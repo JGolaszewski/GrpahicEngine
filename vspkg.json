@@ -1,0 +1,12 @@
+{
+  "name": "graphic-engine",
+  "version-string": "0.1.0",
+  "dependencies": [
+    "directxmath",
+    {
+      "name": "imgui",
+      "features": [ "glfw-binding", "vulkan-binding", "dx12-binding" ]
+    },
+    "glfw3"
+  ]
+}
