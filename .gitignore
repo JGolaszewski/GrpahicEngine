@@ -1,2 +1,7 @@
 .vs
 out
+
+# SourceTrail
+*.srctrlbm
+*.srctrlprj
+*.srctrldb
