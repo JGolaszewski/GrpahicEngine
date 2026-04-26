@@ -1,12 +1,16 @@
 #include "PipelineCache.h"
 
-
+#include <cstdint>
 
 bool Engine::PipelineKey::operator==(const PipelineKey& other) const {
 	return VS == other.VS &&
 		PS == other.PS &&
 		GlobalLayout == other.GlobalLayout &&
-		MaterialLayout == other.MaterialLayout;
+     MaterialLayout == other.MaterialLayout &&
+		Wireframe == other.Wireframe &&
+		DepthTest == other.DepthTest &&
+		DepthWrite == other.DepthWrite &&
+		CullMode == other.CullMode;
 }
 
 std::size_t Engine::PipelineKeyHasher::operator()(const PipelineKey& k) const {
@@ -18,6 +22,10 @@ std::size_t Engine::PipelineKeyHasher::operator()(const PipelineKey& k) const {
 	hash_combine(k.PS.Get());
 	hash_combine(k.GlobalLayout.Get());
 	hash_combine(k.MaterialLayout.Get());
+ hash_combine(reinterpret_cast<void*>(static_cast<uintptr_t>(k.Wireframe)));
+	hash_combine(reinterpret_cast<void*>(static_cast<uintptr_t>(k.DepthTest)));
+	hash_combine(reinterpret_cast<void*>(static_cast<uintptr_t>(k.DepthWrite)));
+	hash_combine(reinterpret_cast<void*>(static_cast<uintptr_t>(k.CullMode)));
 	return res;
 }
 
@@ -39,15 +47,18 @@ nvrhi::GraphicsPipelineHandle Engine::PipelineCache::GetOrCreatePipeline(const P
 	pdesc.VS = key.VS;
 	pdesc.PS = key.PS;
 	pdesc.inputLayout = inputLayout;
-	pdesc.bindingLayouts = { key.GlobalLayout, key.MaterialLayout };
+    pdesc.bindingLayouts = { key.GlobalLayout };
+	if(key.MaterialLayout) {
+		pdesc.bindingLayouts.push_back(key.MaterialLayout);
+	}
 
-	pdesc.renderState.depthStencilState.depthTestEnable = true;
-	pdesc.renderState.depthStencilState.depthWriteEnable = true;
+ pdesc.renderState.depthStencilState.depthTestEnable = key.DepthTest;
+	pdesc.renderState.depthStencilState.depthWriteEnable = key.DepthWrite;
 	pdesc.renderState.depthStencilState.depthFunc = nvrhi::ComparisonFunc::Less;
 
-	// pdesc.renderState.rasterState.fillMode = nvrhi::RasterFillMode::Solid;
-	pdesc.renderState.rasterState.fillMode = nvrhi::RasterFillMode::Wireframe;
-	pdesc.renderState.rasterState.cullMode = nvrhi::RasterCullMode::None;
+   pdesc.renderState.rasterState.fillMode = key.Wireframe ? nvrhi::RasterFillMode::Wireframe : nvrhi::RasterFillMode::Solid;
+	pdesc.renderState.rasterState.cullMode = key.CullMode;
+ pdesc.renderState.rasterState.frontCounterClockwise = false;
 
 	auto pipeline = m_Device->createGraphicsPipeline(pdesc, fb);
 

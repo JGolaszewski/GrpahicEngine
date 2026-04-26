@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreExport.h"
+#include "events/Event.h"
 
 #include <stdint.h>
 
@@ -15,6 +16,8 @@ namespace Engine {
 
 		virtual bool ShouldClose() const = 0;
 		virtual void PollEvents() = 0;
+		virtual void SetEventCallback(Events::EventCallbackFn callback) = 0;
+		virtual void SetCursorVisible(bool visible) = 0;
 
 		virtual void InitImGui() = 0;
 		virtual void ImGuiNewFrame() = 0;

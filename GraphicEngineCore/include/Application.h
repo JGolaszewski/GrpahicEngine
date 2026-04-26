@@ -29,6 +29,7 @@ namespace Engine {
 		Renderer::ShaderFactory* GetShaderFactory();
 		IRenderBackend* GetRenderer() const;
 		nvrhi::ICommandList* GetCommandList() const;
+		IWindow* GetWindow() const;
 
 		SceneRenderer* GetSceneRenderer() const;
 		void SetActiveCamera(std::shared_ptr<Renderer::Camera> camera);
@@ -38,6 +39,8 @@ namespace Engine {
 		virtual void OnUpdate(float deltaTime) {};
 		virtual void OnRender() {};
 		virtual void OnUIRender() {};
+		virtual void OnResize(uint32_t width, uint32_t height) {};
+		virtual void OnEvent(Events::Event& event) {};
 
 	private:
 		bool InitializeCore(RenderAPI api);

@@ -8,10 +8,9 @@
 #include <vector>
 
 namespace Renderer {
-	// USUNIÊTO: class Material; (Mesh ju¿ o nim nie wie!)
-
 	struct ENGINE_API Vertex {
 		DirectX::XMFLOAT3 Position;
+      DirectX::XMFLOAT3 Normal;
 	};
 
 	class ENGINE_API Mesh {
@@ -26,6 +25,11 @@ namespace Renderer {
 					.setName("POSITION")
 					.setFormat(nvrhi::Format::RGB32_FLOAT)
 					.setOffset(offsetof(Vertex, Position))
+                   .setElementStride(sizeof(Vertex)),
+				nvrhi::VertexAttributeDesc()
+					.setName("NORMAL")
+					.setFormat(nvrhi::Format::RGB32_FLOAT)
+					.setOffset(offsetof(Vertex, Normal))
 					.setElementStride(sizeof(Vertex))
 			};
 		}

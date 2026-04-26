@@ -40,6 +40,7 @@ namespace Engine {
 
 		nvrhi::DeviceHandle m_NvrhiDevice;
 		nvrhi::TextureHandle m_NvrhiBackBuffer;
+        nvrhi::TextureHandle m_NvrhiDepthBuffer;
 		nvrhi::FramebufferHandle m_NvrhiFramebuffer;
 	};
 

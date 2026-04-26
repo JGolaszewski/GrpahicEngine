@@ -1,5 +1,6 @@
 ﻿add_library(GraphicEngineCore SHARED 
     "include/CoreExport.h"
+    "include/events/Event.h"
     "include/Window.h" 
 
     "include/RenderBackend.h" 
@@ -36,7 +37,7 @@
  
     "include/components/Transform.h"
     "src/components/Transform.cpp"
-)
+ "include/Logging.h" "include/renderer/Light.h" "src/renderer/Light.cpp")
 
 target_link_libraries(GraphicEngineCore PUBLIC 
     nvrhi 

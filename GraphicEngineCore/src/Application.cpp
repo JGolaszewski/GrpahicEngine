@@ -49,6 +49,9 @@ namespace Engine {
 
 		m_Window->InitImGui();
 		m_Renderer->InitImGui(m_Window.get());
+		m_Window->SetEventCallback([this](Events::Event& event) {
+			OnEvent(event);
+		});
 
 		return true;
 	}
@@ -62,6 +65,8 @@ namespace Engine {
 		OnInit();
 
 		auto lastTime = std::chrono::high_resolution_clock::now();
+		uint32_t lastWidth = m_Window->GetWidth();
+		uint32_t lastHeight = m_Window->GetHeight();
 
 		while(m_IsRunning && !m_Window->ShouldClose()) {
 
@@ -70,6 +75,17 @@ namespace Engine {
 			lastTime = currentTime;
 
 			m_Window->PollEvents();
+
+			uint32_t currentWidth = m_Window->GetWidth();
+			uint32_t currentHeight = m_Window->GetHeight();
+
+			if(currentWidth > 0 && currentHeight > 0 && (currentWidth != lastWidth || currentHeight != lastHeight)) {
+				m_Renderer->Resize(static_cast<int>(currentWidth), static_cast<int>(currentHeight));
+				OnResize(currentWidth, currentHeight);
+				lastWidth = currentWidth;
+				lastHeight = currentHeight;
+			}
+
 			OnUpdate(deltaTime);
 
 			nvrhi::IDevice* nvrhiDevice = m_Renderer->GetDevice();
@@ -81,6 +97,11 @@ namespace Engine {
 				nvrhi::ITexture* backBufferTex = framebuffer->getDesc().colorAttachments[0].texture;
 				nvrhi::Color clearColor = nvrhi::Color(0.1f, 0.1f, 0.1f, 1.0f);
 				m_CommandList->clearTextureFloat(backBufferTex, nvrhi::AllSubresources, clearColor);
+
+				nvrhi::ITexture* depthTex = framebuffer->getDesc().depthAttachment.texture;
+				if(depthTex) {
+					m_CommandList->clearDepthStencilTexture(depthTex, nvrhi::AllSubresources, true, 1.0f, false, 0);
+				}
 			}
 
 			OnRender();
@@ -96,11 +117,11 @@ namespace Engine {
 
 			OnUIRender();
 
-			ImGui::Render();
-			m_Renderer->RenderImGui();
-
 			m_CommandList->close();
 			nvrhiDevice->executeCommandList(m_CommandList);
+
+			ImGui::Render();
+			m_Renderer->RenderImGui();
 
 			m_Renderer->Present();
 		}
@@ -132,6 +153,10 @@ namespace Engine {
 
 	nvrhi::ICommandList* Application::GetCommandList() const {
 		return m_CommandList.Get();
+	}
+
+	IWindow* Application::GetWindow() const {
+		return m_Window.get();
 	}
 
 }

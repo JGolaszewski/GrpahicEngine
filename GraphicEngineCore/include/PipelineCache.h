@@ -11,6 +11,10 @@ namespace Engine {
 		nvrhi::ShaderHandle PS;
 		nvrhi::BindingLayoutHandle GlobalLayout;  
 		nvrhi::BindingLayoutHandle MaterialLayout;
+		bool Wireframe = false;
+		bool DepthTest = true;
+		bool DepthWrite = true;
+		nvrhi::RasterCullMode CullMode = nvrhi::RasterCullMode::Back;
 
 		bool operator==(const PipelineKey& other) const;
 	};

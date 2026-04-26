@@ -1,4 +1,5 @@
 #pragma once
+#pragma once
 
 #include "CoreExport.h"
 #include "Window.h"
@@ -16,10 +17,8 @@ namespace Engine {
 
 		bool ShouldClose() const override;
 		void PollEvents() override;
-
-		inline GLFWwindow* GetGLFWHandle() const {
-			return m_Window;
-		}
+		void SetEventCallback(Events::EventCallbackFn callback) override;
+		void SetCursorVisible(bool visible) override;
 
 		void InitImGui() override;
 		void ImGuiNewFrame() override;
@@ -28,6 +27,14 @@ namespace Engine {
 		uint32_t GetHeight() const override;
 
 	private:
+        void SetupEventCallbacks();
+		static Events::KeyCode MapKeyCode(int key);
+		static Events::MouseButton MapMouseButton(int button);
+
 		GLFWwindow* m_Window = nullptr;
+      Events::EventCallbackFn m_EventCallback;
+		double m_LastMouseX = 0.0;
+		double m_LastMouseY = 0.0;
+		bool m_HasMousePosition = false;
 	};
 }

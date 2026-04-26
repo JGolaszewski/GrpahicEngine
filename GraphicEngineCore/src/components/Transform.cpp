@@ -6,6 +6,7 @@ void Components::Transform::SetPosition(float x, float y, float z) {
 
 void Components::Transform::SetRotation(float pitch, float yaw, float roll) {
 	DirectX::XMVECTOR quat = DirectX::XMQuaternionRotationRollPitchYaw(pitch, yaw, roll);
+    quat = DirectX::XMQuaternionNormalize(quat);
 	DirectX::XMStoreFloat4(&Rotation, quat);
 }
 
@@ -33,6 +34,7 @@ void Components::Transform::Rotate(float pitch, float yaw, float roll) {
 	XMVECTOR deltaRot = XMQuaternionRotationRollPitchYaw(pitch, yaw, roll);
 
 	XMVECTOR newRot = XMQuaternionMultiply(currentRot, deltaRot);
+	newRot = XMQuaternionNormalize(newRot);
 
 	XMStoreFloat4(&Rotation, newRot);
 }

@@ -3,7 +3,16 @@
 
 
 void statWindow() {
-	ImGui::Begin("Statystyki");
+ const ImGuiViewport* viewport = ImGui::GetMainViewport();
+	const ImVec2 padding(12.0f, 12.0f);
+
+	ImGui::SetNextWindowPos(
+		ImVec2(viewport->WorkPos.x + padding.x, viewport->WorkPos.y + padding.y),
+		ImGuiCond_Always,
+		ImVec2(0.0f, 0.0f)
+	);
+
+	ImGui::Begin("Statystyki", nullptr, ImGuiWindowFlags_NoMove);
 
 	float fps = ImGui::GetIO().Framerate;
 	float frameTime = 1000.0f / fps;
@@ -31,7 +40,15 @@ void statWindow() {
 void cameraWindow(Components::Transform* transform) {
 	if(!transform) return;
 
-	ImGui::Begin("Sterowanie Kamer¹");
+	const ImGuiViewport* viewport = ImGui::GetMainViewport();
+	const ImVec2 padding(12.0f, 12.0f);
+	ImGui::SetNextWindowPos(
+		ImVec2(viewport->WorkPos.x + padding.x, viewport->WorkPos.y + viewport->WorkSize.y - padding.y),
+		ImGuiCond_Always,
+		ImVec2(0.0f, 1.0f)
+	);
+
+  ImGui::Begin("Sterowanie Kamer¹", nullptr, ImGuiWindowFlags_NoMove);
 
 	float pos[3] = { transform->Position.x, transform->Position.y, transform->Position.z };
 	if(ImGui::InputFloat3("Pozycja", pos)) {
