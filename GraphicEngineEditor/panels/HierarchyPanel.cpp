@@ -1,0 +1,168 @@
+#include "HierarchyPanel.h"
+
+#include <imgui.h>
+#include <string>
+
+// ================================================================================
+// HierarchyPanel::OnEvent
+// ================================================================================
+// Listens for SceneChangedEvent (to update entity counts) and
+// EntitySelectedEvent / EntityDeselectedEvent (to update selection highlight).
+// ================================================================================
+
+void HierarchyPanel::OnEvent(Engine::Events::Event& event) {
+    Engine::Events::EventDispatcher dispatcher(event);
+
+    dispatcher.Dispatch<SceneChangedEvent>([this](const auto& e) {
+        m_ObjectCount = e.GetObjectCount();
+        m_LightCount = e.GetLightCount();
+        m_CameraCount = e.GetCameraCount();
+        return false;
+    });
+
+    dispatcher.Dispatch<EntitySelectedEvent>([this](const auto& e) {
+        m_SelectedItemType = e.GetItemType();
+        m_SelectedObjectIndex = e.GetObjectIndex();
+        m_SelectedLightIndex = e.GetLightIndex();
+        m_SelectedCameraIndex = e.GetCameraIndex();
+        return false;
+    });
+
+    dispatcher.Dispatch<EntityDeselectedEvent>([this](const auto&) {
+        m_SelectedItemType = EntitySelectedEvent::ItemType::None;
+        m_SelectedObjectIndex = -1;
+        m_SelectedLightIndex = -1;
+        m_SelectedCameraIndex = -1;
+        return false;
+    });
+}
+
+void HierarchyPanel::Draw() {
+    ImGui::Begin("Scene", nullptr, ImGuiWindowFlags_NoCollapse);
+
+    if (ImGui::CollapsingHeader("Objects", ImGuiTreeNodeFlags_DefaultOpen)) {
+        for (size_t i = 0; i < m_ObjectCount; ++i) {
+            const std::string label = "Object " + std::to_string(i);
+            const bool selected = m_SelectedItemType == EntitySelectedEvent::ItemType::Object
+                && m_SelectedObjectIndex == static_cast<int>(i);
+            if (ImGui::Selectable(label.c_str(), selected)) {
+                EmitEvent(std::make_unique<EntitySelectedEvent>(
+                    EntitySelectedEvent::ItemType::Object,
+                    static_cast<int>(i), -1, -1,
+                    nullptr, nullptr, nullptr
+                ));
+            }
+        }
+
+        if (m_ObjectCount == 0) {
+            ImGui::TextDisabled("No active objects");
+        }
+    }
+
+    if (ImGui::CollapsingHeader("Lights", ImGuiTreeNodeFlags_DefaultOpen)) {
+        for (size_t i = 0; i < m_LightCount; ++i) {
+            const std::string label = "Light " + std::to_string(i);
+            const bool selected = m_SelectedItemType == EntitySelectedEvent::ItemType::Light
+                && m_SelectedLightIndex == static_cast<int>(i);
+            if (ImGui::Selectable(label.c_str(), selected)) {
+                EmitEvent(std::make_unique<EntitySelectedEvent>(
+                    EntitySelectedEvent::ItemType::Light,
+                    -1, static_cast<int>(i), -1,
+                    nullptr, nullptr, nullptr
+                ));
+            }
+        }
+
+        if (m_LightCount == 0) {
+            ImGui::TextDisabled("No lights");
+        }
+    }
+
+    if (ImGui::CollapsingHeader("Cameras", ImGuiTreeNodeFlags_DefaultOpen)) {
+        for (size_t i = 0; i < m_CameraCount; ++i) {
+            const std::string label = "Camera " + std::to_string(i);
+            const bool selected = m_SelectedItemType == EntitySelectedEvent::ItemType::Camera
+                && m_SelectedCameraIndex == static_cast<int>(i);
+            if (ImGui::Selectable(label.c_str(), selected)) {
+                EmitEvent(std::make_unique<EntitySelectedEvent>(
+                    EntitySelectedEvent::ItemType::Camera,
+                    -1, -1, static_cast<int>(i),
+                    nullptr, nullptr, nullptr
+                ));
+            }
+        }
+
+        if (m_CameraCount == 0) {
+            ImGui::TextDisabled("No cameras");
+        }
+    }
+
+    ImGui::Spacing();
+    DrawAddObjectModal();
+
+    ImGui::End();
+}
+
+void HierarchyPanel::DrawAddObjectModal() {
+    if (ImGui::Button("Add", ImVec2(-1.0f, 0.0f))) {
+        ImGui::OpenPopup("Add object to scene");
+    }
+
+    if (!ImGui::BeginPopupModal("Add object to scene", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        return;
+    }
+
+    static const char* shapeItems[] = { "Cube", "Sphere", "Plane", "Cone" };
+    int selectedShape = static_cast<int>(m_SpawnShape);
+    if (ImGui::Combo("Type", &selectedShape, shapeItems, IM_ARRAYSIZE(shapeItems))) {
+        m_SpawnShape = static_cast<SpawnShapeType>(selectedShape);
+    }
+
+    float spawnPosition[3] = { m_SpawnPosition.x, m_SpawnPosition.y, m_SpawnPosition.z };
+    if (ImGui::DragFloat3("Start position", spawnPosition, 0.05f)) {
+        m_SpawnPosition = { spawnPosition[0], spawnPosition[1], spawnPosition[2] };
+    }
+
+    float spawnScale[3] = { m_SpawnScale.x, m_SpawnScale.y, m_SpawnScale.z };
+    if (ImGui::DragFloat3("Start scale", spawnScale, 0.05f, 0.05f, 100.0f)) {
+        m_SpawnScale = { spawnScale[0], spawnScale[1], spawnScale[2] };
+    }
+
+    float spawnColor[4] = { m_SpawnColor.x, m_SpawnColor.y, m_SpawnColor.z, m_SpawnColor.w };
+    if (ImGui::ColorEdit4("Start color", spawnColor)) {
+        m_SpawnColor = { spawnColor[0], spawnColor[1], spawnColor[2], spawnColor[3] };
+    }
+
+    float spawnEmissive[3] = { m_SpawnEmissive.x, m_SpawnEmissive.y, m_SpawnEmissive.z };
+    if (ImGui::ColorEdit3("Start emission", spawnEmissive)) {
+        m_SpawnEmissive = { spawnEmissive[0], spawnEmissive[1], spawnEmissive[2] };
+    }
+
+    ImGui::SliderFloat("Start metallic", &m_SpawnMetallic, 0.0f, 1.0f);
+    ImGui::SliderFloat("Start roughness", &m_SpawnRoughness, 0.0f, 1.0f);
+
+    if (ImGui::Button("Add", ImVec2(140.0f, 0.0f))) {
+        AddObjectRequestedEvent::Shape shape;
+        switch (m_SpawnShape) {
+            case SpawnShapeType::Cube:   shape = AddObjectRequestedEvent::Shape::Cube;   break;
+            case SpawnShapeType::Sphere: shape = AddObjectRequestedEvent::Shape::Sphere; break;
+            case SpawnShapeType::Plane:  shape = AddObjectRequestedEvent::Shape::Plane;  break;
+            case SpawnShapeType::Cone:   shape = AddObjectRequestedEvent::Shape::Cone;   break;
+        }
+
+        EmitEvent(std::make_unique<AddObjectRequestedEvent>(
+            shape, m_SpawnPosition, m_SpawnScale, m_SpawnColor,
+            m_SpawnEmissive, m_SpawnMetallic, m_SpawnRoughness
+        ));
+
+        m_SpawnPosition.x += 2.5f;
+        ImGui::CloseCurrentPopup();
+    }
+
+    ImGui::SameLine();
+    if (ImGui::Button("Cancel", ImVec2(140.0f, 0.0f))) {
+        ImGui::CloseCurrentPopup();
+    }
+
+    ImGui::EndPopup();
+}

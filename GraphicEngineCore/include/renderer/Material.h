@@ -9,7 +9,7 @@ namespace Renderer {
 
 	struct MaterialConst {
 		DirectX::XMFLOAT4 BaseColor;
-      DirectX::XMFLOAT4 EmissiveMetallic;
+        DirectX::XMFLOAT4 EmissiveMetallic;
 		DirectX::XMFLOAT4 SurfaceParams;
 	};
 
@@ -37,7 +37,12 @@ namespace Renderer {
 
 		inline nvrhi::ShaderHandle GetVS() const { return m_VS; }
 		inline nvrhi::ShaderHandle GetPS() const { return m_PS; }
+
+		static const Material& DefaultMaterial(nvrhi::IDevice* device);
 	private:
+		bool m_IsDirty = true;
+		uint32_t m_MaterialID;
+
 		nvrhi::DeviceHandle m_Device;
 
 		nvrhi::ShaderHandle m_VS;

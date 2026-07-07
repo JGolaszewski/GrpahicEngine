@@ -12,151 +12,161 @@
 
 namespace Engine {
 
-	Application::Application() {}
-	Application::~Application() {}
+    Application::Application() {}
+    Application::~Application() {}
 
-	bool Application::InitializeCore(RenderAPI api) {
-		m_Window = std::make_unique<GLFWWindow>(1280, 720, "APPLICATION");
+    bool Application::InitializeCore(RenderAPI api) {
+        m_Window = std::make_unique<GLFWWindow>(1280, 720, "Editor");
 
-		if(api == RenderAPI::D3D11) {
-			m_Renderer = std::make_unique<D3D11Backend>();
-		} else {
-			std::cerr << "ERROR: Not supported API." << std::endl;
-			return false;
-		}
+        if(api == RenderAPI::D3D11) {
+            m_Renderer = std::make_unique<D3D11Backend>();
+        } else {
+            std::cerr << "ERROR: Not supported API." << std::endl;
+            return false;
+        }
 
-		if(!m_Renderer->Initialize(m_Window.get())) {
-			std::cerr << "ERROR: Could not initialize renderer." << std::endl;
-			return false;
-		}
+        if(!m_Renderer->Initialize(m_Window.get())) {
+            std::cerr << "ERROR: Could not initialize renderer." << std::endl;
+            return false;
+        }
 
-		nvrhi::IDevice* device = m_Renderer->GetDevice();
-		if(!device) return false;
+        nvrhi::IDevice* device = m_Renderer->GetDevice();
+        if(!device) return false;
 
-		nvrhi::CommandListParameters cmdParams;
-		m_CommandList = device->createCommandList(cmdParams);
+        nvrhi::CommandListParameters cmdParams;
+        m_CommandList = device->createCommandList(cmdParams);
 
-		m_ShaderFactory = std::make_unique<Renderer::ShaderFactory>(m_Renderer->GetDevice());
+        m_ShaderFactory = std::make_unique<Renderer::ShaderFactory>(m_Renderer->GetDevice());
 
-		m_SceneRenderer = std::make_unique<SceneRenderer>();
-		m_SceneRenderer->Init(device);
+        m_SceneRenderer = std::make_unique<SceneRenderer>();
+        m_SceneRenderer->Init(device);
 
-		IMGUI_CHECKVERSION();
-		ImGui::CreateContext();
+        IMGUI_CHECKVERSION();
+        ImGui::CreateContext();
 
-		ImGui::StyleColorsDark();
-		ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+        ImGui::StyleColorsDark();
+        ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+        ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable;
 
-		m_Window->InitImGui();
-		m_Renderer->InitImGui(m_Window.get());
-		m_Window->SetEventCallback([this](Events::Event& event) {
-			OnEvent(event);
-		});
+        m_Window->InitImGui();
+        m_Renderer->InitImGui(m_Window.get());
+        m_Window->SetEventCallback([this](Events::Event& event) {
+            OnEvent(event);
+        });
 
-		return true;
-	}
+        return true;
+    }
 
-	void Application::Run() {
-		if(!InitializeCore(RenderAPI::D3D11)) {
-			return;
-		}
+    static void ClearFramebuffer(nvrhi::ICommandList* cmd, nvrhi::IFramebuffer* framebuffer) {
+        if(!framebuffer) {
+            return;
+        }
 
-		m_IsRunning = true;
-		OnInit();
+        nvrhi::ITexture* colorTex = framebuffer->getDesc().colorAttachments[0].texture;
+        if(colorTex) {
+            cmd->clearTextureFloat(colorTex, nvrhi::AllSubresources, nvrhi::Color(0.1f, 0.1f, 0.1f, 1.0f));
+        }
 
-		auto lastTime = std::chrono::high_resolution_clock::now();
-		uint32_t lastWidth = m_Window->GetWidth();
-		uint32_t lastHeight = m_Window->GetHeight();
+        nvrhi::ITexture* depthTex = framebuffer->getDesc().depthAttachment.texture;
+        if(depthTex) {
+            cmd->clearDepthStencilTexture(depthTex, nvrhi::AllSubresources, true, 1.0f, false, 0);
+        }
+    }
 
-		while(m_IsRunning && !m_Window->ShouldClose()) {
+    void Application::Run() {
+        if(!InitializeCore(RenderAPI::D3D11)) {
+            return;
+        }
 
-			auto currentTime = std::chrono::high_resolution_clock::now();
-			float deltaTime = std::chrono::duration<float>(currentTime - lastTime).count();
-			lastTime = currentTime;
+        m_IsRunning = true;
+        OnInit();
 
-			m_Window->PollEvents();
+        auto lastTime = std::chrono::high_resolution_clock::now();
+        uint32_t lastWidth = m_Window->GetWidth();
+        uint32_t lastHeight = m_Window->GetHeight();
 
-			uint32_t currentWidth = m_Window->GetWidth();
-			uint32_t currentHeight = m_Window->GetHeight();
+        while(m_IsRunning && !m_Window->ShouldClose()) {
 
-			if(currentWidth > 0 && currentHeight > 0 && (currentWidth != lastWidth || currentHeight != lastHeight)) {
-				m_Renderer->Resize(static_cast<int>(currentWidth), static_cast<int>(currentHeight));
-				OnResize(currentWidth, currentHeight);
-				lastWidth = currentWidth;
-				lastHeight = currentHeight;
-			}
+            auto currentTime = std::chrono::high_resolution_clock::now();
+            float deltaTime = std::chrono::duration<float>(currentTime - lastTime).count();
+            lastTime = currentTime;
 
-			OnUpdate(deltaTime);
+            m_Window->PollEvents();
 
-			nvrhi::IDevice* nvrhiDevice = m_Renderer->GetDevice();
-			nvrhi::IFramebuffer* framebuffer = m_Renderer->GetDefaultFramebuffer();
+            uint32_t currentWidth = m_Window->GetWidth();
+            uint32_t currentHeight = m_Window->GetHeight();
 
-			m_CommandList->open();
+            if(currentWidth > 0 && currentHeight > 0 && (currentWidth != lastWidth || currentHeight != lastHeight)) {
+                m_Renderer->Resize(static_cast<int>(currentWidth), static_cast<int>(currentHeight));
+                OnResize(currentWidth, currentHeight);
+                lastWidth = currentWidth;
+                lastHeight = currentHeight;
+            }
 
-			if(framebuffer) {
-				nvrhi::ITexture* backBufferTex = framebuffer->getDesc().colorAttachments[0].texture;
-				nvrhi::Color clearColor = nvrhi::Color(0.1f, 0.1f, 0.1f, 1.0f);
-				m_CommandList->clearTextureFloat(backBufferTex, nvrhi::AllSubresources, clearColor);
+            OnUpdate(deltaTime);
 
-				nvrhi::ITexture* depthTex = framebuffer->getDesc().depthAttachment.texture;
-				if(depthTex) {
-					m_CommandList->clearDepthStencilTexture(depthTex, nvrhi::AllSubresources, true, 1.0f, false, 0);
-				}
-			}
+            nvrhi::IDevice* nvrhiDevice = m_Renderer->GetDevice();
+            nvrhi::IFramebuffer* sceneFramebuffer = GetSceneRenderFramebuffer();
+            nvrhi::IFramebuffer* defaultFramebuffer = m_Renderer->GetDefaultFramebuffer();
 
-			OnRender();
+            m_CommandList->open();
 
-			if(framebuffer) {
-				auto viewProjMatrix = m_ActiveCamera->GetViewProjection();
-				m_SceneRenderer->RenderAll(m_CommandList.Get(), framebuffer, viewProjMatrix);
-			}
+            ClearFramebuffer(m_CommandList.Get(), sceneFramebuffer);
+            ClearFramebuffer(m_CommandList.Get(), defaultFramebuffer);
 
-			m_Renderer->BeginImGuiFrame();
-			m_Window->ImGuiNewFrame();
-			ImGui::NewFrame();
+            OnRender();
 
-			OnUIRender();
+            if(sceneFramebuffer && m_ActiveCamera) {
+                auto viewProjMatrix = m_ActiveCamera->GetViewProjection();
+                m_SceneRenderer->RenderAll(m_CommandList.Get(), sceneFramebuffer, viewProjMatrix);
+            }
 
-			m_CommandList->close();
-			nvrhiDevice->executeCommandList(m_CommandList);
+            m_Renderer->BeginImGuiFrame();
+            m_Window->ImGuiNewFrame();
+            ImGui::NewFrame();
 
-			ImGui::Render();
-			m_Renderer->RenderImGui();
+            OnUIRender();
 
-			m_Renderer->Present();
-		}
-	}
+            m_CommandList->close();
+            nvrhiDevice->executeCommandList(m_CommandList);
 
-	SceneRenderer* Application::GetSceneRenderer() const {
-		return m_SceneRenderer.get();
-	}
+            ImGui::Render();
+            m_Renderer->RenderImGui();
 
-	void Application::SetActiveCamera(std::shared_ptr<Renderer::Camera> camera) {
-		m_ActiveCamera = camera;
-	}
+            m_Renderer->Present();
+        }
+    }
 
-	std::shared_ptr<Renderer::Camera> Application::GetActiveCamera() const {
-		return m_ActiveCamera;
-	}
+    SceneRenderer* Application::GetSceneRenderer() const {
+        return m_SceneRenderer.get();
+    }
 
-	ImGuiContext* Application::GetImGuiContext() {
-		return ImGui::GetCurrentContext();
-	}
+    void Application::SetActiveCamera(std::shared_ptr<Renderer::Camera> camera) {
+        m_ActiveCamera = camera;
+    }
 
-	Renderer::ShaderFactory* Application::GetShaderFactory() {
-		return m_ShaderFactory.get();
-	}
+    std::shared_ptr<Renderer::Camera> Application::GetActiveCamera() const {
+        return m_ActiveCamera;
+    }
 
-	Engine::IRenderBackend* Application::GetRenderer() const {
-		return m_Renderer.get();
-	}
+    ImGuiContext* Application::GetImGuiContext() {
+        return ImGui::GetCurrentContext();
+    }
 
-	nvrhi::ICommandList* Application::GetCommandList() const {
-		return m_CommandList.Get();
-	}
+    Renderer::ShaderFactory* Application::GetShaderFactory() {
+        return m_ShaderFactory.get();
+    }
 
-	IWindow* Application::GetWindow() const {
-		return m_Window.get();
-	}
+    Engine::IRenderBackend* Application::GetRenderer() const {
+        return m_Renderer.get();
+    }
+
+    nvrhi::ICommandList* Application::GetCommandList() const {
+        return m_CommandList.Get();
+    }
+
+    IWindow* Application::GetWindow() const {
+        return m_Window.get();
+    }
 
 }

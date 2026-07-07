@@ -18,10 +18,12 @@ namespace Renderer {
 		Components::Transform transform;
 		std::shared_ptr<Mesh> mesh;
 		std::shared_ptr<Material> material;
-      bool ForceWireframe = false;
+        
+		bool ForceWireframe = false;
 		bool DisableDepthTest = false;
-       bool CastShadows = true;
+        bool CastShadows = true;
 		bool ReceiveShadows = true;
+		
 		nvrhi::RasterCullMode CullMode = nvrhi::RasterCullMode::Back;
 	};
 
@@ -48,7 +50,8 @@ namespace Renderer {
 		nvrhi::DeviceHandle m_Device;
 		nvrhi::CommandListHandle m_CommandList;
 
-          enum class Shape { None, Cube, Cone, Sphere, Plane };
+        enum class Shape { None, Cube, Cone, Sphere, Plane };
+		
 		Shape m_Shape = Shape::None;
 		uint32_t m_ConeSegments = 24;
 		uint32_t m_SphereStacks = 16;

@@ -15,46 +15,50 @@ struct ImGuiContext;
 
 namespace Engine {
 
-	enum class RenderAPI {
-		D3D11
-	};
+    enum class RenderAPI {
+        D3D11
+    };
 
-	class ENGINE_API Application {
-	public:
-		Application();
-		virtual ~Application();
+    class ENGINE_API Application {
+    public:
+        Application();
+        virtual ~Application();
 
-		void Run();
-		ImGuiContext* GetImGuiContext();
-		Renderer::ShaderFactory* GetShaderFactory();
-		IRenderBackend* GetRenderer() const;
-		nvrhi::ICommandList* GetCommandList() const;
-		IWindow* GetWindow() const;
+        void Run();
+        ImGuiContext* GetImGuiContext();
+        Renderer::ShaderFactory* GetShaderFactory();
+        IRenderBackend* GetRenderer() const;
+        nvrhi::ICommandList* GetCommandList() const;
+        IWindow* GetWindow() const;
 
-		SceneRenderer* GetSceneRenderer() const;
-		void SetActiveCamera(std::shared_ptr<Renderer::Camera> camera);
-		std::shared_ptr<Renderer::Camera> GetActiveCamera() const;
-	protected:
-		virtual void OnInit() {};
-		virtual void OnUpdate(float deltaTime) {};
-		virtual void OnRender() {};
-		virtual void OnUIRender() {};
-		virtual void OnResize(uint32_t width, uint32_t height) {};
-		virtual void OnEvent(Events::Event& event) {};
+        SceneRenderer* GetSceneRenderer() const;
+        void SetActiveCamera(std::shared_ptr<Renderer::Camera> camera);
+        std::shared_ptr<Renderer::Camera> GetActiveCamera() const;
 
-	private:
-		bool InitializeCore(RenderAPI api);
+        virtual nvrhi::IFramebuffer* GetSceneRenderFramebuffer() const {
+            return m_Renderer->GetDefaultFramebuffer();
+        }
+    protected:
+        virtual void OnInit() {};
+        virtual void OnUpdate(float deltaTime) {};
+        virtual void OnRender() {};
+        virtual void OnUIRender() {};
+        virtual void OnResize(uint32_t width, uint32_t height) {};
+        virtual void OnEvent(Events::Event& event) {};
 
-		std::unique_ptr<IWindow> m_Window;
-		std::unique_ptr<IRenderBackend> m_Renderer;
-		std::unique_ptr<Renderer::ShaderFactory> m_ShaderFactory;
+    private:
+        bool InitializeCore(RenderAPI api);
 
-		std::unique_ptr<SceneRenderer> m_SceneRenderer;
+        std::unique_ptr<IWindow> m_Window;
+        std::unique_ptr<IRenderBackend> m_Renderer;
+        std::unique_ptr<Renderer::ShaderFactory> m_ShaderFactory;
 
-		std::shared_ptr<Renderer::Camera> m_ActiveCamera;
+        std::unique_ptr<SceneRenderer> m_SceneRenderer;
 
-		nvrhi::CommandListHandle m_CommandList;
+        std::shared_ptr<Renderer::Camera> m_ActiveCamera;
 
-		bool m_IsRunning = false;
-	};
+        nvrhi::CommandListHandle m_CommandList;
+
+        bool m_IsRunning = false;
+    };
 }

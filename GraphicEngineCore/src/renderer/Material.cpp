@@ -81,4 +81,12 @@ namespace Renderer {
 		properties.Roughness = m_Constants.SurfaceParams.x;
 		return properties;
 	}
+
+	const Renderer::Material& Material::DefaultMaterial(nvrhi::IDevice* device)
+	{
+		static const Material defaultMaterial(device, nullptr, nullptr);
+
+		return defaultMaterial;
+	}
+
 }

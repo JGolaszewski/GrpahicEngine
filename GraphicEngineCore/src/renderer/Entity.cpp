@@ -88,7 +88,7 @@ namespace Renderer {
 		m_Device->executeCommandList(m_CommandList);
 
 		auto material = std::make_shared<Renderer::Material>(m_Device, m_VS, m_PS);
-     Renderer::MaterialProperties properties;
+        Renderer::MaterialProperties properties;
 		properties.BaseColor = m_Color;
 		properties.Emissive = m_Emissive;
 		properties.Metallic = m_Metallic;

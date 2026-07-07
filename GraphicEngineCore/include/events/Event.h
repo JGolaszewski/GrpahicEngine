@@ -14,8 +14,12 @@ namespace Engine::Events {
         D,
         Q,
         E,
+        Z,
+        Y,
         Space,
         LeftControl,
+        LeftShift,
+        Delete,
         Count
     };
 
@@ -36,7 +40,19 @@ namespace Engine::Events {
         MouseButtonPressed,
         MouseButtonReleased,
         MouseMoved,
-        MouseScrolled
+        MouseScrolled,
+        // Editor events
+        EntitySelected,
+        EntityDeselected,
+        SceneChanged,
+        ViewportChanged,
+        ViewportHovered,
+        ViewportResizeRequested,
+        CameraSettingsChanged,
+        MaterialChanged,
+        AddObjectRequested,
+        CommandExecuteRequested,
+        DebugRenderToggled
     };
 
     class ENGINE_API Event {

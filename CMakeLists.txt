@@ -1,4 +1,4 @@
-﻿cmake_minimum_required (VERSION 3.15)
+cmake_minimum_required (VERSION 3.15)
 
 
 # Hot reload enable for MSVC
@@ -29,9 +29,9 @@ endif()
 
 find_package(directxmath CONFIG REQUIRED)
 find_package(glfw3 CONFIG REQUIRED)
-find_package(imgui CONFIG REQUIRED)
 
+add_subdirectory(vendor/imgui)
 add_subdirectory(vendor/nvrhi)
 
 add_subdirectory ("GraphicEngineCore")
-add_subdirectory ("GraphicEngineApp")
+add_subdirectory ("GraphicEngineEditor")
