@@ -21,46 +21,30 @@ namespace Renderer {
 	};
 
 	class ENGINE_API Material {
+		friend class MaterialSystem;
+	
 	public:
-		Material(nvrhi::IDevice* device, nvrhi::ShaderHandle vs, nvrhi::ShaderHandle ps);
+		Material(uint32_t materialID);
 
-        void SetProperties(const MaterialProperties& properties, nvrhi::ICommandList* commandList);
-		void SetColor(const DirectX::XMFLOAT4& color, nvrhi::ICommandList* commandList);
-		void SetEmissive(const DirectX::XMFLOAT3& emissive, nvrhi::ICommandList* commandList);
-		void SetMetallic(float metallic, nvrhi::ICommandList* commandList);
-		void SetRoughness(float roughness, nvrhi::ICommandList* commandList);
+        void SetProperties(const MaterialProperties& properties);
+
+		void SetColor(const DirectX::XMFLOAT4& color);	
+		void SetEmissive(const DirectX::XMFLOAT3& emissive);
+		void SetMetallic(float metallic);
+		void SetRoughness(float roughness);
+
+		inline void ClearDirtyFlag() { m_IsDirty = false; }
+		inline bool IsDirty() const { return m_IsDirty; }
+
 		MaterialProperties GetProperties() const;
-
 		inline nvrhi::BindingSetHandle GetBindingSet() const { return m_BindingSet; }
-		inline nvrhi::GraphicsPipelineHandle GetPipeline() const { return m_Pipeline; }
-		inline nvrhi::BindingLayoutHandle GetBindingLayout() const { return m_BindingLayout; }
-
-		inline nvrhi::ShaderHandle GetVS() const { return m_VS; }
-		inline nvrhi::ShaderHandle GetPS() const { return m_PS; }
-
-		static const Material& DefaultMaterial(nvrhi::IDevice* device);
 	private:
 		bool m_IsDirty = true;
 		uint32_t m_MaterialID;
 
-		nvrhi::DeviceHandle m_Device;
-
-		nvrhi::ShaderHandle m_VS;
-		nvrhi::ShaderHandle m_PS;
-
 		nvrhi::BufferHandle m_ConstantBuffer;
-		nvrhi::BindingLayoutHandle m_BindingLayout;
 		nvrhi::BindingSetHandle m_BindingSet;
 
-		nvrhi::InputLayoutHandle m_InputLayout;
-		nvrhi::GraphicsPipelineHandle m_Pipeline;
-
-		MaterialConst m_Constants = {
-			{ 1.0f, 1.0f, 1.0f, 1.0f },
-			{ 0.0f, 0.0f, 0.0f, 0.0f },
-			{ 0.5f, 0.0f, 0.0f, 0.0f }
-		};
-
-		void UploadConstants(nvrhi::ICommandList* commandList);
+		MaterialConst m_Constants;
 	};
 }

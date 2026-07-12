@@ -76,7 +76,22 @@ add_library(GraphicEngineCore SHARED
     "include/renderer/Light.h" 
     "src/renderer/Light.cpp"
 
- "include/renderer/MaterialSystem.h" "src/renderer/MaterialSystem.cpp")
+    "include/renderer/MaterialSystem.h"
+    "src/renderer/MaterialSystem.cpp" 
+    "include/RenderSystem.h" 
+    "src/renderer/RenderSystem.cpp"
+
+    "include/renderer/render_graph/RenderGraph.h"
+
+    "include/renderer/render_graph/RenderPass.h"
+
+    "include/renderer/render_graph/RGBuiilder.h"
+
+    "include/renderer/render_graph/RGResourcePool.h"
+
+    "include/renderer/render_graph/RGResources.h"
+
+)
 
 target_link_libraries(GraphicEngineCore PUBLIC 
     nvrhi 

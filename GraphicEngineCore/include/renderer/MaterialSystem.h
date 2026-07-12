@@ -1,21 +1,30 @@
 #include <nvrhi/nvrhi.h>
 #include "Material.h"
 
+#include <memory>
+
 namespace Renderer {
 	class ENGINE_API MaterialSystem {
-		MaterialSystem(nvrhi::IDevice* device);
+	public:
+		MaterialSystem(nvrhi::IDevice* device, nvrhi::ShaderHandle standardVS, nvrhi::ShaderHandle standardPS);
 		~MaterialSystem();
 
-		void RegisterMaterial(Material* material);
-		void UnregisterMaterial(Material* material);
+		void RegisterMaterial(std::shared_ptr<Material> material);
+		void UnregisterMaterial(std::shared_ptr<Material> material);
 
-		void UpdateDirtyMaterials();
+		void UpdateDirtyMaterials(nvrhi::ICommandList* commandList);
 		nvrhi::BindingLayoutHandle GetStandardMaterialLayout() const;
+		
+		inline nvrhi::ShaderHandle GetStandardVS() const { return m_StandardVS; }
+		inline nvrhi::ShaderHandle GetStandardPS() const { return m_StandardPS; }
 	private:
 		nvrhi::DeviceHandle m_Device;
 		nvrhi::BindingLayoutHandle m_StandardLayout;
 
-		std::vector<Material*> m_ActiveMaterials;
+		nvrhi::ShaderHandle m_StandardVS;
+		nvrhi::ShaderHandle m_StandardPS;
+
+		std::vector<std::shared_ptr<Material>> m_ActiveMaterials;
 	};
 
 }

@@ -19,27 +19,18 @@ namespace Engine {
         m_Window = std::make_unique<GLFWWindow>(1280, 720, "Editor");
 
         if(api == RenderAPI::D3D11) {
-            m_Renderer = std::make_unique<D3D11Backend>();
+            m_RenderBackend = std::make_unique<D3D11Backend>();
         } else {
             std::cerr << "ERROR: Not supported API." << std::endl;
             return false;
         }
 
-        if(!m_Renderer->Initialize(m_Window.get())) {
+        if(!m_RenderBackend->Initialize(m_Window.get())) {
             std::cerr << "ERROR: Could not initialize renderer." << std::endl;
             return false;
         }
-
-        nvrhi::IDevice* device = m_Renderer->GetDevice();
-        if(!device) return false;
-
-        nvrhi::CommandListParameters cmdParams;
-        m_CommandList = device->createCommandList(cmdParams);
-
-        m_ShaderFactory = std::make_unique<Renderer::ShaderFactory>(m_Renderer->GetDevice());
-
-        m_SceneRenderer = std::make_unique<SceneRenderer>();
-        m_SceneRenderer->Init(device);
+        
+		m_RenderSystem = std::make_unique<RenderSystem>(m_RenderBackend.get());
 
         IMGUI_CHECKVERSION();
         ImGui::CreateContext();
@@ -49,28 +40,12 @@ namespace Engine {
         ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable;
 
         m_Window->InitImGui();
-        m_Renderer->InitImGui(m_Window.get());
+        m_RenderBackend->InitImGui(m_Window.get());
         m_Window->SetEventCallback([this](Events::Event& event) {
             OnEvent(event);
         });
 
         return true;
-    }
-
-    static void ClearFramebuffer(nvrhi::ICommandList* cmd, nvrhi::IFramebuffer* framebuffer) {
-        if(!framebuffer) {
-            return;
-        }
-
-        nvrhi::ITexture* colorTex = framebuffer->getDesc().colorAttachments[0].texture;
-        if(colorTex) {
-            cmd->clearTextureFloat(colorTex, nvrhi::AllSubresources, nvrhi::Color(0.1f, 0.1f, 0.1f, 1.0f));
-        }
-
-        nvrhi::ITexture* depthTex = framebuffer->getDesc().depthAttachment.texture;
-        if(depthTex) {
-            cmd->clearDepthStencilTexture(depthTex, nvrhi::AllSubresources, true, 1.0f, false, 0);
-        }
     }
 
     void Application::Run() {
@@ -97,22 +72,17 @@ namespace Engine {
             uint32_t currentHeight = m_Window->GetHeight();
 
             if(currentWidth > 0 && currentHeight > 0 && (currentWidth != lastWidth || currentHeight != lastHeight)) {
-                m_Renderer->Resize(static_cast<int>(currentWidth), static_cast<int>(currentHeight));
+                m_RenderBackend->Resize(static_cast<int>(currentWidth), static_cast<int>(currentHeight));
                 OnResize(currentWidth, currentHeight);
                 lastWidth = currentWidth;
                 lastHeight = currentHeight;
             }
 
             OnUpdate(deltaTime);
+            // m_ActiveScene->Update(deltaTime);
 
-            nvrhi::IDevice* nvrhiDevice = m_Renderer->GetDevice();
-            nvrhi::IFramebuffer* sceneFramebuffer = GetSceneRenderFramebuffer();
-            nvrhi::IFramebuffer* defaultFramebuffer = m_Renderer->GetDefaultFramebuffer();
-
-            m_CommandList->open();
-
-            ClearFramebuffer(m_CommandList.Get(), sceneFramebuffer);
-            ClearFramebuffer(m_CommandList.Get(), defaultFramebuffer);
+            // TODO: Add Scene and Viewport
+            m_RenderSystem->RenderFrame()
 
             OnRender();
 
@@ -137,36 +107,11 @@ namespace Engine {
         }
     }
 
-    SceneRenderer* Application::GetSceneRenderer() const {
-        return m_SceneRenderer.get();
-    }
-
-    void Application::SetActiveCamera(std::shared_ptr<Renderer::Camera> camera) {
-        m_ActiveCamera = camera;
-    }
-
-    std::shared_ptr<Renderer::Camera> Application::GetActiveCamera() const {
-        return m_ActiveCamera;
-    }
-
     ImGuiContext* Application::GetImGuiContext() {
         return ImGui::GetCurrentContext();
-    }
-
-    Renderer::ShaderFactory* Application::GetShaderFactory() {
-        return m_ShaderFactory.get();
-    }
-
-    Engine::IRenderBackend* Application::GetRenderer() const {
-        return m_Renderer.get();
-    }
-
-    nvrhi::ICommandList* Application::GetCommandList() const {
-        return m_CommandList.Get();
     }
 
     IWindow* Application::GetWindow() const {
         return m_Window.get();
     }
-
 }

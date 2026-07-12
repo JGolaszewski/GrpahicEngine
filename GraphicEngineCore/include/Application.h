@@ -4,6 +4,7 @@
 #include "Window.h"
 #include "RenderBackend.h"
 #include "renderer/ShaderFactory.h"
+#include "RenderSystem.h"
 
 #include "SceneRenderer.h" 
 #include "renderer/Camera.h"
@@ -25,19 +26,16 @@ namespace Engine {
         virtual ~Application();
 
         void Run();
+
+		void AddScene(std::shared_ptr<Scene> scene);
+		void RemoveScene(std::shared_ptr<Scene> scene);
+
+		void AddViewport(std::shared_ptr<Renderer::Viewport> viewport);
+		void RemoveViewport(std::shared_ptr<Renderer::Viewport> viewport);
+
         ImGuiContext* GetImGuiContext();
-        Renderer::ShaderFactory* GetShaderFactory();
-        IRenderBackend* GetRenderer() const;
-        nvrhi::ICommandList* GetCommandList() const;
         IWindow* GetWindow() const;
 
-        SceneRenderer* GetSceneRenderer() const;
-        void SetActiveCamera(std::shared_ptr<Renderer::Camera> camera);
-        std::shared_ptr<Renderer::Camera> GetActiveCamera() const;
-
-        virtual nvrhi::IFramebuffer* GetSceneRenderFramebuffer() const {
-            return m_Renderer->GetDefaultFramebuffer();
-        }
     protected:
         virtual void OnInit() {};
         virtual void OnUpdate(float deltaTime) {};
@@ -49,16 +47,13 @@ namespace Engine {
     private:
         bool InitializeCore(RenderAPI api);
 
-        std::unique_ptr<IWindow> m_Window;
-        std::unique_ptr<IRenderBackend> m_Renderer;
-        std::unique_ptr<Renderer::ShaderFactory> m_ShaderFactory;
-
-        std::unique_ptr<SceneRenderer> m_SceneRenderer;
-
-        std::shared_ptr<Renderer::Camera> m_ActiveCamera;
-
-        nvrhi::CommandListHandle m_CommandList;
-
         bool m_IsRunning = false;
+
+        std::unique_ptr<IWindow> m_Window;
+        std::unique_ptr<IRenderBackend> m_RenderBackend;
+		std::unique_ptr<RenderSystem> m_RenderSystem;
+
+		std::vector<std::shared_ptr<Scene>> m_ActiveScenes;
+		std::vector<std::shared_ptr<Renderer::Viewport>> m_Viewports;
     };
 }
