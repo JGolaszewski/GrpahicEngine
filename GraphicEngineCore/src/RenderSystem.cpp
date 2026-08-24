@@ -132,7 +132,6 @@ namespace Engine {
 		m_RenderBackend->GetDevice()->executeCommandList(m_CommandList);
 		m_FrameActive = false;
 
-		m_SceneRenderer->Clear();
 	}
 
 	void RenderSystem::ClearFrameBuffer() {

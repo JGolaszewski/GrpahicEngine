@@ -23,7 +23,6 @@ namespace Engine {
 		static constexpr uint32_t ShadowMapSize = 2048;
 		static constexpr uint32_t MaxLights = ENGINE_MAX_LIGHTS;
 		static constexpr uint32_t MaxShadowedLights = 4;
-		static constexpr uint32_t MaxPerObjects = 4096;
 		static constexpr uint32_t PerObjectDataStride = 256;
 
 		SceneRenderer(nvrhi::IDevice* device);
@@ -39,26 +38,21 @@ namespace Engine {
 		inline nvrhi::BindingLayoutHandle GetSceneBindingLayout() const { return m_SceneBindingLayout; }
 		inline Renderer::MaterialSystem* GetMaterialSystem() const { return m_MaterialSystem; }
 		inline PipelineCache* GetPipelineCache() { return &m_PipelineCache; }
-		
-		inline void Clear() { m_PerObjectDataOffset = 0; }
 
 	private:
 
 		void CullAndFillView(Renderer::RenderView* view, nvrhi::ICommandList* commandList);
-		Renderer::RenderPacket CreateRenderPacket(const Renderer::Entity* entity, uint32_t perObjectOffset);
+		Renderer::RenderPacket CreateRenderPacket(const Renderer::Entity* entity, nvrhi::BufferHandle perObjectBuffer);
 
 		PipelineCache m_PipelineCache;
 
 		nvrhi::DeviceHandle m_Device;
 		nvrhi::BufferHandle m_LightBuffer;
-		nvrhi::BufferHandle m_PerObjectDataBuffer;
 		nvrhi::BindingLayoutHandle m_PerObjectBindingLayout;
 		nvrhi::BindingLayoutHandle m_SceneBindingLayout;
 		nvrhi::SamplerHandle m_ShadowSampler;
 
 		Renderer::MaterialSystem* m_MaterialSystem = nullptr;
-
-		uint32_t m_PerObjectDataOffset = 0;
 
 	};
 

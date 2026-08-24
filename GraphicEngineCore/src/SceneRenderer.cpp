@@ -13,7 +13,10 @@ namespace {
 		DirectX::XMFLOAT4X4 MVP;
 		DirectX::XMFLOAT4X4 World;
 		DirectX::XMFLOAT4 ObjectParams;
+		uint8_t Padding[112]{};
 	};
+
+	static_assert(sizeof(PerObjectData) == Engine::SceneRenderer::PerObjectDataStride);
 
 	DirectX::XMMATRIX ComputeSpotLightViewProj(const Renderer::DirectionalLightData& lightData) {
 		using namespace DirectX;
@@ -63,13 +66,6 @@ void Engine::SceneRenderer::Init(nvrhi::IDevice* device, Renderer::MaterialSyste
 	lightCbDesc.debugName = "Lights_Buffer";
 	lightCbDesc.maxVersions = 3;
 	m_LightBuffer = device->createBuffer(lightCbDesc);
-
-	nvrhi::BufferDesc perObjectDesc;
-	perObjectDesc.byteSize = MaxPerObjects * PerObjectDataStride;
-	perObjectDesc.isConstantBuffer = true;
-
-	perObjectDesc.debugName = "PerObjectDataBuffer";
-	m_PerObjectDataBuffer = device->createBuffer(perObjectDesc);
 
 	nvrhi::BindingLayoutDesc perObjectLayoutDesc;
 	perObjectLayoutDesc.visibility = nvrhi::ShaderType::All;
@@ -128,9 +124,6 @@ void Engine::SceneRenderer::CullAndFillView(Renderer::RenderView* view, nvrhi::I
 		// TODO: Frustum Culling
 
 
-		uint32_t offset = m_PerObjectDataOffset;
-		m_PerObjectDataOffset += PerObjectDataStride;
-
 		PerObjectData perObjectData{};
 		DirectX::XMMATRIX world = entity->transform.GetWorldMat();
 		DirectX::XMMATRIX mvp = world * viewProj;
@@ -144,9 +137,16 @@ void Engine::SceneRenderer::CullAndFillView(Renderer::RenderView* view, nvrhi::I
 			0.0f, 0.0f
 		};
 
-		commandList->writeBuffer(m_PerObjectDataBuffer, &perObjectData, sizeof(PerObjectData), offset);
+		nvrhi::BufferDesc perObjectDesc;
+		perObjectDesc.byteSize = PerObjectDataStride;
+		perObjectDesc.isConstantBuffer = true;
+		perObjectDesc.debugName = "PerObjectData";
+		nvrhi::BufferHandle perObjectBuffer = m_Device->createBuffer(perObjectDesc);
+		if (!perObjectBuffer) continue;
 
-		auto packet = CreateRenderPacket(entity.get(), offset);
+		commandList->writeBuffer(perObjectBuffer, &perObjectData, PerObjectDataStride);
+
+		auto packet = CreateRenderPacket(entity.get(), perObjectBuffer);
 		packet.Queue = Renderer::RenderQueueType::Opaque;
 
 		Engine::PipelineKey key;
@@ -179,7 +179,7 @@ void Engine::SceneRenderer::CullAndFillView(Renderer::RenderView* view, nvrhi::I
 
 // --- RenderPacket creation ---
 
-Renderer::RenderPacket Engine::SceneRenderer::CreateRenderPacket(const Renderer::Entity* entity, uint32_t perObjectOffset) {
+Renderer::RenderPacket Engine::SceneRenderer::CreateRenderPacket(const Renderer::Entity* entity, nvrhi::BufferHandle perObjectBuffer) {
 	Renderer::RenderPacket packet;
 	packet.VertexBuffer = entity->mesh->GetVertexBuffer();
 	packet.IndexBuffer = entity->mesh->GetIndexBuffer();
@@ -190,11 +190,7 @@ Renderer::RenderPacket Engine::SceneRenderer::CreateRenderPacket(const Renderer:
 	packet.StartIndexLocation = 0;
 
 	nvrhi::BindingSetDesc setDesc;
-	setDesc.addItem(nvrhi::BindingSetItem::ConstantBuffer(
-		0,
-		m_PerObjectDataBuffer,
-		nvrhi::BufferRange{ perObjectOffset, PerObjectDataStride }
-	));
+	setDesc.addItem(nvrhi::BindingSetItem::ConstantBuffer(0, perObjectBuffer));
 	packet.PerObjectBindings = m_Device->createBindingSet(setDesc, m_PerObjectBindingLayout);
 
 	return packet;
