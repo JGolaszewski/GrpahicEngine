@@ -23,7 +23,7 @@ foreach(SHADER_FILE ${SHADER_FILES})
 
     add_custom_command(
         OUTPUT ${OUTPUT_FILE}
-        COMMAND fxc /T ${PROFILE} /E ${ENTRY} /Fo ${OUTPUT_FILE} ${CMAKE_CURRENT_SOURCE_DIR}/${SHADER_FILE}
+        COMMAND fxc /DENGINE_MAX_LIGHTS=${ENGINE_MAX_LIGHTS} /T ${PROFILE} /E ${ENTRY} /Fo ${OUTPUT_FILE} ${CMAKE_CURRENT_SOURCE_DIR}/${SHADER_FILE}
         DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/${SHADER_FILE}
     )
 
@@ -58,7 +58,10 @@ target_link_libraries(GraphicEngineCore PUBLIC
 
 target_include_directories(GraphicEngineCore PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
-target_compile_definitions(GraphicEngineCore PRIVATE EXPORTING_ENGINE_CORE)
+target_compile_definitions(GraphicEngineCore PRIVATE
+  EXPORTING_ENGINE_CORE
+  ENGINE_MAX_LIGHTS=${ENGINE_MAX_LIGHTS}
+)
 
 if (CMAKE_VERSION VERSION_GREATER 3.12)
   set_property(TARGET GraphicEngineCore PROPERTY CXX_STANDARD 23)

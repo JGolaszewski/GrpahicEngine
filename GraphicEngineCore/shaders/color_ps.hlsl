@@ -1,3 +1,7 @@
+#ifndef ENGINE_MAX_LIGHTS
+#define ENGINE_MAX_LIGHTS 8
+#endif
+
 cbuffer PerObjectCB : register(b0)
 {
     float4x4 g_MVP;
@@ -25,7 +29,7 @@ struct LightData
 
 cbuffer LightsCB : register(b2)
 {
-    LightData g_Lights[128];
+    LightData g_Lights[ENGINE_MAX_LIGHTS];
     uint      g_LightCount;
     float3    g_LightPadding;
 };

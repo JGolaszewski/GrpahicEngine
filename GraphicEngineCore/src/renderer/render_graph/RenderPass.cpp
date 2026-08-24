@@ -4,15 +4,8 @@
 #include <algorithm>
 
 namespace {
-	constexpr uint32_t MaxLights = 8;
 	constexpr uint32_t ShadowMapSize = 2048;
 	constexpr uint32_t MaxShadowedLights = 4;
-
-	struct LightsCBData {
-		Renderer::DirectionalLightData Lights[MaxLights];
-		uint32_t LightCount = 0;
-		float Padding[3] = { 0.0f, 0.0f, 0.0f };
-	};
 }
 
 namespace Renderer {
@@ -152,8 +145,8 @@ namespace Renderer {
 		nvrhi::SamplerHandle shadowSampler = ctx.GetBlackboard().GetShadowSampler();
 		nvrhi::BindingLayoutHandle sceneBindingLayout = ctx.GetBlackboard().GetSceneBindingLayout();
 
-		LightsCBData lightData{};
-		const uint32_t lightCount = static_cast<uint32_t>(std::min(lights.size(), static_cast<size_t>(MaxLights)));
+		Renderer::LightsCBData lightData{};
+		const uint32_t lightCount = static_cast<uint32_t>(std::min(lights.size(), static_cast<size_t>(ENGINE_MAX_LIGHTS)));
 		for (uint32_t i = 0; i < lightCount; ++i) {
 			lightData.Lights[i] = lights[i];
 		}

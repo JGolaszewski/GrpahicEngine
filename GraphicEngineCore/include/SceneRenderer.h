@@ -21,7 +21,7 @@ namespace Engine {
 	class ENGINE_API SceneRenderer {
 	public:
 		static constexpr uint32_t ShadowMapSize = 2048;
-		static constexpr uint32_t MaxLights = 8;
+		static constexpr uint32_t MaxLights = ENGINE_MAX_LIGHTS;
 		static constexpr uint32_t MaxShadowedLights = 4;
 		static constexpr uint32_t MaxPerObjects = 4096;
 		static constexpr uint32_t PerObjectDataStride = 256;

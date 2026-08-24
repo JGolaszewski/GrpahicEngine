@@ -11,6 +11,7 @@ endif()
 project ("GraphicEngine")
 
 set(NVRHI_WITH_DX11 ON)
+set(ENGINE_MAX_LIGHTS 8 CACHE STRING "Maximum number of lights supported by CPU and GPU lighting buffers")
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")

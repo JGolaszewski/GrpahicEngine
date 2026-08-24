@@ -15,12 +15,6 @@ namespace {
 		DirectX::XMFLOAT4 ObjectParams;
 	};
 
-	struct LightsCBData {
-		Renderer::DirectionalLightData Lights[Engine::SceneRenderer::MaxLights];
-		uint32_t LightCount = 0;
-		float Padding[3] = { 0.0f, 0.0f, 0.0f };
-	};
-
 	DirectX::XMMATRIX ComputeSpotLightViewProj(const Renderer::DirectionalLightData& lightData) {
 		using namespace DirectX;
 
@@ -63,7 +57,7 @@ void Engine::SceneRenderer::Init(nvrhi::IDevice* device, Renderer::MaterialSyste
 	m_Device = device;
 
 	nvrhi::BufferDesc lightCbDesc;
-	lightCbDesc.byteSize = sizeof(LightsCBData);
+	lightCbDesc.byteSize = sizeof(Renderer::LightsCBData);
 	lightCbDesc.isConstantBuffer = true;
 	lightCbDesc.isVolatile = true;
 	lightCbDesc.debugName = "Lights_Buffer";
@@ -286,6 +280,10 @@ void Engine::SceneRenderer::BuildLighting(Engine::Scene* scene, Renderer::FrameB
 	uint32_t shadowIdx = 0;
 
 	for (const auto& light : scene->GetLights()) {
+		if (lights.size() >= MaxLights) {
+			break;
+		}
+
 		auto lightData = light->GetDirectionalLightData();
 
 		const bool usePosition = lightData.ColorUsePosition.w > 0.5f;

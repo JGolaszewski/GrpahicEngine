@@ -3,8 +3,14 @@
 
 #include "CoreExport.h"
 #include <DirectXMath.h>
+#include <cstddef>
+#include <cstdint>
 
 namespace Renderer {
+
+#ifndef ENGINE_MAX_LIGHTS
+#define ENGINE_MAX_LIGHTS 8
+#endif
 
     struct ENGINE_API DirectionalLightData {
         DirectX::XMFLOAT4 DirectionIntensity = { 0.0f, -1.0f, 0.0f, 1.0f };
@@ -19,6 +25,22 @@ namespace Renderer {
         };
         DirectX::XMFLOAT4 ShadowParams = { -1.0f, 0.0015f, 0.0015f, 0.0f };
     };
+
+    struct ENGINE_API LightsCBData {
+        DirectionalLightData Lights[ENGINE_MAX_LIGHTS]{};
+        uint32_t LightCount = 0;
+        float Padding[3] = { 0.0f, 0.0f, 0.0f };
+    };
+
+    static_assert(sizeof(DirectionalLightData) == 144, "DirectionalLightData must match the HLSL LightData layout");
+    static_assert(offsetof(DirectionalLightData, DirectionIntensity) == 0);
+    static_assert(offsetof(DirectionalLightData, ColorUsePosition) == 16);
+    static_assert(offsetof(DirectionalLightData, PositionRange) == 32);
+    static_assert(offsetof(DirectionalLightData, ConeParams) == 48);
+    static_assert(offsetof(DirectionalLightData, LightViewProj) == 64);
+    static_assert(offsetof(DirectionalLightData, ShadowParams) == 128);
+    static_assert(offsetof(LightsCBData, LightCount) == ENGINE_MAX_LIGHTS * sizeof(DirectionalLightData));
+    static_assert(sizeof(LightsCBData) == ENGINE_MAX_LIGHTS * sizeof(DirectionalLightData) + 16);
 
     class ENGINE_API SpotLight {
     public:
