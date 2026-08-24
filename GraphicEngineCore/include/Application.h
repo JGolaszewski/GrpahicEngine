@@ -64,6 +64,7 @@ namespace Engine {
 
     private:
         bool InitializeCore(RenderAPI api);
+        void RegisterDefaultView();
 
         bool m_IsRunning = false;
 
@@ -73,6 +74,7 @@ namespace Engine {
 
         std::vector<std::shared_ptr<Scene>> m_ActiveScenes;
         std::vector<std::shared_ptr<Engine::Viewport>> m_Viewports;
+		std::shared_ptr<Engine::Viewport> m_DefaultViewport;
         
 		std::vector<ViewportBinding> m_ActiveViews;
     };

@@ -4,6 +4,7 @@
 
 #include "windows/GLFWWindow.h"
 #include "backends/D3D11Backend.h"
+#include "renderer/Viewport.h"
 
 #include <iostream>
 #include <chrono>
@@ -31,6 +32,10 @@ namespace Engine {
         }
         
         m_RenderSystem = std::make_unique<RenderSystem>(m_RenderBackend.get());
+		m_DefaultViewport = std::make_shared<Viewport>(
+			m_Window->GetWidth(),
+			m_Window->GetHeight(),
+			m_RenderBackend->GetDefaultFramebuffer());
 
         IMGUI_CHECKVERSION();
         ImGui::CreateContext();
@@ -73,6 +78,8 @@ namespace Engine {
 
 			if (currentWidth > 0 && currentHeight > 0 && (currentWidth != lastWidth || currentHeight != lastHeight)) {
 				m_RenderBackend->Resize(static_cast<int>(currentWidth), static_cast<int>(currentHeight));
+				m_DefaultViewport = std::make_shared<Viewport>(
+					currentWidth, currentHeight, m_RenderBackend->GetDefaultFramebuffer());
 				OnResize(currentWidth, currentHeight);
 				lastWidth = currentWidth;
 				lastHeight = currentHeight;
@@ -83,6 +90,7 @@ namespace Engine {
 			ClearViews();
 
 			OnSetupViews();
+			RegisterDefaultView();
 
 			m_RenderSystem->BeginFrame();
 
@@ -101,6 +109,26 @@ namespace Engine {
 			m_RenderBackend->RenderImGui();
 
 			m_RenderBackend->Present();
+		}
+	}
+
+	void Application::RegisterDefaultView() {
+		if (!m_ActiveViews.empty() || !m_DefaultViewport) {
+			return;
+		}
+
+		for (const auto& scene : m_ActiveScenes) {
+			if (!scene) {
+				continue;
+			}
+
+			Renderer::Camera* camera = scene->GetCamera(0);
+			if (!camera) {
+				continue;
+			}
+
+			RegisterView({ camera, m_DefaultViewport.get(), scene.get() });
+			return;
 		}
 	}
 

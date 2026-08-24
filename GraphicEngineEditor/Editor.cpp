@@ -45,6 +45,23 @@ void Editor::OnInit() {
 		DirectX::XMFLOAT3(3.2f, 4.8f, -5.2f)
 	};
 
+	Renderer::MaterialProperties demoMaterialProperties;
+	demoMaterialProperties.BaseColor = { 0.25f, 0.55f, 0.95f, 1.0f };
+	demoMaterialProperties.Roughness = 0.45f;
+	auto demoMaterial = GetRenderSystem()->GetMaterialSystem()->CreateMaterial(demoMaterialProperties);
+	std::shared_ptr<Renderer::Entity> demoCube;
+	ExecuteImmediate([this, demoMaterial, &demoCube](nvrhi::ICommandList* commandList) {
+		Renderer::EntityBuilder builder(GetRenderer()->GetDevice(), commandList);
+		demoCube = builder
+			.Cube()
+			.SetMaterial(demoMaterial)
+			.Position(0.0f, 0.0f, 0.0f)
+			.Build();
+	});
+	if (demoCube) {
+		m_Cubes.push_back(demoCube);
+	}
+
 	const float lightRanges[2] = { 8.0f, 20.0f };
 	const DirectX::XMFLOAT2 coneAngles[2] = {
 		DirectX::XMFLOAT2(20.0f, 32.0f),
