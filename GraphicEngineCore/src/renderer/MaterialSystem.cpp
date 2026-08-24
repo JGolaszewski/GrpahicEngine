@@ -1,5 +1,7 @@
 #include "renderer/MaterialSystem.h"
 
+#include <algorithm>
+
 namespace Renderer {
 	MaterialSystem::MaterialSystem(nvrhi::IDevice* device, nvrhi::ShaderHandle standardVS, nvrhi::ShaderHandle standardPS)
 		: m_Device(device), m_StandardVS(standardVS), m_StandardPS(standardPS) {
@@ -16,11 +18,16 @@ namespace Renderer {
 	}
 
 	void MaterialSystem::RegisterMaterial(std::shared_ptr<Material> material) {
+		if (!material || std::find(m_ActiveMaterials.begin(), m_ActiveMaterials.end(), material) != m_ActiveMaterials.end()) {
+			return;
+		}
+
 		// Allocate constant buffer for the material
 		nvrhi::BufferDesc bufferDesc;
 		bufferDesc.byteSize = sizeof(MaterialConst);
 		bufferDesc.isConstantBuffer = true;
 		bufferDesc.isVolatile = false;
+		bufferDesc.debugName = "Material_ConstantBuffer";
 		material->m_ConstantBuffer = m_Device->createBuffer(bufferDesc);
 
 		// Create binding set for the material
@@ -31,10 +38,7 @@ namespace Renderer {
 		material->m_BindingSet = m_Device->createBindingSet(setDesc, m_StandardLayout);
 		material->m_IsDirty = true;
 
-		// Add material to list
-		if (std::find(m_ActiveMaterials.begin(), m_ActiveMaterials.end(), material) == m_ActiveMaterials.end()) {
-			m_ActiveMaterials.push_back(material);
-		}
+		m_ActiveMaterials.push_back(std::move(material));
 	}
 
 	void MaterialSystem::UnregisterMaterial(std::shared_ptr<Material> material) {
@@ -45,13 +49,23 @@ namespace Renderer {
 	}
 
 	void MaterialSystem::UpdateDirtyMaterials(nvrhi::ICommandList* commandList) {
+		if (!commandList) {
+			return;
+		}
+
 		for (const auto& material : m_ActiveMaterials) {
 			if(material->IsDirty() && material->m_ConstantBuffer) {
 				commandList->writeBuffer(material->m_ConstantBuffer, &material->m_Constants, sizeof(MaterialConst));
+				material->ClearDirtyFlag();
 			}
-
-			material->ClearDirtyFlag();
 		}
+	}
+
+	std::shared_ptr<Material> MaterialSystem::CreateMaterial(const MaterialProperties& properties) {
+		auto material = std::make_shared<Material>(m_NextMaterialID++);
+		material->SetProperties(properties);
+		RegisterMaterial(material);
+		return material;
 	}
 
 	nvrhi::BindingLayoutHandle MaterialSystem::GetStandardMaterialLayout() const {

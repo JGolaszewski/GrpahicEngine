@@ -33,6 +33,7 @@ namespace Engine {
 	void RenderSystem::BeginFrame() {
 		m_CommandList->open();
 		ClearFrameBuffer();
+		m_MaterialSystem->UpdateDirtyMaterials(m_CommandList);
 
 		m_ViewPool.clear();
 

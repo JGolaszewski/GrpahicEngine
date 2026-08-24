@@ -1,6 +1,7 @@
 #include "renderer/Entity.h"
 #include <algorithm>
 #include <cmath>
+#include <iostream>
 
 namespace Renderer {
 
@@ -47,6 +48,11 @@ namespace Renderer {
 	}
 
 	std::shared_ptr<Renderer::Entity> EntityBuilder::Build() {
+		if (!m_Device || !m_CommandList || !m_Material) {
+			std::cerr << "ERROR: EntityBuilder requires a device, command list, and material." << std::endl;
+			return nullptr;
+		}
+
 		std::vector<Renderer::Vertex> vertices;
 		std::vector<uint32_t> indices;
 
@@ -61,6 +67,10 @@ namespace Renderer {
 		}
 		else if (m_Shape == Shape::Plane) {
 			GeneratePlaneData(vertices, indices);
+		}
+		else {
+			std::cerr << "ERROR: EntityBuilder requires a shape before Build()." << std::endl;
+			return nullptr;
 		}
 
 		auto mesh = std::make_shared<Renderer::Mesh>(m_Device, vertices, indices);

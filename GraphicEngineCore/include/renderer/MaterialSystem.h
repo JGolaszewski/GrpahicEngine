@@ -3,7 +3,9 @@
 #include <nvrhi/nvrhi.h>
 #include "Material.h"
 
+#include <cstdint>
 #include <memory>
+#include <vector>
 
 namespace Renderer {
 	class ENGINE_API MaterialSystem {
@@ -13,6 +15,7 @@ namespace Renderer {
 
 		void RegisterMaterial(std::shared_ptr<Material> material);
 		void UnregisterMaterial(std::shared_ptr<Material> material);
+		std::shared_ptr<Material> CreateMaterial(const MaterialProperties& properties = {});
 
 		void UpdateDirtyMaterials(nvrhi::ICommandList* commandList);
 		nvrhi::BindingLayoutHandle GetStandardMaterialLayout() const;
@@ -27,6 +30,7 @@ namespace Renderer {
 		nvrhi::ShaderHandle m_StandardPS;
 
 		std::vector<std::shared_ptr<Material>> m_ActiveMaterials;
+		uint32_t m_NextMaterialID = 0;
 	};
 
 }

@@ -406,6 +406,12 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
 	dispatcher.Dispatch<AddObjectRequestedEvent>([this](const auto& e) {
 		auto* device = GetRenderer()->GetDevice();
 		DirectX::XMFLOAT3 spawnPosition = e.GetPosition();
+		Renderer::MaterialProperties materialProperties;
+		materialProperties.BaseColor = e.GetColor();
+		materialProperties.Emissive = e.GetEmissive();
+		materialProperties.Metallic = e.GetMetallic();
+		materialProperties.Roughness = e.GetRoughness();
+		auto material = GetRenderSystem()->GetMaterialSystem()->CreateMaterial(materialProperties);
 
 		auto intersectsExisting = [this](const DirectX::XMFLOAT3& position) {
 			for (const auto& entity : m_Cubes) {
@@ -423,7 +429,8 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
 			spawnPosition.x += 2.5f;
 		}
 
-		ExecuteImmediate([this, device, spawnPosition, e](nvrhi::ICommandList* cmd) {
+		std::shared_ptr<Renderer::Entity> createdEntity;
+		ExecuteImmediate([device, spawnPosition, e, material, &createdEntity](nvrhi::ICommandList* cmd) {
 			Renderer::EntityBuilder builder(device, cmd);
 
 			switch (e.GetShape()) {
@@ -433,17 +440,22 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
 			case AddObjectRequestedEvent::Shape::Cone:   builder.Cone(20); break;
 			}
 
-			auto createdEntity = builder
+			auto builtEntity = builder
 				.Position(spawnPosition.x, spawnPosition.y, spawnPosition.z)
 				.Scale(e.GetScale().x, e.GetScale().y, e.GetScale().z)
+				.SetMaterial(material)
 				.Build();
-
-			m_Cubes.push_back(createdEntity);
-
-			if (m_ActiveScene) {
-				m_ActiveScene->AddEntity(createdEntity);
-			}
+			createdEntity = std::move(builtEntity);
 			});
+
+		if (!createdEntity) {
+			return false;
+		}
+
+		m_Cubes.push_back(createdEntity);
+		if (m_ActiveScene) {
+			m_ActiveScene->AddEntity(createdEntity);
+		}
 
 		m_SelectedItemType = SelectedItemType::Object;
 		m_SelectedObjectIndex = static_cast<int>(m_Cubes.size() - 1);
@@ -465,10 +477,7 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
 		auto* entity = e.GetEntity();
 		if (!entity || !entity->material) return false;
 
-		auto* device = GetRenderer()->GetDevice();
-		ExecuteImmediate([entity, device, e](nvrhi::ICommandList* cmd) {
-			entity->material->SetProperties(e.GetProperties());
-			});
+		entity->material->SetProperties(e.GetProperties());
 		return false;
 		});
 
