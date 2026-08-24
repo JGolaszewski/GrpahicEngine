@@ -201,4 +201,8 @@ namespace Engine {
 		ImGui_ImplGlfw_NewFrame();
 	}
 
+	void GLFWWindow::ShutdownImGui() {
+		ImGui_ImplGlfw_Shutdown();
+	}
+
 }

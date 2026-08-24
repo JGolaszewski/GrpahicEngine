@@ -14,7 +14,21 @@
 namespace Engine {
 
     Application::Application() {}
-    Application::~Application() {}
+    Application::~Application() {
+        if (ImGui::GetCurrentContext()) {
+            if (m_RenderBackend) {
+                m_RenderBackend->ShutdownImGui();
+            }
+            if (m_Window) {
+                m_Window->ShutdownImGui();
+            }
+            ImGui::DestroyContext();
+        }
+
+        m_RenderSystem.reset();
+        m_RenderBackend.reset();
+        m_Window.reset();
+    }
 
     bool Application::InitializeCore(RenderAPI api) {
         m_Window = std::make_unique<GLFWWindow>(1280, 720, "Editor");

@@ -21,5 +21,6 @@ namespace Engine {
 		virtual void InitImGui(IWindow* window) = 0;
 		virtual void BeginImGuiFrame() = 0;
 		virtual void RenderImGui() = 0;
+		virtual void ShutdownImGui() = 0;
 	};
 }

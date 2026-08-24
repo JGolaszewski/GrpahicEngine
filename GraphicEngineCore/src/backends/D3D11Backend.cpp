@@ -39,10 +39,9 @@ namespace Engine {
 
 		
 		UINT createDeviceFlags = 0;
-	
-		// #ifdef _DEBUG
-		// 	createDeviceFlags |= D3D11_CREATE_DEVICE_DEBUG;
-		// #endif
+	#ifdef _DEBUG
+		createDeviceFlags |= D3D11_CREATE_DEVICE_DEBUG;
+	#endif
 
 		DXGI_SWAP_CHAIN_DESC sd;
 		ZeroMemory(&sd, sizeof(sd));
@@ -81,6 +80,31 @@ namespace Engine {
 		);
 
 		if(FAILED(hr)) {
+		#ifdef _DEBUG
+			// The D3D debug layer is optional on developer machines. Keep the
+			// validation path enabled when available, but allow normal startup
+			// when the SDK layers are not installed.
+			if (createDeviceFlags != 0) {
+				std::cerr << "WARN: D3D11 debug layer unavailable; retrying without it." << std::endl;
+				createDeviceFlags = 0;
+				hr = D3D11CreateDeviceAndSwapChain(
+					nullptr,
+					D3D_DRIVER_TYPE_HARDWARE,
+					nullptr,
+					createDeviceFlags,
+					nullptr, 0,
+					D3D11_SDK_VERSION,
+					&sd,
+					&m_SwapChain,
+					&m_Device,
+					&featureLevel,
+					&m_Context
+				);
+			}
+		#endif
+		}
+
+		if(FAILED(hr)) {
 			std::cerr << "ERROR: Initialization failed." << std::endl;
 			return false;
 		}
@@ -97,12 +121,11 @@ namespace Engine {
 
 		m_NvrhiDevice = nvrhi::d3d11::createDevice(deviceDesc);
 
-		// #ifdef _DEBUG
-		// if (m_NvrhiDevice)
-		// {
-		// 	  m_NvrhiDevice = nvrhi::validation::createValidationLayer(m_NvrhiDevice);
-		// }
-		// #endif
+	#ifdef _DEBUG
+		if (m_NvrhiDevice) {
+			m_NvrhiDevice = nvrhi::validation::createValidationLayer(m_NvrhiDevice);
+		}
+	#endif
 
 		if(!m_NvrhiDevice) {
 			std::cerr << "ERROR: Parsing DX11 device by NVRHI failed." << std::endl;
@@ -256,10 +279,12 @@ namespace Engine {
 	}
 
 	void D3D11Backend::RenderImGui() {
-		ImGui::Render();
-
 		m_Context->OMSetRenderTargets(1, m_RenderTargetView.GetAddressOf(), nullptr);
 		ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+	}
+
+	void D3D11Backend::ShutdownImGui() {
+		ImGui_ImplDX11_Shutdown();
 	}
 
 }

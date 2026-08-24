@@ -21,6 +21,7 @@ namespace Engine {
 
 		virtual void InitImGui() = 0;
 		virtual void ImGuiNewFrame() = 0;
+		virtual void ShutdownImGui() = 0;
 
 		virtual uint32_t GetWidth() const = 0;
 		virtual uint32_t GetHeight() const = 0;

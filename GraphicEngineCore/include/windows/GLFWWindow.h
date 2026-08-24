@@ -22,6 +22,7 @@ namespace Engine {
 
 		void InitImGui() override;
 		void ImGuiNewFrame() override;
+		void ShutdownImGui() override;
 
 		uint32_t GetWidth() const override;
 		uint32_t GetHeight() const override;

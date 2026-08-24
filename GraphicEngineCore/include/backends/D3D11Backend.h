@@ -23,6 +23,7 @@ namespace Engine {
 		void InitImGui(IWindow* window) override;
 		void BeginImGuiFrame() override;
 		void RenderImGui() override;
+		void ShutdownImGui() override;
 
 		inline nvrhi::IDevice* GetDevice() const override {
 			return m_NvrhiDevice.Get();
