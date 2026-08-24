@@ -66,10 +66,9 @@ namespace Renderer {
 		auto mesh = std::make_shared<Renderer::Mesh>(m_Device, vertices, indices);
 
 		mesh->UploadData(m_CommandList, vertices, indices);
-		m_Device->executeCommandList(m_CommandList);
 
-		// Używamy przekazanego materiału. 
-		// Jeśli zapomniano go podać, Entity otrzyma nullptr, ale program się skompiluje.
+		// The caller owns command-list submission. Build only records mesh uploads
+		// so multiple entities can share one immediate-upload batch.
 		auto entity = std::make_shared<Renderer::Entity>(mesh, m_Material);
 
 		entity->transform.Position = m_Position;
