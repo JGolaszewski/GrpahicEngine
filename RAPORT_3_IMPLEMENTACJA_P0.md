@@ -102,9 +102,21 @@ Decision: shutdown is centralized at the application boundary because it can enf
 - No `g_Lights[128]` declaration remains; the shader and CPU upload path use `ENGINE_MAX_LIGHTS`.
 - The duplicate entity-builder command-list execution is gone.
 - `git diff --check` reports no whitespace errors.
+- A five-second Editor smoke test completed without an access violation and reported zero NVRHI validation errors.
 
-Interactive Sandbox/Editor rendering and validation-layer output were not run in this non-interactive verification pass; the binaries build successfully and the debug validation code is enabled for the next desktop smoke test.
+## Runtime follow-up
+
+Commit: `eca3932` — `Fix DX11 command-list lifetime and frame uploads`
+
+The reported `RenderSystem.cpp:34` access violation was caused by storing a raw `ICommandList*` from a temporary `CommandListHandle`. The handle released the command list at the end of the initializer, leaving a dangling, non-null pointer. `RenderSystem` now owns the handle and rejects renderer initialization when creation fails.
+
+The smoke test then exposed two related DX11 validation issues:
+
+- `SceneRenderer` was opening a second immediate command list while the frame list was open; per-object uploads now use the frame list supplied by `RenderSystem`.
+- Per-object data used a volatile constant buffer with subrange bindings; it is now a regular constant buffer with 256-byte binding ranges, matching DX11/NVRHI requirements.
+
+`RenderView` matrices and frustum planes are initialized, and clearing a view no longer discards its target scene before culling.
 
 ## Result
 
-The six P0 changes are complete in six separate implementation commits. This report is kept as a separate documentation change so the implementation history and the decisions behind it remain easy to audit.
+The six P0 changes and the runtime follow-up are complete. The follow-up is kept in its own commit, and this report remains a separate documentation change so the implementation history and decisions stay auditable.
