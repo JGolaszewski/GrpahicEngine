@@ -27,6 +27,7 @@ namespace Renderer {
 		desc.arraySize = maxShadowedLights;
 		desc.dimension = nvrhi::TextureDimension::Texture2DArray;
 		desc.isRenderTarget = true;
+		desc.isShaderResource = true;
 		desc.mipLevels = 1;
 
 		m_ShadowMapID = builder.CreateAndWriteTexture(desc);
@@ -45,17 +46,9 @@ namespace Renderer {
 		nvrhi::Viewport shadowViewport = nvrhi::Viewport(float(shadowTexDesc.width), float(shadowTexDesc.height));
 		nvrhi::Rect shadowScissor = nvrhi::Rect(shadowTexDesc.width, shadowTexDesc.height);
 
-		nvrhi::BufferHandle lightBuffer = ctx.GetBlackboard().GetLightBuffer();
-		nvrhi::SamplerHandle shadowSampler = ctx.GetBlackboard().GetShadowSampler();
-		nvrhi::BindingLayoutHandle sceneBindingLayout = ctx.GetBlackboard().GetSceneBindingLayout();
-
-		nvrhi::BindingSetHandle sceneBindings;
-		if (sceneBindingLayout) {
-			nvrhi::BindingSetDesc sceneSetDesc;
-			sceneSetDesc.addItem(nvrhi::BindingSetItem::ConstantBuffer(2, lightBuffer));
-			sceneSetDesc.addItem(nvrhi::BindingSetItem::Texture_SRV(3, physicalShadowMap));
-			sceneSetDesc.addItem(nvrhi::BindingSetItem::Sampler(3, shadowSampler));
-			sceneBindings = ctx.GetDevice()->createBindingSet(sceneSetDesc, sceneBindingLayout);
+		if (!m_ShadowMapTexture || m_ShadowMapTexture.Get() != physicalShadowMap.Get()) {
+			m_ShadowMapTexture = physicalShadowMap;
+			m_ShadowFramebuffers.clear();
 		}
 
 		for (uint32_t shadowSlot = 0; shadowSlot < shadowViews.size(); ++shadowSlot) {
@@ -91,7 +84,7 @@ namespace Renderer {
 				state.viewport.addViewport(shadowViewport);
 				state.viewport.addScissorRect(shadowScissor);
 
-				state.bindings = { packet.PerObjectBindings, sceneBindings, packet.MaterialBindings };
+				state.bindings = { packet.PerObjectBindings };
 
 				nvrhi::VertexBufferBinding vbb;
 				vbb.buffer = packet.VertexBuffer;

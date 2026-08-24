@@ -178,6 +178,8 @@ void Engine::SceneRenderer::CullAndFillView(Renderer::RenderView* view) {
 
 		if (view->ViewType == Renderer::RenderView::Type::Shadow) {
 			key.PS = nullptr;
+			key.SceneLayout = nullptr;
+			key.MaterialLayout = nullptr;
 			key.Wireframe = false;
 			key.DepthTest = true;
 			key.CullMode = nvrhi::RasterCullMode::Back;

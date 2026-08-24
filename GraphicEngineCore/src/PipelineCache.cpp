@@ -49,7 +49,10 @@ nvrhi::GraphicsPipelineHandle Engine::PipelineCache::GetOrCreatePipeline(const P
 	pdesc.VS = key.VS;
 	pdesc.PS = key.PS;
 	pdesc.inputLayout = inputLayout;
-    pdesc.bindingLayouts = { key.PerObjectLayout, key.SceneLayout };
+	pdesc.bindingLayouts = { key.PerObjectLayout };
+	if (key.SceneLayout) {
+		pdesc.bindingLayouts.push_back(key.SceneLayout);
+	}
 	if(key.MaterialLayout) {
 		pdesc.bindingLayouts.push_back(key.MaterialLayout);
 	}

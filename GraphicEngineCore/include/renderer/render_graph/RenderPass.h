@@ -40,6 +40,7 @@ namespace Renderer {
 	
 	private:
 		RGResourceID m_ShadowMapID;
+		nvrhi::TextureHandle m_ShadowMapTexture;
 		std::vector<nvrhi::FramebufferHandle> m_ShadowFramebuffers;
 	};
 
