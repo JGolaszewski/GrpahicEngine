@@ -46,6 +46,10 @@ namespace Engine {
         }
         
         m_RenderSystem = std::make_unique<RenderSystem>(m_RenderBackend.get());
+		if (!m_RenderSystem->IsValid()) {
+			std::cerr << "ERROR: Renderer command-list initialization failed." << std::endl;
+			return false;
+		}
 		m_DefaultViewport = std::make_shared<Viewport>(
 			m_Window->GetWidth(),
 			m_Window->GetHeight(),
@@ -59,7 +63,7 @@ namespace Engine {
         ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable;
 
         m_Window->InitImGui();
-        m_RenderBackend->InitImGui(m_Window.get());
+		m_RenderBackend->InitImGui(m_Window.get());
         m_Window->SetEventCallback([this](Events::Event& event) {
             OnEvent(event);
         });

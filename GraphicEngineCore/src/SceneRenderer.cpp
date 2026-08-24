@@ -67,8 +67,6 @@ void Engine::SceneRenderer::Init(nvrhi::IDevice* device, Renderer::MaterialSyste
 	nvrhi::BufferDesc perObjectDesc;
 	perObjectDesc.byteSize = MaxPerObjects * PerObjectDataStride;
 	perObjectDesc.isConstantBuffer = true;
-	perObjectDesc.isVolatile = true;
-	perObjectDesc.maxVersions = 3;
 
 	perObjectDesc.debugName = "PerObjectDataBuffer";
 	m_PerObjectDataBuffer = device->createBuffer(perObjectDesc);
@@ -104,27 +102,9 @@ void Engine::SceneRenderer::Init(nvrhi::IDevice* device, Renderer::MaterialSyste
 
 // --- Uploads ---
 
-void Engine::SceneRenderer::BeginUploads() {
-	if (!m_UploadCommandList) {
-		m_UploadCommandList = m_Device->createCommandList();
-	}
-	if (!m_UploadsPending) {
-		m_UploadCommandList->open();
-		m_UploadsPending = true;
-	}
-}
-
-void Engine::SceneRenderer::FlushUploadsIfPending() {
-	if (m_UploadsPending) {
-		m_UploadCommandList->close();
-		m_Device->executeCommandList(m_UploadCommandList);
-		m_UploadsPending = false;
-	}
-}
-
-
-void Engine::SceneRenderer::CullAndFillView(Renderer::RenderView* view) {
+void Engine::SceneRenderer::CullAndFillView(Renderer::RenderView* view, nvrhi::ICommandList* commandList) {
 	if (!view || !view->TargetScene) return;
+	if (!commandList) return;
 
 	DirectX::XMMATRIX viewProj = view->ViewProjection;
 	nvrhi::IFramebuffer* framebuffer = view->TargetFramebuffer; // FIXME 
@@ -164,7 +144,7 @@ void Engine::SceneRenderer::CullAndFillView(Renderer::RenderView* view) {
 			0.0f, 0.0f
 		};
 
-		m_UploadCommandList->writeBuffer(m_PerObjectDataBuffer, &perObjectData, sizeof(PerObjectData), offset);
+		commandList->writeBuffer(m_PerObjectDataBuffer, &perObjectData, sizeof(PerObjectData), offset);
 
 		auto packet = CreateRenderPacket(entity.get(), offset);
 		packet.Queue = Renderer::RenderQueueType::Opaque;
@@ -213,7 +193,7 @@ Renderer::RenderPacket Engine::SceneRenderer::CreateRenderPacket(const Renderer:
 	setDesc.addItem(nvrhi::BindingSetItem::ConstantBuffer(
 		0,
 		m_PerObjectDataBuffer,
-		nvrhi::BufferRange{ perObjectOffset, sizeof(PerObjectData) }
+		nvrhi::BufferRange{ perObjectOffset, PerObjectDataStride }
 	));
 	packet.PerObjectBindings = m_Device->createBindingSet(setDesc, m_PerObjectBindingLayout);
 
@@ -222,14 +202,16 @@ Renderer::RenderPacket Engine::SceneRenderer::CreateRenderPacket(const Renderer:
 
 // --- View Building ---
 
-void Engine::SceneRenderer::BuildViews(Renderer::FrameBlackboard& blackboard) {
-	BeginUploads();
+void Engine::SceneRenderer::BuildViews(Renderer::FrameBlackboard& blackboard, nvrhi::ICommandList* commandList) {
+	if (!commandList) {
+		return;
+	}
 
 	auto shadowViews = blackboard.GetShadowViews();
 	for (Renderer::RenderView* view : shadowViews) {
 		if (view) {
 			view->Clear();
-			CullAndFillView(view);
+			CullAndFillView(view, commandList);
 		}
 	}
 
@@ -237,11 +219,9 @@ void Engine::SceneRenderer::BuildViews(Renderer::FrameBlackboard& blackboard) {
 	for (Renderer::RenderView* view : sceneViews) {
 		if (view) {
 			view->Clear();
-			CullAndFillView(view);
+			CullAndFillView(view, commandList);
 		}
 	}
-
-	FlushUploadsIfPending();
 }
 
 void Engine::SceneRenderer::BuildShadowData(Engine::Scene* scene, Renderer::FrameBlackboard& blackboard) {

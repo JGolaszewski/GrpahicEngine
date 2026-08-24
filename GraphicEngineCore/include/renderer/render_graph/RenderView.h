@@ -39,14 +39,17 @@ namespace Renderer {
 		Engine::Scene* TargetScene = nullptr;
 		nvrhi::IFramebuffer* TargetFramebuffer = nullptr;
 
-		DirectX::XMMATRIX ViewMatrix;
-		DirectX::XMMATRIX ProjectionMatrix;
-		DirectX::XMMATRIX ViewProjection;
+		DirectX::XMMATRIX ViewMatrix = DirectX::XMMatrixIdentity();
+		DirectX::XMMATRIX ProjectionMatrix = DirectX::XMMatrixIdentity();
+		DirectX::XMMATRIX ViewProjection = DirectX::XMMatrixIdentity();
 
 		uint32_t ViewportWidth = 0;
 		uint32_t ViewportHeight = 0;
 
-		DirectX::XMVECTOR FrustumPlanes[6];
+		DirectX::XMVECTOR FrustumPlanes[6] = {
+			DirectX::XMVectorZero(), DirectX::XMVectorZero(), DirectX::XMVectorZero(),
+			DirectX::XMVectorZero(), DirectX::XMVectorZero(), DirectX::XMVectorZero()
+		};
 
 		void Initialize(const Renderer::Camera* camera, const Engine::Viewport* viewport);
 	
@@ -54,7 +57,6 @@ namespace Renderer {
 
 		void Clear() {
 			Queues.Clear();
-			TargetScene = nullptr;
 		}
 	};
 }

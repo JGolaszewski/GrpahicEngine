@@ -29,7 +29,7 @@ namespace Engine {
 		SceneRenderer(nvrhi::IDevice* device);
 		void Init(nvrhi::IDevice* device, Renderer::MaterialSystem* materialSystem);
 		
-		void BuildViews(Renderer::FrameBlackboard& blackboard);
+		void BuildViews(Renderer::FrameBlackboard& blackboard, nvrhi::ICommandList* commandList);
 		void BuildLighting(Engine::Scene* scene, Renderer::FrameBlackboard& blackboard);
 		void BuildShadowData(Engine::Scene* scene, Renderer::FrameBlackboard& blackboard);
 
@@ -44,10 +44,8 @@ namespace Engine {
 
 	private:
 
-		void CullAndFillView(Renderer::RenderView* view);
+		void CullAndFillView(Renderer::RenderView* view, nvrhi::ICommandList* commandList);
 		Renderer::RenderPacket CreateRenderPacket(const Renderer::Entity* entity, uint32_t perObjectOffset);
-		void BeginUploads();
-		void FlushUploadsIfPending();
 
 		PipelineCache m_PipelineCache;
 
@@ -62,8 +60,6 @@ namespace Engine {
 
 		uint32_t m_PerObjectDataOffset = 0;
 
-		nvrhi::CommandListHandle m_UploadCommandList;
-		bool m_UploadsPending = false;
 	};
 
 }

@@ -16,6 +16,7 @@ namespace Engine {
 	class ENGINE_API RenderSystem {
 	public:
 		RenderSystem(IRenderBackend* backend);
+		bool IsValid() const { return m_CommandList != nullptr; }
 
 		void BeginFrame();
 		void SubmitViews(const std::vector<Engine::ViewportBinding>& views);
@@ -33,7 +34,8 @@ namespace Engine {
 		void ClearFrameBuffer();
 
 		IRenderBackend* const m_RenderBackend;
-		nvrhi::ICommandList* m_CommandList;
+		nvrhi::CommandListHandle m_CommandList;
+		bool m_FrameActive = false;
 
 		std::unique_ptr<Renderer::RenderGraph> m_RenderGraph;
 

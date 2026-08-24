@@ -1,15 +1,30 @@
 #include "RenderSystem.h"
 #include "renderer/render_graph/RenderPass.h"
 
+#include <iostream>
+
 namespace Renderer {
 	class Camera;
 }
 
 namespace Engine {
+	nvrhi::CommandListHandle CreateImmediateCommandList(IRenderBackend* backend) {
+		if (!backend || !backend->GetDevice()) {
+			return nullptr;
+		}
+
+		nvrhi::CommandListParameters parameters;
+		parameters.setEnableImmediateExecution(true);
+		return backend->GetDevice()->createCommandList(parameters);
+	}
 
 	RenderSystem::RenderSystem(IRenderBackend* backend)
 		: m_RenderBackend(backend)
-		, m_CommandList(backend->GetDevice()->createCommandList()) {
+		, m_CommandList(CreateImmediateCommandList(backend)) {
+		if (!m_CommandList) {
+			std::cerr << "ERROR: RenderSystem could not create its immediate command list." << std::endl;
+			return;
+		}
 
 		m_ShaderFactory = std::make_unique<Renderer::ShaderFactory>(m_RenderBackend->GetDevice());
 		auto m_DefaultVS = m_ShaderFactory->GetShader("shaders/color_vs.dxbc", nvrhi::ShaderType::Vertex);
@@ -23,7 +38,17 @@ namespace Engine {
 	}
 
 	void RenderSystem::ExecuteImmediate(std::function<void(nvrhi::ICommandList*)> fn) {
-		nvrhi::CommandListHandle cmd = m_RenderBackend->GetDevice()->createCommandList();
+		if (m_FrameActive) {
+			std::cerr << "ERROR: Immediate command-list execution is not allowed during an active frame." << std::endl;
+			return;
+		}
+
+		nvrhi::CommandListHandle cmd = CreateImmediateCommandList(m_RenderBackend);
+		if (!cmd) {
+			std::cerr << "ERROR: Could not create an immediate command list." << std::endl;
+			return;
+		}
+
 		cmd->open();
 		fn(cmd);
 		cmd->close();
@@ -31,7 +56,12 @@ namespace Engine {
 	}
 
 	void RenderSystem::BeginFrame() {
+		if (!m_CommandList) {
+			return;
+		}
+
 		m_CommandList->open();
+		m_FrameActive = true;
 		ClearFrameBuffer();
 		m_MaterialSystem->UpdateDirtyMaterials(m_CommandList);
 
@@ -77,7 +107,7 @@ namespace Engine {
 
 		if (activeScene) {
 			m_SceneRenderer->BuildShadowData(activeScene, bb);
-			m_SceneRenderer->BuildViews(bb);
+			m_SceneRenderer->BuildViews(bb, m_CommandList);
 			m_SceneRenderer->BuildLighting(activeScene, bb);
 		}
 
@@ -91,16 +121,25 @@ namespace Engine {
 	}
 
 	void RenderSystem::EndFrame() {
+		if (!m_CommandList) {
+			return;
+		}
+
 		m_RenderGraph->Compile();
 		m_RenderGraph->Execute(m_CommandList);
 
 		m_CommandList->close();
 		m_RenderBackend->GetDevice()->executeCommandList(m_CommandList);
+		m_FrameActive = false;
 
 		m_SceneRenderer->Clear();
 	}
 
 	void RenderSystem::ClearFrameBuffer() {
+		if (!m_CommandList) {
+			return;
+		}
+
 		auto* frameBuffer = m_RenderBackend->GetDefaultFramebuffer();
 
 		if (!frameBuffer) {
