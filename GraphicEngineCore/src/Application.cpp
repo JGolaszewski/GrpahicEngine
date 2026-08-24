@@ -30,7 +30,7 @@ namespace Engine {
             return false;
         }
         
-		m_RenderSystem = std::make_unique<RenderSystem>(m_RenderBackend.get());
+        m_RenderSystem = std::make_unique<RenderSystem>(m_RenderBackend.get());
 
         IMGUI_CHECKVERSION();
         ImGui::CreateContext();
@@ -48,66 +48,93 @@ namespace Engine {
         return true;
     }
 
-    void Application::Run() {
-        if(!InitializeCore(RenderAPI::D3D11)) {
-            return;
-        }
+	void Application::Run() {
+		if (!InitializeCore(RenderAPI::D3D11)) {
+			return;
+		}
 
-        m_IsRunning = true;
-        OnInit();
+		m_IsRunning = true;
+		OnInit();
 
-        auto lastTime = std::chrono::high_resolution_clock::now();
-        uint32_t lastWidth = m_Window->GetWidth();
-        uint32_t lastHeight = m_Window->GetHeight();
+		auto lastTime = std::chrono::high_resolution_clock::now();
+		uint32_t lastWidth = m_Window->GetWidth();
+		uint32_t lastHeight = m_Window->GetHeight();
 
-        while(m_IsRunning && !m_Window->ShouldClose()) {
+		while (m_IsRunning && !m_Window->ShouldClose()) {
 
-            auto currentTime = std::chrono::high_resolution_clock::now();
-            float deltaTime = std::chrono::duration<float>(currentTime - lastTime).count();
-            lastTime = currentTime;
+			auto currentTime = std::chrono::high_resolution_clock::now();
+			float deltaTime = std::chrono::duration<float>(currentTime - lastTime).count();
+			lastTime = currentTime;
 
-            m_Window->PollEvents();
+			m_Window->PollEvents();
 
-            uint32_t currentWidth = m_Window->GetWidth();
-            uint32_t currentHeight = m_Window->GetHeight();
+			uint32_t currentWidth = m_Window->GetWidth();
+			uint32_t currentHeight = m_Window->GetHeight();
 
-            if(currentWidth > 0 && currentHeight > 0 && (currentWidth != lastWidth || currentHeight != lastHeight)) {
-                m_RenderBackend->Resize(static_cast<int>(currentWidth), static_cast<int>(currentHeight));
-                OnResize(currentWidth, currentHeight);
-                lastWidth = currentWidth;
-                lastHeight = currentHeight;
-            }
+			if (currentWidth > 0 && currentHeight > 0 && (currentWidth != lastWidth || currentHeight != lastHeight)) {
+				m_RenderBackend->Resize(static_cast<int>(currentWidth), static_cast<int>(currentHeight));
+				OnResize(currentWidth, currentHeight);
+				lastWidth = currentWidth;
+				lastHeight = currentHeight;
+			}
 
-            OnUpdate(deltaTime);
-            // m_ActiveScene->Update(deltaTime);
+			OnUpdate(deltaTime);
 
-            // TODO: Add Scene and Viewport
-            m_RenderSystem->RenderFrame()
+			ClearViews();
 
-            OnRender();
+			OnSetupViews();
 
-            if(sceneFramebuffer && m_ActiveCamera) {
-                auto viewProjMatrix = m_ActiveCamera->GetViewProjection();
-                m_SceneRenderer->RenderAll(m_CommandList.Get(), sceneFramebuffer, viewProjMatrix);
-            }
+			m_RenderSystem->BeginFrame();
 
-            m_Renderer->BeginImGuiFrame();
-            m_Window->ImGuiNewFrame();
-            ImGui::NewFrame();
+            m_RenderSystem->SubmitViews(m_ActiveViews);
+			OnRender();
 
-            OnUIRender();
+			m_RenderSystem->EndFrame();
 
-            m_CommandList->close();
-            nvrhiDevice->executeCommandList(m_CommandList);
+			m_RenderBackend->BeginImGuiFrame();
+			m_Window->ImGuiNewFrame();
+			ImGui::NewFrame();
 
-            ImGui::Render();
-            m_Renderer->RenderImGui();
+			OnUIRender();
 
-            m_Renderer->Present();
+			ImGui::Render();
+			m_RenderBackend->RenderImGui();
+
+			m_RenderBackend->Present();
+		}
+	}
+
+    void Application::AddScene(std::shared_ptr<Scene> scene) {
+        m_ActiveScenes.push_back(scene);
+    }
+
+    void Application::RemoveScene(std::shared_ptr<Scene> scene) {
+        auto it = std::find(m_ActiveScenes.begin(), m_ActiveScenes.end(), scene);
+        if (it != m_ActiveScenes.end()) {
+            m_ActiveScenes.erase(it);
         }
     }
 
-    ImGuiContext* Application::GetImGuiContext() {
+    void Application::AddViewport(std::shared_ptr<Engine::Viewport> viewport) {
+        m_Viewports.push_back(viewport);
+    }
+
+    void Application::RemoveViewport(std::shared_ptr<Engine::Viewport> viewport) {
+        auto it = std::find(m_Viewports.begin(), m_Viewports.end(), viewport);
+        if (it != m_Viewports.end()) {
+            m_Viewports.erase(it);
+        }
+    }
+
+
+	void Application::RegisterView(const ViewportBinding& binding)
+	{
+		if (binding.IsValid()) {
+			m_ActiveViews.push_back(binding);
+		}
+	}
+
+	ImGuiContext* Application::GetImGuiContext() {
         return ImGui::GetCurrentContext();
     }
 

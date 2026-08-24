@@ -3,44 +3,67 @@
 #include "CoreExport.h"
 #include <DirectXMath.h>
 #include <vector>
+#include <unordered_map>
 #include <nvrhi/nvrhi.h>
 
-#include "renderer/Entity.h" 
+#include "renderer/Entity.h"
 #include "renderer/Light.h"
 #include "PipelineCache.h"
-#include "MaterialSystem.h"
-#include "RenderView.h"
-#include "Light.h"
-#include <array>
+#include "renderer/MaterialSystem.h"
+#include "renderer/render_graph/RenderView.h"
+#include "Scene.h"
+#include "renderer/Camera.h"
+#include "renderer/RenderPacket.h"
+#include "renderer/render_graph/FrameBlackboard.h"
 
 namespace Engine {
 
 	class ENGINE_API SceneRenderer {
 	public:
-		void Init(nvrhi::IDevice* device, MaterialSystem materialSystem);
+		static constexpr uint32_t ShadowMapSize = 2048;
+		static constexpr uint32_t MaxLights = 8;
+		static constexpr uint32_t MaxShadowedLights = 4;
+		static constexpr uint32_t MaxPerObjects = 4096;
+		static constexpr uint32_t PerObjectDataStride = 256;
 
-		static void MainView(const Camera& camera, const Scene& scene, Renderer::RederView& outView);
-		static void ExtractShadowView(const Renderer::DirectionalLight& lightm const Scene& scene, Renderer::RederView& outView);
-	
-	private:
-		RenderPacket CreateRenderPacket(const Entity* entity, nvrhi::GraphicsPipelineHandle pso);
+		SceneRenderer(nvrhi::IDevice* device);
+		void Init(nvrhi::IDevice* device, Renderer::MaterialSystem* materialSystem);
 		
+		void BuildViews(Renderer::FrameBlackboard& blackboard);
+		void BuildLighting(Engine::Scene* scene, Renderer::FrameBlackboard& blackboard);
+		void BuildShadowData(Engine::Scene* scene, Renderer::FrameBlackboard& blackboard);
+
+		inline nvrhi::BufferHandle GetLightBuffer() const { return m_LightBuffer; }
+		inline nvrhi::SamplerHandle GetShadowSampler() const { return m_ShadowSampler; }
+		inline nvrhi::BindingLayoutHandle GetPerObjectBindingLayout() const { return m_PerObjectBindingLayout; }
+		inline nvrhi::BindingLayoutHandle GetSceneBindingLayout() const { return m_SceneBindingLayout; }
+		inline Renderer::MaterialSystem* GetMaterialSystem() const { return m_MaterialSystem; }
+		inline PipelineCache* GetPipelineCache() { return &m_PipelineCache; }
+		
+		inline void Clear() { m_PerObjectDataOffset = 0; }
+
+	private:
+
+		void CullAndFillView(Renderer::RenderView* view);
+		Renderer::RenderPacket CreateRenderPacket(const Renderer::Entity* entity, uint32_t perObjectOffset);
+		void BeginUploads();
+		void FlushUploadsIfPending();
+
 		PipelineCache m_PipelineCache;
 
-		std::vector<Renderer::Entity*> m_CommandQueue;
-
 		nvrhi::DeviceHandle m_Device;
-		nvrhi::BufferHandle m_PerObjectBuffer;
-        nvrhi::BufferHandle m_LightBuffer;
+		nvrhi::BufferHandle m_LightBuffer;
+		nvrhi::BufferHandle m_PerObjectDataBuffer;
 		nvrhi::BindingLayoutHandle m_PerObjectBindingLayout;
-		nvrhi::BindingSetHandle m_PerObjectBindingSet;
-		nvrhi::TextureHandle m_ShadowMapArray;
+		nvrhi::BindingLayoutHandle m_SceneBindingLayout;
 		nvrhi::SamplerHandle m_ShadowSampler;
-		
-		std::unordered_map<nvrhi::ITexture*, nvrhi::BindingSetHandle> m_PerObjectBindingSetsCache;
-		std::vector<nvrhi::FramebufferHandle> m_ShadowFramebuffers;
-		std::vector<Renderer::DirectionalLightData> m_Lights;
-		MaterialSystem m_MaterialSystem;
+
+		Renderer::MaterialSystem* m_MaterialSystem = nullptr;
+
+		uint32_t m_PerObjectDataOffset = 0;
+
+		nvrhi::CommandListHandle m_UploadCommandList;
+		bool m_UploadsPending = false;
 	};
 
 }

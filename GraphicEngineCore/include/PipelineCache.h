@@ -9,7 +9,8 @@ namespace Engine {
 	struct PipelineKey {
 		nvrhi::ShaderHandle VS;
 		nvrhi::ShaderHandle PS;
-		nvrhi::BindingLayoutHandle GlobalLayout;  
+		nvrhi::BindingLayoutHandle PerObjectLayout;
+		nvrhi::BindingLayoutHandle SceneLayout;
 		nvrhi::BindingLayoutHandle MaterialLayout;
 		bool Wireframe = false;
 		bool DepthTest = true;
@@ -27,7 +28,7 @@ namespace Engine {
 	public:
 		void Init(nvrhi::IDevice* device);
 
-		nvrhi::GraphicsPipelineHandle GetOrCreatePipeline(const PipelineKey& key, nvrhi::IFramebuffer* fb);
+		nvrhi::GraphicsPipelineHandle GetOrCreatePipeline(const PipelineKey& key, const nvrhi::FramebufferInfo& fbInfo);
 
 	private:
 		nvrhi::DeviceHandle m_Device;

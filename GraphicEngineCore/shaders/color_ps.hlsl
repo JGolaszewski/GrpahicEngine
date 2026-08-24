@@ -39,6 +39,7 @@ struct VS_OUTPUT
     float4 pos      : SV_POSITION;
     float3 normalWS : TEXCOORD0;
     float3 worldPos : TEXCOORD1;
+    float2 uv       : TEXCOORD2;
 };
 
 float SampleShadowPCF(uint lightIndex, float3 worldPos, float3 normalWS, float3 lightVec)

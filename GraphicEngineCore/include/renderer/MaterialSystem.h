@@ -1,3 +1,5 @@
+#pragma once
+
 #include <nvrhi/nvrhi.h>
 #include "Material.h"
 

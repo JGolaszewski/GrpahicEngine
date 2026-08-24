@@ -2,9 +2,14 @@
 
 #include "CoreExport.h"
 
+#include <vector>
+#include <memory>
+#include <span>
+
 namespace Renderer {
-	static class SpotLight {};
-	static class Entity {};
+	class SpotLight;
+	class Entity;
+	class Camera;
 }
 
 namespace Engine {
@@ -13,30 +18,34 @@ namespace Engine {
 		Scene() = default;
 		
 		// Entities
-		void AddEntity(std::unique_ptr<Renderer::Entity> entity);
+		void AddEntity(std::shared_ptr<Renderer::Entity> entity);
 		void RemoveEntity(Renderer::Entity* entity);
-		inline const std::vector<std::unique_ptr<Renderer::Entity>>& GetEntities() const {
+		inline std::span<const std::shared_ptr<Renderer::Entity>> GetEntities() const {
 			return m_Entities;
 		}
+		inline size_t GetEntityCount() const { return m_Entities.size(); }
 
 		// Lights
-		void AddLight(std::unique_ptr<Renderer::SpotLight> light);
+		void AddLight(std::shared_ptr<Renderer::SpotLight> light);
 		void RemoveLight(Renderer::SpotLight* light);
-		inline const std::vector<std::unique_ptr<Renderer::SpotLight>>& GetLights() const {
+		inline std::span<const std::shared_ptr<Renderer::SpotLight>> GetLights() const {
 			return m_Lights;
+		}
+
+		// Cameras
+		void AddCamera(std::shared_ptr<Renderer::Camera> camera);
+		void RemoveCamera(Renderer::Camera* camera);
+		inline std::span<const std::shared_ptr<Renderer::Camera>> GetCameras() const {
+			return m_Cameras;
 		}
 
 		void Update(float deltaTime);
 
 		Renderer::Camera* GetCamera(uint32_t index) const;
-
-		inline size_t GetEntityCount() { return m_Entities.size(); }
-
-		const std::vector<std::unique_ptr<Renderer::Entity>>& GetEntities() const { return m_Entities; }
 	
 	private:
-		std::vector<std::unique_ptr<Renderer::Entity>> m_Entities;
-		std::vector<std::unique_ptr<Renderer::SpotLight>> m_Lights;
-		std::vector<std::unique_ptr<Renderer::Camera>> m_Cameras;
+		std::vector<std::shared_ptr<Renderer::Entity>> m_Entities;
+		std::vector<std::shared_ptr<Renderer::SpotLight>> m_Lights;
+		std::vector<std::shared_ptr<Renderer::Camera>> m_Cameras;
 	};
 }

@@ -6,6 +6,7 @@
 #include <nvrhi/nvrhi.h>
 
 #include <unordered_map>
+#include <vector>
 
 namespace Renderer {
 

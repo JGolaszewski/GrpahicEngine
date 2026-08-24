@@ -5,8 +5,9 @@
 bool Engine::PipelineKey::operator==(const PipelineKey& other) const {
 	return VS == other.VS &&
 		PS == other.PS &&
-		GlobalLayout == other.GlobalLayout &&
-     MaterialLayout == other.MaterialLayout &&
+		PerObjectLayout == other.PerObjectLayout &&
+		SceneLayout == other.SceneLayout &&
+	 MaterialLayout == other.MaterialLayout &&
 		Wireframe == other.Wireframe &&
 		DepthTest == other.DepthTest &&
 		DepthWrite == other.DepthWrite &&
@@ -20,7 +21,8 @@ std::size_t Engine::PipelineKeyHasher::operator()(const PipelineKey& k) const {
 		};
 	hash_combine(k.VS.Get());
 	hash_combine(k.PS.Get());
-	hash_combine(k.GlobalLayout.Get());
+	hash_combine(k.PerObjectLayout.Get());
+	hash_combine(k.SceneLayout.Get());
 	hash_combine(k.MaterialLayout.Get());
  hash_combine(reinterpret_cast<void*>(static_cast<uintptr_t>(k.Wireframe)));
 	hash_combine(reinterpret_cast<void*>(static_cast<uintptr_t>(k.DepthTest)));
@@ -33,7 +35,7 @@ void Engine::PipelineCache::Init(nvrhi::IDevice* device) {
 	m_Device = device;
 }
 
-nvrhi::GraphicsPipelineHandle Engine::PipelineCache::GetOrCreatePipeline(const PipelineKey& key, nvrhi::IFramebuffer* fb) {
+nvrhi::GraphicsPipelineHandle Engine::PipelineCache::GetOrCreatePipeline(const PipelineKey& key, const nvrhi::FramebufferInfo& fbInfo) {
 	auto it = m_Cache.find(key);
 	if(it != m_Cache.end()) {
 		return it->second;
@@ -47,7 +49,7 @@ nvrhi::GraphicsPipelineHandle Engine::PipelineCache::GetOrCreatePipeline(const P
 	pdesc.VS = key.VS;
 	pdesc.PS = key.PS;
 	pdesc.inputLayout = inputLayout;
-    pdesc.bindingLayouts = { key.GlobalLayout };
+    pdesc.bindingLayouts = { key.PerObjectLayout, key.SceneLayout };
 	if(key.MaterialLayout) {
 		pdesc.bindingLayouts.push_back(key.MaterialLayout);
 	}
@@ -60,7 +62,7 @@ nvrhi::GraphicsPipelineHandle Engine::PipelineCache::GetOrCreatePipeline(const P
 	pdesc.renderState.rasterState.cullMode = key.CullMode;
  pdesc.renderState.rasterState.frontCounterClockwise = false;
 
-	auto pipeline = m_Device->createGraphicsPipeline(pdesc, fb);
+	auto pipeline = m_Device->createGraphicsPipeline(pdesc, fbInfo);
 
 	m_Cache[key] = pipeline;
 

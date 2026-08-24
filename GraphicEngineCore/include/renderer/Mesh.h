@@ -10,9 +10,10 @@
 namespace Renderer {
 	struct ENGINE_API Vertex {
 		DirectX::XMFLOAT3 Position;
-      DirectX::XMFLOAT3 Normal;
+		DirectX::XMFLOAT3 Normal;
+		DirectX::XMFLOAT2 UV;
 	};
-
+	 
 	class ENGINE_API Mesh {
 	public:
 		Mesh(nvrhi::IDevice* device, const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices = {});
@@ -25,11 +26,16 @@ namespace Renderer {
 					.setName("POSITION")
 					.setFormat(nvrhi::Format::RGB32_FLOAT)
 					.setOffset(offsetof(Vertex, Position))
-                   .setElementStride(sizeof(Vertex)),
+					.setElementStride(sizeof(Vertex)),
 				nvrhi::VertexAttributeDesc()
 					.setName("NORMAL")
 					.setFormat(nvrhi::Format::RGB32_FLOAT)
 					.setOffset(offsetof(Vertex, Normal))
+					.setElementStride(sizeof(Vertex)),
+				nvrhi::VertexAttributeDesc()
+					.setName("TEXCOORD")
+					.setFormat(nvrhi::Format::RG32_FLOAT)
+					.setOffset(offsetof(Vertex, UV))
 					.setElementStride(sizeof(Vertex))
 			};
 		}

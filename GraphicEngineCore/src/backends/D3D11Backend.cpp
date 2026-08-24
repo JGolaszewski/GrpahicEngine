@@ -2,6 +2,7 @@
 
 #include <iostream>
 #include <nvrhi/d3d11.h>
+#include <nvrhi/validation.h>
 #include <imgui.h>
 #include <imgui_impl_dx11.h>
 
@@ -39,9 +40,9 @@ namespace Engine {
 		
 		UINT createDeviceFlags = 0;
 	
-		#ifdef _DEBUG
-			createDeviceFlags |= D3D11_CREATE_DEVICE_DEBUG;
-		#endif
+		// #ifdef _DEBUG
+		// 	createDeviceFlags |= D3D11_CREATE_DEVICE_DEBUG;
+		// #endif
 
 		DXGI_SWAP_CHAIN_DESC sd;
 		ZeroMemory(&sd, sizeof(sd));
@@ -95,6 +96,13 @@ namespace Engine {
 		deviceDesc.messageCallback = &s_NvrhiMessageCallback;
 
 		m_NvrhiDevice = nvrhi::d3d11::createDevice(deviceDesc);
+
+		// #ifdef _DEBUG
+		// if (m_NvrhiDevice)
+		// {
+		// 	  m_NvrhiDevice = nvrhi::validation::createValidationLayer(m_NvrhiDevice);
+		// }
+		// #endif
 
 		if(!m_NvrhiDevice) {
 			std::cerr << "ERROR: Parsing DX11 device by NVRHI failed." << std::endl;

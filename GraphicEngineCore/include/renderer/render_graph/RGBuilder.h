@@ -2,6 +2,10 @@
 
 #include "CoreExport.h"
 
+#include "renderer/render_graph/RGResources.h"
+
+#include <vector>
+
 namespace Renderer {
 	struct RGPassDependencies {
 		std::vector<RGResourceID> inputs;

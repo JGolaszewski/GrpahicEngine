@@ -32,66 +32,19 @@ endforeach()
 
 add_custom_target(CompileShaders ALL DEPENDS ${COMPILED_SHADERS})
 
-add_library(GraphicEngineCore SHARED 
-    "include/CoreExport.h"
-    "include/events/Event.h"
-    "include/Window.h" 
-
-    "include/RenderBackend.h" 
-
-    "include/backends/D3D11Backend.h" 
-    "src/backends/D3D11Backend.cpp"
-
-    "include/windows/GLFWWindow.h" 
-    "src/windows/GLFWWindow.cpp"
-
-    "include/Application.h"
-    "src/Application.cpp"
-    
-    "include/renderer/Mesh.h"
-    "src/renderer/Mesh.cpp"
-
-    "include/renderer/Camera.h"
-    "src/renderer/Camera.cpp"
-    
-    "include/renderer/ShaderFactory.h"
-    "src/renderer/ShaderFactory.cpp"
-    
-    "include/renderer/Material.h"
-    "src/renderer/Material.cpp"
-    
-    "include/renderer/Entity.h" 
-    "src/renderer/Entity.cpp" 
-    
-    "include/SceneRenderer.h" 
-    "src/SceneRenderer.cpp" 
-    
-    "include/PipelineCache.h"
-    "src/PipelineCache.cpp"
- 
-    "include/components/Transform.h"
-    "src/components/Transform.cpp"
-    
-    "include/Logging.h" 
-    "include/renderer/Light.h" 
-    "src/renderer/Light.cpp"
-
-    "include/renderer/MaterialSystem.h"
-    "src/renderer/MaterialSystem.cpp" 
-    "include/RenderSystem.h" 
-    "src/renderer/RenderSystem.cpp"
-
-    "include/renderer/render_graph/RenderGraph.h"
-
-    "include/renderer/render_graph/RenderPass.h"
-
-    "include/renderer/render_graph/RGBuiilder.h"
-
-    "include/renderer/render_graph/RGResourcePool.h"
-
-    "include/renderer/render_graph/RGResources.h"
-
+file(GLOB_RECURSE CORE_HEADERS CONFIGURE_DEPENDS 
+    "include/*.h" 
+    "include/*.hpp"
 )
+
+file(GLOB_RECURSE CORE_SOURCES CONFIGURE_DEPENDS 
+    "src/*.cpp"
+)
+
+add_library(GraphicEngineCore SHARED 
+    ${CORE_HEADERS}
+    ${CORE_SOURCES}
+ "include/renderer/ViewportBinding.h" "src/renderer/render_graph/RenderView.cpp" )
 
 target_link_libraries(GraphicEngineCore PUBLIC 
     nvrhi 
