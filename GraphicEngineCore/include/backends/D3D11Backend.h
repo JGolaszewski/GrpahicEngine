@@ -40,6 +40,7 @@ namespace Engine {
 		}
 
 	private:
+		bool CreateSwapChainResources(uint32_t width, uint32_t height);
 		Microsoft::WRL::ComPtr<ID3D11Device> m_Device;
 		Microsoft::WRL::ComPtr<ID3D11DeviceContext> m_Context;
 		Microsoft::WRL::ComPtr<IDXGISwapChain> m_SwapChain;
@@ -51,6 +52,8 @@ namespace Engine {
 		nvrhi::TextureHandle m_NvrhiBackBuffer;
         nvrhi::TextureHandle m_NvrhiDepthBuffer;
 		nvrhi::FramebufferHandle m_NvrhiFramebuffer;
+		uint32_t m_SwapChainWidth = 0;
+		uint32_t m_SwapChainHeight = 0;
 	};
 
 }
