@@ -2,6 +2,7 @@
 
 #include <nvrhi/nvrhi.h>
 #include <unordered_map>
+#include <vector>
 #include "renderer/Mesh.h" 
 
 namespace Engine {
@@ -16,6 +17,15 @@ namespace Engine {
 		bool DepthTest = true;
 		bool DepthWrite = true;
 		nvrhi::RasterCullMode CullMode = nvrhi::RasterCullMode::Back;
+
+		nvrhi::FramebufferInfo Framebuffer;
+		nvrhi::PrimitiveType PrimType = nvrhi::PrimitiveType::TriangleList;
+		bool PrimitiveRestart = false;
+		std::vector<nvrhi::VertexAttributeDesc> InputLayout;
+		nvrhi::BlendState BlendState;
+		nvrhi::DepthStencilState DepthStencilState;
+		nvrhi::RasterState RasterState;
+		nvrhi::SinglePassStereoState SinglePassStereoState;
 
 		bool operator==(const PipelineKey& other) const;
 	};
