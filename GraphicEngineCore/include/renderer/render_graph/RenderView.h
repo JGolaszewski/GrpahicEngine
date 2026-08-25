@@ -54,6 +54,7 @@ namespace Renderer {
 		void Initialize(const Renderer::Camera* camera, const Engine::Viewport* viewport);
 	
 		void ExtractFrustumPlanes();
+		bool IsSphereVisible(const DirectX::XMFLOAT3& center, float radius) const;
 
 		void Clear() {
 			Queues.Clear();

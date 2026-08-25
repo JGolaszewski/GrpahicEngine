@@ -147,11 +147,21 @@ void Engine::SceneRenderer::CullAndFillView(Renderer::RenderView* view, nvrhi::I
 			continue;
 		}
 
-		// TODO: Frustum Culling
-
+		const DirectX::XMMATRIX world = entity->transform.GetWorldMat();
+		DirectX::XMFLOAT3 worldCenter;
+		DirectX::XMStoreFloat3(&worldCenter,
+			DirectX::XMVector3TransformCoord(DirectX::XMVectorZero(), world));
+		const float maxScale = (std::max)({
+			std::abs(entity->transform.Scale.x),
+			std::abs(entity->transform.Scale.y),
+			std::abs(entity->transform.Scale.z)
+		});
+		if (!view->IsSphereVisible(worldCenter, maxScale * 1.732f)) {
+			++m_SubmissionStats.ObjectsCulled;
+			continue;
+		}
 
 		PerObjectData perObjectData{};
-		DirectX::XMMATRIX world = entity->transform.GetWorldMat();
 		DirectX::XMMATRIX mvp = world * viewProj;
 
 		DirectX::XMStoreFloat4x4(&perObjectData.World, DirectX::XMMatrixTranspose(world));
@@ -219,6 +229,21 @@ Renderer::RenderPacket Engine::SceneRenderer::CreateRenderPacket(const Renderer:
 	return packet;
 }
 
+void Engine::SceneRenderer::SortViewQueues(Renderer::RenderView* view) {
+	if (!view) return;
+
+	const auto lessBySubmissionState = [](const Renderer::RenderPacket& left, const Renderer::RenderPacket& right) {
+		if (left.Pipeline.Get() != right.Pipeline.Get()) return left.Pipeline.Get() < right.Pipeline.Get();
+		if (left.MaterialBindings.Get() != right.MaterialBindings.Get()) return left.MaterialBindings.Get() < right.MaterialBindings.Get();
+		if (left.VertexBuffer.Get() != right.VertexBuffer.Get()) return left.VertexBuffer.Get() < right.VertexBuffer.Get();
+		return left.IndexBuffer.Get() < right.IndexBuffer.Get();
+	};
+
+	std::stable_sort(view->Queues.Opaque.begin(), view->Queues.Opaque.end(), lessBySubmissionState);
+	std::stable_sort(view->Queues.Masked.begin(), view->Queues.Masked.end(), lessBySubmissionState);
+	std::stable_sort(view->Queues.Transparent.begin(), view->Queues.Transparent.end(), lessBySubmissionState);
+}
+
 // --- View Building ---
 
 void Engine::SceneRenderer::BuildViews(Renderer::FrameBlackboard& blackboard, nvrhi::ICommandList* commandList) {
@@ -234,6 +259,7 @@ void Engine::SceneRenderer::BuildViews(Renderer::FrameBlackboard& blackboard, nv
 		if (view) {
 			view->Clear();
 			CullAndFillView(view, commandList, viewIndex);
+			SortViewQueues(view);
 		}
 	}
 
@@ -243,6 +269,7 @@ void Engine::SceneRenderer::BuildViews(Renderer::FrameBlackboard& blackboard, nv
 		if (view) {
 			view->Clear();
 			CullAndFillView(view, commandList, static_cast<uint32_t>(shadowViews.size()) + viewIndex);
+			SortViewQueues(view);
 		}
 	}
 }
@@ -265,6 +292,7 @@ void Engine::SceneRenderer::BuildShadowData(Engine::Scene* scene, Renderer::Fram
 
 		Renderer::RenderView* currentShadowView = shadowViews[viewIdx];
 		currentShadowView->ViewProjection = lightViewProj;
+		currentShadowView->ExtractFrustumPlanes();
 
 		currentShadowView->TargetScene = scene;
 

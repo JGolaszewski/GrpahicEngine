@@ -53,6 +53,7 @@ namespace Engine {
 	private:
 
 		void CullAndFillView(Renderer::RenderView* view, nvrhi::ICommandList* commandList, uint32_t viewIndex);
+		void SortViewQueues(Renderer::RenderView* view);
 		Renderer::RenderPacket CreateRenderPacket(const Renderer::Entity* entity, nvrhi::BufferHandle perObjectBuffer, nvrhi::BufferRange perObjectRange);
 
 		PipelineCache m_PipelineCache;
