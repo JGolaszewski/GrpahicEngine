@@ -358,8 +358,12 @@ void Editor::UpdateProjection() {
 }
 
 void Editor::UpdateProjection(uint32_t width, uint32_t height) {
-	// Nie robimy niczego na sztywno, Aspect Ratio jest przeliczany dynamicznie w RenderView
-	// Ta metoda może pozostać do wysyłania powiadomień np. dla UI
+	(void)width;
+	(void)height;
+	const auto activeCamera = GetActiveCamera();
+	if (activeCamera) {
+		activeCamera->SetProjection(m_CameraFov, m_CameraNearPlane, m_CameraFarPlane);
+	}
 }
 
 std::shared_ptr<Renderer::Camera> Editor::GetActiveCamera() const {

@@ -3,6 +3,7 @@
 #include "CoreExport.h"
 
 #include <DirectXMath.h>
+#include <cstdint>
 
 #include <components/Transform.h>
 
@@ -11,7 +12,13 @@ namespace Renderer {
 	public:
 		Components::Transform m_Transform;
 
-		Camera(float fov, float znear, float zfar);
+		// Projection values use radians for FOV and positive distances for planes.
+		Camera(float fovRadians, float znear, float zfar);
+
+		bool SetProjection(float fovRadians, float znear, float zfar);
+		float GetFovRadians() const noexcept { return m_FovRadians; }
+		float GetNearPlane() const noexcept { return m_Near; }
+		float GetFarPlane() const noexcept { return m_Far; }
 
 		void SetPosition(Components::Transform transform);
 
@@ -20,8 +27,11 @@ namespace Renderer {
 		DirectX::XMMATRIX GetViewProjection(float aspect) const;
 
 	private:
-		float m_Fov = 0.0f;
+		float m_FovRadians = DirectX::XM_PIDIV4;
 		float m_Near = 0.0f;
 		float m_Far = 0.0f;
+		mutable bool m_ProjectionDirty = true;
+		mutable float m_CachedAspect = 0.0f;
+		mutable DirectX::XMMATRIX m_CachedProjection = DirectX::XMMatrixIdentity();
 	};
 }
