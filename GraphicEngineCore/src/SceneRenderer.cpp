@@ -228,7 +228,7 @@ void Engine::SceneRenderer::BuildViews(Renderer::FrameBlackboard& blackboard, nv
 
 	m_SubmissionStats = {};
 
-	auto shadowViews = blackboard.GetShadowViews();
+	const auto& shadowViews = blackboard.GetShadowViews();
 	for (uint32_t viewIndex = 0; viewIndex < shadowViews.size(); ++viewIndex) {
 		Renderer::RenderView* view = shadowViews[viewIndex];
 		if (view) {
@@ -237,7 +237,7 @@ void Engine::SceneRenderer::BuildViews(Renderer::FrameBlackboard& blackboard, nv
 		}
 	}
 
-	auto sceneViews = blackboard.GetSceneViews();
+	const auto& sceneViews = blackboard.GetSceneViews();
 	for (uint32_t viewIndex = 0; viewIndex < sceneViews.size(); ++viewIndex) {
 		Renderer::RenderView* view = sceneViews[viewIndex];
 		if (view) {
@@ -250,7 +250,7 @@ void Engine::SceneRenderer::BuildViews(Renderer::FrameBlackboard& blackboard, nv
 void Engine::SceneRenderer::BuildShadowData(Engine::Scene* scene, Renderer::FrameBlackboard& blackboard) {
 	if (!scene) return;
 
-	auto shadowViews = blackboard.GetShadowViews();
+	const auto& shadowViews = blackboard.GetShadowViews();
 	uint32_t viewIdx = 0;
 
 	for (uint32_t idx = 0; idx < scene->GetLights().size(); ++idx) {
@@ -281,7 +281,7 @@ void Engine::SceneRenderer::BuildLighting(Engine::Scene* scene, Renderer::FrameB
 	std::vector<Renderer::DirectionalLightData> lights;
 	lights.reserve(scene->GetLights().size());
 
-	auto shadowViews = blackboard.GetShadowViews();
+	const auto& shadowViews = blackboard.GetShadowViews();
 	uint32_t shadowIdx = 0;
 
 	for (const auto& light : scene->GetLights()) {

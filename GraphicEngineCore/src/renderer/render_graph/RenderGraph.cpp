@@ -1,7 +1,36 @@
 #include "renderer/render_graph/RenderGraph.h"
 
+#include <algorithm>
+#include <iostream>
 #include <queue>
-#include <unordered_map>
+#include <sstream>
+#include <vector>
+
+namespace {
+	bool Contains(const std::vector<Renderer::RGResourceID>& ids, Renderer::RGResourceID id) {
+		return std::find(ids.begin(), ids.end(), id) != ids.end();
+	}
+
+	void AddEdge(std::vector<std::vector<size_t>>& adjacency, std::vector<int>& inDegree, size_t from, size_t to) {
+		if (from == to || std::find(adjacency[from].begin(), adjacency[from].end(), to) != adjacency[from].end()) {
+			return;
+		}
+		adjacency[from].push_back(to);
+		++inDegree[to];
+	}
+
+	bool IsDepthFormat(nvrhi::Format format) {
+		return format == nvrhi::Format::D32 || format == nvrhi::Format::D24S8 ||
+			format == nvrhi::Format::D16 || format == nvrhi::Format::D32S8;
+	}
+
+	nvrhi::ResourceStates GetResourceState(const Renderer::RGTextureDesc& desc, bool write) {
+		if (write) {
+			return IsDepthFormat(desc.format) ? nvrhi::ResourceStates::DepthWrite : nvrhi::ResourceStates::RenderTarget;
+		}
+		return nvrhi::ResourceStates::ShaderResource;
+	}
+}
 
 namespace Renderer {
 	RenderGraph::RenderGraph(nvrhi::DeviceHandle device)
@@ -12,95 +41,204 @@ namespace Renderer {
 		m_Registry.Clear();
 		m_Nodes.clear();
 		m_Blackboard.Clear();
+		m_LastError.clear();
+		m_Compiled = false;
 	}
 
-	void RenderGraph::AddPass(std::unique_ptr<IRenderPass> pass) {
+	bool RenderGraph::AddPass(std::unique_ptr<IRenderPass> pass) {
+		if (!pass) {
+			m_LastError = "Cannot add a null render pass";
+			return false;
+		}
+
 		RGPassDependencies deps;
 		RGBuilder builder(m_Registry, deps);
-
 		pass->Setup(builder, m_Blackboard);
+		if (!deps.valid) {
+			m_LastError = pass->GetName() + ": " + deps.error;
+			return false;
+		}
 
 		RGPassNode node;
-
 		node.pass = std::move(pass);
 		node.deps = std::move(deps);
-
 		m_Nodes.push_back(std::move(node));
+		m_Compiled = false;
+		return true;
 	}
 
-	void RenderGraph::Compile() {
-		// Topological sort (Kahn's algorithm)
-		size_t n = m_Nodes.size();
-		std::vector<int> inDegree(n, 0);
-		std::vector<std::vector<size_t>> adj(n);
+	bool RenderGraph::Compile() {
+		m_LastError.clear();
+		m_Compiled = false;
 
-		for (size_t i = 0; i < n; ++i) {
-			for (size_t j = 0; j < n; ++j) {
-				if (i == j) continue;
-				for (const auto& out : m_Nodes[i].deps.outputs) {
-					for (const auto& in : m_Nodes[j].deps.inputs) {
-						if (out.value == in.value) {
-							adj[i].push_back(j);
-							inDegree[j]++;
+		const size_t passCount = m_Nodes.size();
+		if (passCount == 0) {
+			m_Compiled = true;
+			return true;
+		}
+
+		std::vector<bool> active(passCount, false);
+		std::vector<bool> requiredResource(m_Registry.GetAllResources().size(), false);
+
+		for (size_t passIndex = 0; passIndex < passCount; ++passIndex) {
+			const auto& node = m_Nodes[passIndex];
+			if (node.pass->HasSideEffect()) active[passIndex] = true;
+			const RGResourceID output = node.pass->GetOutputID();
+			if (output.isValid()) {
+				if (!m_Registry.IsValid(output)) {
+					m_LastError = node.pass->GetName() + ": GetOutputID returned an invalid resource";
+					return false;
+				}
+				requiredResource[output.value] = true;
+			}
+		}
+
+		bool changed = true;
+		while (changed) {
+			changed = false;
+			for (size_t passIndex = 0; passIndex < passCount; ++passIndex) {
+				const auto& node = m_Nodes[passIndex];
+				const bool producesRequiredResource = std::any_of(node.deps.outputs.begin(), node.deps.outputs.end(),
+					[&requiredResource](RGResourceID id) { return id.isValid() && requiredResource[id.value]; });
+				if (!active[passIndex] && producesRequiredResource) {
+					active[passIndex] = true;
+					changed = true;
+				}
+				if (active[passIndex]) {
+					for (const RGResourceID input : node.deps.inputs) {
+						if (input.isValid() && !requiredResource[input.value]) {
+							requiredResource[input.value] = true;
+							changed = true;
 						}
 					}
 				}
 			}
 		}
 
-		std::queue<size_t> q;
-		for (size_t i = 0; i < n; ++i) {
-			if (inDegree[i] == 0) q.push(i);
+		std::vector<std::vector<size_t>> adjacency(passCount);
+		std::vector<int> inDegree(passCount, 0);
+		std::vector<int> lastWriter(m_Registry.GetAllResources().size(), -1);
+
+		for (size_t passIndex = 0; passIndex < passCount; ++passIndex) {
+			if (!active[passIndex]) continue;
+			const auto& node = m_Nodes[passIndex];
+
+			for (const RGResourceID id : node.deps.inputs) {
+				if (!m_Registry.IsValid(id)) {
+					m_LastError = node.pass->GetName() + ": input references an invalid resource ID";
+					return false;
+				}
+				if (lastWriter[id.value] >= 0) {
+					AddEdge(adjacency, inDegree, static_cast<size_t>(lastWriter[id.value]), passIndex);
+				}
+				else if (!m_Registry.GetResource(id).isImported) {
+					m_LastError = node.pass->GetName() + ": reads a transient resource with no producer";
+					return false;
+				}
+			}
+
+			for (const RGResourceID id : node.deps.outputs) {
+				if (!m_Registry.IsValid(id)) {
+					m_LastError = node.pass->GetName() + ": output references an invalid resource ID";
+					return false;
+				}
+				if (lastWriter[id.value] >= 0) {
+					std::cerr << "WARN: Render graph resource " << id.value << " is written by multiple passes; preserving declaration order." << std::endl;
+					AddEdge(adjacency, inDegree, static_cast<size_t>(lastWriter[id.value]), passIndex);
+				}
+				lastWriter[id.value] = static_cast<int>(passIndex);
+			}
+		}
+
+		std::queue<size_t> ready;
+		for (size_t passIndex = 0; passIndex < passCount; ++passIndex) {
+			if (active[passIndex] && inDegree[passIndex] == 0) ready.push(passIndex);
 		}
 
 		std::vector<size_t> sortedIndices;
-		sortedIndices.reserve(n);
-
-		while (!q.empty()) {
-			size_t u = q.front();
-			q.pop();
-
-			sortedIndices.push_back(u);
-
-			for (size_t v : adj[u]) {
-				if (--inDegree[v] == 0) q.push(v);
+		sortedIndices.reserve(passCount);
+		while (!ready.empty()) {
+			const size_t passIndex = ready.front();
+			ready.pop();
+			sortedIndices.push_back(passIndex);
+			for (const size_t dependent : adjacency[passIndex]) {
+				if (--inDegree[dependent] == 0) ready.push(dependent);
 			}
 		}
 
-		if (sortedIndices.size() == n) {
-			std::vector<RGPassNode> sortedNodes;
-			sortedNodes.reserve(n);
-
-			for (size_t idx : sortedIndices) {
-				sortedNodes.push_back(std::move(m_Nodes[idx]));
+		const size_t activeCount = static_cast<size_t>(std::count(active.begin(), active.end(), true));
+		if (sortedIndices.size() != activeCount) {
+			std::ostringstream message;
+			message << "Render graph cycle detected in passes: ";
+			bool first = true;
+			for (size_t passIndex = 0; passIndex < passCount; ++passIndex) {
+				if (active[passIndex] && inDegree[passIndex] > 0) {
+					if (!first) message << ", ";
+					message << m_Nodes[passIndex].pass->GetName();
+					first = false;
+				}
 			}
-			m_Nodes = std::move(sortedNodes);
-		}
-		else {
-			assert(false); //TODO: CHANGE !
+			m_LastError = message.str();
+			return false;
 		}
 
-		for (auto& resource : m_Registry.GetAllResources()) {
-			if (!resource.isImported) {
-				resource.physicalHandle = m_Pool.Acquire(resource.desc);
-			}
+		std::vector<RGPassNode> sortedNodes;
+		sortedNodes.reserve(sortedIndices.size());
+		for (const size_t passIndex : sortedIndices) {
+			sortedNodes.push_back(std::move(m_Nodes[passIndex]));
+		}
+		m_Nodes = std::move(sortedNodes);
+
+		for (RGResource& resource : m_Registry.GetAllResources()) {
+			resource.firstPassUse = UINT32_MAX;
+			resource.lastPassUse = 0;
+		}
+		for (uint32_t passIndex = 0; passIndex < m_Nodes.size(); ++passIndex) {
+			const auto markUse = [this, passIndex](RGResourceID id) {
+				if (!m_Registry.IsValid(id)) return;
+				RGResource& resource = m_Registry.GetResource(id);
+				resource.firstPassUse = (std::min)(resource.firstPassUse, passIndex);
+				resource.lastPassUse = (std::max)(resource.lastPassUse, passIndex);
+			};
+			for (const RGResourceID id : m_Nodes[passIndex].deps.inputs) markUse(id);
+			for (const RGResourceID id : m_Nodes[passIndex].deps.outputs) markUse(id);
 		}
 
-		// TODO: Add aliasing and First / Last use calculation
+		m_Compiled = true;
+		return true;
 	}
 
 	void RenderGraph::Execute(nvrhi::ICommandList* cmd) {
-		float deltaTime = m_Blackboard.Get<float>("DeltaTime", 0.016f);
+		if (!cmd || !m_Compiled) return;
 
+		const float deltaTime = m_Blackboard.Get<float>("DeltaTime", 0.016f);
 		RenderContext ctx(m_Device.Get(), &m_Registry, &m_Blackboard, deltaTime);
 
-		for (auto& node : m_Nodes) {
-			node.pass->Execute(cmd, ctx);
-		}
+		for (uint32_t passIndex = 0; passIndex < m_Nodes.size(); ++passIndex) {
+			for (RGResource& resource : m_Registry.GetAllResources()) {
+				if (!resource.isImported && resource.firstPassUse == passIndex && !resource.physicalHandle) {
+					resource.physicalHandle = m_Pool.Acquire(resource.desc);
+				}
+			}
 
-		for (auto& resource : m_Registry.GetAllResources()) {
-			if (!resource.isImported && resource.physicalHandle) {
-				m_Pool.Release(resource.desc, resource.physicalHandle);
+			const auto setState = [this, cmd, passIndex](RGResourceID id, bool write) {
+				if (!m_Registry.IsValid(id)) return;
+				RGResource& resource = m_Registry.GetResource(id);
+				if (resource.physicalHandle) {
+					cmd->setTextureState(resource.physicalHandle, nvrhi::AllSubresources, GetResourceState(resource.desc, write));
+				}
+			};
+			for (const RGResourceID id : m_Nodes[passIndex].deps.inputs) setState(id, false);
+			for (const RGResourceID id : m_Nodes[passIndex].deps.outputs) setState(id, true);
+			cmd->commitBarriers();
+
+			m_Nodes[passIndex].pass->Execute(cmd, ctx);
+
+			for (RGResource& resource : m_Registry.GetAllResources()) {
+				if (!resource.isImported && resource.lastPassUse == passIndex && resource.physicalHandle) {
+					m_Pool.Release(resource.desc, resource.physicalHandle);
+					resource.physicalHandle = nullptr;
+				}
 			}
 		}
 	}

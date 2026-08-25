@@ -3,6 +3,7 @@
 #include <nvrhi/nvrhi.h>
 #include <vector>
 #include <memory>
+#include <string>
 
 #include "CoreExport.h"
 #include "RGBuilder.h"
@@ -36,6 +37,8 @@ namespace Renderer {
 		FrameBlackboard m_Blackboard;
 		nvrhi::DeviceHandle m_Device;
 		std::vector<RGPassNode> m_Nodes;
+		std::string m_LastError;
+		bool m_Compiled = false;
 
 	public:
 		RenderGraph(nvrhi::DeviceHandle device);
@@ -43,9 +46,10 @@ namespace Renderer {
 		FrameBlackboard& GetBlackboard() { return m_Blackboard; }
 
 		void Reset();
-		void AddPass(std::unique_ptr<IRenderPass> pass);
-		void Compile();
+		bool AddPass(std::unique_ptr<IRenderPass> pass);
+		bool Compile();
 		void Execute(nvrhi::ICommandList* cmd);
+		const std::string& GetLastError() const noexcept { return m_LastError; }
 
 		RenderGraph(const RenderGraph&) = delete;
 		RenderGraph& operator=(const RenderGraph&) = delete;

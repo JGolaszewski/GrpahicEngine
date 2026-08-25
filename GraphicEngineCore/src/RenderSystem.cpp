@@ -84,7 +84,7 @@ namespace Engine {
 			shadowViews.push_back(view.get());
 			m_ViewPool.push_back(std::move(view));
 		}
-		bb.SetShadowViews(shadowViews);
+		bb.SetShadowViews(std::move(shadowViews));
 
 		Engine::Scene* activeScene = nullptr;
 
@@ -103,7 +103,7 @@ namespace Engine {
 				activeScene = binding.TargetScene;
 			}
 		}
-		bb.SetSceneViews(sceneViews);
+		bb.SetSceneViews(std::move(sceneViews));
 
 		if (activeScene) {
 			m_SceneRenderer->BuildShadowData(activeScene, bb);
@@ -125,7 +125,13 @@ namespace Engine {
 			return;
 		}
 
-		m_RenderGraph->Compile();
+		if (!m_RenderGraph->Compile()) {
+			std::cerr << "ERROR: Render graph compilation failed: " << m_RenderGraph->GetLastError() << std::endl;
+			m_CommandList->close();
+			m_RenderBackend->GetDevice()->executeCommandList(m_CommandList);
+			m_FrameActive = false;
+			return;
+		}
 		m_RenderGraph->Execute(m_CommandList);
 
 		m_CommandList->close();

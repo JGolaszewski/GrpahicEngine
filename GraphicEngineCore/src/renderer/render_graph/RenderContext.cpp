@@ -8,6 +8,7 @@ namespace Renderer {
 
 	nvrhi::TextureHandle RenderContext::GetPhysicalTexture(RGResourceID id) const
 	{
+		if (!m_Registry || !m_Registry->IsValid(id)) return nullptr;
 		return m_Registry->GetResource(id).physicalHandle;
 	}
 }

@@ -31,7 +31,7 @@ namespace Renderer {
 		desc.mipLevels = 1;
 
 		m_ShadowMapID = builder.CreateAndWriteTexture(desc);
-		blackboard.Set<Renderer::RGResourceID>("ShadowMap", m_ShadowMapID);
+		blackboard.SetShadowMap(m_ShadowMapID);
 	}
 
 	void ShadowPass::Execute(nvrhi::ICommandList* cmd, const Renderer::RenderContext& ctx) {
@@ -123,7 +123,7 @@ namespace Renderer {
 	ForwardPass::ForwardPass() = default;
 
 	void ForwardPass::Setup(Renderer::RGBuilder& builder, FrameBlackboard& blackboard) {
-		m_ShadowMapInputID = blackboard.Get<Renderer::RGResourceID>("ShadowMap", Renderer::RGResourceID());
+		m_ShadowMapInputID = blackboard.GetShadowMap();
 		builder.Read(m_ShadowMapInputID);
 	}
 

@@ -16,6 +16,8 @@ namespace Renderer {
 		uint32_t value = UINT32_MAX;
 
 		inline bool isValid() const { return value != UINT32_MAX; }
+		inline bool operator==(const RGResourceID& other) const { return value == other.value; }
+		inline bool operator!=(const RGResourceID& other) const { return !(*this == other); }
 	};
 
 
@@ -79,6 +81,8 @@ namespace Renderer {
 	class ENGINE_API RGResourceRegistry {
 	public:
 		RGResourceID CreateResource(const RGTextureDesc& desc);
+		RGResourceID ImportResource(const RGTextureDesc& desc, nvrhi::TextureHandle texture);
+		bool IsValid(RGResourceID id) const noexcept;
 		inline RGResource& GetResource(RGResourceID id) { 
 			assert(id.isValid() && id.value < m_Registry.size());
 			return m_Registry[id.value]; 
