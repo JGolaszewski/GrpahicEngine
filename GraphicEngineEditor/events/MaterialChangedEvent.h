@@ -1,6 +1,7 @@
 #pragma once
 
 #include "events/Event.h"
+#include "Scene.h"
 #include "renderer/Material.h"
 
 namespace Renderer {
@@ -17,8 +18,8 @@ namespace Renderer {
 
 class MaterialChangedEvent : public Engine::Events::Event {
 public:
-    MaterialChangedEvent(Renderer::Entity* entity, const Renderer::MaterialProperties& properties)
-        : m_Entity(entity)
+    MaterialChangedEvent(Engine::EntityId entityId, const Renderer::MaterialProperties& properties)
+        : m_EntityId(entityId)
         , m_Properties(properties)
     {}
 
@@ -30,10 +31,10 @@ public:
         return GetStaticType();
     }
 
-    [[nodiscard]] Renderer::Entity* GetEntity() const noexcept { return m_Entity; }
+    [[nodiscard]] Engine::EntityId GetEntityId() const noexcept { return m_EntityId; }
     [[nodiscard]] const Renderer::MaterialProperties& GetProperties() const noexcept { return m_Properties; }
 
 private:
-    Renderer::Entity* m_Entity;             // Non-owning
+    Engine::EntityId m_EntityId;
     Renderer::MaterialProperties m_Properties;
 };

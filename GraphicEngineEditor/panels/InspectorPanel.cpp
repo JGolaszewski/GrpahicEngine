@@ -35,6 +35,9 @@ void InspectorPanel::OnEvent(Engine::Events::Event& event) {
         m_SelectedObjectIndex = e.GetObjectIndex();
         m_SelectedLightIndex = e.GetLightIndex();
         m_SelectedCameraIndex = e.GetCameraIndex();
+		m_SelectedEntityId = e.GetEntityId();
+		m_SelectedLightId = e.GetLightId();
+		m_SelectedCameraId = e.GetCameraId();
 
         m_SelectedEntity = e.GetEntity();
         m_SelectedLight = e.GetLight();
@@ -50,9 +53,12 @@ void InspectorPanel::OnEvent(Engine::Events::Event& event) {
         m_SelectedObjectIndex = -1;
         m_SelectedLightIndex = -1;
         m_SelectedCameraIndex = -1;
-        m_SelectedEntity = nullptr;
-        m_SelectedLight = nullptr;
-        m_SelectedCamera = nullptr;
+		m_SelectedEntityId = Engine::InvalidEntityId;
+		m_SelectedLightId = Engine::InvalidLightId;
+		m_SelectedCameraId = Engine::InvalidCameraId;
+		m_SelectedEntity.reset();
+		m_SelectedLight.reset();
+		m_SelectedCamera.reset();
         return false;
     });
 
@@ -70,19 +76,19 @@ void InspectorPanel::Draw() {
 
     switch (m_SelectedItemType) {
         case EntitySelectedEvent::ItemType::Object:
-            if (m_SelectedEntity) {
+            if (!m_SelectedEntity.expired()) {
                 DrawObjectInspector();
             }
             break;
 
         case EntitySelectedEvent::ItemType::Light:
-            if (m_SelectedLight) {
+            if (!m_SelectedLight.expired()) {
                 DrawLightInspector();
             }
             break;
 
         case EntitySelectedEvent::ItemType::Camera:
-            if (m_SelectedCamera) {
+            if (!m_SelectedCamera.expired()) {
                 DrawCameraInspector();
             }
             break;
@@ -116,7 +122,8 @@ void InspectorPanel::Draw() {
 }
 
 void InspectorPanel::DrawObjectInspector() {
-    if (!m_SelectedEntity) {
+    const auto selectedEntity = m_SelectedEntity.lock();
+    if (!selectedEntity) {
         return;
     }
 
@@ -126,11 +133,11 @@ void InspectorPanel::DrawObjectInspector() {
     // ------------------------------------------------------------------------
     // Position — with Undo/Redo integration via CommandExecuteRequestedEvent
     // ------------------------------------------------------------------------
-    DirectX::XMFLOAT3 currentPos = m_SelectedEntity->transform.Position;
+    DirectX::XMFLOAT3 currentPos = selectedEntity->transform.Position;
     float position[3] = { currentPos.x, currentPos.y, currentPos.z };
 
     if (ImGui::DragFloat3("Position", position, 0.05f)) {
-        m_SelectedEntity->transform.SetPosition(position[0], position[1], position[2]);
+        selectedEntity->transform.SetPosition(position[0], position[1], position[2]);
     }
 
     if (ImGui::IsItemActivated()) {
@@ -138,25 +145,25 @@ void InspectorPanel::DrawObjectInspector() {
     }
 
     if (ImGui::IsItemDeactivatedAfterEdit()) {
-        DirectX::XMFLOAT3 newPos = m_SelectedEntity->transform.Position;
+        DirectX::XMFLOAT3 newPos = selectedEntity->transform.Position;
         if (newPos.x != m_PositionBeforeEdit.x ||
             newPos.y != m_PositionBeforeEdit.y ||
             newPos.z != m_PositionBeforeEdit.z) {
             EmitEvent(std::make_unique<CommandExecuteRequestedEvent>(
                 std::make_unique<TransformEntityCommand>(
-                    m_SelectedEntity, m_PositionBeforeEdit, newPos
+                    selectedEntity, m_PositionBeforeEdit, newPos
                 )
             ));
         }
     }
 
     float scale[3] = {
-        m_SelectedEntity->transform.Scale.x,
-        m_SelectedEntity->transform.Scale.y,
-        m_SelectedEntity->transform.Scale.z
+        selectedEntity->transform.Scale.x,
+        selectedEntity->transform.Scale.y,
+        selectedEntity->transform.Scale.z
     };
     if (ImGui::DragFloat3("Scale", scale, 0.05f, 0.01f, 100.0f)) {
-        m_SelectedEntity->transform.SetScale(scale[0], scale[1], scale[2]);
+        selectedEntity->transform.SetScale(scale[0], scale[1], scale[2]);
     }
 
     float rotationDegrees[3] = {
@@ -169,22 +176,22 @@ void InspectorPanel::DrawObjectInspector() {
         const float rollRad = DirectX::XMConvertToRadians(rotationDegrees[0]);
         const float pitchRad = DirectX::XMConvertToRadians(rotationDegrees[1]);
         const float yawRad = DirectX::XMConvertToRadians(rotationDegrees[2]);
-        m_SelectedEntity->transform.SetRotation(pitchRad, yawRad, rollRad);
+        selectedEntity->transform.SetRotation(pitchRad, yawRad, rollRad);
     }
 
-    ImGui::Checkbox("Wireframe", &m_SelectedEntity->ForceWireframe);
-    ImGui::Checkbox("Disable depth test", &m_SelectedEntity->DisableDepthTest);
-    ImGui::Checkbox("Cast shadows", &m_SelectedEntity->CastShadows);
-    ImGui::Checkbox("Receive shadows", &m_SelectedEntity->ReceiveShadows);
+    ImGui::Checkbox("Wireframe", &selectedEntity->ForceWireframe);
+    ImGui::Checkbox("Disable depth test", &selectedEntity->DisableDepthTest);
+    ImGui::Checkbox("Cast shadows", &selectedEntity->CastShadows);
+    ImGui::Checkbox("Receive shadows", &selectedEntity->ReceiveShadows);
 
-    if (!m_SelectedEntity->material) {
+    if (!selectedEntity->material) {
         return;
     }
 
     ImGui::Separator();
     ImGui::TextUnformatted("Material");
 
-    Renderer::MaterialProperties properties = m_SelectedEntity->material->GetProperties();
+    Renderer::MaterialProperties properties = selectedEntity->material->GetProperties();
 
     float baseColor[4] = {
         properties.BaseColor.x, properties.BaseColor.y,
@@ -208,61 +215,63 @@ void InspectorPanel::DrawObjectInspector() {
         properties.Metallic = metallic;
         properties.Roughness = roughness;
 
-        EmitEvent(std::make_unique<MaterialChangedEvent>(m_SelectedEntity, properties));
+        EmitEvent(std::make_unique<MaterialChangedEvent>(m_SelectedEntityId, properties));
     }
 }
 
 void InspectorPanel::DrawLightInspector() {
-    if (!m_SelectedLight) {
+    const auto selectedLight = m_SelectedLight.lock();
+    if (!selectedLight) {
         return;
     }
 
     ImGui::Text("Light %d", m_SelectedLightIndex);
     ImGui::Separator();
 
-    DirectX::XMFLOAT3 pos = m_SelectedLight->GetPosition();
+    DirectX::XMFLOAT3 pos = selectedLight->GetPosition();
     float position[3] = { pos.x, pos.y, pos.z };
     if (ImGui::DragFloat3("Position", position, 0.05f)) {
-        m_SelectedLight->SetPosition(DirectX::XMFLOAT3(position[0], position[1], position[2]));
+        selectedLight->SetPosition(DirectX::XMFLOAT3(position[0], position[1], position[2]));
     }
 
-    DirectX::XMFLOAT3 dir = m_SelectedLight->GetDirection();
+    DirectX::XMFLOAT3 dir = selectedLight->GetDirection();
     float direction[3] = { dir.x, dir.y, dir.z };
     if (ImGui::DragFloat3("Direction", direction, 0.05f)) {
-        m_SelectedLight->SetDirection(DirectX::XMFLOAT3(direction[0], direction[1], direction[2]));
+        selectedLight->SetDirection(DirectX::XMFLOAT3(direction[0], direction[1], direction[2]));
     }
 
-    float innerAngle = m_SelectedLight->GetInnerAngleDegrees();
-    float outerAngle = m_SelectedLight->GetOuterAngleDegrees();
+    float innerAngle = selectedLight->GetInnerAngleDegrees();
+    float outerAngle = selectedLight->GetOuterAngleDegrees();
     float coneAngles[2] = { innerAngle, outerAngle };
     if (ImGui::DragFloat2("Angles", coneAngles, 0.05f)) {
-        m_SelectedLight->SetConeAngles(coneAngles[0], coneAngles[1]);
+        selectedLight->SetConeAngles(coneAngles[0], coneAngles[1]);
     }
 
-    DirectX::XMFLOAT3 color = m_SelectedLight->GetColor();
+    DirectX::XMFLOAT3 color = selectedLight->GetColor();
     float lightColor[3] = { color.x, color.y, color.z };
     if (ImGui::ColorEdit3("Color", lightColor)) {
-        m_SelectedLight->SetColor(DirectX::XMFLOAT3(lightColor[0], lightColor[1], lightColor[2]));
+        selectedLight->SetColor(DirectX::XMFLOAT3(lightColor[0], lightColor[1], lightColor[2]));
     }
 
-    float intensity = m_SelectedLight->GetIntensity();
+    float intensity = selectedLight->GetIntensity();
     if (ImGui::DragFloat("Intensity", &intensity, 0.05f, 0.0f, 100.0f)) {
-        m_SelectedLight->SetIntensity(intensity);
+        selectedLight->SetIntensity(intensity);
     }
 
-    float range = m_SelectedLight->GetRange();
+    float range = selectedLight->GetRange();
     if (ImGui::DragFloat("Range", &range, 0.05f, 0.1f, 100.0f)) {
-        m_SelectedLight->SetRange(range);
+        selectedLight->SetRange(range);
     }
 
-    bool castShadows = m_SelectedLight->GetCastShadows();
+    bool castShadows = selectedLight->GetCastShadows();
     if (ImGui::Checkbox("Cast shadows", &castShadows)) {
-        m_SelectedLight->SetCastShadows(castShadows);
+        selectedLight->SetCastShadows(castShadows);
     }
 }
 
 void InspectorPanel::DrawCameraInspector() {
-    if (!m_SelectedCamera) {
+    const auto selectedCamera = m_SelectedCamera.lock();
+    if (!selectedCamera) {
         return;
     }
 
@@ -270,12 +279,12 @@ void InspectorPanel::DrawCameraInspector() {
     ImGui::Separator();
 
     float position[3] = {
-        m_SelectedCamera->m_Transform.Position.x,
-        m_SelectedCamera->m_Transform.Position.y,
-        m_SelectedCamera->m_Transform.Position.z
+        selectedCamera->m_Transform.Position.x,
+        selectedCamera->m_Transform.Position.y,
+        selectedCamera->m_Transform.Position.z
     };
     if (ImGui::DragFloat3("Position", position, 0.05f)) {
-        m_SelectedCamera->m_Transform.SetPosition(position[0], position[1], position[2]);
+        selectedCamera->m_Transform.SetPosition(position[0], position[1], position[2]);
     }
 
     float fovDeg = DirectX::XMConvertToDegrees(m_CameraFov);

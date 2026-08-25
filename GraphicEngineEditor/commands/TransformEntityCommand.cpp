@@ -6,7 +6,7 @@
 // ================================================================================
 // ================================================================================
 
-TransformEntityCommand::TransformEntityCommand(Renderer::Entity* entity,
+TransformEntityCommand::TransformEntityCommand(std::weak_ptr<Renderer::Entity> entity,
                                                  const DirectX::XMFLOAT3& oldPos,
                                                  const DirectX::XMFLOAT3& newPos)
     : m_Entity(entity)
@@ -16,13 +16,13 @@ TransformEntityCommand::TransformEntityCommand(Renderer::Entity* entity,
 }
 
 void TransformEntityCommand::Execute() {
-    if (m_Entity) {
-        m_Entity->transform.SetPosition(m_NewPosition.x, m_NewPosition.y, m_NewPosition.z);
+	if (const auto entity = m_Entity.lock()) {
+		entity->transform.SetPosition(m_NewPosition.x, m_NewPosition.y, m_NewPosition.z);
     }
 }
 
 void TransformEntityCommand::Undo() {
-    if (m_Entity) {
-        m_Entity->transform.SetPosition(m_OldPosition.x, m_OldPosition.y, m_OldPosition.z);
+	if (const auto entity = m_Entity.lock()) {
+		entity->transform.SetPosition(m_OldPosition.x, m_OldPosition.y, m_OldPosition.z);
     }
 }

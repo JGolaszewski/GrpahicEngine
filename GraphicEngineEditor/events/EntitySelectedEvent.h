@@ -1,6 +1,7 @@
 #pragma once
 
 #include "events/Event.h"
+#include "Scene.h"
 #include <memory>
 
 namespace Renderer {
@@ -24,15 +25,21 @@ public:
                         int objectIndex,
                         int lightIndex,
                         int cameraIndex,
-                        Renderer::Entity* entity,
-                        Renderer::SpotLight* light,
-                        std::shared_ptr<Renderer::Camera> camera)
+                        Engine::EntityId entityId,
+                        Engine::LightId lightId,
+                        Engine::CameraId cameraId,
+                        std::weak_ptr<Renderer::Entity> entity = {},
+                        std::weak_ptr<Renderer::SpotLight> light = {},
+                        std::weak_ptr<Renderer::Camera> camera = {})
         : m_Type(type)
         , m_ObjectIndex(objectIndex)
         , m_LightIndex(lightIndex)
         , m_CameraIndex(cameraIndex)
-        , m_Entity(entity)
-        , m_Light(light)
+        , m_EntityId(entityId)
+        , m_LightId(lightId)
+        , m_CameraId(cameraId)
+        , m_Entity(std::move(entity))
+        , m_Light(std::move(light))
         , m_Camera(std::move(camera))
     {}
 
@@ -49,9 +56,13 @@ public:
     [[nodiscard]] int GetLightIndex() const noexcept { return m_LightIndex; }
     [[nodiscard]] int GetCameraIndex() const noexcept { return m_CameraIndex; }
 
-    [[nodiscard]] Renderer::Entity* GetEntity() const noexcept { return m_Entity; }
-    [[nodiscard]] Renderer::SpotLight* GetLight() const noexcept { return m_Light; }
-    [[nodiscard]] std::shared_ptr<Renderer::Camera> GetCamera() const noexcept { return m_Camera; }
+    [[nodiscard]] Engine::EntityId GetEntityId() const noexcept { return m_EntityId; }
+    [[nodiscard]] Engine::LightId GetLightId() const noexcept { return m_LightId; }
+    [[nodiscard]] Engine::CameraId GetCameraId() const noexcept { return m_CameraId; }
+
+    [[nodiscard]] std::weak_ptr<Renderer::Entity> GetEntity() const noexcept { return m_Entity; }
+    [[nodiscard]] std::weak_ptr<Renderer::SpotLight> GetLight() const noexcept { return m_Light; }
+    [[nodiscard]] std::weak_ptr<Renderer::Camera> GetCamera() const noexcept { return m_Camera; }
 
 private:
     ItemType m_Type;
@@ -59,7 +70,11 @@ private:
     int      m_LightIndex;
     int      m_CameraIndex;
 
-    Renderer::Entity*  m_Entity;  // Non-owning
-    Renderer::SpotLight* m_Light; // Non-owning
-    std::shared_ptr<Renderer::Camera> m_Camera;
+    Engine::EntityId m_EntityId;
+    Engine::LightId m_LightId;
+    Engine::CameraId m_CameraId;
+
+    std::weak_ptr<Renderer::Entity> m_Entity;
+    std::weak_ptr<Renderer::SpotLight> m_Light;
+    std::weak_ptr<Renderer::Camera> m_Camera;
 };

@@ -14,9 +14,9 @@ void HierarchyPanel::OnEvent(Engine::Events::Event& event) {
     Engine::Events::EventDispatcher dispatcher(event);
 
     dispatcher.Dispatch<SceneChangedEvent>([this](const auto& e) {
-        m_ObjectCount = e.GetObjectCount();
-        m_LightCount = e.GetLightCount();
-        m_CameraCount = e.GetCameraCount();
+        m_ObjectIds = e.GetObjectIds();
+        m_LightIds = e.GetLightIds();
+        m_CameraIds = e.GetCameraIds();
         return false;
     });
 
@@ -41,7 +41,7 @@ void HierarchyPanel::Draw() {
     ImGui::Begin("Scene", nullptr, ImGuiWindowFlags_NoCollapse);
 
     if (ImGui::CollapsingHeader("Objects", ImGuiTreeNodeFlags_DefaultOpen)) {
-        for (size_t i = 0; i < m_ObjectCount; ++i) {
+        for (size_t i = 0; i < m_ObjectIds.size(); ++i) {
             const std::string label = "Object " + std::to_string(i);
             const bool selected = m_SelectedItemType == EntitySelectedEvent::ItemType::Object
                 && m_SelectedObjectIndex == static_cast<int>(i);
@@ -49,18 +49,18 @@ void HierarchyPanel::Draw() {
                 EmitEvent(std::make_unique<EntitySelectedEvent>(
                     EntitySelectedEvent::ItemType::Object,
                     static_cast<int>(i), -1, -1,
-                    nullptr, nullptr, nullptr
+                    m_ObjectIds[i], Engine::InvalidLightId, Engine::InvalidCameraId
                 ));
             }
         }
 
-        if (m_ObjectCount == 0) {
+        if (m_ObjectIds.empty()) {
             ImGui::TextDisabled("No active objects");
         }
     }
 
     if (ImGui::CollapsingHeader("Lights", ImGuiTreeNodeFlags_DefaultOpen)) {
-        for (size_t i = 0; i < m_LightCount; ++i) {
+        for (size_t i = 0; i < m_LightIds.size(); ++i) {
             const std::string label = "Light " + std::to_string(i);
             const bool selected = m_SelectedItemType == EntitySelectedEvent::ItemType::Light
                 && m_SelectedLightIndex == static_cast<int>(i);
@@ -68,18 +68,18 @@ void HierarchyPanel::Draw() {
                 EmitEvent(std::make_unique<EntitySelectedEvent>(
                     EntitySelectedEvent::ItemType::Light,
                     -1, static_cast<int>(i), -1,
-                    nullptr, nullptr, nullptr
+                    Engine::InvalidEntityId, m_LightIds[i], Engine::InvalidCameraId
                 ));
             }
         }
 
-        if (m_LightCount == 0) {
+        if (m_LightIds.empty()) {
             ImGui::TextDisabled("No lights");
         }
     }
 
     if (ImGui::CollapsingHeader("Cameras", ImGuiTreeNodeFlags_DefaultOpen)) {
-        for (size_t i = 0; i < m_CameraCount; ++i) {
+        for (size_t i = 0; i < m_CameraIds.size(); ++i) {
             const std::string label = "Camera " + std::to_string(i);
             const bool selected = m_SelectedItemType == EntitySelectedEvent::ItemType::Camera
                 && m_SelectedCameraIndex == static_cast<int>(i);
@@ -87,12 +87,12 @@ void HierarchyPanel::Draw() {
                 EmitEvent(std::make_unique<EntitySelectedEvent>(
                     EntitySelectedEvent::ItemType::Camera,
                     -1, -1, static_cast<int>(i),
-                    nullptr, nullptr, nullptr
+                    Engine::InvalidEntityId, Engine::InvalidLightId, m_CameraIds[i]
                 ));
             }
         }
 
-        if (m_CameraCount == 0) {
+        if (m_CameraIds.empty()) {
             ImGui::TextDisabled("No cameras");
         }
     }

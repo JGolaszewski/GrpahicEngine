@@ -74,19 +74,16 @@ private:
 	void* GetViewportTextureID() const;
 	void UpdateProjection();
 	void UpdateProjection(uint32_t width, uint32_t height);
+	std::shared_ptr<Renderer::Camera> GetActiveCamera() const;
 
 	// ------------------------------------------------------------------------
 	// State
 	// ------------------------------------------------------------------------
 	std::shared_ptr<Engine::Scene>    m_ActiveScene;
 	std::shared_ptr<Engine::Viewport> m_EditorViewport;
-	Renderer::Camera* m_ActiveCamera = nullptr;
+	Engine::CameraId m_ActiveCameraId = Engine::InvalidCameraId;
 
 	std::vector<std::unique_ptr<EditorPanel>> m_Windows;
-
-	std::vector<std::shared_ptr<Renderer::Entity>> m_Cubes;
-	std::vector<Renderer::SpotLight>               m_Lights;
-	std::vector<std::shared_ptr<Renderer::Camera>> m_Cameras;
 
 	// Viewport NVRHI handles
 	nvrhi::TextureHandle                             m_ViewportColorTexture;
@@ -109,9 +106,9 @@ private:
 	bool  m_CursorHidden = false;
 
 	SelectedItemType m_SelectedItemType = SelectedItemType::None;
-	int              m_SelectedObjectIndex = -1;
-	int              m_SelectedLightIndex = -1;
-	int              m_SelectedCameraIndex = -1;
+	Engine::EntityId m_SelectedEntityId = Engine::InvalidEntityId;
+	Engine::LightId m_SelectedLightId = Engine::InvalidLightId;
+	Engine::CameraId m_SelectedCameraId = Engine::InvalidCameraId;
 
 	bool                      m_ViewportHovered = false;
 	bool                      m_DefaultLayoutBuilt = false;

@@ -1,7 +1,8 @@
 #pragma once
 
 #include "events/Event.h"
-#include <cstddef>
+#include "Scene.h"
+#include <vector>
 
 // ================================================================================
 // SceneChangedEvent.h
@@ -13,10 +14,12 @@
 
 class SceneChangedEvent : public Engine::Events::Event {
 public:
-    SceneChangedEvent(size_t objectCount, size_t lightCount, size_t cameraCount)
-        : m_ObjectCount(objectCount)
-        , m_LightCount(lightCount)
-        , m_CameraCount(cameraCount)
+    SceneChangedEvent(std::vector<Engine::EntityId> objectIds,
+                      std::vector<Engine::LightId> lightIds,
+                      std::vector<Engine::CameraId> cameraIds)
+        : m_ObjectIds(std::move(objectIds))
+        , m_LightIds(std::move(lightIds))
+        , m_CameraIds(std::move(cameraIds))
     {}
 
     static Engine::Events::EventType GetStaticType() {
@@ -27,12 +30,12 @@ public:
         return GetStaticType();
     }
 
-    [[nodiscard]] size_t GetObjectCount() const noexcept { return m_ObjectCount; }
-    [[nodiscard]] size_t GetLightCount() const noexcept { return m_LightCount; }
-    [[nodiscard]] size_t GetCameraCount() const noexcept { return m_CameraCount; }
+    [[nodiscard]] const std::vector<Engine::EntityId>& GetObjectIds() const noexcept { return m_ObjectIds; }
+    [[nodiscard]] const std::vector<Engine::LightId>& GetLightIds() const noexcept { return m_LightIds; }
+    [[nodiscard]] const std::vector<Engine::CameraId>& GetCameraIds() const noexcept { return m_CameraIds; }
 
 private:
-    size_t m_ObjectCount;
-    size_t m_LightCount;
-    size_t m_CameraCount;
+    std::vector<Engine::EntityId> m_ObjectIds;
+    std::vector<Engine::LightId> m_LightIds;
+    std::vector<Engine::CameraId> m_CameraIds;
 };

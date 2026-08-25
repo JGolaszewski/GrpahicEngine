@@ -2,6 +2,7 @@
 
 #include "EditorPanel.h"
 #include "events/EditorEvents.h"
+#include "Scene.h"
 #include <DirectXMath.h>
 #include <memory>
 
@@ -37,11 +38,14 @@ private:
     int m_SelectedObjectIndex = -1;
     int m_SelectedLightIndex = -1;
     int m_SelectedCameraIndex = -1;
+	Engine::EntityId m_SelectedEntityId = Engine::InvalidEntityId;
+	Engine::LightId m_SelectedLightId = Engine::InvalidLightId;
+	Engine::CameraId m_SelectedCameraId = Engine::InvalidCameraId;
 
-    // Non-owning pointers to the inspected objects
-    Renderer::Entity* m_SelectedEntity = nullptr;
-    Renderer::SpotLight* m_SelectedLight = nullptr;
-    std::shared_ptr<Renderer::Camera> m_SelectedCamera;
+    // Non-owning handles to the inspected objects
+    std::weak_ptr<Renderer::Entity> m_SelectedEntity;
+    std::weak_ptr<Renderer::SpotLight> m_SelectedLight;
+    std::weak_ptr<Renderer::Camera> m_SelectedCamera;
 
     // Euler degrees for the selected object (display-only, not persisted)
     DirectX::XMFLOAT3 m_SelectedEulerDegrees = { 0.0f, 0.0f, 0.0f };

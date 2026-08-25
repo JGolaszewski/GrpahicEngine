@@ -2,8 +2,10 @@
 
 #include "EditorPanel.h"
 #include "events/EditorEvents.h"
+#include "Scene.h"
 #include <DirectXMath.h>
 #include <memory>
+#include <vector>
 
 namespace Renderer {
     class Entity;
@@ -30,9 +32,9 @@ private:
     void DrawAddObjectModal();
 
     // Internal state — synchronised via events
-    size_t m_ObjectCount = 0;
-    size_t m_LightCount = 0;
-    size_t m_CameraCount = 0;
+    std::vector<Engine::EntityId> m_ObjectIds;
+    std::vector<Engine::LightId> m_LightIds;
+    std::vector<Engine::CameraId> m_CameraIds;
 
     EntitySelectedEvent::ItemType m_SelectedItemType = EntitySelectedEvent::ItemType::None;
     int m_SelectedObjectIndex = -1;

@@ -25,16 +25,9 @@ void Editor::OnInit() {
 	auto mainCamera = std::make_shared<Renderer::Camera>(m_CameraFov, m_CameraNearPlane, m_CameraFarPlane);
 	mainCamera->m_Transform.SetPosition(0.0f, 0.0f, -5.0f);
 
-	m_Cameras.clear();
-	m_Cameras.push_back(mainCamera);
-	m_ActiveCamera = mainCamera.get();
-
-	m_ActiveScene->AddCamera(mainCamera);
+	m_ActiveCameraId = m_ActiveScene->AddCamera(mainCamera);
 
 	// --- Dummy Data Setup ---
-	m_Cubes.clear();
-	m_Lights.clear();
-
 	const DirectX::XMFLOAT3 objectPositions[2] = {
 		DirectX::XMFLOAT3(-3.2f, 0.6f, 2.0f),
 		DirectX::XMFLOAT3(3.2f, 0.3f, 2.3f)
@@ -59,7 +52,7 @@ void Editor::OnInit() {
 			.Build();
 	});
 	if (demoCube) {
-		m_Cubes.push_back(demoCube);
+		m_ActiveScene->AddEntity(demoCube);
 	}
 
 	const float lightRanges[2] = { 8.0f, 20.0f };
@@ -75,25 +68,16 @@ void Editor::OnInit() {
 			objectPositions[i].z - lightPositions[i].z
 		);
 
-		Renderer::SpotLight light(lightDirection, DirectX::XMFLOAT3(1.0f, 0.96f, 0.9f), 8.5f);
-		light.SetUsePosition(true);
-		light.SetPosition(lightPositions[i]);
-		light.SetDirection(lightDirection);
-		light.SetRange(lightRanges[i]);
-		light.SetConeAngles(coneAngles[i].x, coneAngles[i].y);
-		light.SetCastShadows(true);
-		light.SetShadowBias(0.0015f);
-		light.SetShadowNormalBias(0.0025f);
-		m_Lights.push_back(light);
-	}
-
-	// Populate the active scene
-	for (auto& cube : m_Cubes) {
-		m_ActiveScene->AddEntity(cube);
-	}
-	for (auto& light : m_Lights) {
-		auto lightCopy = std::make_shared<Renderer::SpotLight>(light);
-		m_ActiveScene->AddLight(lightCopy);
+		auto light = std::make_shared<Renderer::SpotLight>(lightDirection, DirectX::XMFLOAT3(1.0f, 0.96f, 0.9f), 8.5f);
+		light->SetUsePosition(true);
+		light->SetPosition(lightPositions[i]);
+		light->SetDirection(lightDirection);
+		light->SetRange(lightRanges[i]);
+		light->SetConeAngles(coneAngles[i].x, coneAngles[i].y);
+		light->SetCastShadows(true);
+		light->SetShadowBias(0.0015f);
+		light->SetShadowNormalBias(0.0025f);
+		m_ActiveScene->AddLight(std::move(light));
 	}
 
 	// --- Create Viewport ---
@@ -207,10 +191,11 @@ void* Editor::GetViewportTextureID() const {
 
 void Editor::OnSetupViews() {
 	// Rejestracja okienka Edytora w nowym potoku (Application -> RenderSystem)
-	if (m_EditorViewport && m_ActiveCamera && m_ActiveScene) {
+	const auto activeCamera = GetActiveCamera();
+	if (m_EditorViewport && activeCamera && m_ActiveScene) {
 		Engine::ViewportBinding binding;
 		binding.TargetViewport = m_EditorViewport.get();
-		binding.SourceCamera = m_ActiveCamera;
+		binding.SourceCamera = activeCamera.get();
 		binding.TargetScene = m_ActiveScene.get();
 
 		RegisterView(binding);
@@ -226,7 +211,8 @@ void Editor::OnUpdate(float deltaTime) {
 		return m_MouseButtonDown[static_cast<size_t>(button)];
 		};
 
-	if (m_ActiveCamera) {
+	const auto activeCamera = GetActiveCamera();
+	if (activeCamera) {
 		ImGuiIO& io = ImGui::GetIO();
 
 		const bool rightMouseDown = mouseDown(Engine::Events::MouseButton::Right);
@@ -255,7 +241,7 @@ void Editor::OnUpdate(float deltaTime) {
 			const float sinYaw = std::sin(m_Yaw);
 			const float cosYaw = std::cos(m_Yaw);
 
-			auto& position = m_ActiveCamera->m_Transform.Position;
+			auto& position = activeCamera->m_Transform.Position;
 			position.x += (sinYaw * moveForward + cosYaw * moveRight) * step;
 			position.z += (cosYaw * moveForward - sinYaw * moveRight) * step;
 			position.y += moveUp * step;
@@ -267,7 +253,7 @@ void Editor::OnUpdate(float deltaTime) {
 			m_Pitch += m_MouseDeltaY * sensitivity;
 			m_Pitch = std::clamp(m_Pitch, -1.5f, 1.5f);
 
-			m_ActiveCamera->m_Transform.SetRotation(m_Pitch, m_Yaw, 0.0f);
+			activeCamera->m_Transform.SetRotation(m_Pitch, m_Yaw, 0.0f);
 		}
 	}
 
@@ -332,7 +318,7 @@ void Editor::OnEvent(Engine::Events::Event& event) {
 		});
 
 	dispatcher.Dispatch<Engine::Events::MouseScrolledEvent>([this](const auto& mouseScrolledEvent) {
-		if (ImGui::GetIO().WantCaptureMouse || !m_ViewportHovered || !m_ActiveCamera) {
+		if (ImGui::GetIO().WantCaptureMouse || !m_ViewportHovered || !GetActiveCamera()) {
 			return false;
 		}
 
@@ -376,6 +362,10 @@ void Editor::UpdateProjection(uint32_t width, uint32_t height) {
 	// Ta metoda może pozostać do wysyłania powiadomień np. dla UI
 }
 
+std::shared_ptr<Renderer::Camera> Editor::GetActiveCamera() const {
+	return m_ActiveScene ? m_ActiveScene->FindCamera(m_ActiveCameraId) : nullptr;
+}
+
 void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
 	if (!event) return;
 
@@ -383,28 +373,21 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
 
 	dispatcher.Dispatch<EntitySelectedEvent>([this, &event](const auto& e) {
 		m_SelectedItemType = static_cast<SelectedItemType>(e.GetItemType());
-		m_SelectedObjectIndex = e.GetObjectIndex();
-		m_SelectedLightIndex = e.GetLightIndex();
-		m_SelectedCameraIndex = e.GetCameraIndex();
+		m_SelectedEntityId = e.GetEntityId();
+		m_SelectedLightId = e.GetLightId();
+		m_SelectedCameraId = e.GetCameraId();
 
-		Renderer::Entity* entity = nullptr;
-		Renderer::SpotLight* light = nullptr;
-		std::shared_ptr<Renderer::Camera> camera;
-
-		if (m_SelectedItemType == SelectedItemType::Object && m_SelectedObjectIndex >= 0) {
-			entity = m_Cubes[static_cast<size_t>(m_SelectedObjectIndex)].get();
-		}
-		else if (m_SelectedItemType == SelectedItemType::Light && m_SelectedLightIndex >= 0) {
-			light = &m_Lights[static_cast<size_t>(m_SelectedLightIndex)];
-		}
-		else if (m_SelectedItemType == SelectedItemType::Camera && m_SelectedCameraIndex >= 0) {
-			camera = m_Cameras[static_cast<size_t>(m_SelectedCameraIndex)];
-			m_ActiveCamera = camera.get();
+		const auto entity = m_ActiveScene ? m_ActiveScene->FindEntity(m_SelectedEntityId) : nullptr;
+		const auto light = m_ActiveScene ? m_ActiveScene->FindLight(m_SelectedLightId) : nullptr;
+		const auto camera = m_ActiveScene ? m_ActiveScene->FindCamera(m_SelectedCameraId) : nullptr;
+		if (camera) {
+			m_ActiveCameraId = m_SelectedCameraId;
 		}
 
 		EntitySelectedEvent enrichedEvent(
 			static_cast<EntitySelectedEvent::ItemType>(m_SelectedItemType),
-			m_SelectedObjectIndex, m_SelectedLightIndex, m_SelectedCameraIndex,
+			e.GetObjectIndex(), e.GetLightIndex(), e.GetCameraIndex(),
+			m_SelectedEntityId, m_SelectedLightId, m_SelectedCameraId,
 			entity, light, camera
 		);
 		BroadcastEvent(enrichedEvent);
@@ -413,9 +396,9 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
 
 	dispatcher.Dispatch<EntityDeselectedEvent>([this, &event](const auto&) {
 		m_SelectedItemType = SelectedItemType::None;
-		m_SelectedObjectIndex = -1;
-		m_SelectedLightIndex = -1;
-		m_SelectedCameraIndex = -1;
+		m_SelectedEntityId = Engine::InvalidEntityId;
+		m_SelectedLightId = Engine::InvalidLightId;
+		m_SelectedCameraId = Engine::InvalidCameraId;
 		BroadcastEvent(*event);
 		return false;
 		});
@@ -431,7 +414,8 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
 		auto material = GetRenderSystem()->GetMaterialSystem()->CreateMaterial(materialProperties);
 
 		auto intersectsExisting = [this](const DirectX::XMFLOAT3& position) {
-			for (const auto& entity : m_Cubes) {
+			if (!m_ActiveScene) return false;
+			for (const auto& entity : m_ActiveScene->GetEntities()) {
 				if (!entity) continue;
 				const auto& existingPos = entity->transform.Position;
 				const float dx = existingPos.x - position.x;
@@ -469,29 +453,29 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
 			return false;
 		}
 
-		m_Cubes.push_back(createdEntity);
-		if (m_ActiveScene) {
-			m_ActiveScene->AddEntity(createdEntity);
-		}
+		if (!m_ActiveScene) return false;
+		const Engine::EntityId createdEntityId = m_ActiveScene->AddEntity(createdEntity);
 
 		m_SelectedItemType = SelectedItemType::Object;
-		m_SelectedObjectIndex = static_cast<int>(m_Cubes.size() - 1);
-		m_SelectedLightIndex = -1;
-		m_SelectedCameraIndex = -1;
+		m_SelectedEntityId = createdEntityId;
+		m_SelectedLightId = Engine::InvalidLightId;
+		m_SelectedCameraId = Engine::InvalidCameraId;
+		const int createdEntityIndex = static_cast<int>(m_ActiveScene->GetEntityCount() - 1);
 
 		BroadcastSceneChanged();
 
 		EntitySelectedEvent enrichedEvent(
 			EntitySelectedEvent::ItemType::Object,
-			m_SelectedObjectIndex, -1, -1,
-			m_Cubes.back().get(), nullptr, nullptr
+			createdEntityIndex, -1, -1,
+			createdEntityId, Engine::InvalidLightId, Engine::InvalidCameraId,
+			createdEntity, {}, {}
 		);
 		BroadcastEvent(enrichedEvent);
 		return false;
 		});
 
 	dispatcher.Dispatch<MaterialChangedEvent>([this](const auto& e) {
-		auto* entity = e.GetEntity();
+		auto entity = m_ActiveScene ? m_ActiveScene->FindEntity(e.GetEntityId()) : nullptr;
 		if (!entity || !entity->material) return false;
 
 		entity->material->SetProperties(e.GetProperties());
@@ -536,7 +520,24 @@ void Editor::BroadcastEvent(Engine::Events::Event& event) {
 }
 
 void Editor::BroadcastSceneChanged() {
-	SceneChangedEvent event(m_Cubes.size(), m_Lights.size(), m_Cameras.size());
+	std::vector<Engine::EntityId> entityIds;
+	std::vector<Engine::LightId> lightIds;
+	std::vector<Engine::CameraId> cameraIds;
+	if (m_ActiveScene) {
+		entityIds.reserve(m_ActiveScene->GetEntityCount());
+		for (size_t i = 0; i < m_ActiveScene->GetEntityCount(); ++i) {
+			entityIds.push_back(m_ActiveScene->GetEntityIdAt(i));
+		}
+		lightIds.reserve(m_ActiveScene->GetLights().size());
+		for (size_t i = 0; i < m_ActiveScene->GetLights().size(); ++i) {
+			lightIds.push_back(m_ActiveScene->GetLightIdAt(i));
+		}
+		cameraIds.reserve(m_ActiveScene->GetCameras().size());
+		for (size_t i = 0; i < m_ActiveScene->GetCameras().size(); ++i) {
+			cameraIds.push_back(m_ActiveScene->GetCameraIdAt(i));
+		}
+	}
+	SceneChangedEvent event(std::move(entityIds), std::move(lightIds), std::move(cameraIds));
 	BroadcastEvent(event);
 }
 
@@ -563,18 +564,18 @@ void Editor::Redo() {
 }
 
 void Editor::OnUIRender() {
-	if (m_SelectedObjectIndex >= static_cast<int>(m_Cubes.size())) {
-		m_SelectedObjectIndex = -1;
+	if (m_ActiveScene && m_SelectedEntityId != Engine::InvalidEntityId && !m_ActiveScene->FindEntity(m_SelectedEntityId)) {
+		m_SelectedEntityId = Engine::InvalidEntityId;
 		if (m_SelectedItemType == SelectedItemType::Object) m_SelectedItemType = SelectedItemType::None;
 	}
 
-	if (m_SelectedLightIndex >= static_cast<int>(m_Lights.size())) {
-		m_SelectedLightIndex = -1;
+	if (m_ActiveScene && m_SelectedLightId != Engine::InvalidLightId && !m_ActiveScene->FindLight(m_SelectedLightId)) {
+		m_SelectedLightId = Engine::InvalidLightId;
 		if (m_SelectedItemType == SelectedItemType::Light) m_SelectedItemType = SelectedItemType::None;
 	}
 
-	if (m_SelectedCameraIndex >= static_cast<int>(m_Cameras.size())) {
-		m_SelectedCameraIndex = -1;
+	if (m_ActiveScene && m_SelectedCameraId != Engine::InvalidCameraId && !m_ActiveScene->FindCamera(m_SelectedCameraId)) {
+		m_SelectedCameraId = Engine::InvalidCameraId;
 		if (m_SelectedItemType == SelectedItemType::Camera) m_SelectedItemType = SelectedItemType::None;
 	}
 
