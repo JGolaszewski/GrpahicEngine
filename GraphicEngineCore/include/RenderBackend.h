@@ -22,5 +22,7 @@ namespace Engine {
 		virtual void BeginImGuiFrame() = 0;
 		virtual void RenderImGui() = 0;
 		virtual void ShutdownImGui() = 0;
+		virtual void BeginGpuEvent(const wchar_t*) {}
+		virtual void EndGpuEvent() {}
 	};
 }

@@ -10,6 +10,7 @@
 #include <memory>
 #include <vector>
 #include <functional>
+#include <cstdint>
 
 struct ImGuiContext;
 
@@ -21,6 +22,14 @@ namespace Engine {
 
     class ENGINE_API Application {
     public:
+		struct FrameTimingStats {
+			float CpuFrameTimeMs = 0.0f;
+			float UnclampedDeltaTime = 0.0f;
+			float GameplayDeltaTime = 0.0f;
+			uint64_t FrameCount = 0;
+			uint64_t ClampedFrameCount = 0;
+		};
+
         Application();
         virtual ~Application();
 
@@ -36,7 +45,9 @@ namespace Engine {
 
         ImGuiContext* GetImGuiContext();
         IWindow* GetWindow() const;
-		float GetLastFrameDeltaTime() const noexcept { return m_LastFrameDeltaTime; }
+        float GetLastFrameDeltaTime() const noexcept { return m_LastFrameDeltaTime; }
+		const FrameTimingStats& GetFrameTimingStats() const noexcept { return m_FrameTimingStats; }
+		void SetFrameLimiterHz(uint32_t hz) noexcept { m_FrameLimiterHz = hz; }
 
         // --- Renderer helpers used by Editor and panels ---
         IRenderBackend* GetRenderer() const { return m_RenderBackend.get(); }
@@ -70,6 +81,8 @@ namespace Engine {
 
         bool m_IsRunning = false;
 		float m_LastFrameDeltaTime = 0.0f;
+		uint32_t m_FrameLimiterHz = 0;
+		FrameTimingStats m_FrameTimingStats;
 
         std::unique_ptr<IWindow> m_Window;
         std::unique_ptr<IRenderBackend> m_RenderBackend;

@@ -8,6 +8,7 @@
 #include "RenderBackend.h"
 
 #include <d3d11.h>
+#include <d3d11_1.h>
 #include <dxgi.h>
 #include <wrl/client.h>
 
@@ -24,6 +25,11 @@ namespace Engine {
 		void BeginImGuiFrame() override;
 		void RenderImGui() override;
 		void ShutdownImGui() override;
+		void BeginGpuEvent(const wchar_t* name) override;
+		void EndGpuEvent() override;
+
+		void SetVSyncEnabled(bool enabled) noexcept { m_VSyncEnabled = enabled; }
+		bool IsVSyncEnabled() const noexcept { return m_VSyncEnabled; }
 
 		inline nvrhi::IDevice* GetDevice() const override {
 			return m_NvrhiDevice.Get();
@@ -38,6 +44,8 @@ namespace Engine {
 		Microsoft::WRL::ComPtr<ID3D11DeviceContext> m_Context;
 		Microsoft::WRL::ComPtr<IDXGISwapChain> m_SwapChain;
 		Microsoft::WRL::ComPtr<ID3D11RenderTargetView> m_RenderTargetView;
+		Microsoft::WRL::ComPtr<ID3DUserDefinedAnnotation> m_Annotation;
+		bool m_VSyncEnabled = true;
 
 		nvrhi::DeviceHandle m_NvrhiDevice;
 		nvrhi::TextureHandle m_NvrhiBackBuffer;

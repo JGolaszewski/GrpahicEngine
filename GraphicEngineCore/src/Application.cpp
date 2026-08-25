@@ -9,6 +9,7 @@
 #include <iostream>
 #include <chrono>
 #include <algorithm>
+#include <thread>
 
 #include <imgui.h>
 
@@ -85,11 +86,13 @@ namespace Engine {
 		uint32_t lastHeight = m_Window->GetHeight();
 
 		while (m_IsRunning && !m_Window->ShouldClose()) {
+			const auto frameStart = std::chrono::steady_clock::now();
 
 			auto currentTime = std::chrono::high_resolution_clock::now();
 			float deltaTime = std::chrono::duration<float>(currentTime - lastTime).count();
 			lastTime = currentTime;
 			m_LastFrameDeltaTime = deltaTime;
+			m_FrameTimingStats.UnclampedDeltaTime = deltaTime;
 
 			m_Window->PollEvents();
 
@@ -106,6 +109,10 @@ namespace Engine {
 			}
 
 			const float gameplayDeltaTime = (std::min)(deltaTime, 0.1f);
+			m_FrameTimingStats.GameplayDeltaTime = gameplayDeltaTime;
+			if (gameplayDeltaTime != deltaTime) {
+				++m_FrameTimingStats.ClampedFrameCount;
+			}
 			OnUpdate(gameplayDeltaTime);
 			UpdateScenes(gameplayDeltaTime);
 
@@ -131,6 +138,14 @@ namespace Engine {
 			m_RenderBackend->RenderImGui();
 
 			m_RenderBackend->Present();
+
+			m_FrameTimingStats.CpuFrameTimeMs = std::chrono::duration<float, std::milli>(
+				std::chrono::steady_clock::now() - frameStart).count();
+			++m_FrameTimingStats.FrameCount;
+			if (m_FrameLimiterHz > 0) {
+				const auto frameDuration = std::chrono::duration<float>(1.0f / static_cast<float>(m_FrameLimiterHz));
+				std::this_thread::sleep_until(frameStart + std::chrono::duration_cast<std::chrono::steady_clock::duration>(frameDuration));
+			}
 		}
 	}
 

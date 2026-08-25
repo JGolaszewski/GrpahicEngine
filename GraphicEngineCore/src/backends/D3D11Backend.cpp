@@ -109,6 +109,8 @@ namespace Engine {
 			return false;
 		}
 
+		m_Context.As(&m_Annotation);
+
 		Microsoft::WRL::ComPtr<ID3D11Texture2D> backBuffer;
 		m_SwapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), &backBuffer);
 
@@ -188,7 +190,27 @@ namespace Engine {
 
 	void D3D11Backend::Present() {
 		if(m_SwapChain) {
-			m_SwapChain->Present(0, 0);
+			const HRESULT hr = m_SwapChain->Present(m_VSyncEnabled ? 1 : 0, 0);
+			if (hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET) {
+				std::cerr << "ERROR: Present failed because the D3D11 device was removed or reset (HRESULT 0x"
+					<< std::hex << static_cast<unsigned long>(hr) << std::dec << ")." << std::endl;
+			}
+			else if (FAILED(hr)) {
+				std::cerr << "ERROR: Swap chain Present failed (HRESULT 0x"
+					<< std::hex << static_cast<unsigned long>(hr) << std::dec << ")." << std::endl;
+			}
+		}
+	}
+
+	void D3D11Backend::BeginGpuEvent(const wchar_t* name) {
+		if (m_Annotation.Get() && name) {
+			m_Annotation->BeginEvent(name);
+		}
+	}
+
+	void D3D11Backend::EndGpuEvent() {
+		if (m_Annotation.Get()) {
+			m_Annotation->EndEvent();
 		}
 	}
 

@@ -62,6 +62,7 @@ namespace Engine {
 
 		m_CommandList->open();
 		m_FrameActive = true;
+		m_RenderBackend->BeginGpuEvent(L"RenderFrame");
 		ClearFrameBuffer();
 		m_MaterialSystem->UpdateDirtyMaterials(m_CommandList);
 
@@ -129,6 +130,7 @@ namespace Engine {
 			std::cerr << "ERROR: Render graph compilation failed: " << m_RenderGraph->GetLastError() << std::endl;
 			m_CommandList->close();
 			m_RenderBackend->GetDevice()->executeCommandList(m_CommandList);
+			m_RenderBackend->EndGpuEvent();
 			m_FrameActive = false;
 			return;
 		}
@@ -136,6 +138,7 @@ namespace Engine {
 
 		m_CommandList->close();
 		m_RenderBackend->GetDevice()->executeCommandList(m_CommandList);
+		m_RenderBackend->EndGpuEvent();
 		m_FrameActive = false;
 
 	}
