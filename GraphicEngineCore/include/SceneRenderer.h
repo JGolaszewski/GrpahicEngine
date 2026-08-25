@@ -24,10 +24,6 @@ namespace Engine {
 		static constexpr uint32_t MaxLights = ENGINE_MAX_LIGHTS;
 		static constexpr uint32_t MaxShadowedLights = 4;
 		static constexpr uint32_t PerObjectDataStride = 256;
-		// D3D11 constant buffers are limited to 64 KiB. Keep the per-view
-		// allocator within that limit while preserving 256-byte CB alignment.
-		static constexpr uint32_t MaxPerObjectsPerView = 256;
-		static constexpr uint32_t MaxPerObjectDataBytesPerView = MaxPerObjectsPerView * PerObjectDataStride;
 
 		struct SubmissionStats {
 			uint32_t ObjectsSubmitted = 0;
@@ -54,7 +50,7 @@ namespace Engine {
 
 		void CullAndFillView(Renderer::RenderView* view, nvrhi::ICommandList* commandList, uint32_t viewIndex);
 		void SortViewQueues(Renderer::RenderView* view);
-		Renderer::RenderPacket CreateRenderPacket(const Renderer::Entity* entity, nvrhi::BufferHandle perObjectBuffer, nvrhi::BufferRange perObjectRange);
+		Renderer::RenderPacket CreateRenderPacket(const Renderer::Entity* entity, nvrhi::BufferHandle perObjectBuffer);
 
 		PipelineCache m_PipelineCache;
 
