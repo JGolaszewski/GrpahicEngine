@@ -58,5 +58,5 @@ namespace Renderer {
 		void Clear() {
 			Queues.Clear();
 		}
-	};
+	 };
 }

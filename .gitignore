@@ -5,3 +5,6 @@ out
 *.srctrlbm
 *.srctrlprj
 *.srctrldb
+
+# Documents
+*.md
