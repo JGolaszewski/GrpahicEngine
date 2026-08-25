@@ -24,6 +24,16 @@ namespace Engine {
 		static constexpr uint32_t MaxLights = ENGINE_MAX_LIGHTS;
 		static constexpr uint32_t MaxShadowedLights = 4;
 		static constexpr uint32_t PerObjectDataStride = 256;
+		// D3D11 constant buffers are limited to 64 KiB. Keep the per-view
+		// allocator within that limit while preserving 256-byte CB alignment.
+		static constexpr uint32_t MaxPerObjectsPerView = 256;
+		static constexpr uint32_t MaxPerObjectDataBytesPerView = MaxPerObjectsPerView * PerObjectDataStride;
+
+		struct SubmissionStats {
+			uint32_t ObjectsSubmitted = 0;
+			uint32_t ObjectsCulled = 0;
+			uint32_t PerObjectBytesUsed = 0;
+		};
 
 		SceneRenderer(nvrhi::IDevice* device);
 		void Init(nvrhi::IDevice* device, Renderer::MaterialSystem* materialSystem);
@@ -38,11 +48,12 @@ namespace Engine {
 		inline nvrhi::BindingLayoutHandle GetSceneBindingLayout() const { return m_SceneBindingLayout; }
 		inline Renderer::MaterialSystem* GetMaterialSystem() const { return m_MaterialSystem; }
 		inline PipelineCache* GetPipelineCache() { return &m_PipelineCache; }
+		inline const SubmissionStats& GetSubmissionStats() const { return m_SubmissionStats; }
 
 	private:
 
-		void CullAndFillView(Renderer::RenderView* view, nvrhi::ICommandList* commandList);
-		Renderer::RenderPacket CreateRenderPacket(const Renderer::Entity* entity, nvrhi::BufferHandle perObjectBuffer);
+		void CullAndFillView(Renderer::RenderView* view, nvrhi::ICommandList* commandList, uint32_t viewIndex);
+		Renderer::RenderPacket CreateRenderPacket(const Renderer::Entity* entity, nvrhi::BufferHandle perObjectBuffer, nvrhi::BufferRange perObjectRange);
 
 		PipelineCache m_PipelineCache;
 
@@ -53,6 +64,7 @@ namespace Engine {
 		nvrhi::SamplerHandle m_ShadowSampler;
 
 		Renderer::MaterialSystem* m_MaterialSystem = nullptr;
+		SubmissionStats m_SubmissionStats;
 
 	};
 

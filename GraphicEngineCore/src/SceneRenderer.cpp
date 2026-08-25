@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <iostream>
 
 #include "renderer/Entity.h"
 #include "renderer/Mesh.h"
@@ -98,7 +99,7 @@ void Engine::SceneRenderer::Init(nvrhi::IDevice* device, Renderer::MaterialSyste
 
 // --- Uploads ---
 
-void Engine::SceneRenderer::CullAndFillView(Renderer::RenderView* view, nvrhi::ICommandList* commandList) {
+void Engine::SceneRenderer::CullAndFillView(Renderer::RenderView* view, nvrhi::ICommandList* commandList, uint32_t viewIndex) {
 	if (!view || !view->TargetScene) return;
 	if (!commandList) return;
 
@@ -116,10 +117,35 @@ void Engine::SceneRenderer::CullAndFillView(Renderer::RenderView* view, nvrhi::I
 		return;
 	}
 
-	for (const auto& entity : view->TargetScene->GetEntities()) {
-		if (!entity->mesh || !entity->material) continue;
+	nvrhi::BufferDesc perObjectDesc;
+	perObjectDesc.byteSize = MaxPerObjectDataBytesPerView;
+	perObjectDesc.isConstantBuffer = true;
+	perObjectDesc.debugName = "PerObjectDataPerView";
+	nvrhi::BufferHandle perObjectBuffer = m_Device->createBuffer(perObjectDesc);
+	if (!perObjectBuffer) {
+		std::cerr << "ERROR: Could not allocate per-object buffer for view " << viewIndex << std::endl;
+		return;
+	}
 
-		if (view->ViewType == Renderer::RenderView::Type::Shadow && !entity->CastShadows) continue;
+	uint32_t perObjectDataOffset = 0;
+
+	for (const auto& entity : view->TargetScene->GetEntities()) {
+		if (!entity || !entity->mesh || !entity->material) {
+			++m_SubmissionStats.ObjectsCulled;
+			continue;
+		}
+
+		if (view->ViewType == Renderer::RenderView::Type::Shadow && !entity->CastShadows) {
+			++m_SubmissionStats.ObjectsCulled;
+			continue;
+		}
+
+		if (perObjectDataOffset + PerObjectDataStride > MaxPerObjectDataBytesPerView) {
+			std::cerr << "WARN: Per-object budget exhausted for view " << viewIndex
+				<< "; skipping remaining object submission." << std::endl;
+			++m_SubmissionStats.ObjectsCulled;
+			continue;
+		}
 
 		// TODO: Frustum Culling
 
@@ -137,17 +163,14 @@ void Engine::SceneRenderer::CullAndFillView(Renderer::RenderView* view, nvrhi::I
 			0.0f, 0.0f
 		};
 
-		nvrhi::BufferDesc perObjectDesc;
-		perObjectDesc.byteSize = PerObjectDataStride;
-		perObjectDesc.isConstantBuffer = true;
-		perObjectDesc.debugName = "PerObjectData";
-		nvrhi::BufferHandle perObjectBuffer = m_Device->createBuffer(perObjectDesc);
-		if (!perObjectBuffer) continue;
+		commandList->writeBuffer(perObjectBuffer, &perObjectData, PerObjectDataStride, perObjectDataOffset);
 
-		commandList->writeBuffer(perObjectBuffer, &perObjectData, PerObjectDataStride);
-
-		auto packet = CreateRenderPacket(entity.get(), perObjectBuffer);
+		auto packet = CreateRenderPacket(entity.get(), perObjectBuffer,
+			nvrhi::BufferRange(perObjectDataOffset, PerObjectDataStride));
 		packet.Queue = Renderer::RenderQueueType::Opaque;
+		perObjectDataOffset += PerObjectDataStride;
+		++m_SubmissionStats.ObjectsSubmitted;
+		m_SubmissionStats.PerObjectBytesUsed += PerObjectDataStride;
 
 		Engine::PipelineKey key;
 		key.VS = m_MaterialSystem->GetStandardVS();
@@ -179,7 +202,7 @@ void Engine::SceneRenderer::CullAndFillView(Renderer::RenderView* view, nvrhi::I
 
 // --- RenderPacket creation ---
 
-Renderer::RenderPacket Engine::SceneRenderer::CreateRenderPacket(const Renderer::Entity* entity, nvrhi::BufferHandle perObjectBuffer) {
+Renderer::RenderPacket Engine::SceneRenderer::CreateRenderPacket(const Renderer::Entity* entity, nvrhi::BufferHandle perObjectBuffer, nvrhi::BufferRange perObjectRange) {
 	Renderer::RenderPacket packet;
 	packet.VertexBuffer = entity->mesh->GetVertexBuffer();
 	packet.IndexBuffer = entity->mesh->GetIndexBuffer();
@@ -190,7 +213,7 @@ Renderer::RenderPacket Engine::SceneRenderer::CreateRenderPacket(const Renderer:
 	packet.StartIndexLocation = 0;
 
 	nvrhi::BindingSetDesc setDesc;
-	setDesc.addItem(nvrhi::BindingSetItem::ConstantBuffer(0, perObjectBuffer));
+	setDesc.addItem(nvrhi::BindingSetItem::ConstantBuffer(0, perObjectBuffer, perObjectRange));
 	packet.PerObjectBindings = m_Device->createBindingSet(setDesc, m_PerObjectBindingLayout);
 
 	return packet;
@@ -203,19 +226,23 @@ void Engine::SceneRenderer::BuildViews(Renderer::FrameBlackboard& blackboard, nv
 		return;
 	}
 
+	m_SubmissionStats = {};
+
 	auto shadowViews = blackboard.GetShadowViews();
-	for (Renderer::RenderView* view : shadowViews) {
+	for (uint32_t viewIndex = 0; viewIndex < shadowViews.size(); ++viewIndex) {
+		Renderer::RenderView* view = shadowViews[viewIndex];
 		if (view) {
 			view->Clear();
-			CullAndFillView(view, commandList);
+			CullAndFillView(view, commandList, viewIndex);
 		}
 	}
 
 	auto sceneViews = blackboard.GetSceneViews();
-	for (Renderer::RenderView* view : sceneViews) {
+	for (uint32_t viewIndex = 0; viewIndex < sceneViews.size(); ++viewIndex) {
+		Renderer::RenderView* view = sceneViews[viewIndex];
 		if (view) {
 			view->Clear();
-			CullAndFillView(view, commandList);
+			CullAndFillView(view, commandList, static_cast<uint32_t>(shadowViews.size()) + viewIndex);
 		}
 	}
 }
