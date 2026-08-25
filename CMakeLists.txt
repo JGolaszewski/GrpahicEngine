@@ -1,5 +1,28 @@
 cmake_minimum_required (VERSION 3.15)
 
+# Visual Studio can configure a CMake project directly instead of using its
+# configure preset. In that mode, recover the vcpkg settings before project()
+# initializes the toolchain.
+if(CMAKE_HOST_WIN32)
+    if(NOT DEFINED CMAKE_TOOLCHAIN_FILE AND DEFINED ENV{VCPKG_ROOT})
+        set(ENGINE_VCPKG_TOOLCHAIN "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake")
+        if(EXISTS "${ENGINE_VCPKG_TOOLCHAIN}")
+            set(CMAKE_TOOLCHAIN_FILE "${ENGINE_VCPKG_TOOLCHAIN}" CACHE FILEPATH
+                "vcpkg toolchain used by the engine")
+        endif()
+    endif()
+
+    if(NOT DEFINED VCPKG_TARGET_TRIPLET)
+        if(CMAKE_GENERATOR_PLATFORM STREQUAL "Win32")
+            set(VCPKG_TARGET_TRIPLET "x86-windows" CACHE STRING
+                "vcpkg target triplet used by the engine")
+        else()
+            set(VCPKG_TARGET_TRIPLET "x64-windows" CACHE STRING
+                "vcpkg target triplet used by the engine")
+        endif()
+    endif()
+endif()
+
 
 # Hot reload enable for MSVC
 if (POLICY CMP0141)
@@ -34,8 +57,12 @@ endif()
 
 # Make manifest-mode packages discoverable even when the IDE regenerates after
 # switching to a different vcpkg toolchain file.
-if(DEFINED VCPKG_INSTALLED_DIR AND DEFINED VCPKG_TARGET_TRIPLET)
-    set(ENGINE_VCPKG_PREFIX "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}")
+if(DEFINED VCPKG_TARGET_TRIPLET)
+    if(DEFINED VCPKG_INSTALLED_DIR)
+        set(ENGINE_VCPKG_PREFIX "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}")
+    else()
+        set(ENGINE_VCPKG_PREFIX "${CMAKE_BINARY_DIR}/vcpkg_installed/${VCPKG_TARGET_TRIPLET}")
+    endif()
     if(EXISTS "${ENGINE_VCPKG_PREFIX}")
         list(PREPEND CMAKE_PREFIX_PATH "${ENGINE_VCPKG_PREFIX}")
     endif()
