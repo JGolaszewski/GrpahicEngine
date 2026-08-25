@@ -32,6 +32,15 @@ if(MSVC)
     set(CMAKE_VS_GLOBALS "VcpkgEnabled=true")
 endif()
 
+# Make manifest-mode packages discoverable even when the IDE regenerates after
+# switching to a different vcpkg toolchain file.
+if(DEFINED VCPKG_INSTALLED_DIR AND DEFINED VCPKG_TARGET_TRIPLET)
+    set(ENGINE_VCPKG_PREFIX "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}")
+    if(EXISTS "${ENGINE_VCPKG_PREFIX}")
+        list(PREPEND CMAKE_PREFIX_PATH "${ENGINE_VCPKG_PREFIX}")
+    endif()
+endif()
+
 find_package(directxmath CONFIG REQUIRED)
 find_package(glfw3 CONFIG REQUIRED)
 
