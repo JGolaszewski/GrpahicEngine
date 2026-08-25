@@ -36,6 +36,7 @@ namespace Engine {
 
         ImGuiContext* GetImGuiContext();
         IWindow* GetWindow() const;
+		float GetLastFrameDeltaTime() const noexcept { return m_LastFrameDeltaTime; }
 
         // --- Renderer helpers used by Editor and panels ---
         IRenderBackend* GetRenderer() const { return m_RenderBackend.get(); }
@@ -65,8 +66,10 @@ namespace Engine {
     private:
         bool InitializeCore(RenderAPI api);
         void RegisterDefaultView();
+		void UpdateScenes(float deltaTime);
 
         bool m_IsRunning = false;
+		float m_LastFrameDeltaTime = 0.0f;
 
         std::unique_ptr<IWindow> m_Window;
         std::unique_ptr<IRenderBackend> m_RenderBackend;

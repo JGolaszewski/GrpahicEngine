@@ -8,6 +8,7 @@
 
 #include <iostream>
 #include <chrono>
+#include <algorithm>
 
 #include <imgui.h>
 
@@ -88,6 +89,7 @@ namespace Engine {
 			auto currentTime = std::chrono::high_resolution_clock::now();
 			float deltaTime = std::chrono::duration<float>(currentTime - lastTime).count();
 			lastTime = currentTime;
+			m_LastFrameDeltaTime = deltaTime;
 
 			m_Window->PollEvents();
 
@@ -103,7 +105,9 @@ namespace Engine {
 				lastHeight = currentHeight;
 			}
 
-			OnUpdate(deltaTime);
+			const float gameplayDeltaTime = (std::min)(deltaTime, 0.1f);
+			OnUpdate(gameplayDeltaTime);
+			UpdateScenes(gameplayDeltaTime);
 
 			ClearViews();
 
@@ -127,6 +131,14 @@ namespace Engine {
 			m_RenderBackend->RenderImGui();
 
 			m_RenderBackend->Present();
+		}
+	}
+
+	void Application::UpdateScenes(float deltaTime) {
+		for (const auto& scene : m_ActiveScenes) {
+			if (scene) {
+				scene->Update(deltaTime);
+			}
 		}
 	}
 
