@@ -3,7 +3,10 @@
 #include "CoreExport.h"
 
 #include <nvrhi/nvrhi.h>
+#include <filesystem>
+#include <string>
 #include <unordered_map>
+#include <vector>
 
 namespace Renderer {
 
@@ -17,6 +20,7 @@ namespace Renderer {
 		
 		std::unordered_map<std::string, nvrhi::ShaderHandle> m_shaderCache;
 		nvrhi::IDevice* m_Device;
+		std::filesystem::path m_AssetRoot;
 	};
 
 }

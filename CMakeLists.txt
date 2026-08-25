@@ -16,6 +16,8 @@ set(ENGINE_MAX_LIGHTS 8 CACHE STRING "Maximum number of lights supported by CPU 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")
+set(ENGINE_ASSET_ROOT "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}" CACHE PATH
+    "Runtime root containing compiled engine assets")
 
 # set(CMAKE_PDB_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 
@@ -60,3 +62,12 @@ add_subdirectory ("GraphicEngineCore")
 add_subdirectory ("GraphicEngineEditor")
 
 add_subdirectory ("SandboxApp")
+
+install(TARGETS GraphicEngineCore Editor Sandbox
+    RUNTIME DESTINATION bin
+    LIBRARY DESTINATION lib
+    ARCHIVE DESTINATION lib
+)
+install(DIRECTORY "${ENGINE_ASSET_ROOT}/shaders/" DESTINATION bin/shaders OPTIONAL)
+
+include(CPack)
