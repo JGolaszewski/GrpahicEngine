@@ -8,6 +8,7 @@
 #include "renderer/Mesh.h"
 #include "renderer/Material.h"
 #include "Scene.h"
+#include "renderer/DebugGeometry.h"
 
 namespace {
 	struct PerObjectData {
@@ -259,8 +260,20 @@ void Engine::SceneRenderer::BuildViews(Renderer::FrameBlackboard& blackboard, nv
 			view->Clear();
 			CullAndFillView(view, commandList, static_cast<uint32_t>(shadowViews.size()) + viewIndex);
 			SortViewQueues(view);
+			BuildDebugGeometry(view);
 		}
 	}
+}
+
+void Engine::SceneRenderer::BuildDebugGeometry(Renderer::RenderView* view) {
+	if (!view || view->ViewType != Renderer::RenderView::Type::Main || !view->TargetScene) {
+		return;
+	}
+
+	Renderer::DebugGeometryBuilder::BuildScene(
+		*view->TargetScene,
+		view->DebugSettings,
+		view->DebugGeometryData);
 }
 
 void Engine::SceneRenderer::BuildShadowData(Engine::Scene* scene, Renderer::FrameBlackboard& blackboard) {

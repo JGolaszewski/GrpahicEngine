@@ -2,6 +2,7 @@
 #include <vector>
 #include <DirectXMath.h>
 #include "renderer/RenderPacket.h"
+#include "renderer/DebugGeometry.h"
 
 // Forward declarations
 namespace Engine { class Scene; class Viewport; }
@@ -35,6 +36,8 @@ namespace Renderer {
 		Type ViewType = Type::Main;
 
 		RenderQueues Queues;
+		DebugRenderSettings DebugSettings;
+		DebugGeometry DebugGeometryData;
 
 		Engine::Scene* TargetScene = nullptr;
 		nvrhi::IFramebuffer* TargetFramebuffer = nullptr;
@@ -58,6 +61,7 @@ namespace Renderer {
 
 		void Clear() {
 			Queues.Clear();
+			DebugGeometryData.Clear();
 		}
 	 };
 }

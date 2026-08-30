@@ -48,6 +48,7 @@ set(CORE_HEADERS
     include/PipelineCache.h
     include/RenderBackend.h
     include/renderer/Camera.h
+    include/renderer/DebugGeometry.h
     include/renderer/Entity.h
     include/renderer/Light.h
     include/renderer/Material.h
@@ -79,6 +80,7 @@ set(CORE_SOURCES
     src/components/Transform.cpp
     src/PipelineCache.cpp
     src/renderer/Camera.cpp
+    src/renderer/DebugGeometry.cpp
     src/renderer/Entity.cpp
     src/renderer/Light.cpp
     src/renderer/Material.cpp

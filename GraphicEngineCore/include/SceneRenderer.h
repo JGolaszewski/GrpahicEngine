@@ -35,6 +35,7 @@ namespace Engine {
 		void Init(nvrhi::IDevice* device, Renderer::MaterialSystem* materialSystem);
 		
 		void BuildViews(Renderer::FrameBlackboard& blackboard, nvrhi::ICommandList* commandList);
+		void BuildDebugGeometry(Renderer::RenderView* view);
 		void BuildLighting(Engine::Scene* scene, Renderer::FrameBlackboard& blackboard);
 		void BuildShadowData(Engine::Scene* scene, Renderer::FrameBlackboard& blackboard);
 
