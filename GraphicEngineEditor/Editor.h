@@ -23,6 +23,8 @@ namespace Engine::Events {
 	class Event;
 }
 
+class ScenePanel;
+
 class Editor : public Engine::Application {
 public:
 	Editor() = default;
@@ -112,6 +114,8 @@ private:
 
 	bool                      m_ViewportHovered = false;
 	bool                      m_DefaultLayoutBuilt = false;
+	bool                      m_ShowLightGizmos = true;
+	ScenePanel*               m_ScenePanel = nullptr;
 
 	CommandHistory m_CommandHistory;
 };
