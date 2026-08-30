@@ -1,9 +1,7 @@
 #include "ScenePanel.h"
 
-#include <algorithm>
 #include <imgui.h>
 #include <imgui_internal.h>
-#include <string>
 
 // ================================================================================
 // ScenePanel::OnEvent
@@ -21,10 +19,6 @@ void ScenePanel::OnEvent(Engine::Events::Event& event) {
         m_ViewportSize = { e.GetWidth(), e.GetHeight() };
         return false;
     });
-}
-
-void ScenePanel::SetLightGizmos(std::vector<LightGizmo> gizmos) {
-    m_LightGizmos = std::move(gizmos);
 }
 
 void ScenePanel::Draw() {
@@ -55,59 +49,11 @@ void ScenePanel::Draw() {
     }
 
     const ImVec2 viewportPanelSize = ImGui::GetContentRegionAvail();
-    const ImVec2 viewportImagePosition = ImGui::GetCursorScreenPos();
     if (m_TextureId) {
         ImGui::Image(m_TextureId, viewportPanelSize);
     }
     else {
         ImGui::TextDisabled("Viewport not available");
-    }
-
-    if (m_TextureId && viewportPanelSize.x > 0.0f && viewportPanelSize.y > 0.0f) {
-        ImDrawList* drawList = ImGui::GetWindowDrawList();
-        const ImVec2 mousePosition = ImGui::GetIO().MousePos;
-        int hoveredGizmo = -1;
-        float closestDistanceSquared = 0.0f;
-
-        for (size_t i = 0; i < m_LightGizmos.size(); ++i) {
-            const LightGizmo& gizmo = m_LightGizmos[i];
-            const ImVec2 markerPosition(
-                viewportImagePosition.x + gizmo.normalizedPosition.x * viewportPanelSize.x,
-                viewportImagePosition.y + gizmo.normalizedPosition.y * viewportPanelSize.y);
-            const float dx = mousePosition.x - markerPosition.x;
-            const float dy = mousePosition.y - markerPosition.y;
-            const float distanceSquared = dx * dx + dy * dy;
-            const float hitRadius = gizmo.selected ? 12.0f : 10.0f;
-            if (distanceSquared <= hitRadius * hitRadius &&
-                (hoveredGizmo < 0 || distanceSquared < closestDistanceSquared)) {
-                hoveredGizmo = static_cast<int>(i);
-                closestDistanceSquared = distanceSquared;
-            }
-
-            const ImVec4 color(
-                std::clamp(gizmo.color.x, 0.0f, 1.0f),
-                std::clamp(gizmo.color.y, 0.0f, 1.0f),
-                std::clamp(gizmo.color.z, 0.0f, 1.0f),
-                1.0f);
-            const ImU32 markerColor = ImGui::ColorConvertFloat4ToU32(color);
-            const ImU32 outlineColor = gizmo.selected ? IM_COL32(255, 255, 255, 255) : IM_COL32(20, 20, 20, 255);
-            const float markerRadius = gizmo.selected ? 8.0f : 6.0f;
-
-            drawList->AddCircleFilled(markerPosition, markerRadius, markerColor);
-            drawList->AddCircle(markerPosition, markerRadius + 2.0f, outlineColor, 16, 2.0f);
-            if (gizmo.selected) {
-                const std::string label = "Light " + std::to_string(gizmo.index);
-                drawList->AddText(ImVec2(markerPosition.x + 12.0f, markerPosition.y - 8.0f), outlineColor, label.c_str());
-            }
-        }
-
-        if (hoveredGizmo >= 0 && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
-            const LightGizmo& gizmo = m_LightGizmos[static_cast<size_t>(hoveredGizmo)];
-            EmitEvent(std::make_unique<EntitySelectedEvent>(
-                EntitySelectedEvent::ItemType::Light,
-                -1, gizmo.index, -1,
-                Engine::InvalidEntityId, gizmo.id, Engine::InvalidCameraId));
-        }
     }
 
     ImGui::End();

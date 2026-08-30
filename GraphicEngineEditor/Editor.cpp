@@ -87,9 +87,7 @@ void Editor::OnInit() {
 	// --- Initialize Panels ---
 	m_Windows.push_back(std::make_unique<MainBar>());
 	m_Windows.push_back(std::make_unique<StatWindow>());
-	auto scenePanel = std::make_unique<ScenePanel>();
-	m_ScenePanel = scenePanel.get();
-	m_Windows.push_back(std::move(scenePanel));
+	m_Windows.push_back(std::make_unique<ScenePanel>());
 	m_Windows.push_back(std::make_unique<HierarchyPanel>());
 	m_Windows.push_back(std::make_unique<InspectorPanel>());
 
@@ -515,13 +513,6 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
 		}
 		return false;
 		});
-
-	dispatcher.Dispatch<DebugRenderToggledEvent>([this](const auto& e) {
-		if (e.GetToggle() == DebugRenderToggledEvent::Toggle::LightGizmos) {
-			m_ShowLightGizmos = e.GetValue();
-		}
-		return false;
-		});
 }
 
 void Editor::BroadcastEvent(Engine::Events::Event& event) {
@@ -596,44 +587,6 @@ void Editor::OnUIRender() {
 	ImGui::DockSpaceOverViewport(dockspaceId, ImGui::GetMainViewport(), ImGuiDockNodeFlags_PassthruCentralNode);
 	BuildDefaultDockLayoutIfNeeded(dockspaceId);
 
-	if (m_ScenePanel) {
-		std::vector<ScenePanel::LightGizmo> lightGizmos;
-		const auto activeCamera = GetActiveCamera();
-		if (m_ShowLightGizmos && m_ActiveScene && activeCamera && m_ViewportSize.first > 0.0f && m_ViewportSize.second > 0.0f) {
-			const float aspect = m_ViewportSize.first / m_ViewportSize.second;
-			const DirectX::XMMATRIX viewProjection = activeCamera->GetViewProjection(aspect);
-			const auto lights = m_ActiveScene->GetLights();
-			lightGizmos.reserve(lights.size());
-
-			for (size_t index = 0; index < lights.size(); ++index) {
-				const auto& light = lights[index];
-				if (!light) continue;
-
-				const DirectX::XMFLOAT3 position = light->GetPosition();
-				const DirectX::XMVECTOR worldPosition = DirectX::XMVectorSet(position.x, position.y, position.z, 1.0f);
-				const DirectX::XMVECTOR clipPosition = DirectX::XMVector4Transform(worldPosition, viewProjection);
-				const float clipW = DirectX::XMVectorGetW(clipPosition);
-				if (!std::isfinite(clipW) || std::abs(clipW) < 1e-5f) continue;
-
-				const float ndcX = DirectX::XMVectorGetX(clipPosition) / clipW;
-				const float ndcY = DirectX::XMVectorGetY(clipPosition) / clipW;
-				if (!std::isfinite(ndcX) || !std::isfinite(ndcY)) continue;
-
-				ScenePanel::LightGizmo gizmo;
-				gizmo.id = m_ActiveScene->GetLightIdAt(index);
-				gizmo.index = static_cast<int>(index);
-				gizmo.normalizedPosition = {
-					std::clamp(ndcX * 0.5f + 0.5f, 0.02f, 0.98f),
-					std::clamp(-ndcY * 0.5f + 0.5f, 0.02f, 0.98f)
-				};
-				gizmo.color = light->GetColor();
-				gizmo.selected = m_SelectedItemType == SelectedItemType::Light && m_SelectedLightId == gizmo.id;
-				lightGizmos.push_back(gizmo);
-			}
-		}
-		m_ScenePanel->SetLightGizmos(std::move(lightGizmos));
-	}
-
 	for (auto& window : m_Windows) {
 		if (window) {
 			window->Draw();
@@ -645,28 +598,12 @@ void Editor::BuildDefaultDockLayoutIfNeeded(ImGuiID dockspaceId) {
 	if (m_DefaultLayoutBuilt) return;
 
 	ImGuiDockNode* node = ImGui::DockBuilderGetNode(dockspaceId);
-	bool layoutNeedsRepair = false;
-	const float hostWidth = GetWindow() ? static_cast<float>(GetWindow()->GetWidth()) : 0.0f;
-	const float hostHeight = GetWindow() ? static_cast<float>(GetWindow()->GetHeight()) : 0.0f;
-	if (node && hostWidth > 0.0f && hostHeight > 0.0f) {
-		layoutNeedsRepair = node->Size.x > hostWidth * 1.5f || node->Size.y > hostHeight * 1.5f ||
-			node->SizeRef.x > hostWidth * 1.5f || node->SizeRef.y > hostHeight * 1.5f;
-		if (ImGuiWindow* inspectorWindow = ImGui::FindWindowByName("Inspector")) {
-			layoutNeedsRepair = hostWidth > 0.0f && hostHeight > 0.0f &&
-				(inspectorWindow->Pos.x < 0.0f || inspectorWindow->Pos.y < 0.0f ||
-				 inspectorWindow->Pos.x + inspectorWindow->Size.x > hostWidth ||
-				 inspectorWindow->Pos.y + inspectorWindow->Size.y > hostHeight);
-		}
-	}
-
-	if (!node || layoutNeedsRepair) {
-		BuildDefaultDockLayout(dockspaceId);
-	} else if (node->Windows.Size > 0 || node->ChildNodes[0] != nullptr || node->ChildNodes[1] != nullptr) {
+	if (!node || node->Windows.Size > 0 || node->ChildNodes[0] != nullptr || node->ChildNodes[1] != nullptr) {
 		m_DefaultLayoutBuilt = true;
 		return;
-	} else {
-		BuildDefaultDockLayout(dockspaceId);
 	}
+
+	BuildDefaultDockLayout(dockspaceId);
 	m_DefaultLayoutBuilt = true;
 }
 
