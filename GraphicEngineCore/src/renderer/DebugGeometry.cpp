@@ -27,9 +27,6 @@ namespace {
         return result;
     }
 
-    DirectX::XMFLOAT4 ScaleAlpha(const DirectX::XMFLOAT4& color, float alpha) {
-        return { color.x, color.y, color.z, alpha };
-    }
 }
 
 namespace Renderer {
@@ -119,8 +116,6 @@ namespace Renderer {
         const DirectX::XMFLOAT4 coneColor = selected
             ? DirectX::XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f)
             : DirectX::XMFLOAT4(safeColor.x, safeColor.y, safeColor.z, 1.0f);
-        const DirectX::XMFLOAT4 fillColor = ScaleAlpha(coneColor, selected ? 0.12f : 0.05f);
-
         DirectX::XMFLOAT3 previousRingPoint = {};
         for (uint32_t segment = 0; segment < LightRingSegments; ++segment) {
             const float angle = TwoPi * static_cast<float>(segment) /
@@ -134,7 +129,6 @@ namespace Renderer {
                 geometry.AddLine(previousRingPoint, ringPoint, coneColor);
             }
             geometry.AddLine(position, ringPoint, coneColor);
-            geometry.AddTriangle(position, ringPoint, StoreFloat3(baseCenter), fillColor);
             previousRingPoint = ringPoint;
         }
 
