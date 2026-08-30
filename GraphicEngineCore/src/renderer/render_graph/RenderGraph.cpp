@@ -115,13 +115,20 @@ namespace Renderer {
 			}
 		}
 
-		std::vector<std::vector<size_t>> adjacency(passCount);
+	std::vector<std::vector<size_t>> adjacency(passCount);
 		std::vector<int> inDegree(passCount, 0);
 		std::vector<int> lastWriter(m_Registry.GetAllResources().size(), -1);
+		int lastSideEffectPass = -1;
 
 		for (size_t passIndex = 0; passIndex < passCount; ++passIndex) {
 			if (!active[passIndex]) continue;
 			const auto& node = m_Nodes[passIndex];
+			if (node.pass->HasSideEffect()) {
+				if (lastSideEffectPass >= 0) {
+					AddEdge(adjacency, inDegree, static_cast<size_t>(lastSideEffectPass), passIndex);
+				}
+				lastSideEffectPass = static_cast<int>(passIndex);
+			}
 
 			for (const RGResourceID id : node.deps.inputs) {
 				if (!m_Registry.IsValid(id)) {
