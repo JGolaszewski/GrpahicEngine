@@ -602,25 +602,6 @@ void Editor::OnUIRender() {
 		if (m_ShowLightGizmos && m_ActiveScene && activeCamera && m_ViewportSize.first > 0.0f && m_ViewportSize.second > 0.0f) {
 			const float aspect = m_ViewportSize.first / m_ViewportSize.second;
 			const DirectX::XMMATRIX viewProjection = activeCamera->GetViewProjection(aspect);
-			const auto projectToViewport = [&viewProjection](DirectX::FXMVECTOR worldPosition, DirectX::XMFLOAT2& normalizedPosition) {
-				const DirectX::XMVECTOR clipPosition = DirectX::XMVector4Transform(worldPosition, viewProjection);
-				const float clipW = DirectX::XMVectorGetW(clipPosition);
-				if (!std::isfinite(clipW) || std::abs(clipW) < 1e-5f) {
-					return false;
-				}
-
-				const float ndcX = DirectX::XMVectorGetX(clipPosition) / clipW;
-				const float ndcY = DirectX::XMVectorGetY(clipPosition) / clipW;
-				if (!std::isfinite(ndcX) || !std::isfinite(ndcY)) {
-					return false;
-				}
-
-				normalizedPosition = {
-					std::clamp(ndcX * 0.5f + 0.5f, 0.06f, 0.94f),
-					std::clamp(-ndcY * 0.5f + 0.5f, 0.06f, 0.94f)
-				};
-				return true;
-			};
 			const auto lights = m_ActiveScene->GetLights();
 			lightGizmos.reserve(lights.size());
 
@@ -630,41 +611,21 @@ void Editor::OnUIRender() {
 
 				const DirectX::XMFLOAT3 position = light->GetPosition();
 				const DirectX::XMVECTOR worldPosition = DirectX::XMVectorSet(position.x, position.y, position.z, 1.0f);
+				const DirectX::XMVECTOR clipPosition = DirectX::XMVector4Transform(worldPosition, viewProjection);
+				const float clipW = DirectX::XMVectorGetW(clipPosition);
+				if (!std::isfinite(clipW) || std::abs(clipW) < 1e-5f) continue;
+
+				const float ndcX = DirectX::XMVectorGetX(clipPosition) / clipW;
+				const float ndcY = DirectX::XMVectorGetY(clipPosition) / clipW;
+				if (!std::isfinite(ndcX) || !std::isfinite(ndcY)) continue;
 
 				ScenePanel::LightGizmo gizmo;
 				gizmo.id = m_ActiveScene->GetLightIdAt(index);
 				gizmo.index = static_cast<int>(index);
-				if (!projectToViewport(worldPosition, gizmo.normalizedPosition)) continue;
-
-				const DirectX::XMFLOAT3 direction = light->GetDirection();
-				DirectX::XMVECTOR directionVector = DirectX::XMVectorSet(direction.x, direction.y, direction.z, 0.0f);
-				const float directionLengthSquared = DirectX::XMVectorGetX(DirectX::XMVector3LengthSq(directionVector));
-				if (!std::isfinite(directionLengthSquared) || directionLengthSquared < 1e-6f) {
-					directionVector = DirectX::XMVectorSet(0.0f, -1.0f, 0.0f, 0.0f);
-				}
-				else {
-					directionVector = DirectX::XMVector3Normalize(directionVector);
-				}
-
-				const float visualLength = std::clamp(light->GetRange() * 0.2f, 0.75f, 3.5f);
-				const float coneRadius = visualLength * std::tan(DirectX::XMConvertToRadians(light->GetOuterAngleDegrees()));
-				DirectX::XMVECTOR upReference = DirectX::XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
-				if (std::abs(DirectX::XMVectorGetX(DirectX::XMVector3Dot(upReference, directionVector))) > 0.98f) {
-					upReference = DirectX::XMVectorSet(1.0f, 0.0f, 0.0f, 0.0f);
-				}
-				const DirectX::XMVECTOR coneRight = DirectX::XMVector3Normalize(DirectX::XMVector3Cross(directionVector, upReference));
-				const DirectX::XMVECTOR coneBaseCenter = DirectX::XMVectorAdd(
-					worldPosition,
-					DirectX::XMVectorScale(directionVector, visualLength));
-				const DirectX::XMVECTOR coneLeftPosition = DirectX::XMVectorAdd(
-					coneBaseCenter,
-					DirectX::XMVectorScale(coneRight, coneRadius));
-				const DirectX::XMVECTOR coneRightPosition = DirectX::XMVectorSubtract(
-					coneBaseCenter,
-					DirectX::XMVectorScale(coneRight, coneRadius));
-				gizmo.hasCone = projectToViewport(coneBaseCenter, gizmo.normalizedDirectionEnd) &&
-					projectToViewport(coneLeftPosition, gizmo.normalizedConeLeft) &&
-					projectToViewport(coneRightPosition, gizmo.normalizedConeRight);
+				gizmo.normalizedPosition = {
+					std::clamp(ndcX * 0.5f + 0.5f, 0.02f, 0.98f),
+					std::clamp(-ndcY * 0.5f + 0.5f, 0.02f, 0.98f)
+				};
 				gizmo.color = light->GetColor();
 				gizmo.selected = m_SelectedItemType == SelectedItemType::Light && m_SelectedLightId == gizmo.id;
 				lightGizmos.push_back(gizmo);

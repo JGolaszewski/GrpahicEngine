@@ -23,11 +23,7 @@ public:
         Engine::LightId id = Engine::InvalidLightId;
         int index = -1;
         DirectX::XMFLOAT2 normalizedPosition = { 0.0f, 0.0f };
-        DirectX::XMFLOAT2 normalizedDirectionEnd = { 0.0f, 0.0f };
-        DirectX::XMFLOAT2 normalizedConeLeft = { 0.0f, 0.0f };
-        DirectX::XMFLOAT2 normalizedConeRight = { 0.0f, 0.0f };
         DirectX::XMFLOAT3 color = { 1.0f, 1.0f, 1.0f };
-        bool hasCone = false;
         bool selected = false;
     };
 
