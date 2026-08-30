@@ -8,8 +8,10 @@
 
 #include "renderer/Entity.h"
 #include "renderer/Light.h"
+#include "renderer/DebugGeometry.h"
 #include "PipelineCache.h"
 #include "renderer/MaterialSystem.h"
+#include "renderer/ShaderFactory.h"
 #include "renderer/render_graph/RenderView.h"
 #include "Scene.h"
 #include "renderer/Camera.h"
@@ -32,10 +34,13 @@ namespace Engine {
 		};
 
 		SceneRenderer(nvrhi::IDevice* device);
-		void Init(nvrhi::IDevice* device, Renderer::MaterialSystem* materialSystem);
+		void Init(nvrhi::IDevice* device,
+			Renderer::MaterialSystem* materialSystem,
+			Renderer::ShaderFactory* shaderFactory);
 		
 		void BuildViews(Renderer::FrameBlackboard& blackboard, nvrhi::ICommandList* commandList);
 		void BuildDebugGeometry(Renderer::RenderView* view);
+		void RenderDebugGeometry(nvrhi::ICommandList* commandList, const Renderer::RenderView& view);
 		void BuildLighting(Engine::Scene* scene, Renderer::FrameBlackboard& blackboard);
 		void BuildShadowData(Engine::Scene* scene, Renderer::FrameBlackboard& blackboard);
 
@@ -51,6 +56,13 @@ namespace Engine {
 
 		void CullAndFillView(Renderer::RenderView* view, nvrhi::ICommandList* commandList, uint32_t viewIndex);
 		void SortViewQueues(Renderer::RenderView* view);
+		void EnsureDebugBuffer(nvrhi::BufferHandle& buffer,
+			uint64_t& capacity,
+			size_t vertexCount,
+			const char* debugName);
+		nvrhi::GraphicsPipelineHandle GetDebugPipeline(const nvrhi::FramebufferInfo& framebuffer,
+			nvrhi::PrimitiveType primitiveType,
+			Renderer::DebugDepthMode depthMode);
 		Renderer::RenderPacket CreateRenderPacket(const Renderer::Entity* entity, nvrhi::BufferHandle perObjectBuffer);
 
 		PipelineCache m_PipelineCache;
@@ -60,6 +72,14 @@ namespace Engine {
 		nvrhi::BindingLayoutHandle m_PerObjectBindingLayout;
 		nvrhi::BindingLayoutHandle m_SceneBindingLayout;
 		nvrhi::SamplerHandle m_ShadowSampler;
+		nvrhi::ShaderHandle m_DebugVS;
+		nvrhi::ShaderHandle m_DebugPS;
+		nvrhi::BindingLayoutHandle m_DebugBindingLayout;
+		nvrhi::BufferHandle m_DebugViewBuffer;
+		nvrhi::BufferHandle m_DebugLineBuffer;
+		nvrhi::BufferHandle m_DebugTriangleBuffer;
+		uint64_t m_DebugLineBufferCapacity = 0;
+		uint64_t m_DebugTriangleBufferCapacity = 0;
 
 		Renderer::MaterialSystem* m_MaterialSystem = nullptr;
 		SubmissionStats m_SubmissionStats;

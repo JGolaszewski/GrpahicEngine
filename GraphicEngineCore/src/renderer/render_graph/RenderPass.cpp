@@ -1,6 +1,7 @@
 #include "renderer/render_graph/RenderPass.h"
 #include "renderer/render_graph/FrameBlackboard.h"
 #include "renderer/render_graph/RenderView.h"
+#include "SceneRenderer.h"
 #include <algorithm>
 
 namespace {
@@ -217,6 +218,29 @@ namespace Renderer {
 			drawQueue(view->Queues.Skybox, mainFramebuffer, viewportState, scissor);
 			drawQueue(view->Queues.Transparent, mainFramebuffer, viewportState, scissor);
 			drawQueue(view->Queues.UI, mainFramebuffer, viewportState, scissor);
+		}
+	}
+
+	// ==============================================================================
+	// DEBUG PASS
+	// ==============================================================================
+
+	DebugPass::DebugPass(Engine::SceneRenderer* sceneRenderer)
+		: m_SceneRenderer(sceneRenderer) {
+	}
+
+	void DebugPass::Setup(Renderer::RGBuilder&, FrameBlackboard&) {
+	}
+
+	void DebugPass::Execute(nvrhi::ICommandList* cmd, const Renderer::RenderContext& ctx) {
+		if (!m_SceneRenderer) {
+			return;
+		}
+
+		for (const Renderer::RenderView* view : ctx.GetBlackboard().GetSceneViews()) {
+			if (view) {
+				m_SceneRenderer->RenderDebugGeometry(cmd, *view);
+			}
 		}
 	}
 }

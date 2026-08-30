@@ -57,4 +57,18 @@ namespace Renderer {
 		void Setup(Renderer::RGBuilder& builder, Renderer::FrameBlackboard& blackboard) override;
 		void Execute(nvrhi::ICommandList* cmd, const Renderer::RenderContext& ctx) override;
 	};
+
+	class ENGINE_API DebugPass : public Renderer::IRenderPass {
+	public:
+		explicit DebugPass(Engine::SceneRenderer* sceneRenderer);
+
+		std::string GetName() const override { return "DebugPass"; }
+		bool HasSideEffect() const override { return true; }
+
+		void Setup(Renderer::RGBuilder& builder, Renderer::FrameBlackboard& blackboard) override;
+		void Execute(nvrhi::ICommandList* cmd, const Renderer::RenderContext& ctx) override;
+
+	private:
+		Engine::SceneRenderer* m_SceneRenderer = nullptr;
+	};
 }

@@ -18,6 +18,10 @@ namespace {
 		uint8_t Padding[112]{};
 	};
 
+	struct DebugViewData {
+		DirectX::XMFLOAT4X4 ViewProjection;
+	};
+
 	static_assert(sizeof(PerObjectData) == Engine::SceneRenderer::PerObjectDataStride);
 
 	DirectX::XMMATRIX ComputeSpotLightViewProj(const Renderer::DirectionalLightData& lightData) {
@@ -55,11 +59,18 @@ namespace {
 
 Engine::SceneRenderer::SceneRenderer(nvrhi::IDevice* device) {}
 
-void Engine::SceneRenderer::Init(nvrhi::IDevice* device, Renderer::MaterialSystem* materialSystem) {
+void Engine::SceneRenderer::Init(nvrhi::IDevice* device,
+	Renderer::MaterialSystem* materialSystem,
+	Renderer::ShaderFactory* shaderFactory) {
 	m_MaterialSystem = materialSystem;
 	m_PipelineCache.Init(device);
 
 	m_Device = device;
+
+	if (shaderFactory) {
+		m_DebugVS = shaderFactory->GetShader("shaders/debug_vs.dxbc", nvrhi::ShaderType::Vertex);
+		m_DebugPS = shaderFactory->GetShader("shaders/debug_ps.dxbc", nvrhi::ShaderType::Pixel);
+	}
 
 	nvrhi::BufferDesc lightCbDesc;
 	lightCbDesc.byteSize = sizeof(Renderer::LightsCBData);
@@ -85,6 +96,21 @@ void Engine::SceneRenderer::Init(nvrhi::IDevice* device, Renderer::MaterialSyste
 	};
 	m_SceneBindingLayout = device->createBindingLayout(sceneLayoutDesc);
 
+	nvrhi::BindingLayoutDesc debugLayoutDesc;
+	debugLayoutDesc.visibility = nvrhi::ShaderType::Vertex;
+	debugLayoutDesc.bindings = {
+		nvrhi::BindingLayoutItem::ConstantBuffer(0)
+	};
+	m_DebugBindingLayout = device->createBindingLayout(debugLayoutDesc);
+
+	nvrhi::BufferDesc debugViewDesc;
+	debugViewDesc.byteSize = sizeof(DebugViewData);
+	debugViewDesc.isConstantBuffer = true;
+	debugViewDesc.isVolatile = true;
+	debugViewDesc.maxVersions = 8;
+	debugViewDesc.debugName = "DebugView_Buffer";
+	m_DebugViewBuffer = device->createBuffer(debugViewDesc);
+
 	nvrhi::SamplerDesc shadowSamplerDesc;
 	shadowSamplerDesc.setAddressU(nvrhi::SamplerAddressMode::Border)
 		.setAddressV(nvrhi::SamplerAddressMode::Border)
@@ -95,6 +121,154 @@ void Engine::SceneRenderer::Init(nvrhi::IDevice* device, Renderer::MaterialSyste
 		.setReductionType(nvrhi::SamplerReductionType::Comparison)
 		.setBorderColor(nvrhi::Color(1.0f, 1.0f, 1.0f, 1.0f));
 	m_ShadowSampler = device->createSampler(shadowSamplerDesc);
+}
+
+void Engine::SceneRenderer::EnsureDebugBuffer(nvrhi::BufferHandle& buffer,
+	uint64_t& capacity,
+	size_t vertexCount,
+	const char* debugName) {
+	if (vertexCount == 0) {
+		return;
+	}
+
+	const uint64_t requiredBytes = static_cast<uint64_t>(vertexCount) * sizeof(Renderer::DebugVertex);
+	if (buffer && capacity >= requiredBytes) {
+		return;
+	}
+
+	uint64_t newCapacity = (std::max)(requiredBytes, static_cast<uint64_t>(sizeof(Renderer::DebugVertex) * 256));
+	while (newCapacity < requiredBytes && newCapacity <= UINT64_MAX / 2) {
+		newCapacity *= 2;
+	}
+
+	nvrhi::BufferDesc desc;
+	desc.byteSize = newCapacity;
+	desc.isVertexBuffer = true;
+	desc.initialState = nvrhi::ResourceStates::VertexBuffer;
+	desc.keepInitialState = true;
+	desc.debugName = debugName ? debugName : "DebugGeometry_Buffer";
+	nvrhi::BufferHandle newBuffer = m_Device ? m_Device->createBuffer(desc) : nullptr;
+	if (newBuffer) {
+		buffer = std::move(newBuffer);
+		capacity = newCapacity;
+	}
+}
+
+nvrhi::GraphicsPipelineHandle Engine::SceneRenderer::GetDebugPipeline(
+	const nvrhi::FramebufferInfo& framebuffer,
+	nvrhi::PrimitiveType primitiveType,
+	Renderer::DebugDepthMode depthMode) {
+	if (!m_DebugVS || !m_DebugPS || !m_DebugBindingLayout) {
+		return nullptr;
+	}
+
+	Engine::PipelineKey key;
+	key.VS = m_DebugVS;
+	key.PS = m_DebugPS;
+	key.PerObjectLayout = m_DebugBindingLayout;
+	key.PrimType = primitiveType;
+	key.InputLayout = {
+		nvrhi::VertexAttributeDesc()
+			.setName("POSITION")
+			.setFormat(nvrhi::Format::RGB32_FLOAT)
+			.setOffset(offsetof(Renderer::DebugVertex, Position))
+			.setElementStride(sizeof(Renderer::DebugVertex)),
+		nvrhi::VertexAttributeDesc()
+			.setName("COLOR")
+			.setFormat(nvrhi::Format::RGBA32_FLOAT)
+			.setOffset(offsetof(Renderer::DebugVertex, Color))
+			.setElementStride(sizeof(Renderer::DebugVertex))
+	};
+	key.DepthTest = depthMode == Renderer::DebugDepthMode::Test;
+	key.DepthWrite = false;
+	key.CullMode = nvrhi::RasterCullMode::None;
+	key.RasterState.setCullNone();
+	key.RasterState.setAntialiasedLineEnable(primitiveType == nvrhi::PrimitiveType::LineList);
+
+	nvrhi::BlendState::RenderTarget blendTarget;
+	blendTarget.enableBlend()
+		.setSrcBlend(nvrhi::BlendFactor::SrcAlpha)
+		.setDestBlend(nvrhi::BlendFactor::InvSrcAlpha)
+		.setSrcBlendAlpha(nvrhi::BlendFactor::One)
+		.setDestBlendAlpha(nvrhi::BlendFactor::InvSrcAlpha);
+	key.BlendState.setRenderTarget(0, blendTarget);
+
+	return m_PipelineCache.GetOrCreatePipeline(key, framebuffer);
+}
+
+void Engine::SceneRenderer::RenderDebugGeometry(nvrhi::ICommandList* commandList,
+	const Renderer::RenderView& view) {
+	if (!commandList || !view.TargetFramebuffer || view.DebugGeometryData.Empty() ||
+		!m_DebugViewBuffer || !m_DebugBindingLayout) {
+		return;
+	}
+
+	const Renderer::DebugGeometry& geometry = view.DebugGeometryData;
+	EnsureDebugBuffer(m_DebugLineBuffer,
+		m_DebugLineBufferCapacity,
+		geometry.GetLineVertices().size(),
+		"DebugLineVertices");
+	EnsureDebugBuffer(m_DebugTriangleBuffer,
+		m_DebugTriangleBufferCapacity,
+		geometry.GetTriangleVertices().size(),
+		"DebugTriangleVertices");
+
+	if ((!geometry.GetLineVertices().empty() && !m_DebugLineBuffer) ||
+		(!geometry.GetTriangleVertices().empty() && !m_DebugTriangleBuffer)) {
+		return;
+	}
+
+	DebugViewData viewData;
+	DirectX::XMStoreFloat4x4(&viewData.ViewProjection,
+		DirectX::XMMatrixTranspose(view.ViewProjection));
+	commandList->writeBuffer(m_DebugViewBuffer, &viewData, sizeof(viewData));
+
+	nvrhi::BindingSetDesc bindingDesc;
+	bindingDesc.addItem(nvrhi::BindingSetItem::ConstantBuffer(0, m_DebugViewBuffer));
+	nvrhi::BindingSetHandle bindings = m_Device->createBindingSet(bindingDesc, m_DebugBindingLayout);
+	if (!bindings) {
+		return;
+	}
+
+	const nvrhi::FramebufferInfo framebufferInfo = view.TargetFramebuffer->getFramebufferInfo();
+	const nvrhi::Viewport viewport = nvrhi::Viewport(
+		static_cast<float>(view.ViewportWidth),
+		static_cast<float>(view.ViewportHeight));
+	const nvrhi::Rect scissor = nvrhi::Rect(view.ViewportWidth, view.ViewportHeight);
+
+	const auto drawVertices = [&](const std::vector<Renderer::DebugVertex>& vertices,
+		nvrhi::BufferHandle vertexBuffer,
+		nvrhi::PrimitiveType primitiveType) {
+		if (vertices.empty() || !vertexBuffer) {
+			return;
+		}
+
+		commandList->writeBuffer(vertexBuffer, vertices.data(), vertices.size() * sizeof(Renderer::DebugVertex));
+		nvrhi::GraphicsPipelineHandle pipeline = GetDebugPipeline(
+			framebufferInfo,
+			primitiveType,
+			view.DebugSettings.DepthMode);
+		if (!pipeline) {
+			return;
+		}
+
+		nvrhi::GraphicsState state;
+		state.pipeline = pipeline;
+		state.framebuffer = view.TargetFramebuffer;
+		state.viewport.addViewport(viewport);
+		state.viewport.addScissorRect(scissor);
+		state.bindings = { bindings };
+		state.vertexBuffers = { nvrhi::VertexBufferBinding{ vertexBuffer, 0, 0 } };
+		commandList->setGraphicsState(state);
+
+		nvrhi::DrawArguments arguments;
+		arguments.vertexCount = static_cast<uint32_t>(vertices.size());
+		arguments.instanceCount = 1;
+		commandList->draw(arguments);
+	};
+
+	drawVertices(geometry.GetTriangleVertices(), m_DebugTriangleBuffer, nvrhi::PrimitiveType::TriangleList);
+	drawVertices(geometry.GetLineVertices(), m_DebugLineBuffer, nvrhi::PrimitiveType::LineList);
 }
 
 

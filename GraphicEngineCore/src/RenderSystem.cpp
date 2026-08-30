@@ -32,7 +32,10 @@ namespace Engine {
 
 		m_MaterialSystem = std::make_unique<Renderer::MaterialSystem>(m_RenderBackend->GetDevice(), m_DefaultVS, m_DefaultPS);
 		m_SceneRenderer = std::make_unique<SceneRenderer>(m_RenderBackend->GetDevice());
-		m_SceneRenderer->Init(m_RenderBackend->GetDevice(), m_MaterialSystem.get());
+		m_SceneRenderer->Init(
+			m_RenderBackend->GetDevice(),
+			m_MaterialSystem.get(),
+			m_ShaderFactory.get());
 
 		m_RenderGraph = std::make_unique<Renderer::RenderGraph>(m_RenderBackend->GetDevice());
 	}
@@ -96,6 +99,7 @@ namespace Engine {
 			view->ViewType = Renderer::RenderView::Type::Main;
 			view->Initialize(binding.SourceCamera, binding.TargetViewport);
 			view->TargetScene = binding.TargetScene;
+			view->DebugSettings = binding.DebugSettings;
 
 			sceneViews.push_back(view.get());
 			m_ViewPool.push_back(std::move(view));
@@ -119,6 +123,7 @@ namespace Engine {
 
 		m_RenderGraph->AddPass(std::make_unique<Renderer::ShadowPass>());
 		m_RenderGraph->AddPass(std::make_unique<Renderer::ForwardPass>());
+		m_RenderGraph->AddPass(std::make_unique<Renderer::DebugPass>(m_SceneRenderer.get()));
 	}
 
 	void RenderSystem::EndFrame() {
