@@ -46,6 +46,7 @@ namespace Engine::Events {
         EntityDeselected,
         SceneChanged,
         ViewportChanged,
+        ViewportClicked,
         ViewportHovered,
         ViewportResizeRequested,
         CameraSettingsChanged,

@@ -148,6 +148,22 @@ namespace Engine {
 
 	}
 
+	std::optional<Engine::LightId> RenderSystem::PickLight(float viewportX, float viewportY) const {
+		if (!m_SceneRenderer) {
+			return std::nullopt;
+		}
+
+		for (const auto& view : m_ViewPool) {
+			if (view && view->ViewType == Renderer::RenderView::Type::Main) {
+				if (const auto lightId = m_SceneRenderer->PickLight(*view, viewportX, viewportY)) {
+					return lightId;
+				}
+			}
+		}
+
+		return std::nullopt;
+	}
+
 	void RenderSystem::ClearFrameBuffer() {
 		if (!m_CommandList) {
 			return;

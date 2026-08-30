@@ -112,6 +112,8 @@ private:
 
 	bool                      m_ViewportHovered = false;
 	bool                      m_DefaultLayoutBuilt = false;
+	bool                      m_ShowDebugLightGizmos = true;
+	bool                      m_ShowDebugWireframePlane = true;
 
 	CommandHistory m_CommandHistory;
 };

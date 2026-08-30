@@ -197,6 +197,11 @@ void Editor::OnSetupViews() {
 		binding.TargetViewport = m_EditorViewport.get();
 		binding.SourceCamera = activeCamera.get();
 		binding.TargetScene = m_ActiveScene.get();
+		binding.DebugSettings.ShowLightGizmos = m_ShowDebugLightGizmos;
+		binding.DebugSettings.ShowWireframePlane = m_ShowDebugWireframePlane;
+		binding.DebugSettings.DepthMode = Renderer::DebugDepthMode::AlwaysOnTop;
+		binding.DebugSettings.SelectedLightId =
+			m_SelectedItemType == SelectedItemType::Light ? m_SelectedLightId : Engine::InvalidLightId;
 
 		RegisterView(binding);
 	}
@@ -503,6 +508,35 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
 
 	dispatcher.Dispatch<ViewportHoveredEvent>([this](const auto& e) {
 		m_ViewportHovered = e.IsHovered();
+		return false;
+		});
+
+	dispatcher.Dispatch<ViewportClickedEvent>([this](const auto& e) {
+		if (!GetRenderSystem() || !m_ActiveScene) {
+			return false;
+		}
+
+		const auto lightId = GetRenderSystem()->PickLight(e.GetX(), e.GetY());
+		if (!lightId) {
+			return false;
+		}
+
+		ProcessPanelEvent(std::make_unique<EntitySelectedEvent>(
+			EntitySelectedEvent::ItemType::Light,
+			-1, -1, -1,
+			Engine::InvalidEntityId, *lightId, Engine::InvalidCameraId));
+		return true;
+		});
+
+	dispatcher.Dispatch<DebugRenderToggledEvent>([this](const auto& e) {
+		switch (e.GetToggle()) {
+		case DebugRenderToggledEvent::Toggle::LightGizmos:
+			m_ShowDebugLightGizmos = e.GetValue();
+			break;
+		case DebugRenderToggledEvent::Toggle::WireframePlane:
+			m_ShowDebugWireframePlane = e.GetValue();
+			break;
+		}
 		return false;
 		});
 

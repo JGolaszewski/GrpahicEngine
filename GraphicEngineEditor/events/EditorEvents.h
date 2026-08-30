@@ -10,6 +10,7 @@
 #include "events/EntityDeselectedEvent.h"
 #include "events/SceneChangedEvent.h"
 #include "events/ViewportChangedEvent.h"
+#include "events/ViewportClickedEvent.h"
 #include "events/ViewportHoveredEvent.h"
 #include "events/ViewportResizeRequestedEvent.h"
 #include "events/CameraSettingsChangedEvent.h"

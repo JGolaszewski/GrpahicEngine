@@ -10,6 +10,7 @@
 #include "renderer/ViewportBinding.h"
 #include <memory>
 #include <functional>
+#include <optional>
 #include <vector>
 
 namespace Engine {
@@ -21,6 +22,7 @@ namespace Engine {
 		void BeginFrame();
 		void SubmitViews(const std::vector<Engine::ViewportBinding>& views);
 		void EndFrame();
+		std::optional<Engine::LightId> PickLight(float viewportX, float viewportY) const;
 
 		void ExecuteImmediate(std::function<void(nvrhi::ICommandList*)> fn);
 

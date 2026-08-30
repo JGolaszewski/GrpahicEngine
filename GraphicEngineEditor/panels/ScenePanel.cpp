@@ -49,8 +49,19 @@ void ScenePanel::Draw() {
     }
 
     const ImVec2 viewportPanelSize = ImGui::GetContentRegionAvail();
+    const ImVec2 viewportImagePosition = ImGui::GetCursorScreenPos();
     if (m_TextureId) {
         ImGui::Image(m_TextureId, viewportPanelSize);
+
+        if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+            const ImVec2 mousePosition = ImGui::GetIO().MousePos;
+            const float viewportX = mousePosition.x - viewportImagePosition.x;
+            const float viewportY = mousePosition.y - viewportImagePosition.y;
+            if (viewportX >= 0.0f && viewportY >= 0.0f &&
+                viewportX < viewportPanelSize.x && viewportY < viewportPanelSize.y) {
+                EmitEvent(std::make_unique<ViewportClickedEvent>(viewportX, viewportY));
+            }
+        }
     }
     else {
         ImGui::TextDisabled("Viewport not available");

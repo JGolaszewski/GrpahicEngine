@@ -5,6 +5,7 @@
 #include <vector>
 #include <unordered_map>
 #include <nvrhi/nvrhi.h>
+#include <optional>
 
 #include "renderer/Entity.h"
 #include "renderer/Light.h"
@@ -41,6 +42,9 @@ namespace Engine {
 		void BuildViews(Renderer::FrameBlackboard& blackboard, nvrhi::ICommandList* commandList);
 		void BuildDebugGeometry(Renderer::RenderView* view);
 		void RenderDebugGeometry(nvrhi::ICommandList* commandList, const Renderer::RenderView& view);
+		std::optional<Engine::LightId> PickLight(const Renderer::RenderView& view,
+			float viewportX,
+			float viewportY) const;
 		void BuildLighting(Engine::Scene* scene, Renderer::FrameBlackboard& blackboard);
 		void BuildShadowData(Engine::Scene* scene, Renderer::FrameBlackboard& blackboard);
 

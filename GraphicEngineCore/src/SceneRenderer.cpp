@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <iostream>
+#include <limits>
 
 #include "renderer/Entity.h"
 #include "renderer/Mesh.h"
@@ -21,6 +22,15 @@ namespace {
 	struct DebugViewData {
 		DirectX::XMFLOAT4X4 ViewProjection;
 	};
+
+	DirectX::XMVECTOR NormalizeOrDefault(const DirectX::XMFLOAT3& value) {
+		DirectX::XMVECTOR vector = DirectX::XMLoadFloat3(&value);
+		const float lengthSquared = DirectX::XMVectorGetX(DirectX::XMVector3LengthSq(vector));
+		if (!std::isfinite(lengthSquared) || lengthSquared < 1e-6f) {
+			return DirectX::XMVectorSet(0.0f, -1.0f, 0.0f, 0.0f);
+		}
+		return DirectX::XMVector3Normalize(vector);
+	}
 
 	static_assert(sizeof(PerObjectData) == Engine::SceneRenderer::PerObjectDataStride);
 
@@ -269,6 +279,108 @@ void Engine::SceneRenderer::RenderDebugGeometry(nvrhi::ICommandList* commandList
 
 	drawVertices(geometry.GetTriangleVertices(), m_DebugTriangleBuffer, nvrhi::PrimitiveType::TriangleList);
 	drawVertices(geometry.GetLineVertices(), m_DebugLineBuffer, nvrhi::PrimitiveType::LineList);
+}
+
+std::optional<Engine::LightId> Engine::SceneRenderer::PickLight(
+	const Renderer::RenderView& view,
+	float viewportX,
+	float viewportY) const {
+	if (view.ViewportWidth == 0 || view.ViewportHeight == 0 ||
+		viewportX < 0.0f || viewportY < 0.0f ||
+		viewportX >= static_cast<float>(view.ViewportWidth) ||
+		viewportY >= static_cast<float>(view.ViewportHeight)) {
+		return std::nullopt;
+	}
+
+	const float ndcX = viewportX / static_cast<float>(view.ViewportWidth) * 2.0f - 1.0f;
+	const float ndcY = 1.0f - viewportY / static_cast<float>(view.ViewportHeight) * 2.0f;
+	const DirectX::XMMATRIX inverseViewProjection = DirectX::XMMatrixInverse(nullptr, view.ViewProjection);
+	const DirectX::XMVECTOR clipNear = DirectX::XMVectorSet(ndcX, ndcY, 0.0f, 1.0f);
+	const DirectX::XMVECTOR clipFar = DirectX::XMVectorSet(ndcX, ndcY, 1.0f, 1.0f);
+	DirectX::XMVECTOR rayOrigin = DirectX::XMVector4Transform(clipNear, inverseViewProjection);
+	DirectX::XMVECTOR rayEnd = DirectX::XMVector4Transform(clipFar, inverseViewProjection);
+	const float originW = DirectX::XMVectorGetW(rayOrigin);
+	const float endW = DirectX::XMVectorGetW(rayEnd);
+	if (!std::isfinite(originW) || !std::isfinite(endW) ||
+		std::abs(originW) < 1e-5f || std::abs(endW) < 1e-5f) {
+		return std::nullopt;
+	}
+
+	rayOrigin = DirectX::XMVectorScale(rayOrigin, 1.0f / originW);
+	rayEnd = DirectX::XMVectorScale(rayEnd, 1.0f / endW);
+	const DirectX::XMVECTOR rayDirection = DirectX::XMVector3Normalize(
+		DirectX::XMVectorSubtract(rayEnd, rayOrigin));
+	const auto& targets = view.DebugGeometryData.GetLightTargets();
+	float closestDistance = std::numeric_limits<float>::max();
+	Engine::LightId closestLight = Engine::InvalidLightId;
+
+	for (const Renderer::DebugLightTarget& target : targets) {
+		const DirectX::XMVECTOR axis = NormalizeOrDefault(target.Direction);
+		const DirectX::XMVECTOR offset = DirectX::XMVectorSubtract(
+			rayOrigin,
+			DirectX::XMLoadFloat3(&target.Position));
+		const float axisRayDot = DirectX::XMVectorGetX(DirectX::XMVector3Dot(axis, rayDirection));
+		const float axisOffsetDot = DirectX::XMVectorGetX(DirectX::XMVector3Dot(axis, offset));
+
+		const float safeRange = std::max(target.Range, 0.25f);
+		const float coneSlope = std::tan(std::clamp(target.OuterAngleRadians, 0.0f, DirectX::XM_PIDIV2 - 0.001f));
+		const float quadraticA = 1.0f - axisRayDot * axisRayDot * (1.0f + coneSlope * coneSlope);
+		const float quadraticB = 2.0f * (DirectX::XMVectorGetX(DirectX::XMVector3Dot(offset, rayDirection)) -
+			axisOffsetDot * axisRayDot * (1.0f + coneSlope * coneSlope));
+		const float quadraticC = DirectX::XMVectorGetX(DirectX::XMVector3Dot(offset, offset)) -
+			axisOffsetDot * axisOffsetDot * (1.0f + coneSlope * coneSlope);
+
+		float hitDistance = std::numeric_limits<float>::max();
+		if (std::abs(quadraticA) < 1e-6f) {
+			if (std::abs(quadraticB) > 1e-6f) {
+				hitDistance = -quadraticC / quadraticB;
+			}
+		}
+		else {
+			const float discriminant = quadraticB * quadraticB - 4.0f * quadraticA * quadraticC;
+			if (discriminant >= 0.0f) {
+				const float sqrtDiscriminant = std::sqrt(discriminant);
+				const float rootA = (-quadraticB - sqrtDiscriminant) / (2.0f * quadraticA);
+				const float rootB = (-quadraticB + sqrtDiscriminant) / (2.0f * quadraticA);
+				if (rootA > 0.0f) hitDistance = rootA;
+				if (rootB > 0.0f) hitDistance = std::min(hitDistance, rootB);
+			}
+		}
+
+		if (hitDistance == std::numeric_limits<float>::max()) {
+			const float sphereRadius = std::max(0.2f, safeRange * 0.025f);
+			const float sphereA = DirectX::XMVectorGetX(DirectX::XMVector3Dot(rayDirection, rayDirection));
+			const float sphereB = 2.0f * DirectX::XMVectorGetX(DirectX::XMVector3Dot(offset, rayDirection));
+			const float sphereC = DirectX::XMVectorGetX(DirectX::XMVector3Dot(offset, offset)) - sphereRadius * sphereRadius;
+			const float sphereDiscriminant = sphereB * sphereB - 4.0f * sphereA * sphereC;
+			if (sphereDiscriminant >= 0.0f) {
+				const float sphereRoot = (-sphereB - std::sqrt(sphereDiscriminant)) / (2.0f * sphereA);
+				if (sphereRoot > 0.0f) hitDistance = sphereRoot;
+			}
+		}
+
+		if (hitDistance <= 0.0f || hitDistance >= std::numeric_limits<float>::max()) {
+			continue;
+		}
+
+		const DirectX::XMVECTOR hitPoint = DirectX::XMVectorAdd(
+			rayOrigin,
+			DirectX::XMVectorScale(rayDirection, hitDistance));
+		const float hitAxialDistance = DirectX::XMVectorGetX(DirectX::XMVector3Dot(
+			DirectX::XMVectorSubtract(hitPoint, DirectX::XMLoadFloat3(&target.Position)), axis));
+		if (hitAxialDistance < -0.25f || hitAxialDistance > safeRange + 0.25f) {
+			continue;
+		}
+
+		if (hitDistance < closestDistance) {
+			closestDistance = hitDistance;
+			closestLight = target.Id;
+		}
+	}
+
+	return closestLight == Engine::InvalidLightId
+		? std::nullopt
+		: std::optional<Engine::LightId>(closestLight);
 }
 
 

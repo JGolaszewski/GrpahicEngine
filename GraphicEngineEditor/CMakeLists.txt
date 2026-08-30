@@ -20,6 +20,7 @@ add_executable(Editor
     "events/EntityDeselectedEvent.h"
     "events/SceneChangedEvent.h"
     "events/ViewportChangedEvent.h"
+    "events/ViewportClickedEvent.h"
     "events/ViewportHoveredEvent.h"
     "events/ViewportResizeRequestedEvent.h"
     "events/CameraSettingsChangedEvent.h"
