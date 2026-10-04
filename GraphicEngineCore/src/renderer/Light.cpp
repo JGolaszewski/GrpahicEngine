@@ -14,6 +14,20 @@ namespace Renderer {
         m_Direction = direction;
     }
 
+    void SpotLight::LookAt(const DirectX::XMFLOAT3& target) {
+        using namespace DirectX;
+
+        const XMVECTOR position = XMLoadFloat3(&m_Position);
+        const XMVECTOR targetPosition = XMLoadFloat3(&target);
+        const XMVECTOR offset = XMVectorSubtract(targetPosition, position);
+        const float lengthSquared = XMVectorGetX(XMVector3LengthSq(offset));
+        if (!std::isfinite(lengthSquared) || lengthSquared < 1e-6f) {
+            return;
+        }
+
+        XMStoreFloat3(&m_Direction, XMVector3Normalize(offset));
+    }
+
     void SpotLight::SetPosition(const DirectX::XMFLOAT3& position) {
         m_Position = position;
     }

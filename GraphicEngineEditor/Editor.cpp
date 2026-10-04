@@ -1,6 +1,13 @@
 #include "Editor.h"
 
+#include "Scene.h"
+#include "PrimitiveFactory.h"
+#include "ViewportTarget.h"
+#include "renderer/Camera.h"
+#include "renderer/Entity.h"
 #include "renderer/Light.h"
+#include "renderer/Material.h"
+#include "renderer/Viewport.h"
 #include "panels/HierarchyPanel.h"
 #include "panels/InspectorPanel.h"
 #include "panels/ScenePanel.h"
@@ -8,11 +15,9 @@
 #include "panels/StatisticsPanel.h"
 #include "events/EditorEvents.h"
 
-#include <algorithm>
-#include <cmath>
+#include <DirectXMath.h>
 #include <imgui.h>
 #include <imgui_internal.h>
-#include <iostream>
 
 void Editor::OnInit() {
 	ImGui::SetCurrentContext(GetImGuiContext());
@@ -42,15 +47,10 @@ void Editor::OnInit() {
 	demoMaterialProperties.BaseColor = { 0.25f, 0.55f, 0.95f, 1.0f };
 	demoMaterialProperties.Roughness = 0.45f;
 	auto demoMaterial = GetRenderSystem()->GetMaterialSystem()->CreateMaterial(demoMaterialProperties);
-	std::shared_ptr<Renderer::Entity> demoCube;
-	ExecuteImmediate([this, demoMaterial, &demoCube](nvrhi::ICommandList* commandList) {
-		Renderer::EntityBuilder builder(GetRenderer()->GetDevice(), commandList);
-		demoCube = builder
-			.Cube()
-			.SetMaterial(demoMaterial)
-			.Position(0.0f, 0.0f, 0.0f)
-			.Build();
-	});
+	auto demoCube = GetRenderSystem()->CreatePrimitive(
+		Engine::PrimitiveShape::Cube,
+		demoMaterial,
+		DirectX::XMFLOAT3(0.0f, 0.0f, 0.0f));
 	if (demoCube) {
 		m_ActiveScene->AddEntity(demoCube);
 	}
@@ -62,16 +62,13 @@ void Editor::OnInit() {
 	};
 
 	for (int i = 0; i < 2; ++i) {
-		const DirectX::XMFLOAT3 lightDirection(
-			objectPositions[i].x - lightPositions[i].x,
-			objectPositions[i].y - lightPositions[i].y,
-			objectPositions[i].z - lightPositions[i].z
-		);
-
-		auto light = std::make_shared<Renderer::SpotLight>(lightDirection, DirectX::XMFLOAT3(1.0f, 0.96f, 0.9f), 8.5f);
+		auto light = std::make_shared<Renderer::SpotLight>(
+			DirectX::XMFLOAT3(0.0f, -1.0f, 0.0f),
+			DirectX::XMFLOAT3(1.0f, 0.96f, 0.9f),
+			8.5f);
 		light->SetUsePosition(true);
 		light->SetPosition(lightPositions[i]);
-		light->SetDirection(lightDirection);
+		light->LookAt(objectPositions[i]);
 		light->SetRange(lightRanges[i]);
 		light->SetConeAngles(coneAngles[i].x, coneAngles[i].y);
 		light->SetCastShadows(true);
@@ -114,79 +111,32 @@ void Editor::CreateViewport(uint32_t width, uint32_t height) {
 
 	DestroyViewport();
 
-	auto* device = GetRenderer()->GetDevice();
-
-	nvrhi::TextureDesc colorDesc;
-	colorDesc.width = width;
-	colorDesc.height = height;
-	colorDesc.format = nvrhi::Format::RGBA8_UNORM;
-	colorDesc.isRenderTarget = true;
-	colorDesc.isShaderResource = true;
-	colorDesc.initialState = nvrhi::ResourceStates::RenderTarget;
-	colorDesc.keepInitialState = true;
-	colorDesc.debugName = "ViewportColor";
-
-	m_ViewportColorTexture = device->createTexture(colorDesc);
-	if (!m_ViewportColorTexture) {
-		std::cerr << "ERROR: Failed to create viewport color texture." << std::endl;
+	if (!GetRenderSystem()) {
 		return;
 	}
 
-	nvrhi::TextureDesc depthDesc;
-	depthDesc.width = width;
-	depthDesc.height = height;
-	depthDesc.depth = 1;
-	depthDesc.arraySize = 1;
-	depthDesc.mipLevels = 1;
-	depthDesc.format = nvrhi::Format::D24S8;
-	depthDesc.sampleCount = 1;
-	depthDesc.sampleQuality = 0;
-	depthDesc.isRenderTarget = true;
-	depthDesc.isUAV = false;
-	depthDesc.isShaderResource = false;
-	depthDesc.initialState = nvrhi::ResourceStates::DepthWrite;
-	depthDesc.keepInitialState = true;
-	depthDesc.debugName = "ViewportDepth";
-
-	m_ViewportDepthTexture = device->createTexture(depthDesc);
-	if (!m_ViewportDepthTexture) {
-		std::cerr << "ERROR: Failed to create viewport depth texture." << std::endl;
+	auto target = GetRenderSystem()->CreateViewportTarget(width, height);
+	if (!target) {
 		return;
 	}
-
-	nvrhi::FramebufferDesc framebufferDesc;
-	framebufferDesc.addColorAttachment(m_ViewportColorTexture);
-	framebufferDesc.setDepthAttachment(m_ViewportDepthTexture);
-	m_ViewportFramebuffer = device->createFramebuffer(framebufferDesc);
-
-	if (!m_ViewportFramebuffer) {
-		std::cerr << "ERROR: Failed to create viewport framebuffer." << std::endl;
-		return;
-	}
-
-	nvrhi::Object nativeView = m_ViewportColorTexture->getNativeView(nvrhi::ObjectTypes::D3D11_ShaderResourceView);
-	m_ViewportSRV = static_cast<ID3D11ShaderResourceView*>(nativeView);
 
 	m_ViewportSize = std::pair<float, float>(static_cast<float>(width), static_cast<float>(height));
-
-	// Update or recreate the Application Viewport object with the new Framebuffer
-	if (m_EditorViewport) {
-		RemoveViewport(m_EditorViewport);
-	}
-	m_EditorViewport = std::make_shared<Engine::Viewport>(width, height, m_ViewportFramebuffer.Get());
+	m_EditorViewportTarget = std::move(target);
+	m_EditorViewport = std::make_shared<Engine::Viewport>(m_EditorViewportTarget);
 	AddViewport(m_EditorViewport);
 }
 
 void Editor::DestroyViewport() {
-	m_ViewportSRV.Reset();
-	m_ViewportFramebuffer = nullptr;
-	m_ViewportDepthTexture = nullptr;
-	m_ViewportColorTexture = nullptr;
+	if (m_EditorViewport) {
+		RemoveViewport(m_EditorViewport);
+	}
+	m_EditorViewport.reset();
+	m_EditorViewportTarget.reset();
 	m_ViewportSize = std::pair<float, float>(0.0f, 0.0f);
 }
 
 void* Editor::GetViewportTextureID() const {
-	return m_ViewportSRV.Get();
+	return m_EditorViewportTarget ? m_EditorViewportTarget->GetTextureId() : nullptr;
 }
 
 void Editor::OnSetupViews() {
@@ -217,53 +167,29 @@ void Editor::OnUpdate(float deltaTime) {
 		};
 
 	const auto activeCamera = GetActiveCamera();
-	if (activeCamera) {
-		ImGuiIO& io = ImGui::GetIO();
+	const bool rightMouseDown = mouseDown(Engine::Events::MouseButton::Right);
+	const ImGuiIO& io = ImGui::GetIO();
 
-		const bool rightMouseDown = mouseDown(Engine::Events::MouseButton::Right);
-		const bool shouldHideCursor = rightMouseDown && m_ViewportHovered;
-		if (GetWindow() && shouldHideCursor != m_CursorHidden) {
-			GetWindow()->SetCursorVisible(!shouldHideCursor);
-			m_CursorHidden = shouldHideCursor;
-		}
+	Engine::EditorCameraController::InputState input;
+	input.MoveForward = keyDown(Engine::Events::KeyCode::W);
+	input.MoveBackward = keyDown(Engine::Events::KeyCode::S);
+	input.MoveRight = keyDown(Engine::Events::KeyCode::D);
+	input.MoveLeft = keyDown(Engine::Events::KeyCode::A);
+	input.MoveUp = keyDown(Engine::Events::KeyCode::E);
+	input.MoveDown = keyDown(Engine::Events::KeyCode::Q);
+	input.RightMouseDown = rightMouseDown;
+	input.ViewportHovered = m_ViewportHovered;
+	input.TextInputActive = io.WantTextInput;
 
-		const bool viewportActive = m_ViewportHovered && !io.WantTextInput;
-		if (viewportActive) {
-			const float moveSpeed = 8.0f;
-			const float step = moveSpeed * deltaTime;
+	m_CameraController.SetCamera(activeCamera.get());
+	m_CameraController.SetInput(input);
+	m_CameraController.Update(deltaTime);
 
-			float moveForward = 0.0f;
-			float moveRight = 0.0f;
-			float moveUp = 0.0f;
-
-			if (keyDown(Engine::Events::KeyCode::W)) moveForward += 1.0f;
-			if (keyDown(Engine::Events::KeyCode::S)) moveForward -= 1.0f;
-			if (keyDown(Engine::Events::KeyCode::D)) moveRight += 1.0f;
-			if (keyDown(Engine::Events::KeyCode::A)) moveRight -= 1.0f;
-			if (keyDown(Engine::Events::KeyCode::E)) moveUp += 1.0f;
-			if (keyDown(Engine::Events::KeyCode::Q)) moveUp -= 1.0f;
-
-			const float sinYaw = std::sin(m_Yaw);
-			const float cosYaw = std::cos(m_Yaw);
-
-			auto& position = activeCamera->m_Transform.Position;
-			position.x += (sinYaw * moveForward + cosYaw * moveRight) * step;
-			position.z += (cosYaw * moveForward - sinYaw * moveRight) * step;
-			position.y += moveUp * step;
-		}
-
-		if (rightMouseDown && m_ViewportHovered) {
-			const float sensitivity = 0.0035f;
-			m_Yaw += m_MouseDeltaX * sensitivity;
-			m_Pitch += m_MouseDeltaY * sensitivity;
-			m_Pitch = std::clamp(m_Pitch, -1.5f, 1.5f);
-
-			activeCamera->m_Transform.SetRotation(m_Pitch, m_Yaw, 0.0f);
-		}
+	const bool shouldHideCursor = activeCamera && m_CameraController.ShouldCaptureCursor();
+	if (GetWindow() && shouldHideCursor != m_CursorHidden) {
+		GetWindow()->SetCursorVisible(!shouldHideCursor);
+		m_CursorHidden = shouldHideCursor;
 	}
-
-	m_MouseDeltaX = 0.0f;
-	m_MouseDeltaY = 0.0f;
 }
 
 void Editor::OnEvent(Engine::Events::Event& event) {
@@ -317,23 +243,24 @@ void Editor::OnEvent(Engine::Events::Event& event) {
 		});
 
 	dispatcher.Dispatch<Engine::Events::MouseMovedEvent>([this](const auto& mouseMovedEvent) {
-		m_MouseDeltaX += static_cast<float>(mouseMovedEvent.DeltaX);
-		m_MouseDeltaY += static_cast<float>(mouseMovedEvent.DeltaY);
+		m_CameraController.AddMouseDelta(
+			static_cast<float>(mouseMovedEvent.DeltaX),
+			static_cast<float>(mouseMovedEvent.DeltaY));
 		return false;
 		});
 
 	dispatcher.Dispatch<Engine::Events::MouseScrolledEvent>([this](const auto& mouseScrolledEvent) {
-		if (ImGui::GetIO().WantCaptureMouse || !m_ViewportHovered || !GetActiveCamera()) {
+		if (ImGui::GetIO().WantCaptureMouse || !m_ViewportHovered) {
 			return false;
 		}
 
-		constexpr float zoomSensitivity = 0.05f;
-		const float     minFov = DirectX::XMConvertToRadians(20.0f);
-		const float     maxFov = DirectX::XMConvertToRadians(90.0f);
+		const auto activeCamera = GetActiveCamera();
+		m_CameraController.SetCamera(activeCamera.get());
+		if (!m_CameraController.Zoom(static_cast<float>(mouseScrolledEvent.YOffset))) {
+			return false;
+		}
 
-		m_CameraFov -= static_cast<float>(mouseScrolledEvent.YOffset) * zoomSensitivity;
-		m_CameraFov = std::clamp(m_CameraFov, minFov, maxFov);
-
+		m_CameraFov = activeCamera->GetFovRadians();
 		UpdateProjection();
 		return true;
 		});
@@ -346,12 +273,7 @@ void Editor::OnRender() {
 void Editor::OnResize(uint32_t width, uint32_t height) {
 	if (width == 0 || height == 0) return;
 
-	auto* defaultFramebuffer = GetRenderer()->GetDefaultFramebuffer();
-	if (defaultFramebuffer) {
-		const auto& info = defaultFramebuffer->getFramebufferInfo();
-		CreateViewport(info.width, info.height);
-	}
-
+	CreateViewport(width, height);
 	UpdateProjection();
 	BroadcastViewportChanged();
 }
@@ -413,8 +335,10 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
 		});
 
 	dispatcher.Dispatch<AddObjectRequestedEvent>([this](const auto& e) {
-		auto* device = GetRenderer()->GetDevice();
-		DirectX::XMFLOAT3 spawnPosition = e.GetPosition();
+		if (!m_ActiveScene || !GetRenderSystem()) {
+			return false;
+		}
+
 		Renderer::MaterialProperties materialProperties;
 		materialProperties.BaseColor = e.GetColor();
 		materialProperties.Emissive = e.GetEmissive();
@@ -422,41 +346,21 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
 		materialProperties.Roughness = e.GetRoughness();
 		auto material = GetRenderSystem()->GetMaterialSystem()->CreateMaterial(materialProperties);
 
-		auto intersectsExisting = [this](const DirectX::XMFLOAT3& position) {
-			if (!m_ActiveScene) return false;
-			for (const auto& entity : m_ActiveScene->GetEntities()) {
-				if (!entity) continue;
-				const auto& existingPos = entity->transform.Position;
-				const float dx = existingPos.x - position.x;
-				const float dy = existingPos.y - position.y;
-				const float dz = existingPos.z - position.z;
-				if ((dx * dx + dy * dy + dz * dz) < 4.0f) return true;
-			}
-			return false;
-			};
-
-		for (int i = 0; i < 32 && intersectsExisting(spawnPosition); ++i) {
-			spawnPosition.x += 2.5f;
+		const DirectX::XMFLOAT3 spawnPosition = m_ActiveScene->FindFreeSpawnPosition(e.GetPosition());
+		Engine::PrimitiveShape shape;
+		switch (e.GetShape()) {
+		case AddObjectRequestedEvent::Shape::Cube:   shape = Engine::PrimitiveShape::Cube;   break;
+		case AddObjectRequestedEvent::Shape::Sphere: shape = Engine::PrimitiveShape::Sphere; break;
+		case AddObjectRequestedEvent::Shape::Plane:  shape = Engine::PrimitiveShape::Plane;  break;
+		case AddObjectRequestedEvent::Shape::Cone:   shape = Engine::PrimitiveShape::Cone;   break;
+		default: return false;
 		}
 
-		std::shared_ptr<Renderer::Entity> createdEntity;
-		ExecuteImmediate([device, spawnPosition, e, material, &createdEntity](nvrhi::ICommandList* cmd) {
-			Renderer::EntityBuilder builder(device, cmd);
-
-			switch (e.GetShape()) {
-			case AddObjectRequestedEvent::Shape::Cube:   builder.Cube();   break;
-			case AddObjectRequestedEvent::Shape::Sphere: builder.Sphere(); break;
-			case AddObjectRequestedEvent::Shape::Plane:  builder.Plane();  break;
-			case AddObjectRequestedEvent::Shape::Cone:   builder.Cone(20); break;
-			}
-
-			auto builtEntity = builder
-				.Position(spawnPosition.x, spawnPosition.y, spawnPosition.z)
-				.Scale(e.GetScale().x, e.GetScale().y, e.GetScale().z)
-				.SetMaterial(material)
-				.Build();
-			createdEntity = std::move(builtEntity);
-			});
+		auto createdEntity = GetRenderSystem()->CreatePrimitive(
+			shape,
+			std::move(material),
+			spawnPosition,
+			e.GetScale());
 
 		if (!createdEntity) {
 			return false;

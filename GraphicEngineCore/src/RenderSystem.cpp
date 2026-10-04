@@ -2,6 +2,7 @@
 #include "renderer/render_graph/RenderPass.h"
 
 #include <iostream>
+#include <utility>
 
 namespace Renderer {
 	class Camera;
@@ -36,8 +37,32 @@ namespace Engine {
 			m_RenderBackend->GetDevice(),
 			m_MaterialSystem.get(),
 			m_ShaderFactory.get());
+		m_PrimitiveFactory = std::unique_ptr<Engine::PrimitiveFactory>(
+			new Engine::PrimitiveFactory(m_RenderBackend->GetDevice()));
 
 		m_RenderGraph = std::make_unique<Renderer::RenderGraph>(m_RenderBackend->GetDevice());
+	}
+
+	std::shared_ptr<Engine::ViewportTarget> RenderSystem::CreateViewportTarget(uint32_t width, uint32_t height) {
+		if (!m_RenderBackend || !m_RenderBackend->GetDevice()) {
+			return nullptr;
+		}
+
+		auto target = std::shared_ptr<Engine::ViewportTarget>(
+			new Engine::ViewportTarget(m_RenderBackend->GetDevice(), width, height));
+		return target->IsValid() ? target : nullptr;
+	}
+
+	std::shared_ptr<Renderer::Entity> RenderSystem::CreatePrimitive(
+		Engine::PrimitiveShape shape,
+		std::shared_ptr<Renderer::Material> material,
+		const DirectX::XMFLOAT3& position,
+		const DirectX::XMFLOAT3& scale) {
+		if (m_FrameActive || !m_PrimitiveFactory) {
+			return nullptr;
+		}
+
+		return m_PrimitiveFactory->CreatePrimitive(shape, std::move(material), position, scale);
 	}
 
 	void RenderSystem::ExecuteImmediate(std::function<void(nvrhi::ICommandList*)> fn) {

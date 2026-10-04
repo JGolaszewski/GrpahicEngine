@@ -3,6 +3,8 @@
 #include "renderer/Entity.h"
 #include "renderer/Light.h"
 
+#include <algorithm>
+
 namespace Engine {
 
 	EntityId Scene::AddEntity(std::shared_ptr<Renderer::Entity> entity)
@@ -57,6 +59,43 @@ namespace Engine {
 			if (m_EntityIds[index] == id) return m_Entities[index];
 		}
 		return nullptr;
+	}
+
+	DirectX::XMFLOAT3 Scene::FindFreeSpawnPosition(
+		const DirectX::XMFLOAT3& initialPosition,
+		float minimumDistance,
+		float horizontalStep,
+		uint32_t maxAttempts) const
+	{
+		const float safeDistance = (std::max)(minimumDistance, 0.0f);
+		const float safeStep = (std::max)(horizontalStep, 0.0f);
+		const float minimumDistanceSquared = safeDistance * safeDistance;
+		DirectX::XMFLOAT3 candidate = initialPosition;
+
+		const auto intersectsExistingEntity = [this, minimumDistanceSquared](
+			const DirectX::XMFLOAT3& position) {
+			for (const auto& entity : m_Entities) {
+				if (!entity) {
+					continue;
+				}
+
+				const DirectX::XMFLOAT3& existingPosition = entity->transform.Position;
+				const float dx = existingPosition.x - position.x;
+				const float dy = existingPosition.y - position.y;
+				const float dz = existingPosition.z - position.z;
+				if ((dx * dx + dy * dy + dz * dz) < minimumDistanceSquared) {
+					return true;
+				}
+			}
+
+			return false;
+		};
+
+		for (uint32_t attempt = 0; attempt < maxAttempts && intersectsExistingEntity(candidate); ++attempt) {
+			candidate.x += safeStep;
+		}
+
+		return candidate;
 	}
 
 	LightId Scene::AddLight(std::shared_ptr<Renderer::SpotLight> light)

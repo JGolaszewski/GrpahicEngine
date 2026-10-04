@@ -2,25 +2,27 @@
 
 #include "Application.h"
 #include "panels/EditorPanel.h"
+#include "EditorCameraController.h"
 #include <imgui.h>
-#include "renderer/Camera.h"
-#include "renderer/Entity.h"
-#include "renderer/Light.h"
-#include "renderer/Material.h"
-#include "renderer/Mesh.h"
-#include "renderer/Viewport.h"
 #include <array>
 #include <cstdint>
 #include <memory>
 #include <vector>
 #include <utility>
-#include <wrl/client.h>
-#include <d3d11.h>
-#include <nvrhi/nvrhi.h>
 #include "commands/CommandHistory.h"
 
 namespace Engine::Events {
 	class Event;
+}
+
+namespace Renderer {
+	class Camera;
+}
+
+namespace Engine {
+	class Scene;
+	class Viewport;
+	class ViewportTarget;
 }
 
 class Editor : public Engine::Application {
@@ -81,24 +83,15 @@ private:
 	// ------------------------------------------------------------------------
 	std::shared_ptr<Engine::Scene>    m_ActiveScene;
 	std::shared_ptr<Engine::Viewport> m_EditorViewport;
+	std::shared_ptr<Engine::ViewportTarget> m_EditorViewportTarget;
 	Engine::CameraId m_ActiveCameraId = Engine::InvalidCameraId;
 
 	std::vector<std::unique_ptr<EditorPanel>> m_Windows;
 
-	// Viewport NVRHI handles
-	nvrhi::TextureHandle                             m_ViewportColorTexture;
-	nvrhi::TextureHandle                             m_ViewportDepthTexture;
-	nvrhi::FramebufferHandle                         m_ViewportFramebuffer;
-	Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> m_ViewportSRV;
-	std::pair<float, float>                          m_ViewportSize = { 0.0f, 0.0f };
+	std::pair<float, float> m_ViewportSize = { 0.0f, 0.0f };
 
 	std::array<bool, static_cast<size_t>(Engine::Events::KeyCode::Count)>     m_KeyDown{};
 	std::array<bool, static_cast<size_t>(Engine::Events::MouseButton::Count)> m_MouseButtonDown{};
-
-	float m_MouseDeltaX = 0.0f;
-	float m_MouseDeltaY = 0.0f;
-	float m_Yaw = 0.0f;
-	float m_Pitch = 0.0f;
 
 	float m_CameraFov = 0.785398f; // XM_PIDIV4
 	float m_CameraNearPlane = 0.1f;
@@ -114,6 +107,8 @@ private:
 	bool                      m_DefaultLayoutBuilt = false;
 	bool                      m_ShowDebugLightGizmos = true;
 	bool                      m_ShowDebugWireframePlane = true;
+
+	Engine::EditorCameraController m_CameraController;
 
 	CommandHistory m_CommandHistory;
 };

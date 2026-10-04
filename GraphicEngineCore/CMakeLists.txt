@@ -45,10 +45,13 @@ set(CORE_HEADERS
     include/backends/D3D11Backend.h
     include/components/Transform.h
     include/CoreExport.h
+    include/EditorCameraController.h
     include/events/Event.h
     include/Logging.h
     include/PipelineCache.h
+    include/PrimitiveFactory.h
     include/RenderBackend.h
+    include/ViewportTarget.h
     include/renderer/Camera.h
     include/renderer/DebugGeometry.h
     include/renderer/Entity.h
@@ -80,7 +83,9 @@ set(CORE_SOURCES
     src/Application.cpp
     src/backends/D3D11Backend.cpp
     src/components/Transform.cpp
+    src/EditorCameraController.cpp
     src/PipelineCache.cpp
+    src/PrimitiveFactory.cpp
     src/renderer/Camera.cpp
     src/renderer/DebugGeometry.cpp
     src/renderer/Entity.cpp
@@ -97,6 +102,7 @@ set(CORE_SOURCES
     src/renderer/render_graph/RGResources.cpp
     src/renderer/ShaderFactory.cpp
     src/renderer/Viewport.cpp
+    src/ViewportTarget.cpp
     src/RenderSystem.cpp
     src/Scene.cpp
     src/SceneRenderer.cpp

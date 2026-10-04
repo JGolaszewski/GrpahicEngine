@@ -48,6 +48,7 @@ namespace Renderer {
         SpotLight(const DirectX::XMFLOAT3& direction, const DirectX::XMFLOAT3& color, float intensity);
 
         void SetDirection(const DirectX::XMFLOAT3& direction);
+        void LookAt(const DirectX::XMFLOAT3& target);
         void SetPosition(const DirectX::XMFLOAT3& position);
         void SetUsePosition(bool usePosition);
         void SetColor(const DirectX::XMFLOAT3& color);

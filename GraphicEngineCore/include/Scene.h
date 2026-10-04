@@ -2,6 +2,7 @@
 
 #include "CoreExport.h"
 
+#include <DirectXMath.h>
 #include <vector>
 #include <memory>
 #include <span>
@@ -37,6 +38,11 @@ namespace Engine {
 		EntityId GetEntityIdAt(size_t index) const;
 		EntityId GetEntityId(const Renderer::Entity* entity) const;
 		std::shared_ptr<Renderer::Entity> FindEntity(EntityId id) const;
+		DirectX::XMFLOAT3 FindFreeSpawnPosition(
+			const DirectX::XMFLOAT3& initialPosition,
+			float minimumDistance = 2.0f,
+			float horizontalStep = 2.5f,
+			uint32_t maxAttempts = 32) const;
 
 		// Lights
 		LightId AddLight(std::shared_ptr<Renderer::SpotLight> light);
