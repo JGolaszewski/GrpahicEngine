@@ -188,7 +188,9 @@ float4 main_ps(VS_OUTPUT input) : SV_TARGET
         else
         {
             const BrdfQuery query = BuildBrdfQuery(N, V, L);
-            const float3 brdf = EvaluateGgxBrdf(query, g_BaseColor.rgb, metallic, dielectricF0, alpha);
+            const float3 brdf = g_ModelFlags.y == 2u
+                ? EvaluateGtrBrdf(query, g_BaseColor.rgb, metallic, dielectricF0, alpha, g_SurfaceParams.z)
+                : EvaluateGgxBrdf(query, g_BaseColor.rgb, metallic, dielectricF0, alpha);
             brdfAccum += brdf * lightColor * (query.NoL * intensity * attenuation * shadow);
         }
     }
