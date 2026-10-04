@@ -72,32 +72,31 @@ float BrdfGgxNdf(float noH, float alpha)
     return alphaSquared / (BRDF_PI * safeDenominator * safeDenominator);
 }
 
-float BrdfGtrNormalization(float alpha, float gamma)
+float BrdfGtrLogNormalization(float alpha, float gamma)
 {
     const float safeAlpha = max(alpha, BRDF_MIN_ALPHA);
     const float safeGamma = clamp(gamma, BRDF_MIN_GTR_GAMMA, BRDF_MAX_GTR_GAMMA);
     const float alphaSquared = safeAlpha * safeAlpha;
     if (abs(alphaSquared - 1.0f) <= 1.0e-4f)
     {
-        return 1.0f / BRDF_PI;
+        return -log(BRDF_PI);
     }
 
     const float logAlphaSquared = log(alphaSquared);
     if (abs(safeGamma - 1.0f) <= 1.0e-4f)
     {
-        return (alphaSquared - 1.0f) / (BRDF_PI * logAlphaSquared);
+        return log(abs(alphaSquared - 1.0f)) - log(BRDF_PI) - log(abs(logAlphaSquared));
     }
 
     const float exponent = (1.0f - safeGamma) * logAlphaSquared;
     if (exponent > 0.0f)
     {
         const float inverseExponential = exp(-exponent);
-        return (safeGamma - 1.0f) * (1.0f - alphaSquared) * inverseExponential /
-            (BRDF_PI * (1.0f - inverseExponential));
+        return log(safeGamma - 1.0f) + log(1.0f - alphaSquared) - exponent - log(BRDF_PI) -
+            log(1.0f - inverseExponential);
     }
 
-    return (safeGamma - 1.0f) * (alphaSquared - 1.0f) /
-        (BRDF_PI * (1.0f - exp(exponent)));
+    return log(safeGamma - 1.0f) + log(alphaSquared - 1.0f) - log(BRDF_PI) - log(1.0f - exp(exponent));
 }
 
 float BrdfGtrNdf(float noH, float alpha, float gamma)
@@ -107,7 +106,7 @@ float BrdfGtrNdf(float noH, float alpha, float gamma)
     const float safeGamma = clamp(gamma, BRDF_MIN_GTR_GAMMA, BRDF_MAX_GTR_GAMMA);
     const float alphaSquared = safeAlpha * safeAlpha;
     const float denominator = max(1.0f + (alphaSquared - 1.0f) * safeNoH * safeNoH, BRDF_EPSILON);
-    return BrdfGtrNormalization(safeAlpha, safeGamma) / pow(denominator, safeGamma);
+    return exp(BrdfGtrLogNormalization(safeAlpha, safeGamma) - safeGamma * log(denominator));
 }
 
 float3 EvaluateMicrofacetBrdf(BrdfQuery query, float3 baseColor, float metallic, float3 dielectricF0,
