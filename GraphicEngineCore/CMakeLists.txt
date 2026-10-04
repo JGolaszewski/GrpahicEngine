@@ -72,6 +72,7 @@ set(CORE_HEADERS
     include/renderer/ShaderFactory.h
     include/renderer/Viewport.h
     include/renderer/ViewportBinding.h
+    include/renderer/brdf/Brdf.h
     include/RenderSystem.h
     include/Scene.h
     include/SceneRenderer.h
@@ -165,3 +166,10 @@ add_custom_target(tests
     WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
     COMMENT "Running engine tests"
 )
+
+if(BUILD_TESTING)
+    add_executable(BrdfReferenceTests tests/BrdfReferenceTests.cpp)
+    target_include_directories(BrdfReferenceTests PRIVATE include)
+    target_link_libraries(BrdfReferenceTests PRIVATE Microsoft::DirectXMath)
+    add_test(NAME BrdfReferenceTests COMMAND BrdfReferenceTests)
+endif()

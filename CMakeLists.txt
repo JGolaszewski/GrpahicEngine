@@ -33,6 +33,8 @@ endif()
 
 project ("GraphicEngine")
 
+include(CTest)
+
 set(NVRHI_WITH_DX11 ON)
 set(ENGINE_MAX_LIGHTS 8 CACHE STRING "Maximum number of lights supported by CPU and GPU lighting buffers")
 
