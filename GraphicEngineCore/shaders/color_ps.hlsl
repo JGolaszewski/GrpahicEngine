@@ -15,6 +15,8 @@ cbuffer MaterialCB : register(b1)
     float4 g_BaseColor;
     float4 g_EmissiveMetallic;
     float4 g_SurfaceParams;
+    float4 g_SpecularParams;
+    uint4  g_ModelFlags;
 };
 
 struct LightData

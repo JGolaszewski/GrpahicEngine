@@ -7,7 +7,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <vector>
+#include <type_traits>
 
 namespace Renderer {
 
@@ -24,18 +24,11 @@ namespace Renderer {
 	};
 
 	inline constexpr uint32_t MaterialGpuAbiVersion = 1;
-	inline constexpr float MaterialMinRoughness = 0.03162278f;
-	inline constexpr float MaterialMinAlpha = 1.0e-3f;
+inline constexpr float MaterialMinAlpha = 1.0e-3f;
 	inline constexpr float MaterialMinGtrGamma = 1.0f;
 	inline constexpr float MaterialMaxGtrGamma = 8.0f;
 	inline constexpr float MaterialMinIor = 1.0f;
 	inline constexpr float MaterialMaxIor = 3.0f;
-
-	struct MaterialConst {
-		DirectX::XMFLOAT4 BaseColor;
-		DirectX::XMFLOAT4 EmissiveMetallic;
-		DirectX::XMFLOAT4 SurfaceParams;
-	};
 
 	struct MaterialGpu {
 		DirectX::XMFLOAT4 BaseColor;
@@ -75,7 +68,7 @@ namespace Renderer {
 	}
 
 	inline MaterialGpu BuildMaterialGpu(const MaterialProperties& properties) noexcept {
-		const float roughness = ClampFinite(properties.Roughness, 0.5f, MaterialMinRoughness, 1.0f);
+		const float roughness = ClampFinite(properties.Roughness, 0.5f, 0.0f, 1.0f);
 		const float ior = ClampFinite(properties.Ior, 1.5f, MaterialMinIor, MaterialMaxIor);
 		const auto validModel = [](BrdfModel model) {
 			return static_cast<uint32_t>(model) <= static_cast<uint32_t>(BrdfModel::Neural) ?
@@ -87,7 +80,12 @@ namespace Renderer {
 		};
 
 		return {
-			properties.BaseColor,
+			{
+				ClampFinite(properties.BaseColor.x, 1.0f, 0.0f, 1.0f),
+				ClampFinite(properties.BaseColor.y, 1.0f, 0.0f, 1.0f),
+				ClampFinite(properties.BaseColor.z, 1.0f, 0.0f, 1.0f),
+				ClampFinite(properties.BaseColor.w, 1.0f, 0.0f, 1.0f)
+			},
 			{
 				FiniteNonNegative(properties.Emissive.x),
 				FiniteNonNegative(properties.Emissive.y),
@@ -115,7 +113,7 @@ namespace Renderer {
 		};
 	}
 
-	static_assert(sizeof(MaterialConst) == 48);
+	static_assert(std::is_trivially_copyable_v<MaterialGpu>);
 
 	class ENGINE_API Material {
 		friend class MaterialSystem;
@@ -142,6 +140,6 @@ namespace Renderer {
 		nvrhi::BufferHandle m_ConstantBuffer;
 		nvrhi::BindingSetHandle m_BindingSet;
 
-		MaterialConst m_Constants;
+		MaterialGpu m_Constants;
 	};
 }

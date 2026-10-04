@@ -124,12 +124,28 @@ namespace {
 		properties.GtrGamma = 16.0f;
 		properties.Ior = 0.0f;
 		const Renderer::MaterialGpu clamped = Renderer::BuildMaterialGpu(properties);
-		Require(clamped.SurfaceParams.x == Renderer::MaterialMinRoughness &&
-			clamped.SurfaceParams.y >= Renderer::MaterialMinAlpha &&
+		Require(clamped.SurfaceParams.x == 0.0f && clamped.SurfaceParams.y == Renderer::MaterialMinAlpha &&
 			clamped.SurfaceParams.z == Renderer::MaterialMaxGtrGamma &&
 			clamped.SurfaceParams.w == Renderer::MaterialMinIor &&
 			clamped.EmissiveMetallic.w == 1.0f,
 			"Material GPU packing must clamp model parameters to supported ranges");
+	}
+
+	void TestMaterialPropertiesRoundTrip() {
+		Renderer::Material material(0);
+		Renderer::MaterialProperties properties;
+		properties.Model = Renderer::BrdfModel::GTR;
+		properties.SpecularMode = Renderer::DielectricSpecularMode::ExplicitF0;
+		properties.GtrGamma = 4.0f;
+		properties.Ior = 1.8f;
+		properties.SpecularF0 = { 0.12f, 0.23f, 0.34f };
+		material.SetProperties(properties);
+		const auto restored = material.GetProperties();
+		Require(restored.Model == properties.Model && restored.SpecularMode == properties.SpecularMode &&
+			std::abs(restored.GtrGamma - properties.GtrGamma) < 1.0e-6f &&
+			std::abs(restored.Ior - properties.Ior) < 1.0e-6f &&
+			std::abs(restored.SpecularF0.z - properties.SpecularF0.z) < 1.0e-6f,
+			"Material must retain authored BRDF model parameters");
 	}
 }
 
@@ -138,6 +154,7 @@ int main() {
 	TestGtrLimitsAndRoughnessMapping();
 	TestReciprocityAndWhiteFurnace();
 	TestMaterialGpuAbiPacking();
+	TestMaterialPropertiesRoundTrip();
 	std::cout << "BRDF reference tests passed\n";
 	return EXIT_SUCCESS;
 }

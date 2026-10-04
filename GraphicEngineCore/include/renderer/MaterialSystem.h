@@ -13,7 +13,7 @@ namespace Renderer {
 		MaterialSystem(nvrhi::IDevice* device, nvrhi::ShaderHandle standardVS, nvrhi::ShaderHandle standardPS);
 		~MaterialSystem();
 
-		void RegisterMaterial(std::shared_ptr<Material> material);
+		bool RegisterMaterial(std::shared_ptr<Material> material);
 		void UnregisterMaterial(std::shared_ptr<Material> material);
 		std::shared_ptr<Material> CreateMaterial(const MaterialProperties& properties = {});
 
