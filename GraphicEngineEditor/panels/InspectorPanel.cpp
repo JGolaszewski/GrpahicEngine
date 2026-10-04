@@ -209,6 +209,38 @@ void InspectorPanel::DrawObjectInspector() {
     materialChanged |= ImGui::SliderFloat("Metallic", &metallic, 0.0f, 1.0f);
     materialChanged |= ImGui::SliderFloat("Roughness", &roughness, 0.0f, 1.0f);
 
+    static constexpr const char* brdfModelNames[] = { "Legacy", "GGX / TR", "GTR" };
+    int selectedBrdfModel = static_cast<uint32_t>(properties.Model) <= static_cast<uint32_t>(Renderer::BrdfModel::GTR)
+        ? static_cast<int>(properties.Model)
+        : static_cast<int>(Renderer::BrdfModel::Legacy);
+    if (ImGui::Combo("BRDF model", &selectedBrdfModel, brdfModelNames, IM_ARRAYSIZE(brdfModelNames))) {
+        properties.Model = static_cast<Renderer::BrdfModel>(selectedBrdfModel);
+        materialChanged = true;
+    }
+
+    if (properties.Model == Renderer::BrdfModel::GTR) {
+        materialChanged |= ImGui::SliderFloat("GTR gamma", &properties.GtrGamma, 1.0f, 8.0f, "%.2f");
+    }
+
+    if (properties.Model != Renderer::BrdfModel::Legacy) {
+        int specularMode = static_cast<int>(properties.SpecularMode);
+        static constexpr const char* specularModeNames[] = { "Index of refraction", "Explicit F0" };
+        if (ImGui::Combo("Dielectric specular", &specularMode, specularModeNames, IM_ARRAYSIZE(specularModeNames))) {
+            properties.SpecularMode = static_cast<Renderer::DielectricSpecularMode>(specularMode);
+            materialChanged = true;
+        }
+
+        if (properties.SpecularMode == Renderer::DielectricSpecularMode::IndexOfRefraction) {
+            materialChanged |= ImGui::SliderFloat("Index of refraction", &properties.Ior, 1.0f, 3.0f, "%.2f");
+        } else {
+            float specularF0[3] = { properties.SpecularF0.x, properties.SpecularF0.y, properties.SpecularF0.z };
+            if (ImGui::ColorEdit3("Dielectric F0", specularF0)) {
+                properties.SpecularF0 = { specularF0[0], specularF0[1], specularF0[2] };
+                materialChanged = true;
+            }
+        }
+    }
+
     if (materialChanged) {
         properties.BaseColor = { baseColor[0], baseColor[1], baseColor[2], baseColor[3] };
         properties.Emissive = { emissive[0], emissive[1], emissive[2] };
