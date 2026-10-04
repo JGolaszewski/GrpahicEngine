@@ -2,6 +2,8 @@
 #define ENGINE_MAX_LIGHTS 8
 #endif
 
+#include "brdf_common.hlsli"
+
 cbuffer PerObjectCB : register(b0)
 {
     float4x4 g_MVP;
@@ -121,17 +123,23 @@ float4 main_ps(VS_OUTPUT input) : SV_TARGET
         return float4(g_BaseColor.rgb + g_EmissiveMetallic.rgb, g_BaseColor.a);
     }
 
-    float3 N        = normalize(input.normalWS);
+    float3 N        = BrdfNormalizeOr(input.normalWS, float3(0.0f, 0.0f, 1.0f));
     float  metallic = saturate(g_EmissiveMetallic.w);
-    float  roughness = saturate(g_SurfaceParams.x);
-
-    float3 diffuseColor  = g_BaseColor.rgb * (1.0f - metallic);
-    float3 specularColor = lerp(float3(0.04f, 0.04f, 0.04f), g_BaseColor.rgb, metallic);
-    float  gloss         = 1.0f - roughness;
-    float  specularPower = lerp(8.0f, 128.0f, gloss);
+    const bool isLegacy = g_ModelFlags.y == 0u;
+    const float alpha = max(g_SurfaceParams.y, BRDF_MIN_ALPHA);
+    const float ior = max(g_SurfaceParams.w, 1.0f);
+    const float iorRatio = (ior - 1.0f) / (ior + 1.0f);
+    const float3 dielectricF0 = g_ModelFlags.z == 1u
+        ? saturate(g_SpecularParams.rgb)
+        : float3(iorRatio * iorRatio, iorRatio * iorRatio, iorRatio * iorRatio);
+    const float3 legacyDiffuseColor = g_BaseColor.rgb * (1.0f - metallic);
+    const float3 legacySpecularColor = lerp(float3(0.04f, 0.04f, 0.04f), g_BaseColor.rgb, metallic);
+    const float legacySpecularPower = lerp(8.0f, 128.0f, 1.0f - saturate(g_SurfaceParams.x));
+    const float3 V = g_CameraPosition.xyz - input.worldPos;
 
     float3 diffuseAccum = 0.0f;
     float3 specAccum    = 0.0f;
+    float3 brdfAccum    = 0.0f;
 
     [loop]
     for (uint i = 0; i < g_LightCount; ++i)
@@ -168,16 +176,26 @@ float4 main_ps(VS_OUTPUT input) : SV_TARGET
             attenuation *= coneAttenuation;
         }
 
-        float lambert  = max(dot(N, L), 0.0f);
-        float specular = pow(lambert, specularPower);
         float shadow   = SampleShadowPCF(i, input.worldPos, N, L);
 
-        diffuseAccum += diffuseColor  * lightColor * (lambert  * intensity * attenuation * shadow);
-        specAccum    += specularColor * lightColor * (specular * intensity * attenuation * shadow);
+        if (isLegacy)
+        {
+            const float lambert = max(dot(N, L), 0.0f);
+            const float specular = pow(lambert, legacySpecularPower);
+            diffuseAccum += legacyDiffuseColor * lightColor * (lambert * intensity * attenuation * shadow);
+            specAccum += legacySpecularColor * lightColor * (specular * intensity * attenuation * shadow);
+        }
+        else
+        {
+            const BrdfQuery query = BuildBrdfQuery(N, V, L);
+            const float3 brdf = EvaluateGgxBrdf(query, g_BaseColor.rgb, metallic, dielectricF0, alpha);
+            brdfAccum += brdf * lightColor * (query.NoL * intensity * attenuation * shadow);
+        }
     }
 
-    float3 ambient  = 0.04f * diffuseColor;
+    const float3 ambient = 0.04f * legacyDiffuseColor;
     float3 emissive = g_EmissiveMetallic.rgb;
 
-    return float4(ambient + diffuseAccum + specAccum + emissive, g_BaseColor.a);
+    const float3 directLighting = isLegacy ? diffuseAccum + specAccum : brdfAccum;
+    return float4(ambient + directLighting + emissive, g_BaseColor.a);
 }

@@ -60,4 +60,31 @@ float3 BrdfLambert(float3 diffuseColor)
     return diffuseColor / BRDF_PI;
 }
 
+float BrdfGgxNdf(float noH, float alpha)
+{
+    const float safeNoH = saturate(noH);
+    const float safeAlpha = max(alpha, BRDF_MIN_ALPHA);
+    const float alphaSquared = safeAlpha * safeAlpha;
+    const float denominator = 1.0f + (alphaSquared - 1.0f) * safeNoH * safeNoH;
+    return alphaSquared / (BRDF_PI * max(denominator * denominator, BRDF_EPSILON));
+}
+
+float3 EvaluateGgxBrdf(BrdfQuery query, float3 baseColor, float metallic, float3 dielectricF0, float alpha)
+{
+    if (query.NoV <= BRDF_EPSILON || query.NoL <= BRDF_EPSILON)
+    {
+        return 0.0f;
+    }
+
+    const float3 f0 = lerp(dielectricF0, baseColor, saturate(metallic));
+    const float3 fresnel = BrdfFresnelSchlick(f0, query.VoH);
+    const float distribution = BrdfGgxNdf(query.NoH, alpha);
+    const float geometry = BrdfSmithGgxCorrelated(query.NoV, query.NoL, alpha);
+    const float specularDenominator = max(4.0f * query.NoV * query.NoL, BRDF_EPSILON);
+    const float3 diffuseColor = baseColor * (1.0f - saturate(metallic));
+    const float3 diffuse = BrdfLambert(diffuseColor * (1.0f - fresnel));
+    const float3 specular = fresnel * (distribution * geometry / specularDenominator);
+    return diffuse + specular;
+}
+
 #endif
