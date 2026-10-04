@@ -170,6 +170,6 @@ add_custom_target(tests
 if(BUILD_TESTING)
     add_executable(BrdfReferenceTests tests/BrdfReferenceTests.cpp)
     target_include_directories(BrdfReferenceTests PRIVATE include)
-    target_link_libraries(BrdfReferenceTests PRIVATE Microsoft::DirectXMath)
+    target_link_libraries(BrdfReferenceTests PRIVATE Microsoft::DirectXMath nvrhi)
     add_test(NAME BrdfReferenceTests COMMAND BrdfReferenceTests)
 endif()

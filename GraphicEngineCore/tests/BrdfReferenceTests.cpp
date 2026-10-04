@@ -1,4 +1,5 @@
 #include "renderer/brdf/Brdf.h"
+#include "renderer/Material.h"
 
 #include <cmath>
 #include <cstdlib>
@@ -95,12 +96,48 @@ namespace {
 			}
 		}
 	}
+
+	void TestMaterialGpuAbiPacking() {
+		Renderer::MaterialProperties properties;
+		properties.Model = Renderer::BrdfModel::GTR;
+		properties.SpecularMode = Renderer::DielectricSpecularMode::ExplicitF0;
+		properties.Roughness = 0.5f;
+		properties.GtrGamma = 3.0f;
+		properties.Ior = 1.7f;
+		properties.SpecularF0 = { 0.2f, 0.3f, 0.4f };
+		const Renderer::MaterialGpu gpu = Renderer::BuildMaterialGpu(properties);
+
+		Require(gpu.ModelFlags.x == Renderer::MaterialGpuAbiVersion, "Material GPU ABI version must be packed in the flags slot");
+		Require(gpu.ModelFlags.y == static_cast<uint32_t>(Renderer::BrdfModel::GTR), "Material model selector must be packed");
+		Require(gpu.ModelFlags.z == static_cast<uint32_t>(Renderer::DielectricSpecularMode::ExplicitF0), "Specular policy must be packed");
+		Require(std::abs(gpu.SurfaceParams.x - 0.5f) < 1.0e-6f && std::abs(gpu.SurfaceParams.y - 0.25f) < 1.0e-6f,
+			"Perceptual and slope roughness must be packed together");
+		Require(std::abs(gpu.SurfaceParams.z - 3.0f) < 1.0e-6f && std::abs(gpu.SurfaceParams.w - 1.7f) < 1.0e-6f,
+			"GTR exponent and index of refraction must be packed");
+		Require(std::abs(gpu.SpecularParams.x - 0.2f) < 1.0e-6f &&
+			std::abs(gpu.SpecularParams.y - 0.3f) < 1.0e-6f &&
+			std::abs(gpu.SpecularParams.z - 0.4f) < 1.0e-6f,
+			"Explicit dielectric F0 must be packed");
+
+		properties.Roughness = -1.0f;
+		properties.Metallic = 2.0f;
+		properties.GtrGamma = 16.0f;
+		properties.Ior = 0.0f;
+		const Renderer::MaterialGpu clamped = Renderer::BuildMaterialGpu(properties);
+		Require(clamped.SurfaceParams.x == Renderer::MaterialMinRoughness &&
+			clamped.SurfaceParams.y >= Renderer::MaterialMinAlpha &&
+			clamped.SurfaceParams.z == Renderer::MaterialMaxGtrGamma &&
+			clamped.SurfaceParams.w == Renderer::MaterialMinIor &&
+			clamped.EmissiveMetallic.w == 1.0f,
+			"Material GPU packing must clamp model parameters to supported ranges");
+	}
 }
 
 int main() {
 	TestProjectedNdfNormalization();
 	TestGtrLimitsAndRoughnessMapping();
 	TestReciprocityAndWhiteFurnace();
+	TestMaterialGpuAbiPacking();
 	std::cout << "BRDF reference tests passed\n";
 	return EXIT_SUCCESS;
 }

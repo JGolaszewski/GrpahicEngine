@@ -3,22 +3,119 @@
 #include "CoreExport.h"
 #include <nvrhi/nvrhi.h>
 #include <DirectXMath.h>
+#include <algorithm>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <vector>
 
 namespace Renderer {
 
+	enum class BrdfModel : uint32_t {
+		Legacy = 0,
+		GGX = 1,
+		GTR = 2,
+		Neural = 3
+	};
+
+	enum class DielectricSpecularMode : uint32_t {
+		IndexOfRefraction = 0,
+		ExplicitF0 = 1
+	};
+
+	inline constexpr uint32_t MaterialGpuAbiVersion = 1;
+	inline constexpr float MaterialMinRoughness = 0.03162278f;
+	inline constexpr float MaterialMinAlpha = 1.0e-3f;
+	inline constexpr float MaterialMinGtrGamma = 1.0f;
+	inline constexpr float MaterialMaxGtrGamma = 8.0f;
+	inline constexpr float MaterialMinIor = 1.0f;
+	inline constexpr float MaterialMaxIor = 3.0f;
+
 	struct MaterialConst {
 		DirectX::XMFLOAT4 BaseColor;
-        DirectX::XMFLOAT4 EmissiveMetallic;
+		DirectX::XMFLOAT4 EmissiveMetallic;
 		DirectX::XMFLOAT4 SurfaceParams;
 	};
+
+	struct MaterialGpu {
+		DirectX::XMFLOAT4 BaseColor;
+		DirectX::XMFLOAT4 EmissiveMetallic;
+		DirectX::XMFLOAT4 SurfaceParams;
+		DirectX::XMFLOAT4 SpecularParams;
+		DirectX::XMUINT4 ModelFlags;
+	};
+
+	static_assert(sizeof(DirectX::XMFLOAT4) == 16);
+	static_assert(sizeof(DirectX::XMUINT4) == 16);
+	static_assert(offsetof(MaterialGpu, BaseColor) == 0);
+	static_assert(offsetof(MaterialGpu, EmissiveMetallic) == 16);
+	static_assert(offsetof(MaterialGpu, SurfaceParams) == 32);
+	static_assert(offsetof(MaterialGpu, SpecularParams) == 48);
+	static_assert(offsetof(MaterialGpu, ModelFlags) == 64);
+	static_assert(sizeof(MaterialGpu) == 80);
 
 	struct MaterialProperties {
 		DirectX::XMFLOAT4 BaseColor = { 1.0f, 1.0f, 1.0f, 1.0f };
 		DirectX::XMFLOAT3 Emissive = { 0.0f, 0.0f, 0.0f };
 		float Metallic = 0.0f;
 		float Roughness = 0.5f;
+		float GtrGamma = 2.0f;
+		float Ior = 1.5f;
+		DirectX::XMFLOAT3 SpecularF0 = { 0.04f, 0.04f, 0.04f };
+		BrdfModel Model = BrdfModel::Legacy;
+		DielectricSpecularMode SpecularMode = DielectricSpecularMode::IndexOfRefraction;
 	};
+
+	inline float ClampFinite(float value, float fallback, float minimum, float maximum) noexcept {
+		return std::isfinite(value) ? (std::clamp)(value, minimum, maximum) : fallback;
+	}
+
+	inline float FiniteNonNegative(float value) noexcept {
+		return std::isfinite(value) ? (std::max)(value, 0.0f) : 0.0f;
+	}
+
+	inline MaterialGpu BuildMaterialGpu(const MaterialProperties& properties) noexcept {
+		const float roughness = ClampFinite(properties.Roughness, 0.5f, MaterialMinRoughness, 1.0f);
+		const float ior = ClampFinite(properties.Ior, 1.5f, MaterialMinIor, MaterialMaxIor);
+		const auto validModel = [](BrdfModel model) {
+			return static_cast<uint32_t>(model) <= static_cast<uint32_t>(BrdfModel::Neural) ?
+				model : BrdfModel::Legacy;
+		};
+		const auto validSpecularMode = [](DielectricSpecularMode mode) {
+			return static_cast<uint32_t>(mode) <= static_cast<uint32_t>(DielectricSpecularMode::ExplicitF0) ?
+				mode : DielectricSpecularMode::IndexOfRefraction;
+		};
+
+		return {
+			properties.BaseColor,
+			{
+				FiniteNonNegative(properties.Emissive.x),
+				FiniteNonNegative(properties.Emissive.y),
+				FiniteNonNegative(properties.Emissive.z),
+				ClampFinite(properties.Metallic, 0.0f, 0.0f, 1.0f)
+			},
+			{
+				roughness,
+				(std::max)(roughness * roughness, MaterialMinAlpha),
+				ClampFinite(properties.GtrGamma, 2.0f, MaterialMinGtrGamma, MaterialMaxGtrGamma),
+				ior
+			},
+			{
+				ClampFinite(properties.SpecularF0.x, 0.04f, 0.0f, 1.0f),
+				ClampFinite(properties.SpecularF0.y, 0.04f, 0.0f, 1.0f),
+				ClampFinite(properties.SpecularF0.z, 0.04f, 0.0f, 1.0f),
+				0.0f
+			},
+			{
+				MaterialGpuAbiVersion,
+				static_cast<uint32_t>(validModel(properties.Model)),
+				static_cast<uint32_t>(validSpecularMode(properties.SpecularMode)),
+				0u
+		}
+		};
+	}
+
+	static_assert(sizeof(MaterialConst) == 48);
 
 	class ENGINE_API Material {
 		friend class MaterialSystem;
