@@ -102,7 +102,8 @@ void Engine::SceneRenderer::Init(nvrhi::IDevice* device,
 	sceneLayoutDesc.bindings = {
 		nvrhi::BindingLayoutItem::ConstantBuffer(2),
 		nvrhi::BindingLayoutItem::Texture_SRV(3),
-		nvrhi::BindingLayoutItem::Sampler(3)
+		nvrhi::BindingLayoutItem::Sampler(3),
+		nvrhi::BindingLayoutItem::ConstantBuffer(4)
 	};
 	m_SceneBindingLayout = device->createBindingLayout(sceneLayoutDesc);
 
@@ -544,6 +545,19 @@ void Engine::SceneRenderer::BuildViews(Renderer::FrameBlackboard& blackboard, nv
 		Renderer::RenderView* view = sceneViews[viewIndex];
 		if (view) {
 			view->Clear();
+			if (!view->CameraBuffer) {
+				nvrhi::BufferDesc cameraBufferDesc;
+				cameraBufferDesc.byteSize = sizeof(Renderer::CameraGpuData);
+				cameraBufferDesc.isConstantBuffer = true;
+				cameraBufferDesc.debugName = "ViewCameraPosition";
+				view->CameraBuffer = m_Device->createBuffer(cameraBufferDesc);
+			}
+			if (view->CameraBuffer) {
+				const Renderer::CameraGpuData cameraData{
+					{ view->CameraPosition.x, view->CameraPosition.y, view->CameraPosition.z, 1.0f }
+				};
+				commandList->writeBuffer(view->CameraBuffer, &cameraData, sizeof(cameraData));
+			}
 			CullAndFillView(view, commandList, static_cast<uint32_t>(shadowViews.size()) + viewIndex);
 			SortViewQueues(view);
 			BuildDebugGeometry(view);

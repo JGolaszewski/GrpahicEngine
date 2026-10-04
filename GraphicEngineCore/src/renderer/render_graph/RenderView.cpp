@@ -13,6 +13,8 @@ namespace Renderer {
 		ViewportHeight = viewport->GetHeight();
 
 		TargetFramebuffer = viewport->GetFramebuffer();
+		DirectX::XMStoreFloat3(&CameraPosition,
+			DirectX::XMVector3TransformCoord(DirectX::XMVectorZero(), camera->m_Transform.GetWorldMat()));
 
 		float aspect = 1.0f;
 		if (ViewportHeight > 0) {

@@ -147,16 +147,11 @@ namespace Renderer {
 		lightData.LightCount = lightCount;
 		cmd->writeBuffer(lightBuffer, &lightData, sizeof(LightsCBData));
 
-		nvrhi::BindingSetHandle sceneBindings;
-		if (sceneBindingLayout) {
-			nvrhi::BindingSetDesc sceneSetDesc;
-			sceneSetDesc.addItem(nvrhi::BindingSetItem::ConstantBuffer(2, lightBuffer));
-			sceneSetDesc.addItem(nvrhi::BindingSetItem::Texture_SRV(3, physicalShadowMap));
-			sceneSetDesc.addItem(nvrhi::BindingSetItem::Sampler(3, shadowSampler));
-			sceneBindings = ctx.GetDevice()->createBindingSet(sceneSetDesc, sceneBindingLayout);
-		}
-
-		auto drawQueue = [&](const std::vector<Renderer::RenderPacket>& packets, nvrhi::IFramebuffer* fb, const nvrhi::Viewport& vp, const nvrhi::Rect& scissor) {
+		auto drawQueue = [&](const std::vector<Renderer::RenderPacket>& packets,
+			nvrhi::BindingSetHandle sceneBindings,
+			nvrhi::IFramebuffer* fb,
+			const nvrhi::Viewport& vp,
+			const nvrhi::Rect& scissor) {
 			for (const auto& packet : packets) {
 				nvrhi::GraphicsState state;
 				state.pipeline = packet.Pipeline;
@@ -196,7 +191,15 @@ namespace Renderer {
 			};
 
 		for (Renderer::RenderView* view : sceneViews) {
-			if (!view || !view->TargetFramebuffer) continue;
+			if (!view || !view->TargetFramebuffer || !view->CameraBuffer || !sceneBindingLayout) continue;
+
+			nvrhi::BindingSetDesc sceneSetDesc;
+			sceneSetDesc.addItem(nvrhi::BindingSetItem::ConstantBuffer(2, lightBuffer));
+			sceneSetDesc.addItem(nvrhi::BindingSetItem::Texture_SRV(3, physicalShadowMap));
+			sceneSetDesc.addItem(nvrhi::BindingSetItem::Sampler(3, shadowSampler));
+			sceneSetDesc.addItem(nvrhi::BindingSetItem::ConstantBuffer(4, view->CameraBuffer));
+			nvrhi::BindingSetHandle sceneBindings = ctx.GetDevice()->createBindingSet(sceneSetDesc, sceneBindingLayout);
+			if (!sceneBindings) continue;
 
 			nvrhi::IFramebuffer* mainFramebuffer = view->TargetFramebuffer;
 
@@ -213,11 +216,11 @@ namespace Renderer {
 			nvrhi::Viewport viewportState = nvrhi::Viewport(float(fbInfo.width), float(fbInfo.height));
 			nvrhi::Rect scissor = nvrhi::Rect(fbInfo.width, fbInfo.height);
 
-			drawQueue(view->Queues.Opaque, mainFramebuffer, viewportState, scissor);
-			drawQueue(view->Queues.Masked, mainFramebuffer, viewportState, scissor);
-			drawQueue(view->Queues.Skybox, mainFramebuffer, viewportState, scissor);
-			drawQueue(view->Queues.Transparent, mainFramebuffer, viewportState, scissor);
-			drawQueue(view->Queues.UI, mainFramebuffer, viewportState, scissor);
+			drawQueue(view->Queues.Opaque, sceneBindings, mainFramebuffer, viewportState, scissor);
+			drawQueue(view->Queues.Masked, sceneBindings, mainFramebuffer, viewportState, scissor);
+			drawQueue(view->Queues.Skybox, sceneBindings, mainFramebuffer, viewportState, scissor);
+			drawQueue(view->Queues.Transparent, sceneBindings, mainFramebuffer, viewportState, scissor);
+			drawQueue(view->Queues.UI, sceneBindings, mainFramebuffer, viewportState, scissor);
 		}
 	}
 

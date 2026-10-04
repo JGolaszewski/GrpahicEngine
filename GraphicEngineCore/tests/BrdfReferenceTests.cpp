@@ -1,5 +1,8 @@
 #include "renderer/brdf/Brdf.h"
 #include "renderer/Material.h"
+#include "renderer/Camera.h"
+#include "renderer/Viewport.h"
+#include "renderer/render_graph/RenderView.h"
 
 #include <cmath>
 #include <cstdlib>
@@ -147,6 +150,18 @@ namespace {
 			std::abs(restored.SpecularF0.z - properties.SpecularF0.z) < 1.0e-6f,
 			"Material must retain authored BRDF model parameters");
 	}
+
+	void TestRenderViewCameraWorldPosition() {
+		Renderer::Camera camera(0.7853982f, 0.1f, 100.0f);
+		camera.m_Transform.SetPosition(3.0f, 4.0f, 5.0f);
+		Engine::Viewport viewport(320, 200, nullptr);
+		Renderer::RenderView view;
+		view.Initialize(&camera, &viewport);
+		Require(std::abs(view.CameraPosition.x - 3.0f) < 1.0e-6f &&
+			std::abs(view.CameraPosition.y - 4.0f) < 1.0e-6f &&
+			std::abs(view.CameraPosition.z - 5.0f) < 1.0e-6f,
+			"Render views must retain camera world position for the GPU camera buffer");
+	}
 }
 
 int main() {
@@ -155,6 +170,7 @@ int main() {
 	TestReciprocityAndWhiteFurnace();
 	TestMaterialGpuAbiPacking();
 	TestMaterialPropertiesRoundTrip();
+	TestRenderViewCameraWorldPosition();
 	std::cout << "BRDF reference tests passed\n";
 	return EXIT_SUCCESS;
 }

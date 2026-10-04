@@ -36,6 +36,11 @@ cbuffer LightsCB : register(b2)
     float3    g_LightPadding;
 };
 
+cbuffer CameraCB : register(b4)
+{
+    float4 g_CameraPosition;
+};
+
 Texture2DArray<float>  g_ShadowMaps    : register(t3);
 SamplerComparisonState g_ShadowSampler : register(s3);
 

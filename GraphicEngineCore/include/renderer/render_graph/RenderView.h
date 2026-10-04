@@ -9,6 +9,10 @@ namespace Engine { class Scene; class Viewport; }
 namespace Renderer { class Camera; }
 
 namespace Renderer {
+	struct CameraGpuData {
+		DirectX::XMFLOAT4 Position;
+	};
+	static_assert(sizeof(CameraGpuData) == 16);
 
 	struct RenderQueues {
 		std::vector<RenderPacket> Opaque;
@@ -41,6 +45,8 @@ namespace Renderer {
 
 		Engine::Scene* TargetScene = nullptr;
 		nvrhi::IFramebuffer* TargetFramebuffer = nullptr;
+		DirectX::XMFLOAT3 CameraPosition = { 0.0f, 0.0f, 0.0f };
+		nvrhi::BufferHandle CameraBuffer;
 
 		DirectX::XMMATRIX ViewMatrix = DirectX::XMMatrixIdentity();
 		DirectX::XMMATRIX ProjectionMatrix = DirectX::XMMatrixIdentity();
