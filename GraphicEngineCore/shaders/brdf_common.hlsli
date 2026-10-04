@@ -68,7 +68,8 @@ float BrdfGgxNdf(float noH, float alpha)
     const float safeAlpha = max(alpha, BRDF_MIN_ALPHA);
     const float alphaSquared = safeAlpha * safeAlpha;
     const float denominator = 1.0f + (alphaSquared - 1.0f) * safeNoH * safeNoH;
-    return alphaSquared / (BRDF_PI * max(denominator * denominator, BRDF_EPSILON));
+    const float safeDenominator = max(denominator, BRDF_EPSILON);
+    return alphaSquared / (BRDF_PI * safeDenominator * safeDenominator);
 }
 
 float BrdfGtrNormalization(float alpha, float gamma)
