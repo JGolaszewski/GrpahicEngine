@@ -46,13 +46,15 @@ void Editor::OnInit() {
 	Renderer::MaterialProperties demoMaterialProperties;
 	demoMaterialProperties.BaseColor = { 0.25f, 0.55f, 0.95f, 1.0f };
 	demoMaterialProperties.Roughness = 0.45f;
+	demoMaterialProperties.Model = Renderer::BrdfModel::GGX;
 	auto demoMaterial = GetRenderSystem()->GetMaterialSystem()->CreateMaterial(demoMaterialProperties);
 	auto demoCube = GetRenderSystem()->CreatePrimitive(
 		Engine::PrimitiveShape::Cube,
 		demoMaterial,
 		DirectX::XMFLOAT3(0.0f, 0.0f, 0.0f));
+	Engine::EntityId demoCubeId = Engine::InvalidEntityId;
 	if (demoCube) {
-		m_ActiveScene->AddEntity(demoCube);
+		demoCubeId = m_ActiveScene->AddEntity(demoCube);
 	}
 
 	const float lightRanges[2] = { 8.0f, 20.0f };
@@ -102,6 +104,12 @@ void Editor::OnInit() {
 	BroadcastSceneChanged();
 	BroadcastCameraSettings();
 	BroadcastViewportChanged();
+	if (demoCubeId != Engine::InvalidEntityId) {
+		ProcessPanelEvent(std::make_unique<EntitySelectedEvent>(
+			EntitySelectedEvent::ItemType::Object,
+			0, -1, -1,
+			demoCubeId, Engine::InvalidLightId, Engine::InvalidCameraId));
+	}
 }
 
 void Editor::CreateViewport(uint32_t width, uint32_t height) {
