@@ -209,11 +209,11 @@ void InspectorPanel::DrawObjectInspector() {
     materialChanged |= ImGui::SliderFloat("Metallic", &metallic, 0.0f, 1.0f);
     materialChanged |= ImGui::SliderFloat("Roughness", &roughness, 0.0f, 1.0f);
 
-    static constexpr const char* brdfModelNames[] = { "Legacy", "GGX / TR", "GTR" };
+    static constexpr const char* brdfModelNames[] = { "Legacy", "GGX", "GTR" };
     int selectedBrdfModel = static_cast<uint32_t>(properties.Model) <= static_cast<uint32_t>(Renderer::BrdfModel::GTR)
         ? static_cast<int>(properties.Model)
         : static_cast<int>(Renderer::BrdfModel::Legacy);
-    if (ImGui::Combo("BRDF model", &selectedBrdfModel, brdfModelNames, IM_ARRAYSIZE(brdfModelNames))) {
+    if (ImGui::Combo("Light model", &selectedBrdfModel, brdfModelNames, IM_ARRAYSIZE(brdfModelNames))) {
         properties.Model = static_cast<Renderer::BrdfModel>(selectedBrdfModel);
         materialChanged = true;
     }
