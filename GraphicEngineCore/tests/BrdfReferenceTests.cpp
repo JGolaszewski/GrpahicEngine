@@ -3,6 +3,7 @@
 #include "renderer/Camera.h"
 #include "renderer/Viewport.h"
 #include "renderer/render_graph/RenderView.h"
+#include "components/Transform.h"
 
 #include <cmath>
 #include <cstdlib>
@@ -162,6 +163,25 @@ namespace {
 			std::abs(view.CameraPosition.z - 5.0f) < 1.0e-6f,
 			"Render views must retain camera world position for the GPU camera buffer");
 	}
+
+	void TestNormalTransformPreservesPerpendicularity() {
+		Components::Transform transform;
+		transform.SetScale(2.0f, 1.0f, 0.5f);
+		transform.SetRotation(0.3f, -0.7f, 0.2f);
+		const DirectX::XMVECTOR tangent = DirectX::XMVectorSet(1.0f, 0.0f, -1.0f, 0.0f);
+		const DirectX::XMVECTOR normal = DirectX::XMVectorSet(1.0f, 0.0f, 1.0f, 0.0f);
+		const DirectX::XMVECTOR worldTangent = DirectX::XMVector3TransformNormal(tangent, transform.GetWorldMat());
+		const DirectX::XMVECTOR worldNormal = DirectX::XMVector3TransformNormal(normal, transform.GetNormalMat());
+		const float dot = DirectX::XMVectorGetX(DirectX::XMVector3Dot(worldTangent, worldNormal));
+		Require(std::isfinite(dot) && std::abs(dot) < 1.0e-5f,
+			"Inverse-transpose normal transforms must preserve tangent orthogonality under nonuniform scale");
+
+		transform.SetScale(0.0f, 1.0f, 1.0f);
+		const DirectX::XMVECTOR singularNormal = DirectX::XMVector3TransformNormal(normal, transform.GetNormalMat());
+		Require(DirectX::XMVector3IsNaN(singularNormal) == false &&
+			DirectX::XMVector3IsInfinite(singularNormal) == false,
+			"Singular transforms must return a finite normal fallback");
+	}
 }
 
 int main() {
@@ -171,6 +191,7 @@ int main() {
 	TestMaterialGpuAbiPacking();
 	TestMaterialPropertiesRoundTrip();
 	TestRenderViewCameraWorldPosition();
+	TestNormalTransformPreservesPerpendicularity();
 	std::cout << "BRDF reference tests passed\n";
 	return EXIT_SUCCESS;
 }

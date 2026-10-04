@@ -3,6 +3,7 @@ cbuffer PerObjectCB : register(b0)
 {
     float4x4 g_MVP;
     float4x4 g_World;
+    float4x4 g_NormalMatrix;
     float4   g_ObjectParams;
 };
 
@@ -30,7 +31,7 @@ VS_OUTPUT main_vs(VS_INPUT input)
     float4 worldPos = mul(float4(input.pos, 1.0f), g_World);
 
     output.pos      = mul(float4(input.pos, 1.0f), g_MVP);
-    output.normalWS = normalize(mul(float4(input.normal, 0.0f), g_World).xyz);
+    output.normalWS = normalize(mul(float4(input.normal, 0.0f), g_NormalMatrix).xyz);
     output.worldPos = worldPos.xyz;
 
     output.UV       = input.UV; 

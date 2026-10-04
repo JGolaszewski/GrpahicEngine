@@ -6,6 +6,7 @@ cbuffer PerObjectCB : register(b0)
 {
     float4x4 g_MVP;
     float4x4 g_World;
+    float4x4 g_NormalMatrix;
     float4   g_ObjectParams;
 };
 

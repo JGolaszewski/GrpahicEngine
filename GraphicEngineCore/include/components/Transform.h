@@ -26,6 +26,7 @@ namespace Components {
 
 		DirectX::XMMATRIX GetLocalMat() const;
 		DirectX::XMMATRIX GetWorldMat() const;
+		DirectX::XMMATRIX GetNormalMat() const;
 	
 		DirectX::XMFLOAT3 Position = { 0.0f, 0.0f, 0.0f };
 		DirectX::XMFLOAT4 Rotation = { 0.0f, 0.0f, 0.0f, 1.0f };

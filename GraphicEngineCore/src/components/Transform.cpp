@@ -1,5 +1,7 @@
 #include "components/Transform.h"
 
+#include <cmath>
+
 void Components::Transform::SetPosition(float x, float y, float z) {
 	Position = { x, y, z };
 	MarkDirty();
@@ -103,4 +105,16 @@ DirectX::XMMATRIX Components::Transform::GetLocalMat() const {
 DirectX::XMMATRIX Components::Transform::GetWorldMat() const {
 	const DirectX::XMMATRIX local = GetLocalMat();
 	return m_Parent ? local * m_Parent->GetWorldMat() : local;
+}
+
+DirectX::XMMATRIX Components::Transform::GetNormalMat() const {
+	using namespace DirectX;
+	const XMMATRIX world = GetWorldMat();
+	XMVECTOR determinant;
+	const XMMATRIX inverse = XMMatrixInverse(&determinant, world);
+	const float determinantValue = XMVectorGetX(determinant);
+	if (!std::isfinite(determinantValue) || std::abs(determinantValue) < 1.0e-8f) {
+		return XMMatrixIdentity();
+	}
+	return XMMatrixTranspose(inverse);
 }

@@ -15,8 +15,9 @@ namespace {
 	struct PerObjectData {
 		DirectX::XMFLOAT4X4 MVP;
 		DirectX::XMFLOAT4X4 World;
+		DirectX::XMFLOAT4X4 Normal;
 		DirectX::XMFLOAT4 ObjectParams;
-		uint8_t Padding[112]{};
+		uint8_t Padding[48]{};
 	};
 
 	struct DebugViewData {
@@ -435,6 +436,8 @@ void Engine::SceneRenderer::CullAndFillView(Renderer::RenderView* view, nvrhi::I
 
 		DirectX::XMStoreFloat4x4(&perObjectData.World, DirectX::XMMatrixTranspose(world));
 		DirectX::XMStoreFloat4x4(&perObjectData.MVP, DirectX::XMMatrixTranspose(mvp));
+		DirectX::XMStoreFloat4x4(&perObjectData.Normal,
+			DirectX::XMMatrixTranspose(entity->transform.GetNormalMat()));
 
 		perObjectData.ObjectParams = {
 			entity->ReceiveShadows ? 1.0f : 0.0f,
