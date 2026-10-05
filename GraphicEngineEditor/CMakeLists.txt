@@ -41,6 +41,7 @@ add_executable(Editor
     "commands/EntityMembershipCommand.h"
     "commands/EntityMembershipCommand.cpp"
     "events/RemoveEntityRequestedEvent.h"
+    "events/SceneModifiedEvent.h"
 )
 
 set_target_properties(Editor PROPERTIES

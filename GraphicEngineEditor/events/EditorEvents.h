@@ -23,3 +23,4 @@
 #include "events/AssetRegistryChangedEvent.h"
 #include "events/AddModelRequestedEvent.h"
 #include "events/RemoveEntityRequestedEvent.h"
+#include "events/SceneModifiedEvent.h"

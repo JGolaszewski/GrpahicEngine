@@ -136,6 +136,7 @@ void InspectorPanel::DrawObjectInspector() {
 
     ImGui::Text("Object %d", m_SelectedObjectIndex);
     ImGui::Separator();
+    bool sceneChanged = false;
 
     // ------------------------------------------------------------------------
     // Position — with Undo/Redo integration via CommandExecuteRequestedEvent
@@ -171,6 +172,7 @@ void InspectorPanel::DrawObjectInspector() {
     };
     if (ImGui::DragFloat3("Scale", scale, 0.05f, 0.01f, 100.0f)) {
         selectedEntity->transform.SetScale(scale[0], scale[1], scale[2]);
+        sceneChanged = true;
     }
 
     float rotationDegrees[3] = {
@@ -184,14 +186,16 @@ void InspectorPanel::DrawObjectInspector() {
         const float pitchRad = DirectX::XMConvertToRadians(rotationDegrees[1]);
         const float yawRad = DirectX::XMConvertToRadians(rotationDegrees[2]);
         selectedEntity->transform.SetRotation(pitchRad, yawRad, rollRad);
+        sceneChanged = true;
     }
 
-    ImGui::Checkbox("Wireframe", &selectedEntity->ForceWireframe);
-    ImGui::Checkbox("Disable depth test", &selectedEntity->DisableDepthTest);
-    ImGui::Checkbox("Cast shadows", &selectedEntity->CastShadows);
-    ImGui::Checkbox("Receive shadows", &selectedEntity->ReceiveShadows);
+    sceneChanged |= ImGui::Checkbox("Wireframe", &selectedEntity->ForceWireframe);
+    sceneChanged |= ImGui::Checkbox("Disable depth test", &selectedEntity->DisableDepthTest);
+    sceneChanged |= ImGui::Checkbox("Cast shadows", &selectedEntity->CastShadows);
+    sceneChanged |= ImGui::Checkbox("Receive shadows", &selectedEntity->ReceiveShadows);
 
     if (!selectedEntity->material) {
+        if (sceneChanged) EmitEvent(std::make_unique<SceneModifiedEvent>());
         return;
     }
 
@@ -282,6 +286,7 @@ void InspectorPanel::DrawObjectInspector() {
 		}
 		m_MaterialEditActive = false;
 	}
+	if (sceneChanged) EmitEvent(std::make_unique<SceneModifiedEvent>());
 }
 
 void InspectorPanel::DrawLightInspector() {
@@ -292,17 +297,20 @@ void InspectorPanel::DrawLightInspector() {
 
     ImGui::Text("Light %d", m_SelectedLightIndex);
     ImGui::Separator();
+    bool sceneChanged = false;
 
     DirectX::XMFLOAT3 pos = selectedLight->GetPosition();
     float position[3] = { pos.x, pos.y, pos.z };
     if (ImGui::DragFloat3("Position", position, 0.05f)) {
         selectedLight->SetPosition(DirectX::XMFLOAT3(position[0], position[1], position[2]));
+        sceneChanged = true;
     }
 
     DirectX::XMFLOAT3 dir = selectedLight->GetDirection();
     float direction[3] = { dir.x, dir.y, dir.z };
     if (ImGui::DragFloat3("Direction", direction, 0.05f)) {
         selectedLight->SetDirection(DirectX::XMFLOAT3(direction[0], direction[1], direction[2]));
+        sceneChanged = true;
     }
 
     float innerAngle = selectedLight->GetInnerAngleDegrees();
@@ -310,28 +318,34 @@ void InspectorPanel::DrawLightInspector() {
     float coneAngles[2] = { innerAngle, outerAngle };
     if (ImGui::DragFloat2("Angles", coneAngles, 0.05f)) {
         selectedLight->SetConeAngles(coneAngles[0], coneAngles[1]);
+        sceneChanged = true;
     }
 
     DirectX::XMFLOAT3 color = selectedLight->GetColor();
     float lightColor[3] = { color.x, color.y, color.z };
     if (ImGui::ColorEdit3("Color", lightColor)) {
         selectedLight->SetColor(DirectX::XMFLOAT3(lightColor[0], lightColor[1], lightColor[2]));
+        sceneChanged = true;
     }
 
     float intensity = selectedLight->GetIntensity();
     if (ImGui::DragFloat("Intensity", &intensity, 0.05f, 0.0f, 100.0f)) {
         selectedLight->SetIntensity(intensity);
+        sceneChanged = true;
     }
 
     float range = selectedLight->GetRange();
     if (ImGui::DragFloat("Range", &range, 0.05f, 0.1f, 100.0f)) {
         selectedLight->SetRange(range);
+        sceneChanged = true;
     }
 
     bool castShadows = selectedLight->GetCastShadows();
     if (ImGui::Checkbox("Cast shadows", &castShadows)) {
         selectedLight->SetCastShadows(castShadows);
+        sceneChanged = true;
     }
+	if (sceneChanged) EmitEvent(std::make_unique<SceneModifiedEvent>());
 }
 
 void InspectorPanel::DrawCameraInspector() {
@@ -350,6 +364,7 @@ void InspectorPanel::DrawCameraInspector() {
     };
     if (ImGui::DragFloat3("Position", position, 0.05f)) {
         selectedCamera->m_Transform.SetPosition(position[0], position[1], position[2]);
+        EmitEvent(std::make_unique<SceneModifiedEvent>());
     }
 
     float fovDeg = DirectX::XMConvertToDegrees(m_CameraFov);

@@ -485,11 +485,17 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
 		return false;
 		});
 
+	dispatcher.Dispatch<SceneModifiedEvent>([this](const auto&) {
+		m_SceneDirty = true;
+		return false;
+		});
+
 	dispatcher.Dispatch<CameraSettingsChangedEvent>([this](const auto& e) {
 		m_CameraFov = e.GetFov();
 		m_CameraNearPlane = e.GetNearPlane();
 		m_CameraFarPlane = e.GetFarPlane();
 		UpdateProjection();
+		m_SceneDirty = true;
 		return false;
 		});
 

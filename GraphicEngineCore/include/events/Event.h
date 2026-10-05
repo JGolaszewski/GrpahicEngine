@@ -60,7 +60,8 @@ namespace Engine::Events {
         AssetImportRequested,
         AssetRegistryChanged,
         AddModelRequested,
-        RemoveEntityRequested
+        RemoveEntityRequested,
+        SceneModified
     };
 
     class ENGINE_API Event {
