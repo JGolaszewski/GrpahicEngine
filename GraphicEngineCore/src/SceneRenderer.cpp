@@ -407,7 +407,7 @@ void Engine::SceneRenderer::CullAndFillView(Renderer::RenderView* view, nvrhi::I
 	}
 
 	for (const auto& entity : view->TargetScene->GetEntities()) {
-		if (!entity || !entity->mesh || !entity->material) {
+		if (!entity || (entity->Submeshes.empty() && (!entity->mesh || !entity->material))) {
 			++m_SubmissionStats.ObjectsCulled;
 			continue;
 		}
@@ -417,88 +417,119 @@ void Engine::SceneRenderer::CullAndFillView(Renderer::RenderView* view, nvrhi::I
 			continue;
 		}
 
-		const DirectX::XMMATRIX world = entity->transform.GetWorldMat();
-		DirectX::XMFLOAT3 worldCenter;
-		DirectX::XMStoreFloat3(&worldCenter,
-			DirectX::XMVector3TransformCoord(DirectX::XMVectorZero(), world));
-		const float maxScale = (std::max)({
-			std::abs(entity->transform.Scale.x),
-			std::abs(entity->transform.Scale.y),
-			std::abs(entity->transform.Scale.z)
-		});
-		if (!view->IsSphereVisible(worldCenter, maxScale * 1.732f)) {
-			++m_SubmissionStats.ObjectsCulled;
-			continue;
-		}
+		const auto submitSubmesh = [&](const Renderer::Submesh& submesh) {
+			if (!submesh.mesh || !submesh.material) {
+				++m_SubmissionStats.ObjectsCulled;
+				return;
+			}
 
-		PerObjectData perObjectData{};
-		DirectX::XMMATRIX mvp = world * viewProj;
+			const DirectX::XMMATRIX local = DirectX::XMLoadFloat4x4(&submesh.LocalTransform);
+			const DirectX::XMMATRIX world = local * entity->transform.GetWorldMat();
+			DirectX::XMFLOAT3 localCenter = {
+				(submesh.BoundsMin.x + submesh.BoundsMax.x) * 0.5f,
+				(submesh.BoundsMin.y + submesh.BoundsMax.y) * 0.5f,
+				(submesh.BoundsMin.z + submesh.BoundsMax.z) * 0.5f
+			};
+			const DirectX::XMVECTOR center = DirectX::XMVector3TransformCoord(
+				DirectX::XMLoadFloat3(&localCenter), world);
+			float radius = 0.0f;
+			for (uint32_t corner = 0; corner < 8; ++corner) {
+				const DirectX::XMFLOAT3 point = {
+					(corner & 1) ? submesh.BoundsMax.x : submesh.BoundsMin.x,
+					(corner & 2) ? submesh.BoundsMax.y : submesh.BoundsMin.y,
+					(corner & 4) ? submesh.BoundsMax.z : submesh.BoundsMin.z
+				};
+				const DirectX::XMVECTOR worldPoint = DirectX::XMVector3TransformCoord(DirectX::XMLoadFloat3(&point), world);
+				radius = (std::max)(radius, DirectX::XMVectorGetX(DirectX::XMVector3Length(
+					DirectX::XMVectorSubtract(worldPoint, center))));
+			}
+			DirectX::XMFLOAT3 worldCenter;
+			DirectX::XMStoreFloat3(&worldCenter, center);
+			if (!view->IsSphereVisible(worldCenter, radius)) {
+				++m_SubmissionStats.ObjectsCulled;
+				return;
+			}
 
-		DirectX::XMStoreFloat4x4(&perObjectData.World, DirectX::XMMatrixTranspose(world));
-		DirectX::XMStoreFloat4x4(&perObjectData.MVP, DirectX::XMMatrixTranspose(mvp));
-		DirectX::XMStoreFloat4x4(&perObjectData.Normal,
-			DirectX::XMMatrixTranspose(entity->transform.GetNormalMat()));
+			PerObjectData perObjectData{};
+			const DirectX::XMMATRIX mvp = world * viewProj;
+			DirectX::XMVECTOR determinant;
+			const DirectX::XMMATRIX inverseWorld = DirectX::XMMatrixInverse(&determinant, world);
+			const DirectX::XMMATRIX normal = std::abs(DirectX::XMVectorGetX(determinant)) > 1.0e-8f
+				? DirectX::XMMatrixTranspose(inverseWorld)
+				: DirectX::XMMatrixIdentity();
+			DirectX::XMStoreFloat4x4(&perObjectData.World, DirectX::XMMatrixTranspose(world));
+			DirectX::XMStoreFloat4x4(&perObjectData.MVP, DirectX::XMMatrixTranspose(mvp));
+			DirectX::XMStoreFloat4x4(&perObjectData.Normal, DirectX::XMMatrixTranspose(normal));
+			perObjectData.ObjectParams = {
+				entity->ReceiveShadows ? 1.0f : 0.0f,
+				entity->ForceWireframe ? 1.0f : 0.0f,
+				0.0f, 0.0f
+			};
 
-		perObjectData.ObjectParams = {
-			entity->ReceiveShadows ? 1.0f : 0.0f,
-			entity->ForceWireframe ? 1.0f : 0.0f,
-			0.0f, 0.0f
+			nvrhi::BufferDesc perObjectDesc;
+			perObjectDesc.byteSize = PerObjectDataStride;
+			perObjectDesc.isConstantBuffer = true;
+			perObjectDesc.debugName = "PerObjectData";
+			nvrhi::BufferHandle perObjectBuffer = m_Device->createBuffer(perObjectDesc);
+			if (!perObjectBuffer) {
+				std::cerr << "ERROR: Could not allocate per-object buffer for view " << viewIndex << std::endl;
+				return;
+			}
+			commandList->writeBuffer(perObjectBuffer, &perObjectData, PerObjectDataStride);
+
+			auto packet = CreateRenderPacket(submesh.mesh.get(), submesh.material.get(), perObjectBuffer);
+			packet.Queue = Renderer::RenderQueueType::Opaque;
+			++m_SubmissionStats.ObjectsSubmitted;
+			m_SubmissionStats.PerObjectBytesUsed += PerObjectDataStride;
+
+			Engine::PipelineKey key;
+			key.VS = m_MaterialSystem->GetStandardVS();
+			key.PerObjectLayout = m_PerObjectBindingLayout;
+			key.SceneLayout = m_SceneBindingLayout;
+			key.MaterialLayout = m_MaterialSystem->GetStandardMaterialLayout();
+			key.DepthWrite = true;
+			if (view->ViewType == Renderer::RenderView::Type::Shadow) {
+				key.PS = nullptr;
+				key.SceneLayout = nullptr;
+				key.MaterialLayout = nullptr;
+				key.Wireframe = false;
+				key.DepthTest = true;
+				key.CullMode = nvrhi::RasterCullMode::Back;
+			} else {
+				key.PS = m_MaterialSystem->GetStandardPS();
+				key.Wireframe = entity->ForceWireframe;
+				key.DepthTest = !entity->DisableDepthTest;
+				key.CullMode = entity->ForceWireframe ? nvrhi::RasterCullMode::None : entity->CullMode;
+			}
+			packet.Pipeline = m_PipelineCache.GetOrCreatePipeline(key, fbInfo);
+			view->Queues.Opaque.push_back(packet);
 		};
 
-		nvrhi::BufferDesc perObjectDesc;
-		perObjectDesc.byteSize = PerObjectDataStride;
-		perObjectDesc.isConstantBuffer = true;
-		perObjectDesc.debugName = "PerObjectData";
-		nvrhi::BufferHandle perObjectBuffer = m_Device->createBuffer(perObjectDesc);
-		if (!perObjectBuffer) {
-			std::cerr << "ERROR: Could not allocate per-object buffer for view " << viewIndex << std::endl;
-			continue;
+		if (entity->Submeshes.empty()) {
+			Renderer::Submesh submesh;
+			submesh.mesh = entity->mesh;
+			submesh.material = entity->material;
+			submesh.BoundsMin = {-1.0f, -1.0f, -1.0f};
+			submesh.BoundsMax = {1.0f, 1.0f, 1.0f};
+			submitSubmesh(submesh);
+		} else {
+			for (const auto& submesh : entity->Submeshes) submitSubmesh(submesh);
 		}
-
-		commandList->writeBuffer(perObjectBuffer, &perObjectData, PerObjectDataStride);
-
-		auto packet = CreateRenderPacket(entity.get(), perObjectBuffer);
-		packet.Queue = Renderer::RenderQueueType::Opaque;
-		++m_SubmissionStats.ObjectsSubmitted;
-		m_SubmissionStats.PerObjectBytesUsed += PerObjectDataStride;
-
-		Engine::PipelineKey key;
-		key.VS = m_MaterialSystem->GetStandardVS();
-		key.PerObjectLayout = m_PerObjectBindingLayout;
-		key.SceneLayout = m_SceneBindingLayout;
-		key.MaterialLayout = m_MaterialSystem->GetStandardMaterialLayout();
-		key.DepthWrite = true;
-
-		if (view->ViewType == Renderer::RenderView::Type::Shadow) {
-			key.PS = nullptr;
-			key.SceneLayout = nullptr;
-			key.MaterialLayout = nullptr;
-			key.Wireframe = false;
-			key.DepthTest = true;
-			key.CullMode = nvrhi::RasterCullMode::Back;
-		}
-		else {
-			key.PS = m_MaterialSystem->GetStandardPS();
-			key.Wireframe = entity->ForceWireframe;
-			key.DepthTest = !entity->DisableDepthTest;
-			key.CullMode = entity->ForceWireframe ? nvrhi::RasterCullMode::None : entity->CullMode;
-		}
-
-		packet.Pipeline = m_PipelineCache.GetOrCreatePipeline(key, fbInfo);
-
-		view->Queues.Opaque.push_back(packet);
 	}
 }
 
 // --- RenderPacket creation ---
 
-Renderer::RenderPacket Engine::SceneRenderer::CreateRenderPacket(const Renderer::Entity* entity, nvrhi::BufferHandle perObjectBuffer) {
+Renderer::RenderPacket Engine::SceneRenderer::CreateRenderPacket(
+	const Renderer::Mesh* mesh,
+	const Renderer::Material* material,
+	nvrhi::BufferHandle perObjectBuffer) {
 	Renderer::RenderPacket packet;
-	packet.VertexBuffer = entity->mesh->GetVertexBuffer();
-	packet.IndexBuffer = entity->mesh->GetIndexBuffer();
-	packet.VertexCount = entity->mesh->GetVertexCount();
-	packet.IndexCount = entity->mesh->GetIndexCount();
-	packet.MaterialBindings = entity->material->GetBindingSet();
+	packet.VertexBuffer = mesh->GetVertexBuffer();
+	packet.IndexBuffer = mesh->GetIndexBuffer();
+	packet.VertexCount = mesh->GetVertexCount();
+	packet.IndexCount = mesh->GetIndexCount();
+	packet.MaterialBindings = material->GetBindingSet();
 	packet.BaseVertexOffset = 0;
 	packet.StartIndexLocation = 0;
 

@@ -18,7 +18,9 @@ namespace Renderer {
 	}
 
 	bool MaterialSystem::RegisterMaterial(std::shared_ptr<Material> material) {
-		if (!material || std::find(m_ActiveMaterials.begin(), m_ActiveMaterials.end(), material) != m_ActiveMaterials.end()) {
+		if (!material || std::any_of(m_ActiveMaterials.begin(), m_ActiveMaterials.end(), [&material](const auto& weak) {
+			return weak.lock() == material;
+		})) {
 			return false;
 		}
 		if (!m_Device || !m_StandardLayout) {
@@ -53,10 +55,10 @@ namespace Renderer {
 	}
 
 	void MaterialSystem::UnregisterMaterial(std::shared_ptr<Material> material) {
-		auto it = std::find(m_ActiveMaterials.begin(), m_ActiveMaterials.end(), material);
-		if (it != m_ActiveMaterials.end()) {
-			m_ActiveMaterials.erase(it);
-		}
+		std::erase_if(m_ActiveMaterials, [&material](const auto& weak) {
+			const auto registered = weak.lock();
+			return !registered || registered == material;
+		});
 	}
 
 	void MaterialSystem::UpdateDirtyMaterials(nvrhi::ICommandList* commandList) {
@@ -64,10 +66,15 @@ namespace Renderer {
 			return;
 		}
 
-		for (const auto& material : m_ActiveMaterials) {
-			if(material->IsDirty() && material->m_ConstantBuffer) {
-				commandList->writeBuffer(material->m_ConstantBuffer, &material->m_Constants, sizeof(MaterialGpu));
-				material->ClearDirtyFlag();
+		for (auto it = m_ActiveMaterials.begin(); it != m_ActiveMaterials.end();) {
+			if (const auto material = it->lock()) {
+				if (material->IsDirty() && material->m_ConstantBuffer) {
+					commandList->writeBuffer(material->m_ConstantBuffer, &material->m_Constants, sizeof(MaterialGpu));
+					material->ClearDirtyFlag();
+				}
+				++it;
+			} else {
+				it = m_ActiveMaterials.erase(it);
 			}
 		}
 	}

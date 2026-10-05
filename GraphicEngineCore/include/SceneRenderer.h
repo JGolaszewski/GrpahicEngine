@@ -67,7 +67,10 @@ namespace Engine {
 		nvrhi::GraphicsPipelineHandle GetDebugPipeline(const nvrhi::FramebufferInfo& framebuffer,
 			nvrhi::PrimitiveType primitiveType,
 			Renderer::DebugDepthMode depthMode);
-		Renderer::RenderPacket CreateRenderPacket(const Renderer::Entity* entity, nvrhi::BufferHandle perObjectBuffer);
+		Renderer::RenderPacket CreateRenderPacket(
+			const Renderer::Mesh* mesh,
+			const Renderer::Material* material,
+			nvrhi::BufferHandle perObjectBuffer);
 
 		PipelineCache m_PipelineCache;
 

@@ -29,7 +29,7 @@ namespace Renderer {
 		nvrhi::ShaderHandle m_StandardVS;
 		nvrhi::ShaderHandle m_StandardPS;
 
-		std::vector<std::shared_ptr<Material>> m_ActiveMaterials;
+		std::vector<std::weak_ptr<Material>> m_ActiveMaterials;
 		uint32_t m_NextMaterialID = 0;
 	};
 

@@ -42,12 +42,20 @@ namespace Engine {
 			const std::vector<uint32_t>& indices,
 			std::string& error);
 		void ReleaseResource(const std::string& guid);
+		bool IsFrameActive() const noexcept { return m_FrameActive; }
 		bool UploadModel(
 			const std::string& guid,
 			uint64_t generation,
 			const ImportedModel& model,
 			std::vector<std::vector<std::shared_ptr<Renderer::Mesh>>>& meshes,
 			std::string& error);
+		std::shared_ptr<Renderer::Entity> CreateModelEntity(
+			const std::string& guid,
+			uint64_t generation,
+			const ImportedModel& model,
+			const std::vector<std::optional<Renderer::MaterialProperties>>& materialOverrides,
+			std::string& error,
+			std::vector<std::string>& warnings);
 
 		SceneRenderer* GetSceneRenderer() const { return m_SceneRenderer.get(); }
 		Renderer::MaterialSystem* GetMaterialSystem() const { return m_MaterialSystem.get(); }

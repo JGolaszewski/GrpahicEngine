@@ -80,6 +80,13 @@ namespace Renderer {
 		// The caller owns command-list submission. Build only records mesh uploads
 		// so multiple entities can share one immediate-upload batch.
 		auto entity = std::make_shared<Renderer::Entity>(mesh, m_Material);
+		switch (m_Shape) {
+		case Shape::Cube: entity->PrimitiveType = "cube"; break;
+		case Shape::Cone: entity->PrimitiveType = "cone"; break;
+		case Shape::Sphere: entity->PrimitiveType = "sphere"; break;
+		case Shape::Plane: entity->PrimitiveType = "plane"; break;
+		case Shape::None: break;
+		}
 
 		entity->transform.Position = m_Position;
 		entity->transform.Scale = m_Scale;

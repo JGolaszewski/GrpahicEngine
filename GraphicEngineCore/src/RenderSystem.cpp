@@ -183,6 +183,150 @@ namespace Engine {
 		return m_ResourceManager->GetOrCreateModelMeshes(guid, generation, model, meshes, error);
 	}
 
+	std::shared_ptr<Renderer::Entity> RenderSystem::CreateModelEntity(
+		const std::string& guid,
+		uint64_t generation,
+		const ImportedModel& model,
+		const std::vector<std::optional<Renderer::MaterialProperties>>& materialOverrides,
+		std::string& error,
+		std::vector<std::string>& warnings) {
+		using namespace DirectX;
+		struct PendingSubmesh {
+			size_t MeshIndex;
+			size_t PrimitiveIndex;
+			int32_t MaterialIndex;
+			XMFLOAT4X4 LocalTransform;
+			XMFLOAT3 BoundsMin;
+			XMFLOAT3 BoundsMax;
+		};
+		std::vector<PendingSubmesh> pending;
+		std::vector<uint8_t> visited(model.nodes.size(), 0);
+		const auto visitNode = [&](const auto& self, uint32_t nodeIndex, FXMMATRIX parent) -> bool {
+			if (nodeIndex >= model.nodes.size() || visited[nodeIndex] != 0) return false;
+			visited[nodeIndex] = 1;
+			const auto& node = model.nodes[nodeIndex];
+			XMMATRIX local;
+			if (node.hasMatrix) {
+				local = XMLoadFloat4x4(&node.matrix);
+			} else {
+				local = XMMatrixAffineTransformation(
+					XMLoadFloat3(&node.scale), XMVectorZero(), XMLoadFloat4(&node.rotation), XMLoadFloat3(&node.translation));
+			}
+			const XMMATRIX world = local * parent;
+			if (node.meshIndex >= 0) {
+				if (static_cast<size_t>(node.meshIndex) >= model.meshes.size()) return false;
+				const auto& sourceMesh = model.meshes[static_cast<size_t>(node.meshIndex)];
+				for (size_t primitiveIndex = 0; primitiveIndex < sourceMesh.primitives.size(); ++primitiveIndex) {
+					const auto& primitive = sourceMesh.primitives[primitiveIndex];
+					XMFLOAT4X4 localTransform;
+					XMStoreFloat4x4(&localTransform, world);
+					pending.push_back({ static_cast<size_t>(node.meshIndex), primitiveIndex,
+						primitive.materialIndex, localTransform, primitive.boundsMin, primitive.boundsMax });
+				}
+			}
+			for (const uint32_t child : node.children) {
+				if (!self(self, child, world)) return false;
+			}
+			return true;
+		};
+
+		std::vector<uint32_t> roots;
+		if (model.defaultScene >= 0) {
+			if (static_cast<size_t>(model.defaultScene) >= model.scenes.size()) {
+				error = "model default scene index is invalid";
+				return nullptr;
+			}
+			roots = model.scenes[static_cast<size_t>(model.defaultScene)];
+		} else if (!model.scenes.empty()) {
+			roots = model.scenes.front();
+		} else {
+			for (size_t i = 0; i < model.nodes.size(); ++i) {
+				if (model.nodes[i].parentIndex < 0) roots.push_back(static_cast<uint32_t>(i));
+			}
+		}
+		for (const uint32_t root : roots) {
+			if (!visitNode(visitNode, root, XMMatrixIdentity())) {
+				error = "model node hierarchy references invalid or repeated nodes";
+				return nullptr;
+			}
+		}
+		if (pending.empty()) {
+			error = "model's selected scene contains no renderable mesh primitives";
+			return nullptr;
+		}
+
+		std::vector<std::vector<std::shared_ptr<Renderer::Mesh>>> meshes;
+		if (!UploadModel(guid, generation, model, meshes, error)) return nullptr;
+
+		std::vector<std::shared_ptr<Renderer::Material>> materials;
+		materials.reserve(model.materials.size() + 1);
+		for (size_t materialIndex = 0; materialIndex < model.materials.size(); ++materialIndex) {
+			const auto& sourceMaterial = model.materials[materialIndex];
+			Renderer::MaterialProperties properties;
+			if (materialIndex < materialOverrides.size() && materialOverrides[materialIndex]) {
+				properties = *materialOverrides[materialIndex];
+			} else {
+				properties.BaseColor = sourceMaterial.baseColor;
+				properties.Emissive = sourceMaterial.emissive;
+				properties.Metallic = sourceMaterial.metallic;
+				properties.Roughness = sourceMaterial.roughness;
+				properties.Model = Renderer::BrdfModel::GGX;
+			}
+			auto material = m_MaterialSystem->CreateMaterial(properties);
+			if (!material) {
+				for (const auto& registered : materials) m_MaterialSystem->UnregisterMaterial(registered);
+				error = "renderer could not create a material for the imported model";
+				return nullptr;
+			}
+			materials.push_back(std::move(material));
+			if (sourceMaterial.baseColorTexture >= 0 || sourceMaterial.metallicRoughnessTexture >= 0 ||
+				sourceMaterial.normalTexture >= 0 || sourceMaterial.occlusionTexture >= 0 || sourceMaterial.emissiveTexture >= 0) {
+				warnings.push_back("model material '" + sourceMaterial.name + "' references textures that are not yet bound by the standard material renderer");
+			}
+			if (sourceMaterial.alphaMode != "OPAQUE" || sourceMaterial.doubleSided) {
+				warnings.push_back("model material '" + sourceMaterial.name + "' uses alpha or sidedness settings not represented by the current render pipeline");
+			}
+		}
+		Renderer::MaterialProperties fallbackProperties;
+		fallbackProperties.Model = Renderer::BrdfModel::GGX;
+		auto fallback = m_MaterialSystem->CreateMaterial(fallbackProperties);
+		if (!fallback) {
+			for (const auto& registered : materials) m_MaterialSystem->UnregisterMaterial(registered);
+			error = "renderer could not create a fallback model material";
+			return nullptr;
+		}
+		materials.push_back(std::move(fallback));
+
+		auto entity = std::make_shared<Renderer::Entity>(nullptr, nullptr);
+		entity->ModelGuid = guid;
+		entity->Submeshes.reserve(pending.size());
+		for (const auto& source : pending) {
+			if (source.MeshIndex >= meshes.size() || source.PrimitiveIndex >= meshes[source.MeshIndex].size()) {
+				for (const auto& registered : materials) m_MaterialSystem->UnregisterMaterial(registered);
+				error = "uploaded mesh cache does not match imported model primitives";
+				return nullptr;
+			}
+			const size_t materialIndex = source.MaterialIndex < 0
+				? materials.size() - 1
+				: static_cast<size_t>(source.MaterialIndex);
+			if (materialIndex >= materials.size()) {
+				for (const auto& registered : materials) m_MaterialSystem->UnregisterMaterial(registered);
+				error = "imported primitive references an invalid material slot";
+				return nullptr;
+			}
+			Renderer::Submesh submesh;
+			submesh.mesh = meshes[source.MeshIndex][source.PrimitiveIndex];
+			submesh.material = materials[materialIndex];
+			submesh.LocalTransform = source.LocalTransform;
+			submesh.BoundsMin = source.BoundsMin;
+			submesh.BoundsMax = source.BoundsMax;
+			submesh.MaterialSlot = source.MaterialIndex;
+			entity->Submeshes.push_back(std::move(submesh));
+		}
+		if (!entity->Submeshes.empty()) entity->material = entity->Submeshes.front().material;
+		return entity;
+	}
+
 	void RenderSystem::EndFrame() {
 		if (!m_CommandList) {
 			return;
