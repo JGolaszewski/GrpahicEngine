@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreExport.h"
+#include "AssetImporter.h"
 #include "renderer/RenderDevice.h"
 
 #include <deque>
@@ -21,6 +22,12 @@ namespace Renderer {
 			uint64_t generation,
 			const std::vector<Vertex>& vertices,
 			const std::vector<uint32_t>& indices,
+			std::string& error);
+		bool GetOrCreateModelMeshes(
+			const std::string& guid,
+			uint64_t generation,
+			const ImportedModel& model,
+			std::vector<std::vector<std::shared_ptr<Mesh>>>& meshes,
 			std::string& error);
 		std::shared_ptr<Mesh> GetMesh(const std::string& guid, uint64_t generation) const;
 		void Release(const std::string& guid);

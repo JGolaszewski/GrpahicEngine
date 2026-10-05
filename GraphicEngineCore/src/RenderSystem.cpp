@@ -169,6 +169,20 @@ namespace Engine {
 		if (m_ResourceManager) m_ResourceManager->Release(guid);
 	}
 
+	bool RenderSystem::UploadModel(
+		const std::string& guid,
+		uint64_t generation,
+		const ImportedModel& model,
+		std::vector<std::vector<std::shared_ptr<Renderer::Mesh>>>& meshes,
+		std::string& error) {
+		if (m_FrameActive || !m_ResourceManager) {
+			error = "GPU model uploads are only available outside an active frame";
+			meshes.clear();
+			return false;
+		}
+		return m_ResourceManager->GetOrCreateModelMeshes(guid, generation, model, meshes, error);
+	}
+
 	void RenderSystem::EndFrame() {
 		if (!m_CommandList) {
 			return;

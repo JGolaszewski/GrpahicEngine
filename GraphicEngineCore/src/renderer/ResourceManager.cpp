@@ -35,7 +35,7 @@ namespace Renderer {
 		auto mesh = m_RenderDevice.CreateMesh(vertices, indices, error);
 		if (!mesh) return nullptr;
 		for (auto it = m_Meshes.begin(); it != m_Meshes.end();) {
-			if (it->first.Guid == guid) {
+			if (it->first.Guid == guid || it->first.Guid.starts_with(guid + "/")) {
 				Retire(std::move(it->second));
 				it = m_Meshes.erase(it);
 			} else {
@@ -51,9 +51,70 @@ namespace Renderer {
 		return it == m_Meshes.end() ? nullptr : it->second;
 	}
 
+	bool ResourceManager::GetOrCreateModelMeshes(
+		const std::string& guid,
+		uint64_t generation,
+		const ImportedModel& model,
+		std::vector<std::vector<std::shared_ptr<Mesh>>>& meshes,
+		std::string& error) {
+		error.clear();
+		meshes.clear();
+		if (guid.empty() || model.meshes.empty()) {
+			error = "model upload requires an asset GUID and at least one mesh";
+			return false;
+		}
+
+		std::vector<std::pair<Key, std::shared_ptr<Mesh>>> staged;
+		meshes.resize(model.meshes.size());
+		for (size_t meshIndex = 0; meshIndex < model.meshes.size(); ++meshIndex) {
+			const auto& sourceMesh = model.meshes[meshIndex];
+			if (sourceMesh.primitives.empty()) {
+				error = "model mesh " + std::to_string(meshIndex) + " contains no primitives";
+				break;
+			}
+			meshes[meshIndex].reserve(sourceMesh.primitives.size());
+			for (size_t primitiveIndex = 0; primitiveIndex < sourceMesh.primitives.size(); ++primitiveIndex) {
+				const std::string subresource = "mesh/" + std::to_string(meshIndex) + "/primitive/" + std::to_string(primitiveIndex);
+				const Key key{guid + "/" + subresource, generation};
+				if (const auto cached = m_Meshes.find(key); cached != m_Meshes.end()) {
+					meshes[meshIndex].push_back(cached->second);
+					continue;
+				}
+				const auto& primitive = sourceMesh.primitives[primitiveIndex];
+				auto gpuMesh = m_RenderDevice.CreateMesh(primitive.vertices, primitive.indices, error);
+				if (!gpuMesh) break;
+				staged.emplace_back(key, gpuMesh);
+				meshes[meshIndex].push_back(std::move(gpuMesh));
+			}
+			if (!error.empty()) break;
+		}
+		if (!error.empty()) {
+			for (auto& [key, mesh] : staged) {
+				(void)key;
+				Retire(std::move(mesh));
+			}
+			meshes.clear();
+			return false;
+		}
+
+		for (auto it = m_Meshes.begin(); it != m_Meshes.end();) {
+			if ((it->first.Guid == guid || it->first.Guid.starts_with(guid + "/")) &&
+				it->first.Generation != generation) {
+				Retire(std::move(it->second));
+				it = m_Meshes.erase(it);
+			} else {
+				++it;
+			}
+		}
+		for (auto& [key, mesh] : staged) {
+			m_Meshes.emplace(std::move(key), std::move(mesh));
+		}
+		return true;
+	}
+
 	void ResourceManager::Release(const std::string& guid) {
 		for (auto it = m_Meshes.begin(); it != m_Meshes.end();) {
-			if (it->first.Guid == guid) {
+			if (it->first.Guid == guid || it->first.Guid.starts_with(guid + "/")) {
 				Retire(std::move(it->second));
 				it = m_Meshes.erase(it);
 			} else {

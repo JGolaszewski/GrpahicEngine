@@ -1,5 +1,6 @@
 #pragma once
 #include "CoreExport.h"
+#include "AssetImporter.h"
 #include "RenderBackend.h"
 #include "renderer/RenderPacket.h"
 #include "SceneRenderer.h"
@@ -41,6 +42,12 @@ namespace Engine {
 			const std::vector<uint32_t>& indices,
 			std::string& error);
 		void ReleaseResource(const std::string& guid);
+		bool UploadModel(
+			const std::string& guid,
+			uint64_t generation,
+			const ImportedModel& model,
+			std::vector<std::vector<std::shared_ptr<Renderer::Mesh>>>& meshes,
+			std::string& error);
 
 		SceneRenderer* GetSceneRenderer() const { return m_SceneRenderer.get(); }
 		Renderer::MaterialSystem* GetMaterialSystem() const { return m_MaterialSystem.get(); }
