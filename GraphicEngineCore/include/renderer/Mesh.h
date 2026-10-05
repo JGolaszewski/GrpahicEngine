@@ -12,6 +12,7 @@ namespace Renderer {
 		DirectX::XMFLOAT3 Position;
 		DirectX::XMFLOAT3 Normal;
 		DirectX::XMFLOAT2 UV;
+		DirectX::XMFLOAT4 Tangent = { 1.0f, 0.0f, 0.0f, 1.0f };
 	};
 	 
 	class ENGINE_API Mesh {
@@ -36,6 +37,11 @@ namespace Renderer {
 					.setName("TEXCOORD")
 					.setFormat(nvrhi::Format::RG32_FLOAT)
 					.setOffset(offsetof(Vertex, UV))
+					.setElementStride(sizeof(Vertex)),
+				nvrhi::VertexAttributeDesc()
+					.setName("TANGENT")
+					.setFormat(nvrhi::Format::RGBA32_FLOAT)
+					.setOffset(offsetof(Vertex, Tangent))
 					.setElementStride(sizeof(Vertex))
 			};
 		}

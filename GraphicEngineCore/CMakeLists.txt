@@ -45,6 +45,7 @@ endforeach()
 add_custom_target(CompileShaders ALL DEPENDS ${COMPILED_SHADERS})
 
 set(CORE_HEADERS
+    include/AssetImporter.h
     include/Application.h
     include/backends/D3D11Backend.h
     include/components/Transform.h
@@ -85,6 +86,7 @@ set(CORE_HEADERS
 )
 
 set(CORE_SOURCES
+    src/AssetImporter.cpp
     src/Application.cpp
     src/backends/D3D11Backend.cpp
     src/components/Transform.cpp
