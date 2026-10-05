@@ -6,6 +6,7 @@
 #include <cctype>
 #include <fstream>
 #include <random>
+#include <vector>
 
 namespace Engine {
 namespace {
@@ -55,9 +56,36 @@ namespace {
 			return std::nullopt;
 		}
 		std::error_code ec;
-		const auto resolved = std::filesystem::weakly_canonical(path.is_absolute() ? path : root / path, ec);
-		if (ec || !IsWithin(root, resolved)) {
-			error = path.generic_string() + ": path is outside the project root or cannot be resolved";
+		auto candidate = (path.is_absolute() ? path : root / path).lexically_normal();
+		if (!IsWithin(root, candidate)) {
+			error = path.generic_string() + ": path is outside the project root";
+			return std::nullopt;
+		}
+
+		auto existingAncestor = candidate;
+		std::vector<std::filesystem::path> missingComponents;
+		while (!std::filesystem::exists(existingAncestor, ec) && !ec) {
+			if (existingAncestor.empty() || existingAncestor == existingAncestor.root_path()) break;
+			missingComponents.push_back(existingAncestor.filename());
+			existingAncestor = existingAncestor.parent_path();
+		}
+		if (ec) {
+			error = path.generic_string() + ": could not inspect path: " + ec.message();
+			return std::nullopt;
+		}
+		if (existingAncestor.empty() || !std::filesystem::exists(existingAncestor, ec) || ec) {
+			error = path.generic_string() + ": no existing parent directory could be resolved";
+			return std::nullopt;
+		}
+		auto resolved = std::filesystem::weakly_canonical(existingAncestor, ec);
+		if (ec) {
+			error = path.generic_string() + ": could not resolve parent path: " + ec.message();
+			return std::nullopt;
+		}
+		for (auto it = missingComponents.rbegin(); it != missingComponents.rend(); ++it) resolved /= *it;
+		resolved = resolved.lexically_normal();
+		if (!IsWithin(root, resolved)) {
+			error = path.generic_string() + ": resolved path is outside the project root";
 			return std::nullopt;
 		}
 		return resolved;
