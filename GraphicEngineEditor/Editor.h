@@ -72,6 +72,7 @@ private:
 	void RequestSceneAction(SceneFileActionRequestedEvent::Action action);
 	bool SaveCurrentScene(bool choosePath);
 	void DrawUnsavedChangesModal();
+	void OnEntityMembershipChanged(Engine::EntityId id, const std::shared_ptr<Renderer::Entity>& entity, bool present);
 	CommandHistory& GetCommandHistory() noexcept { return m_CommandHistory; }
 
 	// ------------------------------------------------------------------------

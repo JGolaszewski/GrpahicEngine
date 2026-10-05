@@ -38,6 +38,9 @@ add_executable(Editor
     "commands/TransformEntityCommand.cpp"
     "commands/ChangeMaterialPropertiesCommand.h"
     "commands/ChangeMaterialPropertiesCommand.cpp"
+    "commands/EntityMembershipCommand.h"
+    "commands/EntityMembershipCommand.cpp"
+    "events/RemoveEntityRequestedEvent.h"
 )
 
 set_target_properties(Editor PROPERTIES

@@ -15,6 +15,7 @@
 #include "panels/StatisticsPanel.h"
 #include "panels/AssetBrowserPanel.h"
 #include "events/EditorEvents.h"
+#include "commands/EntityMembershipCommand.h"
 
 #include <DirectXMath.h>
 #include <imgui.h>
@@ -469,24 +470,9 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
 		if (!m_ActiveScene) return false;
 		createdEntity->PrimitiveType = primitiveType;
 		createdEntity->Name = primitiveType;
-		const Engine::EntityId createdEntityId = m_ActiveScene->AddEntity(createdEntity);
-		m_SceneDirty = true;
-
-		m_SelectedItemType = SelectedItemType::Object;
-		m_SelectedEntityId = createdEntityId;
-		m_SelectedLightId = Engine::InvalidLightId;
-		m_SelectedCameraId = Engine::InvalidCameraId;
-		const int createdEntityIndex = static_cast<int>(m_ActiveScene->GetEntityCount() - 1);
-
-		BroadcastSceneChanged();
-
-		EntitySelectedEvent enrichedEvent(
-			EntitySelectedEvent::ItemType::Object,
-			createdEntityIndex, -1, -1,
-			createdEntityId, Engine::InvalidLightId, Engine::InvalidCameraId,
-			createdEntity, {}, {}
-		);
-		BroadcastEvent(enrichedEvent);
+		m_CommandHistory.Execute(std::make_unique<EntityMembershipCommand>(m_ActiveScene, createdEntity,
+			Engine::InvalidEntityId, true,
+			[this](auto id, const auto& entity, bool present) { OnEntityMembershipChanged(id, entity, present); }));
 		return false;
 		});
 
@@ -595,8 +581,30 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
 		const auto position = m_ActiveScene->FindFreeSpawnPosition(request.GetPosition());
 		entity->transform.SetPosition(position.x, position.y, position.z);
 		entity->transform.SetScale(request.GetScale().x, request.GetScale().y, request.GetScale().z);
-		const Engine::EntityId id = m_ActiveScene->AddEntity(entity);
-		m_SceneDirty = true;
+		m_CommandHistory.Execute(std::make_unique<EntityMembershipCommand>(m_ActiveScene, entity,
+			Engine::InvalidEntityId, true,
+			[this](auto id, const auto& addedEntity, bool present) { OnEntityMembershipChanged(id, addedEntity, present); }));
+		if (!warnings.empty()) m_FileError = warnings.front();
+		return true;
+		});
+
+	dispatcher.Dispatch<RemoveEntityRequestedEvent>([this](const auto& request) {
+		if (!m_ActiveScene) return true;
+		const auto entity = m_ActiveScene->FindEntity(request.GetId());
+		if (!entity) return true;
+		m_CommandHistory.Execute(std::make_unique<EntityMembershipCommand>(m_ActiveScene, entity,
+			request.GetId(), false,
+			[this](auto id, const auto& removedEntity, bool present) { OnEntityMembershipChanged(id, removedEntity, present); }));
+		return true;
+		});
+}
+
+void Editor::OnEntityMembershipChanged(
+	Engine::EntityId id,
+	const std::shared_ptr<Renderer::Entity>& entity,
+	bool present) {
+	m_SceneDirty = true;
+	if (present) {
 		m_SelectedItemType = SelectedItemType::Object;
 		m_SelectedEntityId = id;
 		m_SelectedLightId = Engine::InvalidLightId;
@@ -606,9 +614,17 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
 			static_cast<int>(m_ActiveScene->GetEntityCount() - 1), -1, -1, id,
 			Engine::InvalidLightId, Engine::InvalidCameraId, entity, {}, {});
 		BroadcastEvent(selected);
-		if (!warnings.empty()) m_FileError = warnings.front();
-		return true;
-		});
+		return;
+	}
+	BroadcastSceneChanged();
+	if (m_SelectedItemType == SelectedItemType::Object && m_SelectedEntityId == id) {
+		m_SelectedItemType = SelectedItemType::None;
+		m_SelectedEntityId = Engine::InvalidEntityId;
+		m_SelectedLightId = Engine::InvalidLightId;
+		m_SelectedCameraId = Engine::InvalidCameraId;
+		EntityDeselectedEvent deselected;
+		BroadcastEvent(deselected);
+	}
 }
 
 void Editor::BroadcastEvent(Engine::Events::Event& event) {

@@ -24,7 +24,11 @@ void InspectorPanel::OnEvent(Engine::Events::Event& event) {
     dispatcher.Dispatch<Engine::Events::KeyPressedEvent>([this](const auto& keyEvent) {
         if (keyEvent.Key == Engine::Events::KeyCode::Delete &&
             m_SelectedItemType != EntitySelectedEvent::ItemType::None) {
-            EmitEvent(std::make_unique<EntityDeselectedEvent>());
+            if (m_SelectedItemType == EntitySelectedEvent::ItemType::Object) {
+                EmitEvent(std::make_unique<RemoveEntityRequestedEvent>(m_SelectedEntityId));
+            } else {
+                EmitEvent(std::make_unique<EntityDeselectedEvent>());
+            }
             return true; // Consumed — stop propagation
         }
         return false;
@@ -43,6 +47,7 @@ void InspectorPanel::OnEvent(Engine::Events::Event& event) {
         m_SelectedEntity = e.GetEntity();
         m_SelectedLight = e.GetLight();
         m_SelectedCamera = e.GetCamera();
+        m_MaterialEditActive = false;
 
         m_SelectedEulerDegrees = { 0.0f, 0.0f, 0.0f };
         return false;
@@ -59,7 +64,8 @@ void InspectorPanel::OnEvent(Engine::Events::Event& event) {
 		m_SelectedCameraId = Engine::InvalidCameraId;
 		m_SelectedEntity.reset();
 		m_SelectedLight.reset();
-		m_SelectedCamera.reset();
+        m_SelectedCamera.reset();
+        m_MaterialEditActive = false;
         return false;
     });
 

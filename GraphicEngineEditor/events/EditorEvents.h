@@ -22,3 +22,4 @@
 #include "events/AssetImportRequestedEvent.h"
 #include "events/AssetRegistryChangedEvent.h"
 #include "events/AddModelRequestedEvent.h"
+#include "events/RemoveEntityRequestedEvent.h"
