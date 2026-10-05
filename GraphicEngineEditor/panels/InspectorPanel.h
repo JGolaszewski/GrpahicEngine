@@ -5,6 +5,7 @@
 #include "Scene.h"
 #include <DirectXMath.h>
 #include <memory>
+#include "renderer/Material.h"
 
 namespace Renderer {
     class Entity;
@@ -57,6 +58,8 @@ private:
 
     // Position Undo/Redo tracking
     DirectX::XMFLOAT3 m_PositionBeforeEdit = { 0.0f, 0.0f, 0.0f };
+    Renderer::MaterialProperties m_MaterialBeforeEdit{};
+    bool m_MaterialEditActive = false;
 
 #if defined(_DEBUG)
     bool m_ShowDebugLightGizmos = true;

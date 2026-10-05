@@ -36,6 +36,8 @@ add_executable(Editor
     "commands/CommandHistory.cpp"
     "commands/TransformEntityCommand.h"
     "commands/TransformEntityCommand.cpp"
+    "commands/ChangeMaterialPropertiesCommand.h"
+    "commands/ChangeMaterialPropertiesCommand.cpp"
 )
 
 set_target_properties(Editor PROPERTIES

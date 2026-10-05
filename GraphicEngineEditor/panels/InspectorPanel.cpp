@@ -4,6 +4,7 @@
 #include "renderer/Camera.h"
 #include "renderer/Material.h"
 #include "commands/TransformEntityCommand.h"
+#include "commands/ChangeMaterialPropertiesCommand.h"
 
 #include <imgui.h>
 
@@ -192,6 +193,15 @@ void InspectorPanel::DrawObjectInspector() {
     ImGui::TextUnformatted("Material");
 
     Renderer::MaterialProperties properties = selectedEntity->material->GetProperties();
+    const Renderer::MaterialProperties materialPropertiesBeforeFrame = properties;
+    bool materialEditFinished = false;
+    const auto trackMaterialWidget = [this, &materialPropertiesBeforeFrame, &materialEditFinished]() {
+        if (ImGui::IsItemActivated()) {
+            m_MaterialBeforeEdit = materialPropertiesBeforeFrame;
+            m_MaterialEditActive = true;
+        }
+        materialEditFinished |= ImGui::IsItemDeactivatedAfterEdit();
+    };
 
     float baseColor[4] = {
         properties.BaseColor.x, properties.BaseColor.y,
@@ -205,9 +215,13 @@ void InspectorPanel::DrawObjectInspector() {
 
     bool materialChanged = false;
     materialChanged |= ImGui::ColorEdit4("Base color", baseColor);
+    trackMaterialWidget();
     materialChanged |= ImGui::ColorEdit3("Emission", emissive);
+    trackMaterialWidget();
     materialChanged |= ImGui::SliderFloat("Metallic", &metallic, 0.0f, 1.0f);
+    trackMaterialWidget();
     materialChanged |= ImGui::SliderFloat("Roughness", &roughness, 0.0f, 1.0f);
+    trackMaterialWidget();
 
     static constexpr const char* brdfModelNames[] = { "Legacy", "GGX", "GTR" };
     int selectedBrdfModel = static_cast<uint32_t>(properties.Model) <= static_cast<uint32_t>(Renderer::BrdfModel::GTR)
@@ -217,9 +231,11 @@ void InspectorPanel::DrawObjectInspector() {
         properties.Model = static_cast<Renderer::BrdfModel>(selectedBrdfModel);
         materialChanged = true;
     }
+    trackMaterialWidget();
 
     if (properties.Model == Renderer::BrdfModel::GTR) {
         materialChanged |= ImGui::SliderFloat("GTR gamma", &properties.GtrGamma, 1.0f, 8.0f, "%.2f");
+        trackMaterialWidget();
     }
 
     if (properties.Model != Renderer::BrdfModel::Legacy) {
@@ -229,15 +245,18 @@ void InspectorPanel::DrawObjectInspector() {
             properties.SpecularMode = static_cast<Renderer::DielectricSpecularMode>(specularMode);
             materialChanged = true;
         }
+        trackMaterialWidget();
 
         if (properties.SpecularMode == Renderer::DielectricSpecularMode::IndexOfRefraction) {
             materialChanged |= ImGui::SliderFloat("Index of refraction", &properties.Ior, 1.0f, 3.0f, "%.2f");
+            trackMaterialWidget();
         } else {
             float specularF0[3] = { properties.SpecularF0.x, properties.SpecularF0.y, properties.SpecularF0.z };
             if (ImGui::ColorEdit3("Dielectric F0", specularF0)) {
                 properties.SpecularF0 = { specularF0[0], specularF0[1], specularF0[2] };
                 materialChanged = true;
             }
+            trackMaterialWidget();
         }
     }
 
@@ -249,6 +268,14 @@ void InspectorPanel::DrawObjectInspector() {
 
         EmitEvent(std::make_unique<MaterialChangedEvent>(m_SelectedEntityId, properties));
     }
+	if (materialEditFinished && m_MaterialEditActive) {
+		if (materialChanged) {
+			EmitEvent(std::make_unique<CommandExecuteRequestedEvent>(
+				std::make_unique<ChangeMaterialPropertiesCommand>(selectedEntity->material,
+					m_MaterialBeforeEdit, properties)));
+		}
+		m_MaterialEditActive = false;
+	}
 }
 
 void InspectorPanel::DrawLightInspector() {
