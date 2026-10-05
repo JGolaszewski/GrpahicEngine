@@ -27,6 +27,13 @@ namespace Engine {
             ImGui::DestroyContext();
         }
 
+        m_ActiveViews.clear();
+        m_ActiveScenes.clear();
+        m_Viewports.clear();
+        m_DefaultViewport.reset();
+        if (m_RenderBackend && m_RenderBackend->GetDevice()) {
+            m_RenderBackend->GetDevice()->waitForIdle();
+        }
         m_RenderSystem.reset();
         m_RenderBackend.reset();
         m_Window.reset();

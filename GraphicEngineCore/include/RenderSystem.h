@@ -5,6 +5,7 @@
 #include "SceneRenderer.h"
 #include "renderer/Viewport.h"
 #include "renderer/MaterialSystem.h"
+#include "renderer/ResourceManager.h"
 #include "renderer/ShaderFactory.h"
 #include "renderer/render_graph/RenderGraph.h"
 #include "renderer/ViewportBinding.h"
@@ -33,9 +34,17 @@ namespace Engine {
 			const DirectX::XMFLOAT3& scale = { 1.0f, 1.0f, 1.0f });
 
 		void ExecuteImmediate(std::function<void(nvrhi::ICommandList*)> fn);
+		std::shared_ptr<Renderer::Mesh> GetOrCreateMesh(
+			const std::string& guid,
+			uint64_t generation,
+			const std::vector<Renderer::Vertex>& vertices,
+			const std::vector<uint32_t>& indices,
+			std::string& error);
+		void ReleaseResource(const std::string& guid);
 
 		SceneRenderer* GetSceneRenderer() const { return m_SceneRenderer.get(); }
 		Renderer::MaterialSystem* GetMaterialSystem() const { return m_MaterialSystem.get(); }
+		Renderer::ResourceManager* GetResourceManager() const { return m_ResourceManager.get(); }
 		Renderer::ShaderFactory* GetShaderFactory() const { return m_ShaderFactory.get(); }
 		Renderer::RenderGraph* GetRenderGraph() const { return m_RenderGraph.get(); }
 		Engine::PrimitiveFactory* GetPrimitiveFactory() const { return m_PrimitiveFactory.get(); }
@@ -52,6 +61,7 @@ namespace Engine {
 
 		std::unique_ptr<SceneRenderer> m_SceneRenderer;
 		std::unique_ptr<Renderer::MaterialSystem> m_MaterialSystem;
+		std::unique_ptr<Renderer::ResourceManager> m_ResourceManager;
 		std::unique_ptr<Renderer::ShaderFactory> m_ShaderFactory;
 		std::unique_ptr<Engine::PrimitiveFactory> m_PrimitiveFactory;
 

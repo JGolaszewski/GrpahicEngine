@@ -4,6 +4,7 @@
 #include "Window.h"
 #include "RenderBackend.h"
 #include "RenderSystem.h"
+#include "AssetManager.h"
 
 #include "renderer/ViewportBinding.h"
 
@@ -52,6 +53,8 @@ namespace Engine {
         // --- Renderer helpers used by Editor and panels ---
         IRenderBackend* GetRenderer() const { return m_RenderBackend.get(); }
         RenderSystem* GetRenderSystem() const { return m_RenderSystem.get(); }
+        AssetManager* GetAssetManager() noexcept { return &m_AssetManager; }
+        const AssetManager* GetAssetManager() const noexcept { return &m_AssetManager; }
         SceneRenderer* GetSceneRenderer() const { return m_RenderSystem ? m_RenderSystem->GetSceneRenderer() : nullptr; }
         Renderer::ShaderFactory* GetShaderFactory() const { return m_RenderSystem ? m_RenderSystem->GetShaderFactory() : nullptr; }
 
@@ -87,6 +90,7 @@ namespace Engine {
         std::unique_ptr<IWindow> m_Window;
         std::unique_ptr<IRenderBackend> m_RenderBackend;
         std::unique_ptr<RenderSystem> m_RenderSystem;
+        AssetManager m_AssetManager;
 
         std::vector<std::shared_ptr<Scene>> m_ActiveScenes;
         std::vector<std::shared_ptr<Engine::Viewport>> m_Viewports;

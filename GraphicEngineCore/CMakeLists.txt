@@ -45,6 +45,7 @@ endforeach()
 add_custom_target(CompileShaders ALL DEPENDS ${COMPILED_SHADERS})
 
 set(CORE_HEADERS
+    include/AssetManager.h
     include/AssetImporter.h
     include/Application.h
     include/backends/D3D11Backend.h
@@ -64,6 +65,8 @@ set(CORE_HEADERS
     include/renderer/Material.h
     include/renderer/MaterialSystem.h
     include/renderer/Mesh.h
+    include/renderer/RenderDevice.h
+    include/renderer/ResourceManager.h
     include/renderer/render_graph/FrameBlackboard.h
     include/renderer/render_graph/RenderCache.h
     include/renderer/render_graph/RenderContext.h
@@ -87,6 +90,7 @@ set(CORE_HEADERS
 )
 
 set(CORE_SOURCES
+    src/AssetManager.cpp
     src/AssetImporter.cpp
     src/Application.cpp
     src/backends/D3D11Backend.cpp
@@ -101,6 +105,8 @@ set(CORE_SOURCES
     src/renderer/Material.cpp
     src/renderer/MaterialSystem.cpp
     src/renderer/Mesh.cpp
+    src/renderer/RenderDevice.cpp
+    src/renderer/ResourceManager.cpp
     src/renderer/render_graph/RenderContext.cpp
     src/renderer/render_graph/RenderGraph.cpp
     src/renderer/render_graph/RenderPass.cpp

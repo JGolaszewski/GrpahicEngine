@@ -32,6 +32,7 @@ namespace Engine {
 		auto m_DefaultPS = m_ShaderFactory->GetShader("shaders/color_ps.dxbc", nvrhi::ShaderType::Pixel);
 
 		m_MaterialSystem = std::make_unique<Renderer::MaterialSystem>(m_RenderBackend->GetDevice(), m_DefaultVS, m_DefaultPS);
+		m_ResourceManager = std::make_unique<Renderer::ResourceManager>(m_RenderBackend->GetDevice());
 		m_SceneRenderer = std::make_unique<SceneRenderer>(m_RenderBackend->GetDevice());
 		m_SceneRenderer->Init(
 			m_RenderBackend->GetDevice(),
@@ -151,6 +152,23 @@ namespace Engine {
 		m_RenderGraph->AddPass(std::make_unique<Renderer::DebugPass>(m_SceneRenderer.get()));
 	}
 
+	std::shared_ptr<Renderer::Mesh> RenderSystem::GetOrCreateMesh(
+		const std::string& guid,
+		uint64_t generation,
+		const std::vector<Renderer::Vertex>& vertices,
+		const std::vector<uint32_t>& indices,
+		std::string& error) {
+		if (m_FrameActive || !m_ResourceManager) {
+			error = "GPU mesh creation is only available outside an active frame";
+			return nullptr;
+		}
+		return m_ResourceManager->GetOrCreateMesh(guid, generation, vertices, indices, error);
+	}
+
+	void RenderSystem::ReleaseResource(const std::string& guid) {
+		if (m_ResourceManager) m_ResourceManager->Release(guid);
+	}
+
 	void RenderSystem::EndFrame() {
 		if (!m_CommandList) {
 			return;
@@ -162,6 +180,7 @@ namespace Engine {
 			m_RenderBackend->GetDevice()->executeCommandList(m_CommandList);
 			m_RenderBackend->EndGpuEvent();
 			m_FrameActive = false;
+			m_ResourceManager->AdvanceSubmittedFrame();
 			return;
 		}
 		m_RenderGraph->Execute(m_CommandList);
@@ -170,6 +189,7 @@ namespace Engine {
 		m_RenderBackend->GetDevice()->executeCommandList(m_CommandList);
 		m_RenderBackend->EndGpuEvent();
 		m_FrameActive = false;
+		m_ResourceManager->AdvanceSubmittedFrame();
 
 	}
 

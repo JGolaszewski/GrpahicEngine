@@ -51,6 +51,7 @@ namespace Renderer {
 		inline uint32_t GetVertexCount() const { return m_VertexCount; }
 		inline uint32_t GetIndexCount() const { return m_IndexCount; }
 		inline bool HasIndices() const { return m_IndexBuffer != nullptr; }
+		inline bool IsValid() const { return m_VertexBuffer != nullptr && (m_IndexCount == 0 || m_IndexBuffer != nullptr); }
 
 	private:
 		nvrhi::BufferHandle m_VertexBuffer;
