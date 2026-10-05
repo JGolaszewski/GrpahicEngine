@@ -53,12 +53,13 @@ namespace {
 			return false;
 		}
 		const std::vector<unsigned char>& bytes = model.buffers[view.buffer].data;
-		const size_t componentSize = tinygltf::GetComponentSizeInBytes(accessor->componentType);
+		const int componentSizeValue = tinygltf::GetComponentSizeInBytes(accessor->componentType);
 		const int componentCount = tinygltf::GetNumComponentsInType(accessor->type);
-		if (componentSize == 0 || componentCount <= 0) {
+		if (componentSizeValue <= 0 || componentCount <= 0) {
 			error = label + " uses an invalid accessor type";
 			return false;
 		}
+		const size_t componentSize = static_cast<size_t>(componentSizeValue);
 		const size_t elementSize = componentSize * static_cast<size_t>(componentCount);
 		if (view.byteStride != 0) {
 			stride = view.byteStride;
