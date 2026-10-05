@@ -127,6 +127,12 @@ target_link_libraries(GraphicEngineCore PUBLIC
     imgui
 )
 
+target_link_libraries(GraphicEngineCore PRIVATE nlohmann_json::nlohmann_json)
+target_include_directories(GraphicEngineCore SYSTEM PRIVATE
+    "${ENGINE_TINYGLTF_INCLUDE_DIR}"
+    "${ENGINE_STB_INCLUDE_DIR}"
+)
+
 target_include_directories(GraphicEngineCore PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 target_compile_definitions(GraphicEngineCore PRIVATE

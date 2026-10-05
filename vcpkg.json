@@ -4,6 +4,9 @@
   "builtin-baseline": "501262d51e0725f81db09cf528e0e3b14bad1527",
   "dependencies": [
     "directxmath",
-    "glfw3"
+    "glfw3",
+    "nlohmann-json",
+    "stb",
+    "tinygltf"
   ]
 }

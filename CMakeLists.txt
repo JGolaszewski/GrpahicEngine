@@ -72,6 +72,14 @@ endif()
 
 find_package(directxmath CONFIG REQUIRED)
 find_package(glfw3 CONFIG REQUIRED)
+find_package(nlohmann_json CONFIG REQUIRED)
+
+# tinygltf and stb are header-only vcpkg packages without CMake config targets.
+find_path(ENGINE_TINYGLTF_INCLUDE_DIR tiny_gltf.h)
+find_path(ENGINE_STB_INCLUDE_DIR stb_image.h PATH_SUFFIXES stb)
+if(NOT ENGINE_TINYGLTF_INCLUDE_DIR OR NOT ENGINE_STB_INCLUDE_DIR)
+    message(FATAL_ERROR "tinygltf and stb headers must be available from the vcpkg manifest")
+endif()
 
 set(IMGUI_DIR "${CMAKE_CURRENT_SOURCE_DIR}/vendor/imgui")
 
