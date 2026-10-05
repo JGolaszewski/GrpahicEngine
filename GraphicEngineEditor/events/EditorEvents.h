@@ -18,3 +18,4 @@
 #include "events/AddObjectRequestedEvent.h"
 #include "events/CommandExecuteRequestedEvent.h"
 #include "events/DebugRenderToggledEvent.h"
+#include "events/SceneFileActionRequestedEvent.h"

@@ -9,6 +9,8 @@
 #include <memory>
 #include <vector>
 #include <utility>
+#include <filesystem>
+#include "events/SceneFileActionRequestedEvent.h"
 #include "commands/CommandHistory.h"
 
 namespace Engine::Events {
@@ -67,6 +69,9 @@ private:
 	// ------------------------------------------------------------------------
 	void Undo();
 	void Redo();
+	void RequestSceneAction(SceneFileActionRequestedEvent::Action action);
+	bool SaveCurrentScene(bool choosePath);
+	void DrawUnsavedChangesModal();
 	CommandHistory& GetCommandHistory() noexcept { return m_CommandHistory; }
 
 	// ------------------------------------------------------------------------
@@ -112,4 +117,9 @@ private:
 	Engine::EditorCameraController m_CameraController;
 
 	CommandHistory m_CommandHistory;
+	std::filesystem::path m_ScenePath;
+	std::string m_FileError;
+	bool m_SceneDirty = false;
+	bool m_ShowUnsavedModal = false;
+	SceneFileActionRequestedEvent::Action m_PendingSceneAction = SceneFileActionRequestedEvent::Action::NewScene;
 };

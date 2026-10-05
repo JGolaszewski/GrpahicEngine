@@ -18,9 +18,43 @@
 #include <DirectXMath.h>
 #include <imgui.h>
 #include <imgui_internal.h>
+#define NOMINMAX
+#include <windows.h>
+#include <commdlg.h>
+#include <filesystem>
+#include <string>
+
+namespace {
+std::optional<std::filesystem::path> ShowSceneDialog(
+	bool save,
+	const std::filesystem::path& initialPath,
+	const std::filesystem::path& projectRoot) {
+	wchar_t filename[32768]{};
+	if (!initialPath.empty()) {
+		const auto initial = initialPath.wstring();
+		wcsncpy_s(filename, std::size(filename), initial.c_str(), _TRUNCATE);
+	}
+	OPENFILENAMEW dialog{};
+	dialog.lStructSize = sizeof(dialog);
+	dialog.lpstrFile = filename;
+	dialog.nMaxFile = static_cast<DWORD>(std::size(filename));
+	dialog.lpstrFilter = L"Scene files (*.scene.json)\0*.scene.json\0JSON files (*.json)\0*.json\0All files (*.*)\0*.*\0\0";
+	dialog.nFilterIndex = 1;
+	const auto initialDirectory = (initialPath.empty() ? projectRoot : initialPath.parent_path()).wstring();
+	dialog.lpstrInitialDir = initialDirectory.c_str();
+	dialog.Flags = OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR | (save ? OFN_OVERWRITEPROMPT : OFN_FILEMUSTEXIST);
+	dialog.lpstrDefExt = L"json";
+	const BOOL accepted = save ? GetSaveFileNameW(&dialog) : GetOpenFileNameW(&dialog);
+	return accepted ? std::optional(std::filesystem::path(filename)) : std::nullopt;
+}
+}
 
 void Editor::OnInit() {
 	ImGui::SetCurrentContext(GetImGuiContext());
+	std::string projectError;
+	if (!GetAssetManager()->SetProjectRoot(ENGINE_PROJECT_ROOT, projectError)) {
+		m_FileError = std::move(projectError);
+	}
 
 	// --- Create Core Scene ---
 	m_ActiveScene = std::make_shared<Engine::Scene>();
@@ -124,6 +158,7 @@ void Editor::OnSceneReplaced(const std::shared_ptr<Engine::Scene>& scene) {
 	m_SelectedLightId = Engine::InvalidLightId;
 	m_SelectedCameraId = Engine::InvalidCameraId;
 	m_CommandHistory.Clear();
+	m_SceneDirty = false;
 	if (const auto camera = GetActiveCamera()) {
 		m_CameraFov = camera->GetFovRadians();
 		m_CameraNearPlane = camera->GetNearPlane();
@@ -245,6 +280,20 @@ void Editor::OnEvent(Engine::Events::Event& event) {
 		}
 		if (keyEvent.Key == Engine::Events::KeyCode::Y) {
 			Redo();
+			return true;
+		}
+		if (keyEvent.Key == Engine::Events::KeyCode::N) {
+			RequestSceneAction(SceneFileActionRequestedEvent::Action::NewScene);
+			return true;
+		}
+		if (keyEvent.Key == Engine::Events::KeyCode::O) {
+			RequestSceneAction(SceneFileActionRequestedEvent::Action::OpenScene);
+			return true;
+		}
+		if (keyEvent.Key == Engine::Events::KeyCode::S) {
+			RequestSceneAction((keyEvent.Mods & 0x0001) != 0
+				? SceneFileActionRequestedEvent::Action::SaveSceneAs
+				: SceneFileActionRequestedEvent::Action::SaveScene);
 			return true;
 		}
 		return false;
@@ -401,6 +450,7 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
 		createdEntity->PrimitiveType = primitiveType;
 		createdEntity->Name = primitiveType;
 		const Engine::EntityId createdEntityId = m_ActiveScene->AddEntity(createdEntity);
+		m_SceneDirty = true;
 
 		m_SelectedItemType = SelectedItemType::Object;
 		m_SelectedEntityId = createdEntityId;
@@ -425,6 +475,7 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
 		if (!entity || !entity->material) return false;
 
 		entity->material->SetProperties(e.GetProperties());
+		m_SceneDirty = true;
 		return false;
 		});
 
@@ -481,8 +532,14 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
 		auto cmd = e.TakeCommand();
 		if (cmd) {
 			m_CommandHistory.Execute(std::move(cmd));
+			m_SceneDirty = true;
 		}
 		return false;
+		});
+
+	dispatcher.Dispatch<SceneFileActionRequestedEvent>([this](const auto& e) {
+		RequestSceneAction(e.GetAction());
+		return true;
 		});
 }
 
@@ -529,12 +586,14 @@ void Editor::BroadcastViewportChanged() {
 void Editor::Undo() {
 	if (m_CommandHistory.CanUndo()) {
 		m_CommandHistory.Undo();
+		m_SceneDirty = true;
 	}
 }
 
 void Editor::Redo() {
 	if (m_CommandHistory.CanRedo()) {
 		m_CommandHistory.Redo();
+		m_SceneDirty = true;
 	}
 }
 
@@ -562,6 +621,107 @@ void Editor::OnUIRender() {
 		if (window) {
 			window->Draw();
 		}
+	}
+	DrawUnsavedChangesModal();
+}
+
+void Editor::RequestSceneAction(SceneFileActionRequestedEvent::Action action) {
+	m_FileError.clear();
+	if (m_SceneDirty) {
+		m_PendingSceneAction = action;
+		m_ShowUnsavedModal = true;
+		return;
+	}
+	if (action == SceneFileActionRequestedEvent::Action::NewScene) {
+		auto scene = std::make_shared<Engine::Scene>();
+		auto camera = std::make_shared<Renderer::Camera>(m_CameraFov, m_CameraNearPlane, m_CameraFarPlane);
+		camera->m_Transform.SetPosition(0.0f, 0.0f, -5.0f);
+		scene->AddCamera(camera);
+		if (m_ActiveScene) RemoveScene(m_ActiveScene);
+		AddScene(scene);
+		OnSceneReplaced(scene);
+		m_ScenePath.clear();
+		m_SceneDirty = false;
+		return;
+	}
+	if (action == SceneFileActionRequestedEvent::Action::SaveScene) {
+		SaveCurrentScene(m_ScenePath.empty());
+		return;
+	}
+	if (action == SceneFileActionRequestedEvent::Action::SaveSceneAs) {
+		SaveCurrentScene(true);
+		return;
+	}
+	const auto path = ShowSceneDialog(false, m_ScenePath, GetAssetManager()->GetProjectRoot());
+	if (!path) return;
+	std::string error;
+	std::vector<std::string> warnings;
+	if (!LoadScene(*path, error, warnings)) {
+		m_FileError = std::move(error);
+		return;
+	}
+	m_ScenePath = *path;
+	m_SceneDirty = false;
+	if (!warnings.empty()) {
+		m_FileError = warnings.front();
+	}
+}
+
+bool Editor::SaveCurrentScene(bool choosePath) {
+	if (!m_ActiveScene) {
+		m_FileError = "There is no active scene to save.";
+		return false;
+	}
+	auto path = choosePath
+		? ShowSceneDialog(true, m_ScenePath, GetAssetManager()->GetProjectRoot())
+		: std::optional(m_ScenePath);
+	if (!path) return false;
+	std::string error;
+	if (!SaveScene(*path, *m_ActiveScene, error)) {
+		m_FileError = std::move(error);
+		return false;
+	}
+	m_ScenePath = *path;
+	m_SceneDirty = false;
+	m_FileError.clear();
+	return true;
+}
+
+void Editor::DrawUnsavedChangesModal() {
+	if (m_ShowUnsavedModal) {
+		ImGui::OpenPopup("Unsaved changes");
+		m_ShowUnsavedModal = false;
+	}
+	if (ImGui::BeginPopupModal("Unsaved changes", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+		ImGui::TextUnformatted("Save changes to the current scene before continuing?");
+		if (ImGui::Button("Save", ImVec2(120, 0))) {
+			if (SaveCurrentScene(m_ScenePath.empty())) {
+				const auto action = m_PendingSceneAction;
+				ImGui::CloseCurrentPopup();
+				RequestSceneAction(action);
+			}
+		}
+		ImGui::SameLine();
+		if (ImGui::Button("Discard", ImVec2(120, 0))) {
+			m_SceneDirty = false;
+			const auto action = m_PendingSceneAction;
+			ImGui::CloseCurrentPopup();
+			RequestSceneAction(action);
+		}
+		ImGui::SameLine();
+		if (ImGui::Button("Cancel", ImVec2(120, 0))) ImGui::CloseCurrentPopup();
+		ImGui::EndPopup();
+	}
+	if (!m_FileError.empty()) {
+		ImGui::OpenPopup("Scene operation");
+	}
+	if (ImGui::BeginPopupModal("Scene operation", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+		ImGui::TextWrapped("%s", m_FileError.c_str());
+		if (ImGui::Button("OK")) {
+			m_FileError.clear();
+			ImGui::CloseCurrentPopup();
+		}
+		ImGui::EndPopup();
 	}
 }
 

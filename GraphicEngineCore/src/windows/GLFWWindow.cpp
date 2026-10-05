@@ -22,6 +22,8 @@ namespace Engine {
 		case GLFW_KEY_E: return Events::KeyCode::E;
 		case GLFW_KEY_Z: return Events::KeyCode::Z;
 		case GLFW_KEY_Y: return Events::KeyCode::Y;
+		case GLFW_KEY_N: return Events::KeyCode::N;
+		case GLFW_KEY_O: return Events::KeyCode::O;
 		case GLFW_KEY_SPACE: return Events::KeyCode::Space;
 		case GLFW_KEY_LEFT_CONTROL: return Events::KeyCode::LeftControl;
 		case GLFW_KEY_LEFT_SHIFT: return Events::KeyCode::LeftShift;

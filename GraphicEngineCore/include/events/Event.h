@@ -16,6 +16,8 @@ namespace Engine::Events {
         E,
         Z,
         Y,
+        N,
+        O,
         Space,
         LeftControl,
         LeftShift,
@@ -53,7 +55,8 @@ namespace Engine::Events {
         MaterialChanged,
         AddObjectRequested,
         CommandExecuteRequested,
-        DebugRenderToggled
+        DebugRenderToggled,
+        SceneFileActionRequested
     };
 
     class ENGINE_API Event {
