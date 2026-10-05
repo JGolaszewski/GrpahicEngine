@@ -5,6 +5,7 @@
 #include <array>
 #include <cctype>
 #include <fstream>
+#include <limits>
 #include <random>
 #include <vector>
 
@@ -231,10 +232,19 @@ namespace {
 		}
 		if (!hasMetadata && !WriteMetadata(metadataPath, assetGuid, error)) return false;
 
+		uint64_t generation = 1;
+		if (const auto existing = m_Models.find(assetGuid); existing != m_Models.end()) {
+			if (existing->second.generation == std::numeric_limits<uint64_t>::max()) {
+				error = "asset import generation is exhausted for GUID " + assetGuid;
+				return false;
+			}
+			generation = existing->second.generation + 1;
+		}
 		guid = std::move(assetGuid);
 		m_Models.insert_or_assign(guid, ModelRecord{
 			canonicalSource,
-			std::make_shared<const ImportedModel>(std::move(imported.model))
+			std::make_shared<const ImportedModel>(std::move(imported.model)),
+			generation
 		});
 		return true;
 	}
@@ -284,6 +294,11 @@ namespace {
 	std::shared_ptr<const ImportedModel> AssetManager::GetModel(const std::string& guid) const {
 		const auto it = m_Models.find(guid);
 		return it == m_Models.end() ? nullptr : it->second.model;
+	}
+
+	std::optional<uint64_t> AssetManager::GetGeneration(const std::string& guid) const {
+		const auto it = m_Models.find(guid);
+		return it == m_Models.end() ? std::nullopt : std::optional(it->second.generation);
 	}
 
 	std::optional<std::filesystem::path> AssetManager::GetSourcePath(const std::string& guid) const {

@@ -4,13 +4,23 @@
 #include "renderer/Light.h"
 
 #include <algorithm>
+#include <limits>
 
 namespace Engine {
 
-	EntityId Scene::AddEntity(std::shared_ptr<Renderer::Entity> entity)
+	EntityId Scene::AddEntity(std::shared_ptr<Renderer::Entity> entity, EntityId persistentId)
 	{
 		if (!entity) return InvalidEntityId;
-		const EntityId id = m_NextEntityId++;
+		EntityId id = m_NextEntityId;
+		if (persistentId != InvalidEntityId) {
+			if (persistentId == std::numeric_limits<EntityId>::max() ||
+				std::find(m_EntityIds.begin(), m_EntityIds.end(), persistentId) != m_EntityIds.end()) return InvalidEntityId;
+			id = persistentId;
+			m_NextEntityId = (std::max)(m_NextEntityId, persistentId + 1);
+		} else {
+			if (m_NextEntityId == InvalidEntityId) return InvalidEntityId;
+			++m_NextEntityId;
+		}
 		m_Entities.push_back(std::move(entity));
 		m_EntityIds.push_back(id);
 		return id;
@@ -98,10 +108,19 @@ namespace Engine {
 		return candidate;
 	}
 
-	LightId Scene::AddLight(std::shared_ptr<Renderer::SpotLight> light)
+	LightId Scene::AddLight(std::shared_ptr<Renderer::SpotLight> light, LightId persistentId)
 	{
 		if (!light) return InvalidLightId;
-		const LightId id = m_NextLightId++;
+		LightId id = m_NextLightId;
+		if (persistentId != InvalidLightId) {
+			if (persistentId == std::numeric_limits<LightId>::max() ||
+				std::find(m_LightIds.begin(), m_LightIds.end(), persistentId) != m_LightIds.end()) return InvalidLightId;
+			id = persistentId;
+			m_NextLightId = (std::max)(m_NextLightId, persistentId + 1);
+		} else {
+			if (m_NextLightId == InvalidLightId) return InvalidLightId;
+			++m_NextLightId;
+		}
 		m_Lights.push_back(std::move(light));
 		m_LightIds.push_back(id);
 		return id;
@@ -152,10 +171,19 @@ namespace Engine {
 		return nullptr;
 	}
 
-	CameraId Scene::AddCamera(std::shared_ptr<Renderer::Camera> camera)
+	CameraId Scene::AddCamera(std::shared_ptr<Renderer::Camera> camera, CameraId persistentId)
 	{
 		if (!camera) return InvalidCameraId;
-		const CameraId id = m_NextCameraId++;
+		CameraId id = m_NextCameraId;
+		if (persistentId != InvalidCameraId) {
+			if (persistentId == std::numeric_limits<CameraId>::max() ||
+				std::find(m_CameraIds.begin(), m_CameraIds.end(), persistentId) != m_CameraIds.end()) return InvalidCameraId;
+			id = persistentId;
+			m_NextCameraId = (std::max)(m_NextCameraId, persistentId + 1);
+		} else {
+			if (m_NextCameraId == InvalidCameraId) return InvalidCameraId;
+			++m_NextCameraId;
+		}
 		m_Cameras.push_back(std::move(camera));
 		m_CameraIds.push_back(id);
 		return id;

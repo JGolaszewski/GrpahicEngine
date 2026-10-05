@@ -5,6 +5,7 @@
 #include "RenderBackend.h"
 #include "RenderSystem.h"
 #include "AssetManager.h"
+#include "SceneDocument.h"
 
 #include "renderer/ViewportBinding.h"
 
@@ -38,6 +39,8 @@ namespace Engine {
 
         void AddScene(std::shared_ptr<Scene> scene);
         void RemoveScene(std::shared_ptr<Scene> scene);
+		bool LoadScene(const std::filesystem::path& path, std::string& error, std::vector<std::string>& warnings);
+		bool SaveScene(const std::filesystem::path& path, const Scene& scene, std::string& error) const;
 
         void AddViewport(std::shared_ptr<Engine::Viewport> viewport);
         void RemoveViewport(std::shared_ptr<Engine::Viewport> viewport);
@@ -76,6 +79,7 @@ namespace Engine {
         virtual void OnUIRender() {}
         virtual void OnResize(uint32_t width, uint32_t height) {}
         virtual void OnEvent(Events::Event& event) {}
+		virtual void OnSceneReplaced(const std::shared_ptr<Scene>&) {}
 
     private:
         bool InitializeCore(RenderAPI api);

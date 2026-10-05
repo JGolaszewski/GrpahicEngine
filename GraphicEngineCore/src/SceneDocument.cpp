@@ -117,6 +117,69 @@ namespace {
 		return true;
 	}
 
+	bool KnownKeys(const Json& object, std::initializer_list<const char*> known,
+		std::vector<std::string>& warnings, const std::string& context);
+
+	bool ReadMaterial(const Json& value, SceneMaterialDocument& material, std::vector<std::string>& warnings,
+		const std::string& context, std::string& error) {
+		if (!value.is_object()) {
+			error = "material must be an object";
+			return false;
+		}
+		KnownKeys(value, {"baseColor", "emissive", "metallic", "roughness", "gtrGamma", "ior", "specularF0", "brdfModel", "specularMode"}, warnings, context);
+		if (!ReadArrayField(value, "baseColor", material.baseColor, error) ||
+			!ReadArrayField(value, "emissive", material.emissive, error) ||
+			!ReadNumber(value, "metallic", material.metallic, error) ||
+			!ReadNumber(value, "roughness", material.roughness, error) ||
+			!ReadNumber(value, "gtrGamma", material.gtrGamma, error) ||
+			!ReadNumber(value, "ior", material.ior, error) ||
+			!ReadArrayField(value, "specularF0", material.specularF0, error)) return false;
+		if (value.contains("brdfModel")) {
+			if (!value["brdfModel"].is_string()) { error = "brdfModel must be a string"; return false; }
+			material.brdfModel = value["brdfModel"].get<std::string>();
+		}
+		if (value.contains("specularMode")) {
+			if (!value["specularMode"].is_string()) { error = "specularMode must be a string"; return false; }
+			material.specularMode = value["specularMode"].get<std::string>();
+		}
+		const auto validBrdf = material.brdfModel == "legacy" || material.brdfModel == "ggx" ||
+			material.brdfModel == "gtr" || material.brdfModel == "neural";
+		if (!validBrdf) { error = "brdfModel has an unsupported value"; return false; }
+		if (material.specularMode != "ior" && material.specularMode != "explicitF0") {
+			error = "specularMode has an unsupported value";
+			return false;
+		}
+		if (material.metallic < 0.0f || material.metallic > 1.0f || material.roughness < 0.0f ||
+			material.roughness > 1.0f || material.gtrGamma < 1.0f || material.gtrGamma > 8.0f ||
+			material.ior < 1.0f || material.ior > 3.0f) {
+			error = "material contains out-of-range BRDF settings";
+			return false;
+		}
+		for (float value : material.baseColor) if (value < 0.0f || value > 1.0f) { error = "baseColor values must be within [0, 1]"; return false; }
+		for (float value : material.emissive) if (value < 0.0f) { error = "emissive values must be non-negative"; return false; }
+		for (float value : material.specularF0) if (value < 0.0f || value > 1.0f) { error = "specularF0 values must be within [0, 1]"; return false; }
+		return true;
+	}
+
+	bool IsValidPrimitiveType(const std::string& type) {
+		return type == "cube" || type == "sphere" || type == "plane" || type == "cone";
+	}
+
+	bool IsValidMaterial(const SceneMaterialDocument& material) {
+		const auto validBrdf = material.brdfModel == "legacy" || material.brdfModel == "ggx" ||
+			material.brdfModel == "gtr" || material.brdfModel == "neural";
+		if (!validBrdf || (material.specularMode != "ior" && material.specularMode != "explicitF0") ||
+			!std::isfinite(material.metallic) || !std::isfinite(material.roughness) ||
+			!std::isfinite(material.gtrGamma) || !std::isfinite(material.ior) ||
+			material.metallic < 0.0f || material.metallic > 1.0f || material.roughness < 0.0f ||
+			material.roughness > 1.0f || material.gtrGamma < 1.0f || material.gtrGamma > 8.0f ||
+			material.ior < 1.0f || material.ior > 3.0f) return false;
+		for (float value : material.baseColor) if (!std::isfinite(value) || value < 0.0f || value > 1.0f) return false;
+		for (float value : material.emissive) if (!std::isfinite(value) || value < 0.0f) return false;
+		for (float value : material.specularF0) if (!std::isfinite(value) || value < 0.0f || value > 1.0f) return false;
+		return true;
+	}
+
 	bool KnownKeys(const Json& object, std::initializer_list<const char*> known, std::vector<std::string>& warnings, const std::string& context) {
 		if (!object.is_object()) return true;
 		for (auto it = object.begin(); it != object.end(); ++it) {
@@ -137,12 +200,40 @@ namespace {
 				{"id", entity.id}, {"name", entity.name},
 				{"modelGuid", entity.modelGuid ? Json(*entity.modelGuid) : Json(nullptr)},
 				{"materialGuid", entity.materialGuid ? Json(*entity.materialGuid) : Json(nullptr)},
+				{"primitiveType", entity.primitiveType ? Json(*entity.primitiveType) : Json(nullptr)},
 				{"position", entity.position}, {"rotation", entity.rotation}, {"scale", entity.scale},
 				{"render", {
 					{"forceWireframe", entity.forceWireframe}, {"disableDepthTest", entity.disableDepthTest},
 					{"castShadows", entity.castShadows}, {"receiveShadows", entity.receiveShadows}
 				}}
 			};
+			if (entity.material) {
+				const auto& material = *entity.material;
+				item["material"] = {
+					{"baseColor", material.baseColor}, {"emissive", material.emissive},
+					{"metallic", material.metallic}, {"roughness", material.roughness},
+					{"gtrGamma", material.gtrGamma}, {"ior", material.ior},
+					{"specularF0", material.specularF0}, {"brdfModel", material.brdfModel},
+					{"specularMode", material.specularMode}
+				};
+			}
+			if (!entity.materialOverrides.empty()) {
+				item["materialOverrides"] = Json::array();
+				for (const auto& override : entity.materialOverrides) {
+					if (!override) {
+						item["materialOverrides"].push_back(nullptr);
+						continue;
+					}
+					const auto& material = *override;
+					item["materialOverrides"].push_back({
+						{"baseColor", material.baseColor}, {"emissive", material.emissive},
+						{"metallic", material.metallic}, {"roughness", material.roughness},
+						{"gtrGamma", material.gtrGamma}, {"ior", material.ior},
+						{"specularF0", material.specularF0}, {"brdfModel", material.brdfModel},
+						{"specularMode", material.specularMode}
+					});
+				}
+			}
 			result["entities"].push_back(std::move(item));
 		}
 		result["lights"] = Json::array();
@@ -213,7 +304,7 @@ namespace {
 				const Json& item = root["entities"][index];
 				const std::string context = "entities[" + std::to_string(index) + "]";
 				if (!item.is_object()) { result.error = FileContext(path, context + " must be an object"); return result; }
-				KnownKeys(item, {"id", "name", "modelGuid", "materialGuid", "position", "rotation", "scale", "render"}, result.warnings, context);
+				KnownKeys(item, {"id", "name", "modelGuid", "materialGuid", "primitiveType", "material", "materialOverrides", "position", "rotation", "scale", "render"}, result.warnings, context);
 				SceneEntityDocument entity;
 				if (!ReadId(item, entity.id, fieldError) || !entityIds.insert(entity.id).second) {
 					result.error = FileContext(path, context + ".id must be a unique positive integer"); return result;
@@ -224,6 +315,40 @@ namespace {
 				}
 				if (!ReadOptionalGuid(item, "modelGuid", entity.modelGuid, fieldError) || !ReadOptionalGuid(item, "materialGuid", entity.materialGuid, fieldError)) {
 					result.error = FileContext(path, context + "." + fieldError); return result;
+				}
+				if (item.contains("primitiveType") && !item["primitiveType"].is_null()) {
+					if (!item["primitiveType"].is_string()) { result.error = FileContext(path, context + ".primitiveType must be a string or null"); return result; }
+					entity.primitiveType = item["primitiveType"].get<std::string>();
+					if (*entity.primitiveType != "cube" && *entity.primitiveType != "sphere" &&
+						*entity.primitiveType != "plane" && *entity.primitiveType != "cone") {
+						result.error = FileContext(path, context + ".primitiveType is unsupported"); return result;
+					}
+				}
+				if (item.contains("material") && !item["material"].is_null()) {
+					SceneMaterialDocument material;
+					if (!ReadMaterial(item["material"], material, result.warnings, context + ".material", fieldError)) {
+						result.error = FileContext(path, context + ".material: " + fieldError); return result;
+					}
+					entity.material = std::move(material);
+				}
+				if (item.contains("materialOverrides")) {
+					if (!item["materialOverrides"].is_array()) { result.error = FileContext(path, context + ".materialOverrides must be an array"); return result; }
+					for (size_t materialIndex = 0; materialIndex < item["materialOverrides"].size(); ++materialIndex) {
+						if (item["materialOverrides"][materialIndex].is_null()) {
+							entity.materialOverrides.push_back(std::nullopt);
+							continue;
+						}
+						SceneMaterialDocument material;
+						if (!ReadMaterial(item["materialOverrides"][materialIndex], material, result.warnings,
+							context + ".materialOverrides[" + std::to_string(materialIndex) + "]", fieldError)) {
+							result.error = FileContext(path, context + ".materialOverrides[" + std::to_string(materialIndex) + "]: " + fieldError);
+							return result;
+						}
+						entity.materialOverrides.push_back(std::move(material));
+					}
+				}
+				if (entity.modelGuid.has_value() == entity.primitiveType.has_value()) {
+					result.error = FileContext(path, context + " must specify exactly one of modelGuid or primitiveType"); return result;
 				}
 				if (item.contains("position") && !ReadFloatArray(item["position"], entity.position, context + ".position", fieldError)) { result.error = FileContext(path, fieldError); return result; }
 				if (item.contains("rotation") && !ReadFloatArray(item["rotation"], entity.rotation, context + ".rotation", fieldError)) { result.error = FileContext(path, fieldError); return result; }
@@ -309,6 +434,18 @@ namespace {
 			if (entity.id == 0 || !entityIds.insert(entity.id).second ||
 				(entity.modelGuid && !IsGuid(*entity.modelGuid)) || (entity.materialGuid && !IsGuid(*entity.materialGuid))) {
 				error = FileContext(path, "document contains a duplicate/invalid entity ID or asset GUID");
+				return false;
+			}
+			if (entity.modelGuid.has_value() == entity.primitiveType.has_value() ||
+				(entity.primitiveType && !IsValidPrimitiveType(*entity.primitiveType)) ||
+				(entity.material && !IsValidMaterial(*entity.material)) ||
+				(!entity.materialOverrides.empty() && !entity.modelGuid)) {
+				error = FileContext(path, "document contains an invalid entity asset descriptor or material");
+				return false;
+			}
+			if (std::any_of(entity.materialOverrides.begin(), entity.materialOverrides.end(),
+				[](const auto& material) { return material && !IsValidMaterial(*material); })) {
+				error = FileContext(path, "document contains an invalid model material override");
 				return false;
 			}
 			const float values[] = { entity.position[0], entity.position[1], entity.position[2], entity.rotation[0], entity.rotation[1], entity.rotation[2], entity.rotation[3], entity.scale[0], entity.scale[1], entity.scale[2] };

@@ -22,6 +22,7 @@ namespace Engine {
 		bool ImportModel(const std::filesystem::path& sourcePath, std::string& guid, std::string& error);
 		bool LoadModel(const std::string& guid, std::string& error);
 		std::shared_ptr<const ImportedModel> GetModel(const std::string& guid) const;
+		std::optional<uint64_t> GetGeneration(const std::string& guid) const;
 		std::optional<std::filesystem::path> GetSourcePath(const std::string& guid) const;
 
 		SceneDocumentResult LoadScene(const std::filesystem::path& path) const;
@@ -31,6 +32,7 @@ namespace Engine {
 		struct ModelRecord {
 			std::filesystem::path sourcePath;
 			std::shared_ptr<const ImportedModel> model;
+			uint64_t generation = 1;
 		};
 
 		std::filesystem::path m_ProjectRoot;

@@ -28,7 +28,7 @@ namespace Engine {
 		Scene() = default;
 		
 		// Entities
-		EntityId AddEntity(std::shared_ptr<Renderer::Entity> entity);
+		EntityId AddEntity(std::shared_ptr<Renderer::Entity> entity, EntityId persistentId = InvalidEntityId);
 		void RemoveEntity(Renderer::Entity* entity);
 		void RemoveEntity(EntityId id);
 		inline std::span<const std::shared_ptr<Renderer::Entity>> GetEntities() const {
@@ -45,7 +45,7 @@ namespace Engine {
 			uint32_t maxAttempts = 32) const;
 
 		// Lights
-		LightId AddLight(std::shared_ptr<Renderer::SpotLight> light);
+		LightId AddLight(std::shared_ptr<Renderer::SpotLight> light, LightId persistentId = InvalidLightId);
 		void RemoveLight(Renderer::SpotLight* light);
 		void RemoveLight(LightId id);
 		inline std::span<const std::shared_ptr<Renderer::SpotLight>> GetLights() const {
@@ -56,7 +56,7 @@ namespace Engine {
 		std::shared_ptr<Renderer::SpotLight> FindLight(LightId id) const;
 
 		// Cameras
-		CameraId AddCamera(std::shared_ptr<Renderer::Camera> camera);
+		CameraId AddCamera(std::shared_ptr<Renderer::Camera> camera, CameraId persistentId = InvalidCameraId);
 		void RemoveCamera(Renderer::Camera* camera);
 		void RemoveCamera(CameraId id);
 		inline std::span<const std::shared_ptr<Renderer::Camera>> GetCameras() const {

@@ -54,6 +54,8 @@ void Editor::OnInit() {
 		DirectX::XMFLOAT3(0.0f, 0.0f, 0.0f));
 	Engine::EntityId demoCubeId = Engine::InvalidEntityId;
 	if (demoCube) {
+		demoCube->Name = "Demo cube";
+		demoCube->PrimitiveType = "cube";
 		demoCubeId = m_ActiveScene->AddEntity(demoCube);
 	}
 
@@ -110,6 +112,26 @@ void Editor::OnInit() {
 			0, -1, -1,
 			demoCubeId, Engine::InvalidLightId, Engine::InvalidCameraId));
 	}
+}
+
+void Editor::OnSceneReplaced(const std::shared_ptr<Engine::Scene>& scene) {
+	m_ActiveScene = scene;
+	m_ActiveCameraId = scene && !scene->GetCameras().empty()
+		? scene->GetCameraIdAt(0)
+		: Engine::InvalidCameraId;
+	m_SelectedItemType = SelectedItemType::None;
+	m_SelectedEntityId = Engine::InvalidEntityId;
+	m_SelectedLightId = Engine::InvalidLightId;
+	m_SelectedCameraId = Engine::InvalidCameraId;
+	m_CommandHistory.Clear();
+	if (const auto camera = GetActiveCamera()) {
+		m_CameraFov = camera->GetFovRadians();
+		m_CameraNearPlane = camera->GetNearPlane();
+		m_CameraFarPlane = camera->GetFarPlane();
+	}
+	BroadcastSceneChanged();
+	BroadcastCameraSettings();
+	BroadcastViewportChanged();
 }
 
 void Editor::CreateViewport(uint32_t width, uint32_t height) {
@@ -356,11 +378,12 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
 
 		const DirectX::XMFLOAT3 spawnPosition = m_ActiveScene->FindFreeSpawnPosition(e.GetPosition());
 		Engine::PrimitiveShape shape;
+		const char* primitiveType = nullptr;
 		switch (e.GetShape()) {
-		case AddObjectRequestedEvent::Shape::Cube:   shape = Engine::PrimitiveShape::Cube;   break;
-		case AddObjectRequestedEvent::Shape::Sphere: shape = Engine::PrimitiveShape::Sphere; break;
-		case AddObjectRequestedEvent::Shape::Plane:  shape = Engine::PrimitiveShape::Plane;  break;
-		case AddObjectRequestedEvent::Shape::Cone:   shape = Engine::PrimitiveShape::Cone;   break;
+		case AddObjectRequestedEvent::Shape::Cube:   shape = Engine::PrimitiveShape::Cube; primitiveType = "cube"; break;
+		case AddObjectRequestedEvent::Shape::Sphere: shape = Engine::PrimitiveShape::Sphere; primitiveType = "sphere"; break;
+		case AddObjectRequestedEvent::Shape::Plane:  shape = Engine::PrimitiveShape::Plane; primitiveType = "plane"; break;
+		case AddObjectRequestedEvent::Shape::Cone:   shape = Engine::PrimitiveShape::Cone; primitiveType = "cone"; break;
 		default: return false;
 		}
 
@@ -375,6 +398,8 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
 		}
 
 		if (!m_ActiveScene) return false;
+		createdEntity->PrimitiveType = primitiveType;
+		createdEntity->Name = primitiveType;
 		const Engine::EntityId createdEntityId = m_ActiveScene->AddEntity(createdEntity);
 
 		m_SelectedItemType = SelectedItemType::Object;

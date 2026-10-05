@@ -12,11 +12,26 @@
 namespace Engine {
 	inline constexpr uint32_t CurrentSceneSchemaVersion = 1;
 
+	struct SceneMaterialDocument {
+		std::array<float, 4> baseColor = { 1.0f, 1.0f, 1.0f, 1.0f };
+		std::array<float, 3> emissive{};
+		float metallic = 0.0f;
+		float roughness = 0.5f;
+		float gtrGamma = 2.0f;
+		float ior = 1.5f;
+		std::array<float, 3> specularF0 = { 0.04f, 0.04f, 0.04f };
+		std::string brdfModel = "legacy";
+		std::string specularMode = "ior";
+	};
+
 	struct SceneEntityDocument {
 		uint64_t id = 0;
 		std::string name;
 		std::optional<std::string> modelGuid;
 		std::optional<std::string> materialGuid;
+		std::optional<std::string> primitiveType;
+		std::optional<SceneMaterialDocument> material;
+		std::vector<std::optional<SceneMaterialDocument>> materialOverrides;
 		std::array<float, 3> position{};
 		std::array<float, 4> rotation = { 0.0f, 0.0f, 0.0f, 1.0f };
 		std::array<float, 3> scale = { 1.0f, 1.0f, 1.0f };
