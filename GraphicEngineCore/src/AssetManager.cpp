@@ -211,6 +211,48 @@ namespace {
 		return true;
 	}
 
+	bool AssetManager::LoadModel(const std::string& guid, std::string& error) {
+		error.clear();
+		if (m_Models.contains(guid)) return true;
+		if (m_ProjectRoot.empty() || !IsGuid(guid)) {
+			error = m_ProjectRoot.empty() ? "project root must be set before loading assets" : "asset GUID is invalid";
+			return false;
+		}
+
+		std::optional<std::filesystem::path> sourcePath;
+		std::error_code ec;
+		for (std::filesystem::recursive_directory_iterator it(m_ProjectRoot, ec), end; it != end && !ec; it.increment(ec)) {
+			if (!it->is_regular_file(ec) || it->path().extension() != ".meta") continue;
+			std::string metadataGuid;
+			std::string metadataError;
+			if (!ReadMetadata(it->path(), metadataGuid, metadataError) || metadataGuid != guid) continue;
+			if (sourcePath) {
+				error = "duplicate asset GUID " + guid + " in " + it->path().generic_string();
+				return false;
+			}
+			auto source = it->path();
+			source.replace_extension();
+			sourcePath = std::move(source);
+		}
+		if (ec) {
+			error = m_ProjectRoot.generic_string() + ": could not scan project metadata: " + ec.message();
+			return false;
+		}
+		if (!sourcePath) {
+			error = "asset GUID " + guid + " was not found in project metadata";
+			return false;
+		}
+
+		std::string loadedGuid;
+		if (!ImportModel(*sourcePath, loadedGuid, error)) return false;
+		if (loadedGuid != guid) {
+			m_Models.erase(loadedGuid);
+			error = sourcePath->generic_string() + ": resolved sidecar GUID changed during load";
+			return false;
+		}
+		return true;
+	}
+
 	std::shared_ptr<const ImportedModel> AssetManager::GetModel(const std::string& guid) const {
 		const auto it = m_Models.find(guid);
 		return it == m_Models.end() ? nullptr : it->second.model;

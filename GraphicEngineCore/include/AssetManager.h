@@ -20,6 +20,7 @@ namespace Engine {
 		const std::filesystem::path& GetProjectRoot() const noexcept { return m_ProjectRoot; }
 
 		bool ImportModel(const std::filesystem::path& sourcePath, std::string& guid, std::string& error);
+		bool LoadModel(const std::string& guid, std::string& error);
 		std::shared_ptr<const ImportedModel> GetModel(const std::string& guid) const;
 		std::optional<std::filesystem::path> GetSourcePath(const std::string& guid) const;
 
