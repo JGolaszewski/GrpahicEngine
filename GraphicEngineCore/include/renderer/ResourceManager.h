@@ -26,7 +26,7 @@ namespace Renderer {
 		bool GetOrCreateModelMeshes(
 			const std::string& guid,
 			uint64_t generation,
-			const ImportedModel& model,
+			const Engine::ImportedModel& model,
 			std::vector<std::vector<std::shared_ptr<Mesh>>>& meshes,
 			std::string& error);
 		std::shared_ptr<Mesh> GetMesh(const std::string& guid, uint64_t generation) const;

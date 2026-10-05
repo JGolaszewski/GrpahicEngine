@@ -54,7 +54,7 @@ namespace Renderer {
 	bool ResourceManager::GetOrCreateModelMeshes(
 		const std::string& guid,
 		uint64_t generation,
-		const ImportedModel& model,
+		const Engine::ImportedModel& model,
 		std::vector<std::vector<std::shared_ptr<Mesh>>>& meshes,
 		std::string& error) {
 		error.clear();
