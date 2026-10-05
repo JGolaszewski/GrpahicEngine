@@ -19,3 +19,6 @@
 #include "events/CommandExecuteRequestedEvent.h"
 #include "events/DebugRenderToggledEvent.h"
 #include "events/SceneFileActionRequestedEvent.h"
+#include "events/AssetImportRequestedEvent.h"
+#include "events/AssetRegistryChangedEvent.h"
+#include "events/AddModelRequestedEvent.h"

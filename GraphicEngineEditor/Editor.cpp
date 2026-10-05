@@ -13,6 +13,7 @@
 #include "panels/ScenePanel.h"
 #include "panels/MainBar.h"
 #include "panels/StatisticsPanel.h"
+#include "panels/AssetBrowserPanel.h"
 #include "events/EditorEvents.h"
 
 #include <DirectXMath.h>
@@ -46,6 +47,20 @@ std::optional<std::filesystem::path> ShowSceneDialog(
 	dialog.lpstrDefExt = L"json";
 	const BOOL accepted = save ? GetSaveFileNameW(&dialog) : GetOpenFileNameW(&dialog);
 	return accepted ? std::optional(std::filesystem::path(filename)) : std::nullopt;
+}
+
+std::optional<std::filesystem::path> ShowModelDialog(const std::filesystem::path& projectRoot) {
+	wchar_t filename[32768]{};
+	const auto initialDirectory = projectRoot.wstring();
+	OPENFILENAMEW dialog{};
+	dialog.lStructSize = sizeof(dialog);
+	dialog.lpstrFile = filename;
+	dialog.nMaxFile = static_cast<DWORD>(std::size(filename));
+	dialog.lpstrFilter = L"glTF models (*.gltf;*.glb)\0*.gltf;*.glb\0\0";
+	dialog.nFilterIndex = 1;
+	dialog.lpstrInitialDir = initialDirectory.c_str();
+	dialog.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR;
+	return GetOpenFileNameW(&dialog) ? std::optional(std::filesystem::path(filename)) : std::nullopt;
 }
 }
 
@@ -125,6 +140,7 @@ void Editor::OnInit() {
 	m_Windows.push_back(std::make_unique<ScenePanel>());
 	m_Windows.push_back(std::make_unique<HierarchyPanel>());
 	m_Windows.push_back(std::make_unique<InspectorPanel>());
+	m_Windows.push_back(std::make_unique<AssetBrowserPanel>());
 
 	auto emitter = [this](std::unique_ptr<Engine::Events::Event> event) {
 		this->ProcessPanelEvent(std::move(event));
@@ -138,6 +154,8 @@ void Editor::OnInit() {
 
 	// Broadcast initial state
 	BroadcastSceneChanged();
+	AssetRegistryChangedEvent initialAssets(GetAssetManager()->GetKnownModels());
+	BroadcastEvent(initialAssets);
 	BroadcastCameraSettings();
 	BroadcastViewportChanged();
 	if (demoCubeId != Engine::InvalidEntityId) {
@@ -165,6 +183,8 @@ void Editor::OnSceneReplaced(const std::shared_ptr<Engine::Scene>& scene) {
 		m_CameraFarPlane = camera->GetFarPlane();
 	}
 	BroadcastSceneChanged();
+	AssetRegistryChangedEvent assetUpdate(GetAssetManager()->GetKnownModels());
+	BroadcastEvent(assetUpdate);
 	BroadcastCameraSettings();
 	BroadcastViewportChanged();
 }
@@ -541,6 +561,54 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
 		RequestSceneAction(e.GetAction());
 		return true;
 		});
+
+	dispatcher.Dispatch<AssetImportRequestedEvent>([this](const auto&) {
+		const auto path = ShowModelDialog(GetAssetManager()->GetProjectRoot());
+		if (!path) return true;
+		std::string guid;
+		if (!GetAssetManager()->ImportModel(*path, guid, m_FileError)) return true;
+		AssetRegistryChangedEvent assetUpdate(GetAssetManager()->GetKnownModels());
+		BroadcastEvent(assetUpdate);
+		return true;
+		});
+
+	dispatcher.Dispatch<AddModelRequestedEvent>([this](const auto& request) {
+		if (!m_ActiveScene || !GetRenderSystem()) return true;
+		std::string error;
+		if (!GetAssetManager()->LoadModel(request.GetGuid(), error)) {
+			m_FileError = std::move(error);
+			return true;
+		}
+		const auto model = GetAssetManager()->GetModel(request.GetGuid());
+		const auto generation = GetAssetManager()->GetGeneration(request.GetGuid());
+		if (!model || !generation) {
+			m_FileError = "The imported model is not available in the asset registry.";
+			return true;
+		}
+		std::vector<std::string> warnings;
+		auto entity = GetRenderSystem()->CreateModelEntity(request.GetGuid(), *generation, *model, {}, error, warnings);
+		if (!entity) {
+			m_FileError = std::move(error);
+			return true;
+		}
+		entity->Name = model->sourcePath.stem().string();
+		const auto position = m_ActiveScene->FindFreeSpawnPosition(request.GetPosition());
+		entity->transform.SetPosition(position.x, position.y, position.z);
+		entity->transform.SetScale(request.GetScale().x, request.GetScale().y, request.GetScale().z);
+		const Engine::EntityId id = m_ActiveScene->AddEntity(entity);
+		m_SceneDirty = true;
+		m_SelectedItemType = SelectedItemType::Object;
+		m_SelectedEntityId = id;
+		m_SelectedLightId = Engine::InvalidLightId;
+		m_SelectedCameraId = Engine::InvalidCameraId;
+		BroadcastSceneChanged();
+		EntitySelectedEvent selected(EntitySelectedEvent::ItemType::Object,
+			static_cast<int>(m_ActiveScene->GetEntityCount() - 1), -1, -1, id,
+			Engine::InvalidLightId, Engine::InvalidCameraId, entity, {}, {});
+		BroadcastEvent(selected);
+		if (!warnings.empty()) m_FileError = warnings.front();
+		return true;
+		});
 }
 
 void Editor::BroadcastEvent(Engine::Events::Event& event) {
@@ -759,7 +827,8 @@ void Editor::BuildDefaultDockLayout(ImGuiID dockspaceId) {
 
 	ImGui::DockBuilderDockWindow("Scene", dockLeft);
 	ImGui::DockBuilderDockWindow("Inspector", dockRight);
-	ImGui::DockBuilderDockWindow("Statistics", dockBottom);
+			ImGui::DockBuilderDockWindow("Statistics", dockBottom);
+			ImGui::DockBuilderDockWindow("Assets", dockBottom);
 	ImGui::DockBuilderDockWindow("Viewport", dockMain);
 	ImGui::DockBuilderFinish(dockspaceId);
 }

@@ -2,6 +2,7 @@
 
 #include <imgui.h>
 #include <string>
+#include <algorithm>
 
 // ================================================================================
 // HierarchyPanel::OnEvent
@@ -33,6 +34,13 @@ void HierarchyPanel::OnEvent(Engine::Events::Event& event) {
         m_SelectedObjectIndex = -1;
         m_SelectedLightIndex = -1;
         m_SelectedCameraIndex = -1;
+        return false;
+    });
+
+    dispatcher.Dispatch<AssetRegistryChangedEvent>([this](const auto& update) {
+        m_Models = update.GetModels();
+        if (m_Models.empty()) m_SelectedModelIndex = 0;
+        else m_SelectedModelIndex = (std::clamp)(m_SelectedModelIndex, 0, static_cast<int>(m_Models.size()) - 1);
         return false;
     });
 }
@@ -140,6 +148,20 @@ void HierarchyPanel::DrawAddObjectModal() {
 
     ImGui::SliderFloat("Start metallic", &m_SpawnMetallic, 0.0f, 1.0f);
     ImGui::SliderFloat("Start roughness", &m_SpawnRoughness, 0.0f, 1.0f);
+
+    if (!m_Models.empty()) {
+        std::vector<const char*> modelNames;
+        modelNames.reserve(m_Models.size());
+        for (const auto& model : m_Models) modelNames.push_back(model.name.c_str());
+        ImGui::SeparatorText("Imported model");
+        ImGui::Combo("Asset", &m_SelectedModelIndex, modelNames.data(), static_cast<int>(modelNames.size()));
+        if (ImGui::Button("Add selected model", ImVec2(-1.0f, 0.0f))) {
+            const auto& model = m_Models[static_cast<size_t>(m_SelectedModelIndex)];
+            EmitEvent(std::make_unique<AddModelRequestedEvent>(model.guid, m_SpawnPosition, m_SpawnScale));
+            m_SpawnPosition.x += 2.5f;
+            ImGui::CloseCurrentPopup();
+        }
+    }
 
     if (ImGui::Button("Add", ImVec2(140.0f, 0.0f))) {
         AddObjectRequestedEvent::Shape shape;

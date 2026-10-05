@@ -306,6 +306,18 @@ namespace {
 		return it == m_Models.end() ? std::nullopt : std::optional(it->second.sourcePath);
 	}
 
+	std::vector<AssetManager::ModelAssetInfo> AssetManager::GetKnownModels() const {
+		std::vector<ModelAssetInfo> result;
+		result.reserve(m_Models.size());
+		for (const auto& [guid, record] : m_Models) {
+			result.push_back({ guid, record.sourcePath.stem().string(), record.sourcePath });
+		}
+		std::sort(result.begin(), result.end(), [](const auto& left, const auto& right) {
+			return left.name == right.name ? left.guid < right.guid : left.name < right.name;
+		});
+		return result;
+	}
+
 	SceneDocumentResult AssetManager::LoadScene(const std::filesystem::path& path) const {
 		std::string error;
 		const auto resolvedPath = ResolveProjectPath(m_ProjectRoot, path, error);

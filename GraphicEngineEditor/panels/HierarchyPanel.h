@@ -3,6 +3,7 @@
 #include "EditorPanel.h"
 #include "events/EditorEvents.h"
 #include "Scene.h"
+#include "AssetManager.h"
 #include <DirectXMath.h>
 #include <memory>
 #include <vector>
@@ -56,4 +57,6 @@ private:
     DirectX::XMFLOAT3 m_SpawnEmissive = { 0.0f, 0.0f, 0.0f };
     float m_SpawnMetallic = 0.0f;
     float m_SpawnRoughness = 0.8f;
+    std::vector<Engine::AssetManager::ModelAssetInfo> m_Models;
+    int m_SelectedModelIndex = 0;
 };

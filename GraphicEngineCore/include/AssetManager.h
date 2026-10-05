@@ -9,10 +9,16 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 namespace Engine {
 	class ENGINE_API AssetManager {
 	public:
+		struct ModelAssetInfo {
+			std::string guid;
+			std::string name;
+			std::filesystem::path sourcePath;
+		};
 		AssetManager() = default;
 		explicit AssetManager(std::filesystem::path projectRoot);
 
@@ -24,6 +30,7 @@ namespace Engine {
 		std::shared_ptr<const ImportedModel> GetModel(const std::string& guid) const;
 		std::optional<uint64_t> GetGeneration(const std::string& guid) const;
 		std::optional<std::filesystem::path> GetSourcePath(const std::string& guid) const;
+		std::vector<ModelAssetInfo> GetKnownModels() const;
 
 		SceneDocumentResult LoadScene(const std::filesystem::path& path) const;
 		bool SaveScene(const std::filesystem::path& path, const SceneDocument& document, std::string& error) const;

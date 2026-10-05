@@ -56,7 +56,10 @@ namespace Engine::Events {
         AddObjectRequested,
         CommandExecuteRequested,
         DebugRenderToggled,
-        SceneFileActionRequested
+        SceneFileActionRequested,
+        AssetImportRequested,
+        AssetRegistryChanged,
+        AddModelRequested
     };
 
     class ENGINE_API Event {

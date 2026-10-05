@@ -15,6 +15,8 @@ add_executable(Editor
     "panels/MainBar.cpp"
     "panels/StatisticsPanel.h"
     "panels/StatisticsPanel.cpp"
+    "panels/AssetBrowserPanel.h"
+    "panels/AssetBrowserPanel.cpp"
     "events/EditorEvents.h"
     "events/EntitySelectedEvent.h"
     "events/EntityDeselectedEvent.h"
