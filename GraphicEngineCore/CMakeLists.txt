@@ -80,6 +80,7 @@ set(CORE_HEADERS
     include/renderer/brdf/Brdf.h
     include/RenderSystem.h
     include/Scene.h
+    include/SceneDocument.h
     include/SceneRenderer.h
     include/Window.h
     include/windows/GLFWWindow.h
@@ -112,6 +113,7 @@ set(CORE_SOURCES
     src/ViewportTarget.cpp
     src/RenderSystem.cpp
     src/Scene.cpp
+    src/SceneDocument.cpp
     src/SceneRenderer.cpp
     src/windows/GLFWWindow.cpp
 )
