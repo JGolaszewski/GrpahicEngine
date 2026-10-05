@@ -275,6 +275,7 @@ namespace Engine {
         }
         warnings = std::move(loaded.warnings);
         auto stagedScene = std::make_shared<Scene>();
+        stagedScene->SetUnitsPerMeter(loaded.document.unitsPerMeter);
         const auto fail = [&](std::string message) {
             if (auto* materials = m_RenderSystem->GetMaterialSystem()) {
                 for (const auto& entity : stagedScene->GetEntities()) {
@@ -387,6 +388,7 @@ namespace Engine {
 
     bool Application::SaveScene(const std::filesystem::path& path, const Scene& scene, std::string& error) const {
         SceneDocument document;
+        document.unitsPerMeter = scene.GetUnitsPerMeter();
         for (const auto& entity : scene.GetEntities()) {
             if (!entity) continue;
             SceneEntityDocument item;

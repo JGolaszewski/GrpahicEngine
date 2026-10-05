@@ -104,6 +104,7 @@ namespace {
 	void TestSceneJsonRoundTrip(const std::filesystem::path& project) {
 		Engine::AssetManager assets(project);
 		Engine::SceneDocument document;
+		document.unitsPerMeter = 0.01f;
 		Engine::SceneEntityDocument entity;
 		entity.id = 17;
 		entity.name = "serialized entity";
@@ -151,6 +152,8 @@ namespace {
 			result.materialOverrides[0]->metallic == overrideMaterial.metallic,
 			"scene round-trip changed an editable material override");
 		Require(result.position == entity.position && result.forceWireframe, "scene round-trip changed entity settings");
+		Require(loaded.document.unitsPerMeter == document.unitsPerMeter,
+			"scene round-trip changed its physical unit scale");
 		const auto& loadedPrimitive = loaded.document.entities[1];
 		Require(loadedPrimitive.id == primitive.id && loadedPrimitive.primitiveType == primitive.primitiveType,
 			"scene round-trip changed a primitive descriptor or durable ID");

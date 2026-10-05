@@ -26,6 +26,8 @@ namespace Engine {
 	class ENGINE_API Scene {
 	public:
 		Scene() = default;
+		float GetUnitsPerMeter() const noexcept { return m_UnitsPerMeter; }
+		void SetUnitsPerMeter(float unitsPerMeter) noexcept { m_UnitsPerMeter = unitsPerMeter; }
 		
 		// Entities
 		EntityId AddEntity(std::shared_ptr<Renderer::Entity> entity, EntityId persistentId = InvalidEntityId);
@@ -81,5 +83,6 @@ namespace Engine {
 		EntityId m_NextEntityId = 1;
 		LightId m_NextLightId = 1;
 		CameraId m_NextCameraId = 1;
+		float m_UnitsPerMeter = 1.0f;
 	};
 }
