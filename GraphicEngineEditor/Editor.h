@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Application.h"
+#include "EditorEventRouter.h"
 #include "EditorCameraController.h"
 #include "EditorSceneDocument.h"
 #include "commands/CommandHistory.h"
@@ -128,6 +129,8 @@ class Editor : public Engine::Application
     Engine::CameraId m_ActiveCameraId = Engine::InvalidCameraId;
 
     std::vector<std::unique_ptr<EditorPanel>> m_Windows;
+    EditorEventRouter m_EventRouter;
+    std::vector<EditorEventRouter::Connection> m_PanelConnections;
 
     std::pair<float, float> m_ViewportSize = {0.0f, 0.0f};
 

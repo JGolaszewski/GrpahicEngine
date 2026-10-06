@@ -21,7 +21,7 @@ class Event;
 class EditorPanel
 {
   public:
-    using EventEmitter = std::function<void(std::unique_ptr<Engine::Events::Event>)>;
+    using RequestHandler = std::function<void(std::unique_ptr<Engine::Events::Event>)>;
 
     virtual ~EditorPanel() = default;
 
@@ -36,22 +36,22 @@ class EditorPanel
 
     // Set by the Editor after construction. Panels use EmitEvent() to send
     // state-change requests back to the Editor.
-    void SetEventEmitter(EventEmitter emitter)
-    {
-        m_Emitter = std::move(emitter);
-    }
-
   protected:
     // Emits an event to the Editor. The Editor receives it synchronously
     // and is responsible for updating global state and broadcasting back.
     void EmitEvent(std::unique_ptr<Engine::Events::Event> event)
     {
-        if (m_Emitter)
-        {
-            m_Emitter(std::move(event));
-        }
+        if (m_RequestSink)
+            m_RequestSink(std::move(event));
     }
 
   private:
-    EventEmitter m_Emitter;
+    void SetRequestSink(RequestHandler requestSink)
+    {
+        m_RequestSink = std::move(requestSink);
+    }
+
+    RequestHandler m_RequestSink;
+
+    friend class EditorEventRouter;
 };

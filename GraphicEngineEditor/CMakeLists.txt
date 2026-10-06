@@ -9,6 +9,8 @@ target_link_libraries(EditorUI PRIVATE GraphicEngineCore RenderBackendD3D11 imgu
 target_compile_features(EditorUI PRIVATE cxx_std_23)
 
 add_executable(Editor
+    "EditorEventRouter.h"
+    "EditorEventRouter.cpp"
     "main.cpp"
     "Editor.h"
     "Editor.cpp"

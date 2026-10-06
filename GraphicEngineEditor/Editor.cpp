@@ -140,15 +140,13 @@ void Editor::OnInit()
     m_Windows.push_back(std::make_unique<InspectorPanel>());
     m_Windows.push_back(std::make_unique<AssetBrowserPanel>());
 
-    auto emitter = [this](std::unique_ptr<Engine::Events::Event> event) {
-        this->ProcessPanelEvent(std::move(event));
-    };
-
+    m_PanelConnections.reserve(m_Windows.size());
     for (auto &window : m_Windows)
     {
         if (window)
         {
-            window->SetEventEmitter(emitter);
+            m_PanelConnections.push_back(m_EventRouter.Subscribe(
+                *window, [this](auto event) { ProcessPanelEvent(std::move(event)); }));
         }
     }
 
@@ -293,17 +291,9 @@ void Editor::OnUpdate(float deltaTime)
 
 void Editor::OnEvent(Engine::Events::Event &event)
 {
-    for (auto &window : m_Windows)
-    {
-        if (window)
-        {
-            window->OnEvent(event);
-            if (event.Handled)
-            {
-                return;
-            }
-        }
-    }
+    m_EventRouter.DispatchInput(event);
+    if (event.Handled)
+        return;
 
     Engine::Events::EventDispatcher dispatcher(event);
 
@@ -1273,13 +1263,7 @@ void Editor::ReimportAsset(const std::string &guid)
 
 void Editor::BroadcastEvent(Engine::Events::Event &event)
 {
-    for (auto &window : m_Windows)
-    {
-        if (window)
-        {
-            window->OnEvent(event);
-        }
-    }
+    m_EventRouter.NotifyPanels(event);
 }
 
 void Editor::BroadcastSceneChanged()
