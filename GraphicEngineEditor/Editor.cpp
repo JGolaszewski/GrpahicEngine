@@ -1138,8 +1138,13 @@ void Editor::DrawUnsavedChangesModal() {
 	if (!m_FileError.empty()) {
 		ImGui::OpenPopup("Scene operation");
 	}
-	if (ImGui::BeginPopupModal("Scene operation", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+	ImGui::SetNextWindowSize(ImVec2(640.0f, 320.0f), ImGuiCond_Appearing);
+	if (ImGui::BeginPopupModal("Scene operation")) {
+		ImGui::BeginChild("Operation details", ImVec2(0.0f, -ImGui::GetFrameHeightWithSpacing()), true);
 		ImGui::TextWrapped("%s", m_FileError.c_str());
+		ImGui::EndChild();
+		const float buttonWidth = ImGui::CalcTextSize("OK").x + ImGui::GetStyle().FramePadding.x * 2.0f;
+		ImGui::SetCursorPosX((ImGui::GetWindowWidth() - buttonWidth) * 0.5f);
 		if (ImGui::Button("OK")) {
 			m_FileError.clear();
 			ImGui::CloseCurrentPopup();
