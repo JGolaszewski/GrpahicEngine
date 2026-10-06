@@ -19,8 +19,7 @@ protected:
 		
 		scene->AddCamera(m_Camera);
 
-		auto material = std::make_shared<Renderer::Material>(0);
-		GetRenderSystem()->GetMaterialSystem()->RegisterMaterial(material);
+		auto material = GetRenderSystem()->CreateMaterial(Renderer::MaterialProperties{});
 
 		auto cube = GetRenderSystem()->CreatePrimitive(
 			Engine::PrimitiveShape::Cube,

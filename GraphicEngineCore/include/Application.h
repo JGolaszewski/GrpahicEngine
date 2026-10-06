@@ -35,6 +35,8 @@ namespace Engine {
         void RemoveScene(std::shared_ptr<Scene> scene);
 		bool LoadScene(const std::filesystem::path& path, std::string& error, std::vector<std::string>& warnings);
 		bool SaveScene(const std::filesystem::path& path, const Scene& scene, std::string& error) const;
+		bool LoadSceneDocument(const SceneDocument& document, std::string& error, std::vector<std::string>& warnings);
+		SceneDocument CreateSceneDocument(const Scene& scene) const;
 
         void AddViewport(std::shared_ptr<Engine::Viewport> viewport);
         void RemoveViewport(std::shared_ptr<Engine::Viewport> viewport);

@@ -86,7 +86,7 @@ void Editor::OnInit() {
 	demoMaterialProperties.BaseColor = { 0.25f, 0.55f, 0.95f, 1.0f };
 	demoMaterialProperties.Roughness = 0.45f;
 	demoMaterialProperties.Model = Renderer::BrdfModel::GGX;
-	auto demoMaterial = GetRenderSystem()->GetMaterialSystem()->CreateMaterial(demoMaterialProperties);
+	auto demoMaterial = GetRenderSystem()->CreateMaterial(demoMaterialProperties);
 	auto demoCube = GetRenderSystem()->CreatePrimitive(
 		Engine::PrimitiveShape::Cube,
 		demoMaterial,
@@ -434,7 +434,7 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
 		materialProperties.Emissive = e.GetEmissive();
 		materialProperties.Metallic = e.GetMetallic();
 		materialProperties.Roughness = e.GetRoughness();
-		auto material = GetRenderSystem()->GetMaterialSystem()->CreateMaterial(materialProperties);
+		auto material = GetRenderSystem()->CreateMaterial(materialProperties);
 
 		const DirectX::XMFLOAT3 spawnPosition = m_ActiveScene->FindFreeSpawnPosition(e.GetPosition());
 		Engine::PrimitiveShape shape;
@@ -841,7 +841,7 @@ void Editor::ReassignModel(Engine::EntityId entityId, const std::string& guid) {
 		if (!GetRenderSystem()->SetMaterialTextures(submesh.material, base, normal,
 			sourceMaterial->GetBaseColorTextureGuid(), sourceMaterial->GetNormalTextureGuid())) {
 			for (const auto& staged : after->Submeshes)
-				if (staged.material) GetRenderSystem()->GetMaterialSystem()->UnregisterMaterial(staged.material);
+				if (staged.material) GetRenderSystem()->UnregisterMaterial(staged.material);
 			m_FileError = "The new model's texture bindings could not be created.";
 			return;
 		}
@@ -909,7 +909,7 @@ void Editor::ReimportAsset(const std::string& guid) {
 	const auto cleanup = [&]() {
 		for (const auto& replacement : replacements) {
 			for (const auto& submesh : replacement.entity->Submeshes)
-				if (submesh.material) GetRenderSystem()->GetMaterialSystem()->UnregisterMaterial(submesh.material);
+				if (submesh.material) GetRenderSystem()->UnregisterMaterial(submesh.material);
 		}
 	};
 	for (size_t i = 0; i < m_ActiveScene->GetEntities().size(); ++i) {
@@ -957,7 +957,7 @@ void Editor::ReimportAsset(const std::string& guid) {
 			if (!GetRenderSystem()->SetMaterialTextures(next->material, base, normal,
 				oldSubmesh.material->GetBaseColorTextureGuid(), oldSubmesh.material->GetNormalTextureGuid())) {
 				for (const auto& submesh : replacement->Submeshes)
-					if (submesh.material) GetRenderSystem()->GetMaterialSystem()->UnregisterMaterial(submesh.material);
+					if (submesh.material) GetRenderSystem()->UnregisterMaterial(submesh.material);
 				cleanup();
 				m_FileError = "Model reimport could not restore material texture bindings.";
 				return;
@@ -1127,10 +1127,16 @@ void Editor::RequestSceneAction(SceneFileActionRequestedEvent::Action action) {
 	if (!path) return;
 	std::string error;
 	std::vector<std::string> warnings;
-	if (!m_SceneDocument.Load(*this, *path, error, warnings)) {
+	Engine::SceneDocument document;
+	if (!m_SceneDocument.Load(*GetAssetManager(), *path, document, error, warnings)) {
 		m_FileError = std::move(error);
 		return;
 	}
+	if (!LoadSceneDocument(document, error, warnings)) {
+		m_FileError = std::move(error);
+		return;
+	}
+	m_SceneDocument.CommitPath(*path);
 	m_SceneDirty = false;
 	if (!warnings.empty()) m_FileError = JoinWarnings(warnings);
 }
@@ -1145,7 +1151,8 @@ bool Editor::SaveCurrentScene(bool choosePath) {
 		: (m_SceneDocument.GetPath().empty() ? std::nullopt : std::optional(m_SceneDocument.GetPath()));
 	if (!path) return false;
 	std::string error;
-	if (!m_SceneDocument.Save(*this, *m_ActiveScene, *path, error)) {
+	const Engine::SceneDocument document = CreateSceneDocument(*m_ActiveScene);
+	if (!m_SceneDocument.Save(*GetAssetManager(), document, *path, error)) {
 		m_FileError = std::move(error);
 		return false;
 	}

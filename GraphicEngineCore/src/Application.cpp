@@ -248,26 +248,35 @@ namespace Engine {
         std::vector<std::string>& warnings) {
         error.clear();
         warnings.clear();
+        SceneDocumentResult loaded = m_AssetManager.LoadScene(path);
+        if (!loaded) {
+            error = std::move(loaded.error);
+            warnings.clear();
+            return false;
+        }
+        warnings = std::move(loaded.warnings);
+        return LoadSceneDocument(loaded.document, error, warnings);
+    }
+
+    bool Application::LoadSceneDocument(
+        const SceneDocument& document,
+        std::string& error,
+        std::vector<std::string>& warnings) {
+        error.clear();
         if (!m_RenderSystem || m_RenderSystem->IsFrameActive()) {
             error = "scene loading requires an initialized renderer outside an active frame";
             return false;
         }
 
-        SceneDocumentResult loaded = m_AssetManager.LoadScene(path);
-        if (!loaded) {
-            error = std::move(loaded.error);
-            return false;
-        }
-        warnings = std::move(loaded.warnings);
         auto stagedScene = std::make_shared<Scene>();
-        stagedScene->SetUnitsPerMeter(loaded.document.unitsPerMeter);
+        stagedScene->SetUnitsPerMeter(document.unitsPerMeter);
         const auto fail = [&](std::string message) {
-            if (auto* materials = m_RenderSystem->GetMaterialSystem()) {
+            if (m_RenderSystem) {
                 for (const auto& entity : stagedScene->GetEntities()) {
                     if (!entity) continue;
-                    if (entity->material) materials->UnregisterMaterial(entity->material);
+                    if (entity->material) m_RenderSystem->UnregisterMaterial(entity->material);
                     for (const auto& submesh : entity->Submeshes) {
-                        if (submesh.material) materials->UnregisterMaterial(submesh.material);
+                        if (submesh.material) m_RenderSystem->UnregisterMaterial(submesh.material);
                     }
                 }
             }
@@ -275,7 +284,7 @@ namespace Engine {
             return false;
         };
 
-        for (const auto& source : loaded.document.entities) {
+        for (const auto& source : document.entities) {
             if (source.modelGuid && source.primitiveType) {
                 return fail("entity '" + source.name + "' cannot specify both modelGuid and primitiveType");
             }
@@ -340,7 +349,7 @@ namespace Engine {
 					if (!m_RenderSystem->SetMaterialTextures(submesh.material, baseColor, normal,
 						materialDocument.baseColorTextureGuid, materialDocument.normalTextureGuid)) {
 						for (const auto& modelSubmesh : entity->Submeshes) {
-							if (modelSubmesh.material) m_RenderSystem->GetMaterialSystem()->UnregisterMaterial(modelSubmesh.material);
+							if (modelSubmesh.material) m_RenderSystem->UnregisterMaterial(modelSubmesh.material);
 						}
 						return fail("entity '" + source.name + "' material texture binding failed");
 					}
@@ -350,11 +359,11 @@ namespace Engine {
                 if (!shape) return fail("entity '" + source.name + "' uses an unsupported primitive type");
                 Renderer::MaterialProperties properties;
                 if (source.material) properties = ToMaterialProperties(*source.material);
-                auto material = m_RenderSystem->GetMaterialSystem()->CreateMaterial(properties);
+                auto material = m_RenderSystem->CreateMaterial(properties);
                 if (!material) return fail("entity '" + source.name + "' material creation failed");
                 entity = m_RenderSystem->CreatePrimitive(*shape, material, { 0.0f, 0.0f, 0.0f });
                 if (!entity) {
-                    m_RenderSystem->GetMaterialSystem()->UnregisterMaterial(material);
+                    m_RenderSystem->UnregisterMaterial(material);
                     return fail("entity '" + source.name + "' primitive upload failed");
                 }
                 entity->PrimitiveType = source.primitiveType;
@@ -380,7 +389,7 @@ namespace Engine {
 					resolveOverride(source.material->normalTextureGuid, false, normal);
 					if (!m_RenderSystem->SetMaterialTextures(entity->material, baseColor, normal,
 						source.material->baseColorTextureGuid, source.material->normalTextureGuid)) {
-						m_RenderSystem->GetMaterialSystem()->UnregisterMaterial(entity->material);
+						m_RenderSystem->UnregisterMaterial(entity->material);
 						return fail("entity '" + source.name + "' material texture binding failed");
 					}
 				}
@@ -399,15 +408,15 @@ namespace Engine {
             entity->CastShadows = source.castShadows;
             entity->ReceiveShadows = source.receiveShadows;
             if (stagedScene->AddEntity(entity, source.id) == InvalidEntityId) {
-                if (entity->material) m_RenderSystem->GetMaterialSystem()->UnregisterMaterial(entity->material);
+                if (entity->material) m_RenderSystem->UnregisterMaterial(entity->material);
                 for (const auto& submesh : entity->Submeshes) {
-                    if (submesh.material) m_RenderSystem->GetMaterialSystem()->UnregisterMaterial(submesh.material);
+                    if (submesh.material) m_RenderSystem->UnregisterMaterial(submesh.material);
                 }
                 return fail("scene contains a duplicate or unsupported entity ID " + std::to_string(source.id));
             }
         }
 
-        for (const auto& source : loaded.document.lights) {
+        for (const auto& source : document.lights) {
             auto light = std::make_shared<Renderer::SpotLight>(
                 DirectX::XMFLOAT3(source.direction[0], source.direction[1], source.direction[2]),
                 DirectX::XMFLOAT3(source.color[0], source.color[1], source.color[2]), source.intensity);
@@ -423,7 +432,7 @@ namespace Engine {
             }
         }
 
-        for (const auto& source : loaded.document.cameras) {
+        for (const auto& source : document.cameras) {
             auto camera = std::make_shared<Renderer::Camera>(source.fovRadians, source.nearPlane, source.farPlane);
             camera->m_Transform.SetPosition(source.position[0], source.position[1], source.position[2]);
             camera->m_Transform.Rotation = { source.rotation[0], source.rotation[1], source.rotation[2], source.rotation[3] };
@@ -440,6 +449,10 @@ namespace Engine {
     }
 
     bool Application::SaveScene(const std::filesystem::path& path, const Scene& scene, std::string& error) const {
+        return m_AssetManager.SaveScene(path, CreateSceneDocument(scene), error);
+    }
+
+    SceneDocument Application::CreateSceneDocument(const Scene& scene) const {
         SceneDocument document;
         document.unitsPerMeter = scene.GetUnitsPerMeter();
         for (const auto& entity : scene.GetEntities()) {
@@ -508,7 +521,7 @@ namespace Engine {
             item.farPlane = camera->GetFarPlane();
             document.cameras.push_back(std::move(item));
         }
-        return m_AssetManager.SaveScene(path, document, error);
+        return document;
     }
 
     void Application::AddViewport(std::shared_ptr<Engine::Viewport> viewport) {

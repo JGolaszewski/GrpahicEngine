@@ -196,6 +196,14 @@ namespace Engine {
 		return m_ResourceManager->GetOrCreateTexture(identity, generation, image, srgb, error);
 	}
 
+	std::shared_ptr<Renderer::Material> RenderSystem::CreateMaterial(const Renderer::MaterialProperties& properties) {
+		return !m_FrameActive && m_MaterialSystem ? m_MaterialSystem->CreateMaterial(properties) : nullptr;
+	}
+
+	void RenderSystem::UnregisterMaterial(const std::shared_ptr<Renderer::Material>& material) {
+		if (!m_FrameActive && m_MaterialSystem) m_MaterialSystem->UnregisterMaterial(material);
+	}
+
 	bool RenderSystem::SetMaterialTextures(const std::shared_ptr<Renderer::Material>& material,
 		std::shared_ptr<Renderer::TextureResource> baseColor,
 		std::shared_ptr<Renderer::TextureResource> normal,

@@ -44,6 +44,8 @@ namespace Engine {
 			std::string& error);
 		std::shared_ptr<Renderer::TextureResource> GetOrCreateTexture(
 			const std::string& identity, uint64_t generation, const ImportedImage& image, bool srgb, std::string& error);
+		std::shared_ptr<Renderer::Material> CreateMaterial(const Renderer::MaterialProperties& properties);
+		void UnregisterMaterial(const std::shared_ptr<Renderer::Material>& material);
 		bool SetMaterialTextures(const std::shared_ptr<Renderer::Material>& material,
 			std::shared_ptr<Renderer::TextureResource> baseColor,
 			std::shared_ptr<Renderer::TextureResource> normal,
@@ -66,8 +68,6 @@ namespace Engine {
 			std::vector<std::string>& warnings);
 
 		SceneRenderer* GetSceneRenderer() const { return m_SceneRenderer.get(); }
-		Renderer::MaterialSystem* GetMaterialSystem() const { return m_MaterialSystem.get(); }
-		Renderer::ResourceManager* GetResourceManager() const { return m_ResourceManager.get(); }
 		Renderer::ShaderFactory* GetShaderFactory() const { return m_ShaderFactory.get(); }
 		Renderer::RenderGraph* GetRenderGraph() const { return m_RenderGraph.get(); }
 		Engine::PrimitiveFactory* GetPrimitiveFactory() const { return m_PrimitiveFactory.get(); }
