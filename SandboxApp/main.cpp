@@ -7,6 +7,7 @@
 #include "Scene.h"
 #include "renderer/Entity.h"
 #include "renderer/Material.h"
+#include "RenderSystem.h"
 
 class App : public Engine::Application {
 	std::shared_ptr<Renderer::Camera> m_Camera;
@@ -21,17 +22,11 @@ protected:
 		auto material = std::make_shared<Renderer::Material>(0);
 		GetRenderSystem()->GetMaterialSystem()->RegisterMaterial(material);
 
-		ExecuteImmediate([this, scene, material](nvrhi::ICommandList* commandList) {
-			Renderer::EntityBuilder builder(GetRenderer()->GetDevice(), commandList);
-			auto cube = builder
-				.Cube()
-				.SetMaterial(material)
-				.Scale(1.0f, 1.0f, 1.0f)
-				.Position(0.0f, 0.0f, 0.0f)
-				.Build();
-
-			scene->AddEntity(cube);
-		});
+		auto cube = GetRenderSystem()->CreatePrimitive(
+			Engine::PrimitiveShape::Cube,
+			material,
+			DirectX::XMFLOAT3(0.0f, 0.0f, 0.0f));
+		scene->AddEntity(std::move(cube));
 
 		AddScene(scene);
 
