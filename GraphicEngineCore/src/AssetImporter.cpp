@@ -484,6 +484,12 @@ namespace {
 			material.normalTexCoord = input.normalTexture.texCoord;
 			material.occlusionTexCoord = input.occlusionTexture.texCoord;
 			material.emissiveTexCoord = input.emissiveTexture.texCoord;
+			if (material.metallicRoughnessTexture >= 0 || material.occlusionTexture >= 0 || material.emissiveTexture >= 0) {
+				result.error = Context(sourcePath, "material uses an unsupported metallic-roughness, occlusion, or emissive texture"); return result;
+			}
+			if (std::abs(material.normalScale - 1.0f) > 1.0e-6f) {
+				result.error = Context(sourcePath, "material uses an unsupported normal texture scale"); return result;
+			}
 			if (material.baseColorTexCoord != 0 || material.metallicRoughnessTexCoord != 0 ||
 				material.normalTexCoord != 0 || material.occlusionTexCoord != 0 || material.emissiveTexCoord != 0) {
 				result.error = Context(sourcePath, "only TEXCOORD_0 material texture coordinates are supported"); return result;
@@ -510,6 +516,13 @@ namespace {
 		for (const auto& material : result.model.materials) {
 			for (int texture : { material.baseColorTexture, material.metallicRoughnessTexture, material.normalTexture, material.occlusionTexture, material.emissiveTexture }) {
 				if (!ValidTextureIndex(texture, result.model.textures.size())) { result.error = Context(sourcePath, "material references an invalid texture"); return result; }
+				if (texture < 0) continue;
+				const ImportedTexture& imported = result.model.textures[static_cast<size_t>(texture)];
+				if ((imported.magFilter >= 0 && imported.magFilter != 9729) ||
+					(imported.minFilter >= 0 && imported.minFilter != 9729) ||
+					imported.wrapS != 10497 || imported.wrapT != 10497) {
+					result.error = Context(sourcePath, "material references an unsupported sampler state; only linear filtering and repeat addressing are supported"); return result;
+				}
 			}
 		}
 
