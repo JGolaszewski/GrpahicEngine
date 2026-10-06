@@ -48,7 +48,7 @@ namespace Renderer {
 		void Reset();
 		bool AddPass(std::unique_ptr<IRenderPass> pass);
 		bool Compile();
-		void Execute(nvrhi::ICommandList* cmd);
+		bool Execute(nvrhi::ICommandList* cmd);
 		const std::string& GetLastError() const noexcept { return m_LastError; }
 
 		RenderGraph(const RenderGraph&) = delete;

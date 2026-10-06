@@ -403,7 +403,9 @@ namespace Engine {
 			m_ResourceManager->AdvanceSubmittedFrame();
 			return;
 		}
-		m_RenderGraph->Execute(m_CommandList);
+		if (!m_RenderGraph->Execute(m_CommandList)) {
+			std::cerr << "ERROR: Render graph execution failed: " << m_RenderGraph->GetLastError() << std::endl;
+		}
 
 		m_CommandList->close();
 		m_RenderBackend->GetDevice()->executeCommandList(m_CommandList);

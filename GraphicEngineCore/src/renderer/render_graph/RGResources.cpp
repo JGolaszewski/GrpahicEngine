@@ -12,11 +12,14 @@ namespace Renderer {
 		return id;
 	}
 
-	RGResourceID RGResourceRegistry::ImportResource(const RGTextureDesc& desc, nvrhi::TextureHandle texture) {
-		if (!texture) return {};
+	RGResourceID RGResourceRegistry::ImportResource(const RGTextureDesc& desc, nvrhi::TextureHandle texture,
+		nvrhi::ResourceStates initialState, nvrhi::ResourceStates finalState) {
+		if (!texture || initialState == nvrhi::ResourceStates::Unknown || finalState == nvrhi::ResourceStates::Unknown) return {};
 		RGResourceID id = CreateResource(desc);
 		RGResource& resource = GetResource(id);
 		resource.isImported = true;
+		resource.initialState = initialState;
+		resource.finalState = finalState;
 		resource.physicalHandle = std::move(texture);
 		return id;
 	}

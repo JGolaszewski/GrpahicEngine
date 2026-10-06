@@ -20,6 +20,12 @@ namespace Renderer {
 		inline bool operator!=(const RGResourceID& other) const { return !(*this == other); }
 	};
 
+	struct RGTextureAccess {
+		RGResourceID resource;
+		nvrhi::ResourceStates state = nvrhi::ResourceStates::Unknown;
+		nvrhi::TextureSubresourceSet subresources = nvrhi::AllSubresources;
+	};
+
 
 	struct RGTextureDesc {
 		uint32_t width = 1;
@@ -29,6 +35,7 @@ namespace Renderer {
 		uint32_t mipLevels = 1;
 		bool isRenderTarget = false;
 		bool isShaderResource = true;
+		bool isUnorderedAccess = false;
 
 		nvrhi::Format format = nvrhi::Format::UNKNOWN;
 		nvrhi::TextureDimension dimension = nvrhi::TextureDimension::Texture2D;
@@ -48,6 +55,7 @@ namespace Renderer {
 			combine(std::hash<uint32_t>()(desc.mipLevels));
 			combine(std::hash<bool>()(desc.isRenderTarget));
 			combine(std::hash<bool>()(desc.isShaderResource));
+			combine(std::hash<bool>()(desc.isUnorderedAccess));
 			combine(std::hash<uint32_t>()(static_cast<uint32_t>(desc.format)));
 			combine(std::hash<uint32_t>()(static_cast<uint32_t>(desc.dimension)));
 
@@ -63,6 +71,7 @@ namespace Renderer {
 				a.mipLevels == b.mipLevels &&
 				a.isRenderTarget == b.isRenderTarget &&
 				a.isShaderResource == b.isShaderResource &&
+				a.isUnorderedAccess == b.isUnorderedAccess &&
 				a.format == b.format &&
 				a.dimension == b.dimension;
 		}
@@ -71,6 +80,8 @@ namespace Renderer {
 	struct RGResource {
 		RGTextureDesc desc;
 		bool isImported = false;
+		nvrhi::ResourceStates initialState = nvrhi::ResourceStates::Common;
+		nvrhi::ResourceStates finalState = nvrhi::ResourceStates::Common;
 
 		uint32_t firstPassUse = UINT32_MAX;
 		uint32_t lastPassUse = 0;
@@ -81,7 +92,8 @@ namespace Renderer {
 	class ENGINE_API RGResourceRegistry {
 	public:
 		RGResourceID CreateResource(const RGTextureDesc& desc);
-		RGResourceID ImportResource(const RGTextureDesc& desc, nvrhi::TextureHandle texture);
+		RGResourceID ImportResource(const RGTextureDesc& desc, nvrhi::TextureHandle texture,
+			nvrhi::ResourceStates initialState, nvrhi::ResourceStates finalState);
 		bool IsValid(RGResourceID id) const noexcept;
 		inline RGResource& GetResource(RGResourceID id) { 
 			assert(id.isValid() && id.value < m_Registry.size());

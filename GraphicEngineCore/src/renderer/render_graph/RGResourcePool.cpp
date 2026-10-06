@@ -31,22 +31,13 @@ namespace Renderer {
 		nvrhiDesc.dimension = desc.dimension;
 		nvrhiDesc.isRenderTarget = desc.isRenderTarget;
 		nvrhiDesc.isShaderResource = desc.isShaderResource;
+		nvrhiDesc.isUAV = desc.isUnorderedAccess;
 
 		if (desc.isShaderResource && (desc.format == nvrhi::Format::D32 || desc.format == nvrhi::Format::D24S8)) {
 			nvrhiDesc.isTypeless = true;
 		}
 
-		if (desc.isRenderTarget) {
-			if (desc.format == nvrhi::Format::D32 || desc.format == nvrhi::Format::D24S8) {
-				nvrhiDesc.initialState = nvrhi::ResourceStates::DepthWrite;
-			}
-			else {
-				nvrhiDesc.initialState = nvrhi::ResourceStates::RenderTarget;
-			}
-		}
-		else {
-			nvrhiDesc.initialState = nvrhi::ResourceStates::ShaderResource;
-		}
+		nvrhiDesc.initialState = nvrhi::ResourceStates::Common;
 
 		nvrhiDesc.keepInitialState = true;
 

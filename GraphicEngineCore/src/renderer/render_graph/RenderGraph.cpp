@@ -19,17 +19,6 @@ namespace {
 		++inDegree[to];
 	}
 
-	bool IsDepthFormat(nvrhi::Format format) {
-		return format == nvrhi::Format::D32 || format == nvrhi::Format::D24S8 ||
-			format == nvrhi::Format::D16 || format == nvrhi::Format::D32S8;
-	}
-
-	nvrhi::ResourceStates GetResourceState(const Renderer::RGTextureDesc& desc, bool write) {
-		if (write) {
-			return IsDepthFormat(desc.format) ? nvrhi::ResourceStates::DepthWrite : nvrhi::ResourceStates::RenderTarget;
-		}
-		return nvrhi::ResourceStates::ShaderResource;
-	}
 }
 
 namespace Renderer {
@@ -215,38 +204,56 @@ namespace Renderer {
 		return true;
 	}
 
-	void RenderGraph::Execute(nvrhi::ICommandList* cmd) {
-		if (!cmd || !m_Compiled) return;
-
+	bool RenderGraph::Execute(nvrhi::ICommandList* cmd) {
+		if (!cmd || !m_Compiled) {
+			m_LastError = "Cannot execute a null command list or an uncompiled graph";
+			return false;
+		}
+		m_LastError.clear();
 		const float deltaTime = m_Blackboard.Get<float>("DeltaTime", 0.016f);
 		RenderContext ctx(m_Device.Get(), &m_Registry, &m_Blackboard, deltaTime);
 
 		for (uint32_t passIndex = 0; passIndex < m_Nodes.size(); ++passIndex) {
 			for (RGResource& resource : m_Registry.GetAllResources()) {
-				if (!resource.isImported && resource.firstPassUse == passIndex && !resource.physicalHandle) {
-					resource.physicalHandle = m_Pool.Acquire(resource.desc);
+				if (resource.isImported || resource.firstPassUse != passIndex) continue;
+				resource.physicalHandle = m_Pool.Acquire(resource.desc);
+				if (!resource.physicalHandle) {
+					for (RGResource& allocated : m_Registry.GetAllResources()) {
+						if (!allocated.isImported && allocated.physicalHandle) {
+							m_Pool.Release(allocated.desc, allocated.physicalHandle);
+							allocated.physicalHandle = nullptr;
+						}
+					}
+					m_LastError = "Failed to allocate a transient render graph texture";
+					return false;
 				}
 			}
-
-			const auto setState = [this, cmd, passIndex](RGResourceID id, bool write) {
-				if (!m_Registry.IsValid(id)) return;
-				RGResource& resource = m_Registry.GetResource(id);
-				if (resource.physicalHandle) {
-					cmd->setTextureState(resource.physicalHandle, nvrhi::AllSubresources, GetResourceState(resource.desc, write));
+			for (RGResource& resource : m_Registry.GetAllResources()) {
+				if (resource.isImported && resource.firstPassUse == passIndex && resource.physicalHandle) {
+					cmd->beginTrackingTextureState(resource.physicalHandle, nvrhi::AllSubresources, resource.initialState);
 				}
-			};
-			for (const RGResourceID id : m_Nodes[passIndex].deps.inputs) setState(id, false);
-			for (const RGResourceID id : m_Nodes[passIndex].deps.outputs) setState(id, true);
+			}
+			for (const RGTextureAccess& access : m_Nodes[passIndex].deps.accesses) {
+				RGResource& resource = m_Registry.GetResource(access.resource);
+				if (!resource.physicalHandle) continue;
+				cmd->setTextureState(resource.physicalHandle, access.subresources, access.state);
+			}
 			cmd->commitBarriers();
 
 			m_Nodes[passIndex].pass->Execute(cmd, ctx);
 
 			for (RGResource& resource : m_Registry.GetAllResources()) {
-				if (!resource.isImported && resource.lastPassUse == passIndex && resource.physicalHandle) {
-					m_Pool.Release(resource.desc, resource.physicalHandle);
-					resource.physicalHandle = nullptr;
+				if (resource.lastPassUse == passIndex && resource.physicalHandle) {
+					if (resource.isImported) {
+						cmd->setTextureState(resource.physicalHandle, nvrhi::AllSubresources, resource.finalState);
+						cmd->commitBarriers();
+					} else {
+						m_Pool.Release(resource.desc, resource.physicalHandle);
+						resource.physicalHandle = nullptr;
+					}
 				}
 			}
 		}
+		return true;
 	}
 }
