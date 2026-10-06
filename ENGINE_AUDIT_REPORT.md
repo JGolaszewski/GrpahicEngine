@@ -1,4 +1,4 @@
-+# Graphics Engine and Editor Architecture Audit
+# Graphics Engine and Editor Architecture Audit
 
 **Audit date:** 2026-10-06  
 **Scope:** Project-owned C++ engine core, rendering path, asset/scene systems, shaders, and editor. Vendored dependencies were treated as dependencies, not audited line-by-line.  
@@ -21,14 +21,14 @@ The most urgent correctness and scale risks found in source are:
 
 ### Priority summary
 
-| Priority | Finding | User-visible consequence |
-|---|---|---|
-| P0 — Completed (`d05547b`) | Per-view scene lighting is global to the first view | Incorrect lighting/shadows when rendering multiple scenes in one frame |
-| P0 — Completed (`2ddb8b6`) | Alpha/transparency and material sidedness do not reach draw state | Imported assets can render incorrectly; transparent sorting is unsafe |
-| P1 | GPU allocations per object per view and frame | CPU overhead and a poor path to larger scenes or parallel submission |
-| P1 | Device-wide idle wait during deferred resource retirement | Periodic frame-time spikes while assets are reimported or removed |
-| P1 | Renderer, viewport, and ImGui are D3D11-coupled | Backend portability and testing are blocked |
-| P1 | Render graph is partial and declarations are weak | Pass dependencies, transitions, and resource aliasing are not yet reliable enough to grow safely |
+| Priority | Finding | User-visible consequence | Status |
+|---|---|---|---|
+| P0 | Per-view scene lighting is global to the first view | Incorrect lighting/shadows when rendering multiple scenes in one frame | **Completed** (`d05547b`) |
+| P0 | Alpha/transparency and material sidedness do not reach draw state | Imported assets can render incorrectly; transparent sorting is unsafe | **Completed** (`2ddb8b6`) |
+| P1 | GPU allocations per object per view and frame | CPU overhead and a poor path to larger scenes or parallel submission | **Completed** (`7c8d8d7`) |
+| P1 | Device-wide idle wait during deferred resource retirement | Periodic frame-time spikes while assets are reimported or removed | **Completed** (`a3e6a0f`) |
+| P1 | Core, viewport, and editor UI are coupled to D3D11 | Backend portability and testing are blocked | **Completed** (`64f94cb`, `2bdfdc4`) |
+| P1 | Render graph texture declarations lack explicit access states and ranges | Pass transitions and resource use are difficult to validate | **Completed** (`4b06573`) |
 | P2 | Editor orchestration and application lifecycle are large and tightly coupled | Slower changes, harder editor automation, weaker unit-test seams |
 | P2 | Scene is a flat shared-pointer collection with linear ID lookup | Scaling, hierarchy, transform propagation, and serialization evolution need redesign |
 | P3 | Inconsistent conventions and unfinished APIs | Higher maintenance cost and unclear ownership |
