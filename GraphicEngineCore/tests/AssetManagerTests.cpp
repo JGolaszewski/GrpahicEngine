@@ -53,6 +53,45 @@ namespace {
 		Require(static_cast<bool>(output), "could not write minimal glTF fixture");
 	}
 
+	void WriteMinimalPng(const std::filesystem::path& path) {
+		constexpr std::array<uint8_t, 67> png = {
+			0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a,0x00,0x00,0x00,0x0d,0x49,0x48,0x44,0x52,
+			0x00,0x00,0x00,0x01,0x00,0x00,0x00,0x01,0x08,0x06,0x00,0x00,0x00,0x1f,0x15,0xc4,
+			0x89,0x00,0x00,0x00,0x0b,0x49,0x44,0x41,0x54,0x08,0xd7,0x63,0xf8,0xff,0xff,0x3f,
+			0x00,0x05,0xfe,0x02,0xfe,0xa7,0x35,0x81,0x4e,0x00,0x00,0x00,0x00,0x49,0x45,0x4e,
+			0x44,0xae
+		};
+		std::ofstream output(path, std::ios::binary | std::ios::trunc);
+		output.write(reinterpret_cast<const char*>(png.data()), static_cast<std::streamsize>(png.size()));
+		const uint8_t trailer[] = { 0x42, 0x60, 0x82 };
+		output.write(reinterpret_cast<const char*>(trailer), sizeof(trailer));
+		Require(static_cast<bool>(output), "could not write PNG fixture");
+	}
+
+	void TestTextureImportAndRegistry(const std::filesystem::path& project) {
+		WriteMinimalPng(project / "color.png");
+		Engine::AssetManager first(project);
+		std::string guid, error;
+		Require(first.ImportTexture("color.png", guid, error), "texture import failed");
+		Require(std::filesystem::exists(project / "color.png.meta"), "texture import did not write adjacent metadata");
+		const auto image = first.GetTexture(guid);
+		Require(image && image->width == 1 && image->height == 1 && image->rgba8.size() == 4,
+			"texture import did not decode RGBA pixels");
+
+		Engine::AssetManager reopened(project);
+		std::vector<std::string> warnings;
+		Require(reopened.RefreshRegistry(warnings, error), "asset registry refresh failed");
+		Require(warnings.empty(), "valid texture metadata produced registry warnings");
+		Require(reopened.GetTexture(guid) && reopened.GetKnownTextures().size() == 1,
+			"texture was not discovered after reopening the project");
+
+		std::filesystem::copy_file(project / "color.png.meta", project / "copied.png.meta");
+		WriteMinimalPng(project / "copied.png");
+		Engine::AssetManager duplicate(project);
+		Require(!duplicate.ImportTexture("copied.png", guid, error) && error.find("duplicate asset GUID") != std::string::npos,
+			"copied texture metadata did not report the duplicate GUID");
+	}
+
 	void TestImportAndGuidReload(const std::filesystem::path& project) {
 		WriteMinimalModel(project / "model.gltf");
 		Engine::AssetManager first(project);
@@ -224,6 +263,7 @@ namespace {
 int main() {
 	TestWorkspace workspace;
 	TestImportAndGuidReload(workspace.Project());
+	TestTextureImportAndRegistry(workspace.Project());
 	TestDuplicateGuidAndProjectBoundary(workspace.Path(), workspace.Project());
 	TestSceneJsonRoundTrip(workspace.Project());
 	TestStableSceneIds();

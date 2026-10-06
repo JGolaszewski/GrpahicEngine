@@ -95,8 +95,16 @@ namespace Engine {
 		explicit operator bool() const noexcept { return error.empty(); }
 	};
 
+	struct ImageImportResult {
+		ImportedImage image;
+		std::string error;
+
+		explicit operator bool() const noexcept { return error.empty(); }
+	};
+
 	class ENGINE_API AssetImporter {
 	public:
 		AssetImportResult ImportGltf(const std::filesystem::path& sourcePath) const;
+		ImageImportResult ImportImage(const std::filesystem::path& sourcePath) const;
 	};
 }

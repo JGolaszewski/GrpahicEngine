@@ -5,6 +5,7 @@
 #include "SceneDocument.h"
 
 #include <filesystem>
+#include <cstddef>
 #include <memory>
 #include <optional>
 #include <string>
@@ -19,6 +20,11 @@ namespace Engine {
 			std::string name;
 			std::filesystem::path sourcePath;
 		};
+		struct TextureAssetInfo {
+			std::string guid;
+			std::string name;
+			std::filesystem::path sourcePath;
+		};
 		AssetManager() = default;
 		explicit AssetManager(std::filesystem::path projectRoot);
 
@@ -26,11 +32,17 @@ namespace Engine {
 		const std::filesystem::path& GetProjectRoot() const noexcept { return m_ProjectRoot; }
 
 		bool ImportModel(const std::filesystem::path& sourcePath, std::string& guid, std::string& error);
+		bool ImportTexture(const std::filesystem::path& sourcePath, std::string& guid, std::string& error);
 		bool LoadModel(const std::string& guid, std::string& error);
+		bool LoadTexture(const std::string& guid, std::string& error);
+		bool RefreshRegistry(std::vector<std::string>& warnings, std::string& error);
 		std::shared_ptr<const ImportedModel> GetModel(const std::string& guid) const;
+		std::shared_ptr<const ImportedImage> GetTexture(const std::string& guid) const;
 		std::optional<uint64_t> GetGeneration(const std::string& guid) const;
 		std::optional<std::filesystem::path> GetSourcePath(const std::string& guid) const;
 		std::vector<ModelAssetInfo> GetKnownModels() const;
+		std::vector<TextureAssetInfo> GetKnownTextures() const;
+		static std::string GetEmbeddedImageIdentity(const std::string& modelGuid, std::size_t imageIndex);
 
 		SceneDocumentResult LoadScene(const std::filesystem::path& path) const;
 		bool SaveScene(const std::filesystem::path& path, const SceneDocument& document, std::string& error) const;
@@ -41,9 +53,15 @@ namespace Engine {
 			std::shared_ptr<const ImportedModel> model;
 			uint64_t generation = 1;
 		};
+		struct TextureRecord {
+			std::filesystem::path sourcePath;
+			std::shared_ptr<const ImportedImage> image;
+			uint64_t generation = 1;
+		};
 
 		std::filesystem::path m_ProjectRoot;
 		std::unordered_map<std::string, ModelRecord> m_Models;
+		std::unordered_map<std::string, TextureRecord> m_Textures;
 		AssetImporter m_Importer;
 		SceneSerializer m_SceneSerializer;
 	};

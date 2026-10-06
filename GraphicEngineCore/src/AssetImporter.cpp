@@ -543,4 +543,36 @@ namespace {
 		}
 		return result;
 	}
+
+	ImageImportResult AssetImporter::ImportImage(const std::filesystem::path& sourcePath) const {
+		ImageImportResult result;
+		std::string extension = sourcePath.extension().string();
+		std::transform(extension.begin(), extension.end(), extension.begin(),
+			[](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+		if (extension != ".png" && extension != ".jpg" && extension != ".jpeg") {
+			result.error = Context(sourcePath, "expected a PNG or JPEG image");
+			return result;
+		}
+		int width = 0, height = 0, channels = 0;
+		const auto nativePath = sourcePath.string();
+		stbi_uc* pixels = stbi_load(nativePath.c_str(), &width, &height, &channels, STBI_rgb_alpha);
+		if (!pixels) {
+			result.error = Context(sourcePath, std::string("image decode failed: ") + stbi_failure_reason());
+			return result;
+		}
+		if (width <= 0 || height <= 0 || static_cast<size_t>(width) > std::numeric_limits<size_t>::max() /
+			static_cast<size_t>(height) / 4) {
+			stbi_image_free(pixels);
+			result.error = Context(sourcePath, "decoded image dimensions are invalid or too large");
+			return result;
+		}
+		const size_t byteCount = static_cast<size_t>(width) * static_cast<size_t>(height) * 4;
+		result.image.name = sourcePath.stem().string();
+		result.image.mimeType = extension == ".png" ? "image/png" : "image/jpeg";
+		result.image.width = static_cast<uint32_t>(width);
+		result.image.height = static_cast<uint32_t>(height);
+		result.image.rgba8.assign(pixels, pixels + byteCount);
+		stbi_image_free(pixels);
+		return result;
+	}
 }

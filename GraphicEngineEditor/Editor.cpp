@@ -66,6 +66,20 @@ std::optional<std::filesystem::path> ShowModelDialog(const std::filesystem::path
 	return GetOpenFileNameW(&dialog) ? std::optional(std::filesystem::path(filename)) : std::nullopt;
 }
 
+std::optional<std::filesystem::path> ShowTextureDialog(const std::filesystem::path& projectRoot) {
+	wchar_t filename[32768]{};
+	const auto initialDirectory = projectRoot.wstring();
+	OPENFILENAMEW dialog{};
+	dialog.lStructSize = sizeof(dialog);
+	dialog.lpstrFile = filename;
+	dialog.nMaxFile = static_cast<DWORD>(std::size(filename));
+	dialog.lpstrFilter = L"Images (*.png;*.jpg;*.jpeg)\0*.png;*.jpg;*.jpeg\0\0";
+	dialog.nFilterIndex = 1;
+	dialog.lpstrInitialDir = initialDirectory.c_str();
+	dialog.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR;
+	return GetOpenFileNameW(&dialog) ? std::optional(std::filesystem::path(filename)) : std::nullopt;
+}
+
 std::optional<std::filesystem::path> ShowProjectFolderDialog(const std::filesystem::path& initialPath) {
 	BROWSEINFOW dialog{};
 	dialog.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE;
@@ -127,6 +141,9 @@ void Editor::OnInit() {
 		m_FileError = std::move(projectError);
 	} else {
 		RememberProjectRoot(GetAssetManager()->GetProjectRoot());
+		std::vector<std::string> registryWarnings;
+		if (!GetAssetManager()->RefreshRegistry(registryWarnings, projectError)) m_FileError = std::move(projectError);
+		else if (!registryWarnings.empty()) m_FileError = JoinWarnings(registryWarnings);
 	}
 
 	// --- Create Core Scene ---
@@ -212,7 +229,7 @@ void Editor::OnInit() {
 
 	// Broadcast initial state
 	BroadcastSceneChanged();
-	AssetRegistryChangedEvent initialAssets(GetAssetManager()->GetKnownModels());
+	AssetRegistryChangedEvent initialAssets(GetAssetManager()->GetKnownModels(), GetAssetManager()->GetKnownTextures());
 	BroadcastEvent(initialAssets);
 	BroadcastCameraSettings();
 	BroadcastViewportChanged();
@@ -241,7 +258,7 @@ void Editor::OnSceneReplaced(const std::shared_ptr<Engine::Scene>& scene) {
 		m_CameraFarPlane = camera->GetFarPlane();
 	}
 	BroadcastSceneChanged();
-	AssetRegistryChangedEvent assetUpdate(GetAssetManager()->GetKnownModels());
+	AssetRegistryChangedEvent assetUpdate(GetAssetManager()->GetKnownModels(), GetAssetManager()->GetKnownTextures());
 	BroadcastEvent(assetUpdate);
 	BroadcastCameraSettings();
 	BroadcastViewportChanged();
@@ -611,12 +628,17 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
 		return true;
 		});
 
-	dispatcher.Dispatch<AssetImportRequestedEvent>([this](const auto&) {
-		const auto path = ShowModelDialog(GetAssetManager()->GetProjectRoot());
+	dispatcher.Dispatch<AssetImportRequestedEvent>([this](const auto& request) {
+		const auto path = request.GetAssetType() == AssetImportRequestedEvent::AssetType::Texture
+			? ShowTextureDialog(GetAssetManager()->GetProjectRoot())
+			: ShowModelDialog(GetAssetManager()->GetProjectRoot());
 		if (!path) return true;
 		std::string guid;
-		if (!GetAssetManager()->ImportModel(*path, guid, m_FileError)) return true;
-		AssetRegistryChangedEvent assetUpdate(GetAssetManager()->GetKnownModels());
+		const bool imported = request.GetAssetType() == AssetImportRequestedEvent::AssetType::Texture
+			? GetAssetManager()->ImportTexture(*path, guid, m_FileError)
+			: GetAssetManager()->ImportModel(*path, guid, m_FileError);
+		if (!imported) return true;
+		AssetRegistryChangedEvent assetUpdate(GetAssetManager()->GetKnownModels(), GetAssetManager()->GetKnownTextures());
 		BroadcastEvent(assetUpdate);
 		return true;
 		});
@@ -807,6 +829,11 @@ void Editor::RequestSceneAction(SceneFileActionRequestedEvent::Action action) {
 			m_FileError = std::move(error);
 			return;
 		}
+		std::vector<std::string> registryWarnings;
+		if (!GetAssetManager()->RefreshRegistry(registryWarnings, error)) {
+			m_FileError = std::move(error);
+			return;
+		}
 		RememberProjectRoot(GetAssetManager()->GetProjectRoot());
 		auto scene = std::make_shared<Engine::Scene>();
 		auto camera = std::make_shared<Renderer::Camera>(m_CameraFov, m_CameraNearPlane, m_CameraFarPlane);
@@ -817,6 +844,7 @@ void Editor::RequestSceneAction(SceneFileActionRequestedEvent::Action action) {
 		OnSceneReplaced(scene);
 		m_ScenePath.clear();
 		m_SceneDirty = false;
+		if (!registryWarnings.empty()) m_FileError = JoinWarnings(registryWarnings);
 		return;
 	}
 	const auto path = ShowSceneDialog(false, m_ScenePath, GetAssetManager()->GetProjectRoot());

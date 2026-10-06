@@ -12,5 +12,6 @@ public:
 
 private:
 	std::vector<Engine::AssetManager::ModelAssetInfo> m_Models;
+	std::vector<Engine::AssetManager::TextureAssetInfo> m_Textures;
 	std::string m_SelectedGuid;
 };
