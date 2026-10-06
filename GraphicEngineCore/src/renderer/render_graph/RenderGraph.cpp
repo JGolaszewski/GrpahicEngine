@@ -103,9 +103,17 @@ namespace Renderer {
 			}
 		}
 
-	std::vector<std::vector<size_t>> adjacency(passCount);
+		struct SubresourceHazard {
+			int lastWriter = -1;
+			std::vector<size_t> readers;
+		};
+		std::vector<std::vector<SubresourceHazard>> hazards;
+		hazards.reserve(m_Registry.GetAllResources().size());
+		for (const RGResource& resource : m_Registry.GetAllResources()) {
+			hazards.emplace_back(static_cast<size_t>(resource.desc.arraySize) * resource.desc.mipLevels);
+		}
+		std::vector<std::vector<size_t>> adjacency(passCount);
 		std::vector<int> inDegree(passCount, 0);
-		std::vector<int> lastWriter(m_Registry.GetAllResources().size(), -1);
 		int lastSideEffectPass = -1;
 
 		for (size_t passIndex = 0; passIndex < passCount; ++passIndex) {
@@ -118,30 +126,35 @@ namespace Renderer {
 				lastSideEffectPass = static_cast<int>(passIndex);
 			}
 
-			for (const RGResourceID id : node.deps.inputs) {
-				if (!m_Registry.IsValid(id)) {
-					m_LastError = node.pass->GetName() + ": input references an invalid resource ID";
+			for (const RGTextureAccess& access : node.deps.accesses) {
+				if (!m_Registry.IsValid(access.resource)) {
+					m_LastError = node.pass->GetName() + ": access references an invalid resource ID";
 					return false;
 				}
-				if (lastWriter[id.value] >= 0) {
-					AddEdge(adjacency, inDegree, static_cast<size_t>(lastWriter[id.value]), passIndex);
+				const RGResource& resource = m_Registry.GetResource(access.resource);
+				const uint32_t mipCount = access.subresources.numMipLevels == nvrhi::TextureSubresourceSet::AllMipLevels
+					? resource.desc.mipLevels - access.subresources.baseMipLevel : access.subresources.numMipLevels;
+				const uint32_t sliceCount = access.subresources.numArraySlices == nvrhi::TextureSubresourceSet::AllArraySlices
+					? resource.desc.arraySize - access.subresources.baseArraySlice : access.subresources.numArraySlices;
+				for (uint32_t slice = access.subresources.baseArraySlice; slice < access.subresources.baseArraySlice + sliceCount; ++slice) {
+					for (uint32_t mip = access.subresources.baseMipLevel; mip < access.subresources.baseMipLevel + mipCount; ++mip) {
+						SubresourceHazard& hazard = hazards[access.resource.value][static_cast<size_t>(slice) * resource.desc.mipLevels + mip];
+						if (access.read) {
+							if (hazard.lastWriter >= 0) AddEdge(adjacency, inDegree, static_cast<size_t>(hazard.lastWriter), passIndex);
+							else if (!resource.isImported) {
+								m_LastError = node.pass->GetName() + ": reads a transient subresource with no producer";
+								return false;
+							}
+							hazard.readers.push_back(passIndex);
+						}
+						if (access.write) {
+							if (hazard.lastWriter >= 0) AddEdge(adjacency, inDegree, static_cast<size_t>(hazard.lastWriter), passIndex);
+							for (const size_t reader : hazard.readers) AddEdge(adjacency, inDegree, reader, passIndex);
+							hazard.readers.clear();
+							hazard.lastWriter = static_cast<int>(passIndex);
+						}
+					}
 				}
-				else if (!m_Registry.GetResource(id).isImported) {
-					m_LastError = node.pass->GetName() + ": reads a transient resource with no producer";
-					return false;
-				}
-			}
-
-			for (const RGResourceID id : node.deps.outputs) {
-				if (!m_Registry.IsValid(id)) {
-					m_LastError = node.pass->GetName() + ": output references an invalid resource ID";
-					return false;
-				}
-				if (lastWriter[id.value] >= 0) {
-					std::cerr << "WARN: Render graph resource " << id.value << " is written by multiple passes; preserving declaration order." << std::endl;
-					AddEdge(adjacency, inDegree, static_cast<size_t>(lastWriter[id.value]), passIndex);
-				}
-				lastWriter[id.value] = static_cast<int>(passIndex);
 			}
 		}
 
@@ -264,5 +277,33 @@ namespace Renderer {
 			}
 		}
 		return true;
+	}
+
+	std::string RenderGraph::Dump() const {
+		std::ostringstream dump;
+		dump << "RenderGraph\nResources:\n";
+		for (uint32_t resourceIndex = 0; resourceIndex < m_Registry.GetAllResources().size(); ++resourceIndex) {
+			const RGResource& resource = m_Registry.GetAllResources()[resourceIndex];
+			dump << "  R" << resourceIndex << (resource.isImported ? " imported" : " transient")
+				<< " " << resource.desc.width << 'x' << resource.desc.height
+				<< " slices=" << resource.desc.arraySize << " mips=" << resource.desc.mipLevels
+				<< " format=" << static_cast<uint32_t>(resource.desc.format)
+				<< " lifetime=[" << resource.firstPassUse << ',' << resource.lastPassUse << "]";
+			if (resource.isImported) dump << " finalState=" << static_cast<uint32_t>(resource.finalState);
+			dump << '\n';
+		}
+		dump << "Passes and transitions:\n";
+		for (uint32_t passIndex = 0; passIndex < m_Nodes.size(); ++passIndex) {
+			const RGPassNode& node = m_Nodes[passIndex];
+			dump << "  P" << passIndex << ' ' << node.pass->GetName() << '\n';
+			for (const RGTextureAccess& access : node.deps.accesses) {
+				dump << "    R" << access.resource.value << ' '
+					<< (access.read && access.write ? "read/write" : access.write ? "write" : "read")
+					<< " state=" << static_cast<uint32_t>(access.state)
+					<< " mips=" << access.subresources.baseMipLevel << '+' << access.subresources.numMipLevels
+					<< " slices=" << access.subresources.baseArraySlice << '+' << access.subresources.numArraySlices << '\n';
+			}
+		}
+		return dump.str();
 	}
 }

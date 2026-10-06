@@ -31,7 +31,16 @@ namespace Renderer {
 		desc.isShaderResource = true;
 		desc.mipLevels = 1;
 
-		m_ShadowMapID = builder.CreateAndWriteTexture(desc);
+		m_ShadowMapID = builder.CreateTexture(desc);
+		const auto& shadowViews = blackboard.GetShadowViews();
+		for (uint32_t shadowSlot = 0; shadowSlot < shadowViews.size(); ++shadowSlot) {
+			nvrhi::TextureSubresourceSet subresources;
+			subresources.baseArraySlice = shadowSlot;
+			subresources.numArraySlices = 1;
+			subresources.baseMipLevel = 0;
+			subresources.numMipLevels = 1;
+			builder.Write(m_ShadowMapID, nvrhi::ResourceStates::DepthWrite, subresources);
+		}
 		blackboard.SetShadowMap(m_ShadowMapID);
 	}
 

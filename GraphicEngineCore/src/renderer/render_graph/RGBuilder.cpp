@@ -3,20 +3,51 @@
 #include <algorithm>
 #include <utility>
 
+namespace {
+	bool RangesOverlap(uint32_t baseA, uint32_t countA, uint32_t baseB, uint32_t countB, uint32_t all) {
+		const uint64_t endA = countA == all ? UINT64_MAX : static_cast<uint64_t>(baseA) + countA;
+		const uint64_t endB = countB == all ? UINT64_MAX : static_cast<uint64_t>(baseB) + countB;
+		return baseA < endB && baseB < endA;
+	}
+
+	bool Overlaps(const nvrhi::TextureSubresourceSet& a, const nvrhi::TextureSubresourceSet& b) {
+		return RangesOverlap(a.baseMipLevel, a.numMipLevels, b.baseMipLevel, b.numMipLevels,
+			nvrhi::TextureSubresourceSet::AllMipLevels) &&
+			RangesOverlap(a.baseArraySlice, a.numArraySlices, b.baseArraySlice, b.numArraySlices,
+				nvrhi::TextureSubresourceSet::AllArraySlices);
+	}
+}
+
 namespace Renderer {
 	RGBuilder::RGBuilder(RGResourceRegistry& registry, RGPassDependencies& passDeps)
 		: m_Registry(registry), m_CurrentPassDeps(passDeps) {
 	}
 
 	RGResourceID RGBuilder::CreateTexture(const RGTextureDesc& desc) {
+		if (desc.width == 0 || desc.height == 0 || desc.arraySize == 0 || desc.mipLevels == 0 ||
+			desc.format == nvrhi::Format::UNKNOWN ||
+			(!desc.isRenderTarget && !desc.isShaderResource && !desc.isUnorderedAccess)) {
+			m_CurrentPassDeps.valid = false;
+			m_CurrentPassDeps.error = "Texture descriptor has invalid dimensions, format, or capabilities";
+			return {};
+		}
 		return m_Registry.CreateResource(desc);
 	}
 
 	RGResourceID RGBuilder::ImportTexture(const RGTextureDesc& desc, nvrhi::TextureHandle texture,
 		nvrhi::ResourceStates initialState, nvrhi::ResourceStates finalState) {
-		if (initialState == nvrhi::ResourceStates::Unknown || finalState == nvrhi::ResourceStates::Unknown) {
+		if (!texture || initialState == nvrhi::ResourceStates::Unknown || finalState == nvrhi::ResourceStates::Unknown) {
 			m_CurrentPassDeps.valid = false;
-			m_CurrentPassDeps.error = "Imported textures require explicit initial and final states";
+			m_CurrentPassDeps.error = "Imported textures require a texture and explicit initial and final states";
+			return {};
+		}
+		const nvrhi::TextureDesc& physical = texture->getDesc();
+		if (desc.width != physical.width || desc.height != physical.height || desc.arraySize != physical.arraySize ||
+			desc.mipLevels != physical.mipLevels || desc.format != physical.format || desc.dimension != physical.dimension ||
+			desc.isRenderTarget != physical.isRenderTarget || desc.isShaderResource != physical.isShaderResource ||
+			desc.isUnorderedAccess != physical.isUAV) {
+			m_CurrentPassDeps.valid = false;
+			m_CurrentPassDeps.error = "Imported texture descriptor does not match the physical texture";
 			return {};
 		}
 		return m_Registry.ImportResource(desc, std::move(texture), initialState, finalState);
@@ -53,6 +84,7 @@ namespace Renderer {
 			(read && shaderRead && !resource.desc.isShaderResource) ||
 			(write && renderTarget && (!resource.desc.isRenderTarget || depthFormat)) ||
 			(write && depthWrite && (!resource.desc.isRenderTarget || !depthFormat)) ||
+			(read && depthRead && !depthFormat) ||
 			((read || write) && unorderedAccess && !resource.desc.isUnorderedAccess)) {
 			m_CurrentPassDeps.valid = false;
 			m_CurrentPassDeps.error = "Access state is incompatible with the texture descriptor";
@@ -70,13 +102,15 @@ namespace Renderer {
 		if (read && std::find(m_CurrentPassDeps.inputs.begin(), m_CurrentPassDeps.inputs.end(), id) == m_CurrentPassDeps.inputs.end()) {
 			m_CurrentPassDeps.inputs.push_back(id);
 		}
-		if (write && std::find(m_CurrentPassDeps.outputs.begin(), m_CurrentPassDeps.outputs.end(), id) != m_CurrentPassDeps.outputs.end()) {
-			m_CurrentPassDeps.valid = false;
-			m_CurrentPassDeps.error = "Resource is written more than once by one pass";
-			return;
+		for (const RGTextureAccess& existing : m_CurrentPassDeps.accesses) {
+			if (existing.resource == id && (existing.write || write) && Overlaps(existing.subresources, subresources)) {
+				m_CurrentPassDeps.valid = false;
+				m_CurrentPassDeps.error = "Overlapping read/write declarations require one ReadWrite declaration";
+				return;
+			}
 		}
 		if (write) m_CurrentPassDeps.outputs.push_back(id);
-		m_CurrentPassDeps.accesses.push_back({ id, state, subresources });
+		m_CurrentPassDeps.accesses.push_back({ id, state, subresources, read, write });
 	}
 
 	void RGBuilder::Read(RGResourceID id, nvrhi::ResourceStates state, nvrhi::TextureSubresourceSet subresources) {

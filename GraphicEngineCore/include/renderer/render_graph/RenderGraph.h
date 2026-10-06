@@ -50,6 +50,7 @@ namespace Renderer {
 		bool Compile();
 		bool Execute(nvrhi::ICommandList* cmd);
 		const std::string& GetLastError() const noexcept { return m_LastError; }
+		std::string Dump() const;
 
 		RenderGraph(const RenderGraph&) = delete;
 		RenderGraph& operator=(const RenderGraph&) = delete;

@@ -24,6 +24,8 @@ namespace Renderer {
 		RGResourceID resource;
 		nvrhi::ResourceStates state = nvrhi::ResourceStates::Unknown;
 		nvrhi::TextureSubresourceSet subresources = nvrhi::AllSubresources;
+		bool read = false;
+		bool write = false;
 	};
 
 
