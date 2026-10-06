@@ -15,6 +15,28 @@ namespace Renderer {
 		m_Diagnostics = {};
 	}
 
+	nvrhi::BufferHandle FrameContext::GetOrCreateUploadBuffer(const std::string& name,
+		uint32_t byteSize, uint32_t versions) {
+		if (!m_Device || name.empty() || byteSize == 0 || versions == 0) return nullptr;
+		UploadBuffer& uploadBuffer = m_UploadBuffers[name];
+		if (uploadBuffer.Handle && uploadBuffer.ByteSize >= byteSize && uploadBuffer.Versions >= versions) {
+			return uploadBuffer.Handle;
+		}
+		nvrhi::BufferDesc desc;
+		desc.byteSize = byteSize;
+		desc.isConstantBuffer = true;
+		desc.isVolatile = true;
+		desc.maxVersions = versions;
+		desc.debugName = name;
+		nvrhi::BufferHandle replacement = m_Device->createBuffer(desc);
+		if (!replacement) return nullptr;
+		uploadBuffer.Handle = std::move(replacement);
+		uploadBuffer.ByteSize = byteSize;
+		uploadBuffer.Versions = versions;
+		++m_Diagnostics.BufferAllocations;
+		return uploadBuffer.Handle;
+	}
+
 	void FrameContext::MarkSubmitted() {
 		++m_SubmittedFrames;
 		if (!m_Device) return;

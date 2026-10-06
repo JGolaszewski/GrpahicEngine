@@ -7,6 +7,8 @@
 
 #include <deque>
 #include <memory>
+#include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace Renderer {
@@ -34,6 +36,7 @@ namespace Renderer {
 		FrameBlackboard& GetBlackboard() noexcept { return m_Blackboard; }
 		const FrameBlackboard& GetBlackboard() const noexcept { return m_Blackboard; }
 		RGResourcePool& GetTransientPool() noexcept { return m_TransientPool; }
+		nvrhi::BufferHandle GetOrCreateUploadBuffer(const std::string& name, uint32_t byteSize, uint32_t versions);
 		std::vector<std::unique_ptr<RenderView>>& GetViews() noexcept { return m_Views; }
 		const std::vector<std::unique_ptr<RenderView>>& GetViews() const noexcept { return m_Views; }
 		FrameDiagnostics& GetDiagnostics() noexcept { return m_Diagnostics; }
@@ -43,11 +46,17 @@ namespace Renderer {
 			uint64_t Frame = 0;
 			nvrhi::EventQueryHandle CompletionQuery;
 		};
+		struct UploadBuffer {
+			nvrhi::BufferHandle Handle;
+			uint32_t ByteSize = 0;
+			uint32_t Versions = 0;
+		};
 
 		nvrhi::DeviceHandle m_Device;
 		FrameBlackboard m_Blackboard;
 		RGResourcePool m_TransientPool;
 		std::vector<std::unique_ptr<RenderView>> m_Views;
+		std::unordered_map<std::string, UploadBuffer> m_UploadBuffers;
 		std::deque<InFlightFrame> m_InFlightFrames;
 		std::vector<nvrhi::EventQueryHandle> m_FreeCompletionQueries;
 		FrameDiagnostics m_Diagnostics;

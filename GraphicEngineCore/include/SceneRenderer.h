@@ -42,7 +42,7 @@ namespace Engine {
 			Renderer::ShaderFactory* shaderFactory);
 		
 		void BuildViews(Renderer::FrameBlackboard& blackboard, nvrhi::ICommandList* commandList,
-			Renderer::FrameDiagnostics& diagnostics);
+			Renderer::FrameContext& frameContext, Renderer::FrameDiagnostics& diagnostics);
 		void BuildDebugGeometry(Renderer::RenderView* view);
 		void RenderDebugGeometry(nvrhi::ICommandList* commandList, const Renderer::RenderView& view);
 		std::optional<Engine::LightId> PickLight(const Renderer::RenderView& view,
@@ -53,8 +53,8 @@ namespace Engine {
 		void BuildShadowData(Engine::Scene* scene, const std::vector<Renderer::RenderView*>& shadowViews,
 			uint32_t firstShadowSlot);
 
-		bool EnsureLightBuffers(size_t viewCount, Renderer::FrameDiagnostics& diagnostics);
-		nvrhi::BufferHandle GetLightBuffer(size_t viewIndex) const;
+		bool EnsureLightBuffers(size_t viewCount, Renderer::FrameContext& frameContext);
+		nvrhi::BufferHandle GetLightBuffer(size_t viewIndex, Renderer::FrameContext& frameContext) const;
 		nvrhi::BindingSetHandle GetSceneBindingSet(size_t viewIndex, nvrhi::BufferHandle lightBuffer,
 			nvrhi::TextureHandle shadowMap, nvrhi::SamplerHandle shadowSampler,
 			nvrhi::BufferHandle cameraBuffer, Renderer::FrameDiagnostics& diagnostics);
@@ -78,15 +78,14 @@ namespace Engine {
 		nvrhi::GraphicsPipelineHandle GetDebugPipeline(const nvrhi::FramebufferInfo& framebuffer,
 			nvrhi::PrimitiveType primitiveType,
 			Renderer::DebugDepthMode depthMode);
-		bool EnsurePerObjectResources(size_t maxDrawCount, Renderer::FrameDiagnostics& diagnostics);
+		bool EnsurePerObjectResources(size_t maxDrawCount, Renderer::FrameContext& frameContext,
+			Renderer::FrameDiagnostics& diagnostics);
 		size_t EstimateDrawCount(const Renderer::FrameBlackboard& blackboard) const;
 		Renderer::RenderPacket CreateRenderPacket(const Renderer::Mesh* mesh, const Renderer::Material* material);
 
 		PipelineCache m_PipelineCache;
 
 		nvrhi::DeviceHandle m_Device;
-		std::vector<nvrhi::BufferHandle> m_LightBuffers;
-		std::vector<nvrhi::BufferHandle> m_CameraBuffers;
 		struct SceneBindingCache {
 			nvrhi::BufferHandle LightBuffer;
 			nvrhi::TextureHandle ShadowMap;

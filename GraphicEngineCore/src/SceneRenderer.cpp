@@ -394,24 +394,17 @@ size_t Engine::SceneRenderer::EstimateDrawCount(const Renderer::FrameBlackboard&
 	return count;
 }
 
-bool Engine::SceneRenderer::EnsureLightBuffers(size_t viewCount, Renderer::FrameDiagnostics& diagnostics) {
-	while (m_LightBuffers.size() < viewCount) {
-		nvrhi::BufferDesc desc;
-		desc.byteSize = sizeof(Renderer::LightsCBData);
-		desc.isConstantBuffer = true;
-		desc.isVolatile = true;
-		desc.maxVersions = 3;
-		desc.debugName = "ViewLights_Buffer";
-		nvrhi::BufferHandle buffer = m_Device ? m_Device->createBuffer(desc) : nullptr;
-		if (!buffer) return false;
-		m_LightBuffers.push_back(std::move(buffer));
-		++diagnostics.BufferAllocations;
+bool Engine::SceneRenderer::EnsureLightBuffers(size_t viewCount, Renderer::FrameContext& frameContext) {
+	for (size_t viewIndex = 0; viewIndex < viewCount; ++viewIndex) {
+		if (!frameContext.GetOrCreateUploadBuffer("PerViewLights/" + std::to_string(viewIndex),
+			sizeof(Renderer::LightsCBData), static_cast<uint32_t>(Renderer::FrameContext::FramesInFlight + 1))) return false;
 	}
 	return true;
 }
 
-nvrhi::BufferHandle Engine::SceneRenderer::GetLightBuffer(size_t viewIndex) const {
-	return viewIndex < m_LightBuffers.size() ? m_LightBuffers[viewIndex] : nullptr;
+nvrhi::BufferHandle Engine::SceneRenderer::GetLightBuffer(size_t viewIndex, Renderer::FrameContext& frameContext) const {
+	return frameContext.GetOrCreateUploadBuffer("PerViewLights/" + std::to_string(viewIndex),
+		sizeof(Renderer::LightsCBData), static_cast<uint32_t>(Renderer::FrameContext::FramesInFlight + 1));
 }
 
  nvrhi::BindingSetHandle Engine::SceneRenderer::GetSceneBindingSet(size_t viewIndex,
@@ -444,18 +437,14 @@ nvrhi::BufferHandle Engine::SceneRenderer::GetLightBuffer(size_t viewIndex) cons
 	return cache.Bindings;
 }
 
-bool Engine::SceneRenderer::EnsurePerObjectResources(size_t maxDrawCount, Renderer::FrameDiagnostics& diagnostics) {
+bool Engine::SceneRenderer::EnsurePerObjectResources(size_t maxDrawCount, Renderer::FrameContext& frameContext,
+	Renderer::FrameDiagnostics& diagnostics) {
 	maxDrawCount = (std::max)(maxDrawCount, size_t{ 1 });
 	if (maxDrawCount <= m_PerObjectBufferCapacity && m_PerObjectBuffer && m_PerObjectBindingSet) return true;
 	if (maxDrawCount > std::numeric_limits<uint32_t>::max()) return false;
 
-	nvrhi::BufferDesc desc;
-	desc.byteSize = PerObjectDataStride;
-	desc.isConstantBuffer = true;
-	desc.isVolatile = true;
-	desc.maxVersions = static_cast<uint32_t>(maxDrawCount);
-	desc.debugName = "PerObjectDataRing";
-	nvrhi::BufferHandle buffer = m_Device->createBuffer(desc);
+	nvrhi::BufferHandle buffer = frameContext.GetOrCreateUploadBuffer("PerObjectDataRing",
+		static_cast<uint32_t>(PerObjectDataStride), static_cast<uint32_t>(maxDrawCount));
 	if (!buffer) return false;
 
 	nvrhi::BindingSetDesc setDesc;
@@ -466,7 +455,6 @@ bool Engine::SceneRenderer::EnsurePerObjectResources(size_t maxDrawCount, Render
 	m_PerObjectBuffer = std::move(buffer);
 	m_PerObjectBindingSet = std::move(bindingSet);
 	m_PerObjectBufferCapacity = maxDrawCount;
-	++diagnostics.BufferAllocations;
 	++diagnostics.BindingSetAllocations;
 	return true;
 }
@@ -659,13 +647,13 @@ void Engine::SceneRenderer::SortViewQueues(Renderer::RenderView* view) {
 // --- View Building ---
 
 void Engine::SceneRenderer::BuildViews(Renderer::FrameBlackboard& blackboard, nvrhi::ICommandList* commandList,
-	Renderer::FrameDiagnostics& diagnostics) {
+	Renderer::FrameContext& frameContext, Renderer::FrameDiagnostics& diagnostics) {
 	if (!commandList) {
 		return;
 	}
 
 	m_SubmissionStats = {};
-	if (!EnsurePerObjectResources(EstimateDrawCount(blackboard), diagnostics)) {
+	if (!EnsurePerObjectResources(EstimateDrawCount(blackboard), frameContext, diagnostics)) {
 		std::cerr << "ERROR: Could not allocate per-object frame data resources." << std::endl;
 		return;
 	}
@@ -681,23 +669,12 @@ void Engine::SceneRenderer::BuildViews(Renderer::FrameBlackboard& blackboard, nv
 	}
 
 	const auto& sceneViews = blackboard.GetSceneViews();
-	while (m_CameraBuffers.size() < sceneViews.size()) {
-		nvrhi::BufferDesc desc;
-		desc.byteSize = sizeof(Renderer::CameraGpuData);
-		desc.isConstantBuffer = true;
-		desc.isVolatile = true;
-		desc.maxVersions = static_cast<uint32_t>(Renderer::FrameContext::FramesInFlight + 1);
-		desc.debugName = "ViewCameraPosition";
-		nvrhi::BufferHandle buffer = m_Device->createBuffer(desc);
-		if (!buffer) break;
-		m_CameraBuffers.push_back(std::move(buffer));
-		++diagnostics.BufferAllocations;
-	}
 	for (uint32_t viewIndex = 0; viewIndex < sceneViews.size(); ++viewIndex) {
 		Renderer::RenderView* view = sceneViews[viewIndex];
 		if (view) {
 			view->Clear();
-			view->CameraBuffer = viewIndex < m_CameraBuffers.size() ? m_CameraBuffers[viewIndex] : nullptr;
+			view->CameraBuffer = frameContext.GetOrCreateUploadBuffer("ViewCameraPosition/" + std::to_string(viewIndex),
+				sizeof(Renderer::CameraGpuData), static_cast<uint32_t>(Renderer::FrameContext::FramesInFlight + 1));
 			if (view->CameraBuffer) {
 				const Renderer::CameraGpuData cameraData{
 					{ view->CameraPosition.x, view->CameraPosition.y, view->CameraPosition.z, 1.0f }
