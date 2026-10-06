@@ -1,6 +1,7 @@
 #include "PrimitiveFactory.h"
 
 #include "renderer/Entity.h"
+#include "renderer/EntityBuilder.h"
 #include "renderer/Material.h"
 
 #include <nvrhi/nvrhi.h>

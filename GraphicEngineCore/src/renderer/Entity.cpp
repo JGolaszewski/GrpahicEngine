@@ -1,4 +1,5 @@
 #include "renderer/Entity.h"
+#include "EntityBuilder.h"
 #include <algorithm>
 #include <cmath>
 #include <iostream>
