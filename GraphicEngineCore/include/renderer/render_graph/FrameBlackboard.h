@@ -42,6 +42,8 @@ namespace Renderer {
 			m_DirectionalLights.clear();
 			m_ShadowMap = {};
 			m_LightBuffer = nullptr;
+			m_PerObjectBuffer = nullptr;
+			m_PerObjectBindingSet = nullptr;
 			m_ShadowSampler = nullptr;
 			m_PerObjectBindingLayout = nullptr;
 			m_SceneBindingLayout = nullptr;
@@ -55,6 +57,12 @@ namespace Renderer {
 
 		void SetLightBuffer(nvrhi::BufferHandle buffer) { m_LightBuffer = buffer; }
 		nvrhi::BufferHandle GetLightBuffer() const { return m_LightBuffer; }
+
+		void SetPerObjectBuffer(nvrhi::BufferHandle buffer) { m_PerObjectBuffer = std::move(buffer); }
+		nvrhi::BufferHandle GetPerObjectBuffer() const { return m_PerObjectBuffer; }
+
+		void SetPerObjectBindingSet(nvrhi::BindingSetHandle bindingSet) { m_PerObjectBindingSet = std::move(bindingSet); }
+		nvrhi::BindingSetHandle GetPerObjectBindingSet() const { return m_PerObjectBindingSet; }
 
 		void SetShadowSampler(nvrhi::SamplerHandle sampler) { m_ShadowSampler = sampler; }
 		nvrhi::SamplerHandle GetShadowSampler() const { return m_ShadowSampler; }
@@ -78,6 +86,8 @@ namespace Renderer {
 		std::vector<DirectionalLightData> m_DirectionalLights;
 		RGResourceID m_ShadowMap;
 		nvrhi::BufferHandle m_LightBuffer;
+		nvrhi::BufferHandle m_PerObjectBuffer;
+		nvrhi::BindingSetHandle m_PerObjectBindingSet;
 		nvrhi::SamplerHandle m_ShadowSampler;
 		nvrhi::BindingLayoutHandle m_PerObjectBindingLayout;
 		nvrhi::BindingLayoutHandle m_SceneBindingLayout;

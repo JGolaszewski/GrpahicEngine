@@ -38,6 +38,9 @@ namespace Renderer {
 	void ShadowPass::Execute(nvrhi::ICommandList* cmd, const Renderer::RenderContext& ctx) {
 		const auto& shadowViews = ctx.GetBlackboard().GetShadowViews();
 		if (shadowViews.empty()) return;
+		nvrhi::BufferHandle perObjectBuffer = ctx.GetBlackboard().GetPerObjectBuffer();
+		nvrhi::BindingSetHandle perObjectBindings = ctx.GetBlackboard().GetPerObjectBindingSet();
+		if (!perObjectBuffer || !perObjectBindings) return;
 
 		nvrhi::TextureHandle physicalShadowMap = ctx.GetPhysicalTexture(m_ShadowMapID);
 		if (!physicalShadowMap) return;
@@ -79,13 +82,14 @@ namespace Renderer {
 			cmd->clearDepthStencilTexture(physicalShadowMap, subresources, true, 1.0f, false, 0);
 
 			for (const auto& packet : view->Queues.Opaque) {
+				cmd->writeBuffer(perObjectBuffer, &packet.PerObjectData, sizeof(packet.PerObjectData));
 				nvrhi::GraphicsState state;
 				state.pipeline = packet.Pipeline;
 				state.framebuffer = shadowFb;
 				state.viewport.addViewport(shadowViewport);
 				state.viewport.addScissorRect(shadowScissor);
 
-				state.bindings = { packet.PerObjectBindings };
+				state.bindings = { perObjectBindings };
 
 				nvrhi::VertexBufferBinding vbb;
 				vbb.buffer = packet.VertexBuffer;
@@ -134,8 +138,11 @@ namespace Renderer {
 
 		nvrhi::TextureHandle physicalShadowMap = ctx.GetPhysicalTexture(m_ShadowMapInputID);
 		nvrhi::BufferHandle lightBuffer = ctx.GetBlackboard().GetLightBuffer();
+		nvrhi::BufferHandle perObjectBuffer = ctx.GetBlackboard().GetPerObjectBuffer();
+		nvrhi::BindingSetHandle perObjectBindings = ctx.GetBlackboard().GetPerObjectBindingSet();
 		nvrhi::SamplerHandle shadowSampler = ctx.GetBlackboard().GetShadowSampler();
 		nvrhi::BindingLayoutHandle sceneBindingLayout = ctx.GetBlackboard().GetSceneBindingLayout();
+		if (!lightBuffer || !perObjectBuffer || !perObjectBindings || !shadowSampler || !sceneBindingLayout) return;
 
 		auto drawQueue = [&](const std::vector<Renderer::RenderPacket>& packets,
 			nvrhi::BindingSetHandle sceneBindings,
@@ -143,13 +150,14 @@ namespace Renderer {
 			const nvrhi::Viewport& vp,
 			const nvrhi::Rect& scissor) {
 			for (const auto& packet : packets) {
+				cmd->writeBuffer(perObjectBuffer, &packet.PerObjectData, sizeof(packet.PerObjectData));
 				nvrhi::GraphicsState state;
 				state.pipeline = packet.Pipeline;
 				state.framebuffer = fb;
 				state.viewport.addViewport(vp);
 				state.viewport.addScissorRect(scissor);
 
-				state.bindings = { packet.PerObjectBindings, sceneBindings, packet.MaterialBindings };
+				state.bindings = { perObjectBindings, sceneBindings, packet.MaterialBindings };
 
 				nvrhi::VertexBufferBinding vbb;
 				vbb.buffer = packet.VertexBuffer;

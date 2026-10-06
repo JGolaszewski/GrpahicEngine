@@ -2,10 +2,21 @@
 
 #include <nvrhi/nvrhi.h>
 #include <DirectXMath.h>
+#include <array>
+#include <cstdint>
 
 #include "PipelineCache.h"
 
 namespace Renderer {
+
+	struct PerObjectGpuData {
+		DirectX::XMFLOAT4X4 MVP;
+		DirectX::XMFLOAT4X4 World;
+		DirectX::XMFLOAT4X4 Normal;
+		DirectX::XMFLOAT4 ObjectParams;
+		std::array<uint8_t, 48> Padding{};
+	};
+	static_assert(sizeof(PerObjectGpuData) == 256);
 
     enum class RenderQueueType {
         Opaque,
@@ -19,7 +30,7 @@ namespace Renderer {
     struct RenderPacket {
         nvrhi::GraphicsPipelineHandle Pipeline;
         nvrhi::BindingSetHandle MaterialBindings; 
-        nvrhi::BindingSetHandle PerObjectBindings;
+        PerObjectGpuData PerObjectData{};
         nvrhi::BufferHandle VertexBuffer;
         nvrhi::BufferHandle IndexBuffer;
         uint32_t IndexCount;

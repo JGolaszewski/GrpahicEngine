@@ -12,14 +12,6 @@
 #include "renderer/DebugGeometry.h"
 
 namespace {
-	struct PerObjectData {
-		DirectX::XMFLOAT4X4 MVP;
-		DirectX::XMFLOAT4X4 World;
-		DirectX::XMFLOAT4X4 Normal;
-		DirectX::XMFLOAT4 ObjectParams;
-		uint8_t Padding[48]{};
-	};
-
 	struct DebugViewData {
 		DirectX::XMFLOAT4X4 ViewProjection;
 	};
@@ -33,7 +25,7 @@ namespace {
 		return DirectX::XMVector3Normalize(vector);
 	}
 
-	static_assert(sizeof(PerObjectData) == Engine::SceneRenderer::PerObjectDataStride);
+	static_assert(sizeof(Renderer::PerObjectGpuData) == Engine::SceneRenderer::PerObjectDataStride);
 
 	DirectX::XMMATRIX ComputeSpotLightViewProj(const Renderer::DirectionalLightData& lightData) {
 		using namespace DirectX;
@@ -388,9 +380,54 @@ std::optional<Engine::LightId> Engine::SceneRenderer::PickLight(
 
 // --- Uploads ---
 
-void Engine::SceneRenderer::CullAndFillView(Renderer::RenderView* view, nvrhi::ICommandList* commandList, uint32_t viewIndex) {
+size_t Engine::SceneRenderer::EstimateDrawCount(const Renderer::FrameBlackboard& blackboard) const {
+	size_t count = 0;
+	const auto accumulate = [&count](const std::vector<Renderer::RenderView*>& views) {
+		for (const Renderer::RenderView* view : views) {
+			if (!view || !view->TargetScene) continue;
+			for (const auto& entity : view->TargetScene->GetEntities()) {
+				if (!entity) continue;
+				const size_t submeshCount = entity->Submeshes.empty() ? 1 : entity->Submeshes.size();
+				if (submeshCount > std::numeric_limits<size_t>::max() - count) {
+					count = std::numeric_limits<size_t>::max();
+					return;
+				}
+				count += submeshCount;
+			}
+		}
+	};
+	accumulate(blackboard.GetShadowViews());
+	accumulate(blackboard.GetSceneViews());
+	return count;
+}
+
+bool Engine::SceneRenderer::EnsurePerObjectResources(size_t maxDrawCount) {
+	maxDrawCount = (std::max)(maxDrawCount, size_t{ 1 });
+	if (maxDrawCount <= m_PerObjectBufferCapacity && m_PerObjectBuffer && m_PerObjectBindingSet) return true;
+	if (maxDrawCount > std::numeric_limits<uint32_t>::max()) return false;
+
+	nvrhi::BufferDesc desc;
+	desc.byteSize = PerObjectDataStride;
+	desc.isConstantBuffer = true;
+	desc.isVolatile = true;
+	desc.maxVersions = static_cast<uint32_t>(maxDrawCount);
+	desc.debugName = "PerObjectDataRing";
+	nvrhi::BufferHandle buffer = m_Device->createBuffer(desc);
+	if (!buffer) return false;
+
+	nvrhi::BindingSetDesc setDesc;
+	setDesc.addItem(nvrhi::BindingSetItem::ConstantBuffer(0, buffer));
+	nvrhi::BindingSetHandle bindingSet = m_Device->createBindingSet(setDesc, m_PerObjectBindingLayout);
+	if (!bindingSet) return false;
+
+	m_PerObjectBuffer = std::move(buffer);
+	m_PerObjectBindingSet = std::move(bindingSet);
+	m_PerObjectBufferCapacity = maxDrawCount;
+	return true;
+}
+
+void Engine::SceneRenderer::CullAndFillView(Renderer::RenderView* view) {
 	if (!view || !view->TargetScene) return;
-	if (!commandList) return;
 
 	DirectX::XMMATRIX viewProj = view->ViewProjection;
 	nvrhi::IFramebuffer* framebuffer = view->TargetFramebuffer; // FIXME 
@@ -450,7 +487,7 @@ void Engine::SceneRenderer::CullAndFillView(Renderer::RenderView* view, nvrhi::I
 				return;
 			}
 
-			PerObjectData perObjectData{};
+			Renderer::PerObjectGpuData perObjectData{};
 			const DirectX::XMMATRIX mvp = world * viewProj;
 			DirectX::XMVECTOR determinant;
 			const DirectX::XMMATRIX inverseWorld = DirectX::XMMatrixInverse(&determinant, world);
@@ -466,18 +503,8 @@ void Engine::SceneRenderer::CullAndFillView(Renderer::RenderView* view, nvrhi::I
 				0.0f, 0.0f
 			};
 
-			nvrhi::BufferDesc perObjectDesc;
-			perObjectDesc.byteSize = PerObjectDataStride;
-			perObjectDesc.isConstantBuffer = true;
-			perObjectDesc.debugName = "PerObjectData";
-			nvrhi::BufferHandle perObjectBuffer = m_Device->createBuffer(perObjectDesc);
-			if (!perObjectBuffer) {
-				std::cerr << "ERROR: Could not allocate per-object buffer for view " << viewIndex << std::endl;
-				return;
-			}
-			commandList->writeBuffer(perObjectBuffer, &perObjectData, PerObjectDataStride);
-
-			auto packet = CreateRenderPacket(submesh.mesh.get(), submesh.material.get(), perObjectBuffer);
+			auto packet = CreateRenderPacket(submesh.mesh.get(), submesh.material.get());
+			packet.PerObjectData = perObjectData;
 			const Renderer::MaterialProperties materialProperties = submesh.material->GetProperties();
 			packet.Queue = view->ViewType == Renderer::RenderView::Type::Shadow
 				? Renderer::RenderQueueType::Opaque
@@ -545,8 +572,7 @@ void Engine::SceneRenderer::CullAndFillView(Renderer::RenderView* view, nvrhi::I
 
 Renderer::RenderPacket Engine::SceneRenderer::CreateRenderPacket(
 	const Renderer::Mesh* mesh,
-	const Renderer::Material* material,
-	nvrhi::BufferHandle perObjectBuffer) {
+	const Renderer::Material* material) {
 	Renderer::RenderPacket packet;
 	packet.VertexBuffer = mesh->GetVertexBuffer();
 	packet.IndexBuffer = mesh->GetIndexBuffer();
@@ -555,10 +581,6 @@ Renderer::RenderPacket Engine::SceneRenderer::CreateRenderPacket(
 	packet.MaterialBindings = material->GetBindingSet();
 	packet.BaseVertexOffset = 0;
 	packet.StartIndexLocation = 0;
-
-	nvrhi::BindingSetDesc setDesc;
-	setDesc.addItem(nvrhi::BindingSetItem::ConstantBuffer(0, perObjectBuffer));
-	packet.PerObjectBindings = m_Device->createBindingSet(setDesc, m_PerObjectBindingLayout);
 
 	return packet;
 }
@@ -589,13 +611,17 @@ void Engine::SceneRenderer::BuildViews(Renderer::FrameBlackboard& blackboard, nv
 	}
 
 	m_SubmissionStats = {};
+	if (!EnsurePerObjectResources(EstimateDrawCount(blackboard))) {
+		std::cerr << "ERROR: Could not allocate per-object frame data resources." << std::endl;
+		return;
+	}
 
 	const auto& shadowViews = blackboard.GetShadowViews();
 	for (uint32_t viewIndex = 0; viewIndex < shadowViews.size(); ++viewIndex) {
 		Renderer::RenderView* view = shadowViews[viewIndex];
 		if (view) {
 			view->Clear();
-			CullAndFillView(view, commandList, viewIndex);
+			CullAndFillView(view);
 			SortViewQueues(view);
 		}
 	}
@@ -618,7 +644,7 @@ void Engine::SceneRenderer::BuildViews(Renderer::FrameBlackboard& blackboard, nv
 				};
 				commandList->writeBuffer(view->CameraBuffer, &cameraData, sizeof(cameraData));
 			}
-			CullAndFillView(view, commandList, static_cast<uint32_t>(shadowViews.size()) + viewIndex);
+			CullAndFillView(view);
 			SortViewQueues(view);
 			BuildDebugGeometry(view);
 		}

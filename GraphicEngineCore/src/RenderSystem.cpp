@@ -147,6 +147,8 @@ namespace Engine {
 			static_cast<uint32_t>(scenes.size()) * SceneRenderer::MaxShadowedLights));
 
 		m_SceneRenderer->BuildViews(bb, m_CommandList);
+		bb.SetPerObjectBuffer(m_SceneRenderer->GetPerObjectBuffer());
+		bb.SetPerObjectBindingSet(m_SceneRenderer->GetPerObjectBindingSet());
 		for (Renderer::RenderView* view : bb.GetSceneViews()) {
 			if (view && view->TargetScene)
 				m_SceneRenderer->BuildLighting(view->TargetScene, bb.GetShadowViews(), view->Lights);

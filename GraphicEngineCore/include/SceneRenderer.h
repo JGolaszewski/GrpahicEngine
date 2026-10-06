@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreExport.h"
+#include <cstddef>
 #include <DirectXMath.h>
 #include <vector>
 #include <unordered_map>
@@ -51,6 +52,8 @@ namespace Engine {
 			uint32_t firstShadowSlot);
 
 		inline nvrhi::BufferHandle GetLightBuffer() const { return m_LightBuffer; }
+		inline nvrhi::BufferHandle GetPerObjectBuffer() const { return m_PerObjectBuffer; }
+		inline nvrhi::BindingSetHandle GetPerObjectBindingSet() const { return m_PerObjectBindingSet; }
 		inline nvrhi::SamplerHandle GetShadowSampler() const { return m_ShadowSampler; }
 		inline nvrhi::BindingLayoutHandle GetPerObjectBindingLayout() const { return m_PerObjectBindingLayout; }
 		inline nvrhi::BindingLayoutHandle GetSceneBindingLayout() const { return m_SceneBindingLayout; }
@@ -60,7 +63,7 @@ namespace Engine {
 
 	private:
 
-		void CullAndFillView(Renderer::RenderView* view, nvrhi::ICommandList* commandList, uint32_t viewIndex);
+		void CullAndFillView(Renderer::RenderView* view);
 		void SortViewQueues(Renderer::RenderView* view);
 		void EnsureDebugBuffer(nvrhi::BufferHandle& buffer,
 			uint64_t& capacity,
@@ -69,16 +72,18 @@ namespace Engine {
 		nvrhi::GraphicsPipelineHandle GetDebugPipeline(const nvrhi::FramebufferInfo& framebuffer,
 			nvrhi::PrimitiveType primitiveType,
 			Renderer::DebugDepthMode depthMode);
-		Renderer::RenderPacket CreateRenderPacket(
-			const Renderer::Mesh* mesh,
-			const Renderer::Material* material,
-			nvrhi::BufferHandle perObjectBuffer);
+		bool EnsurePerObjectResources(size_t maxDrawCount);
+		size_t EstimateDrawCount(const Renderer::FrameBlackboard& blackboard) const;
+		Renderer::RenderPacket CreateRenderPacket(const Renderer::Mesh* mesh, const Renderer::Material* material);
 
 		PipelineCache m_PipelineCache;
 
 		nvrhi::DeviceHandle m_Device;
 		nvrhi::BufferHandle m_LightBuffer;
 		nvrhi::BindingLayoutHandle m_PerObjectBindingLayout;
+		nvrhi::BufferHandle m_PerObjectBuffer;
+		nvrhi::BindingSetHandle m_PerObjectBindingSet;
+		size_t m_PerObjectBufferCapacity = 0;
 		nvrhi::BindingLayoutHandle m_SceneBindingLayout;
 		nvrhi::SamplerHandle m_ShadowSampler;
 		nvrhi::ShaderHandle m_DebugVS;
