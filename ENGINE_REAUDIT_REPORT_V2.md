@@ -3,11 +3,11 @@
 **Audit date:** 2026-10-06  
 **Role:** Lead Engine Architect / strict code review  
 **Scope:** Project-owned engine core, render submission, render graph, GPU resource lifetime, D3D11/UI boundary, asset/material path, scene data, and editor coordination. Vendored NVRHI, ImGui, GLFW, and other dependencies were not audited line-by-line.  
-**Method:** Git history and implementation diffs, then static inspection of the current source. No performance capture or GPU runtime validation was available. Build/test execution was attempted but the current shell does not have `cmake` or `ctest` on `PATH`.
+**Method:** Git history and implementation diffs, then static inspection of the current source. The final Visual Studio x64 Debug build was run through the Visual Studio Developer Command Prompt. No performance capture or GPU runtime validation was available.
 
 ## Executive Summary
 
-**Implementation update (2026-10-06):** All five P0 actions below are implemented and committed. The Visual Studio x64 Debug build succeeds and both CTest tests pass. The documented interactive GPU validation scenarios have not been run in this session.
+**Implementation update (2026-10-06):** All five P0 actions and all six P1 actions below are implemented and committed. The Visual Studio x64 Debug build succeeds. CTest passed 2/2 after the P0 work; it was not rerun after the P1 changes. The documented interactive GPU validation scenarios have not been run in this session.
 
 The implementation phase resolved several real problems from `ENGINE_AUDIT_REPORT.md`: lights are now prepared per view, imported alpha mode and sidedness reach forward draw state, ordinary resource retirement no longer calls `waitForIdle()`, editor ImGui/D3D11 integration moved out of the core target, scene ID lookups gained indexes, and multiple placeholder or misleading APIs were removed. The fixes are incremental and generally fit the existing design.
 
@@ -16,9 +16,9 @@ The completion markers in the original report overstate the degree of closure. S
 1. Per-view light uploads now use a separate volatile buffer per submitted view slot, so the view count is not constrained by one buffer's version budget.
 2. Masked shadow casters use a depth-only alpha-test shader and material bindings. Shadow culling respects double-sided materials; blended materials are excluded from shadow casting by documented policy.
 
-The render graph now accepts access states and subresource ranges, but still models textures only and does not own the actual viewport attachments, pass clears, or framebuffer policy. `ForwardPass` continues to create binding sets and clear targets internally. Per-view camera buffers and scene binding sets are also recreated each frame. Asset uploads still create and submit one immediate command list per mesh/texture. The core/editor boundary has improved, but the editor reaches through `Application::GetRenderSystem()` into material and renderer implementation services, and viewport texture interop remains an untyped `void*` bridge converted to a D3D11 SRV in the editor.
+The P1 follow-up now puts reusable camera, light, and object upload buffers under `FrameContext`; caches per-view scene binding sets; imports viewport attachments and declares their states, ranges, and clear/store policy in the graph; validates subresource hazards; batches queued asset uploads with completion-based staging retirement; and routes editor material and scene-document workflows through narrower APIs. The graph remains texture-focused, and viewport UI interop remains an untyped `void*` bridge converted to a D3D11 SRV in the editor.
 
-**Review disposition:** P0 implementation is complete. Interactive GPU validation remains a documented manual step. P1 work is open until implemented and verified.
+**Review disposition:** P0 and P1 implementation is complete and builds with the Visual Studio x64 Debug toolchain. Interactive GPU validation remains a documented manual step.
 
 ## 1. Commit Verification and Diff Review
 
@@ -28,15 +28,17 @@ The original report was introduced in `730ae10` after the P0 implementation comm
 |---|---|---|
 | P0 per-view lighting/shadows | `d05547b`, `e0cd3b5` | Per-view light buffers remove the fixed view-count ceiling. A four-view distinct-light scenario is documented in `docs/validation/windows.md`; GPU execution remains manual. |
 | P0 alpha mode and sidedness | `2ddb8b6`, `7848385` | Forward and shadow paths honor mask alpha and double-sided state. Blended materials do not cast shadows by policy. |
-| P1 per-object allocation churn | `7c8d8d7` | Per-object buffer and binding set are reused, and packet data is written during draw recording. This removes per-object buffer/binding-set creation, but remains one buffer write per draw, sizes versions from a worst-case estimate, and does not address camera-buffer or per-view scene-binding churn. |
+| P1 frame and per-view allocation churn | `44d83e7`, `aa3f9c0`, `6ccf7e6` | `FrameContext` owns persistent camera/light/object upload buffers and view lifetime; scene binding sets are cached by resource handles. Per-object data still uses one write per draw and sizes volatile versions from an estimate. |
 | P1 device-wide idle during retirement | `a3e6a0f`, `f15b51a` | Normal retirement polls graphics event queries. Query allocation failure is diagnosed and falls back to an explicit idle wait before releasing retained resources; teardown also waits idle. |
 | P1 ImGui/D3D11 coupling | `64f94cb`, `2bdfdc4` | Core no longer owns ImGui frame lifecycle and no longer links D3D11/GLFW/ImGui directly. UI backend integration is editor-owned. This is a real boundary improvement, not a backend-neutral UI texture API: `EditorUiIntegration` dynamically casts to D3D11 and converts a `void*` NVRHI texture to a D3D11 SRV. |
-| P1 render graph access states | `4b06573` | Explicit texture states and ranges are recorded and applied. This is a useful first step, not a general graph contract: there are no buffer resources, queue ownership, subresource dependency tracking, or graph-owned viewport output/load-store policy. |
+| P1 render graph access states | `4b06573`, `2dc188f`, `fa207d1`, `79e7ae6` | Viewport color/depth attachments are imported with clear/store policy; shadow and viewport accesses use subresource ranges; overlapping declarations and subresource read/write hazards are checked. `RenderGraph::Dump()` exposes passes, resources, lifetimes, and planned transitions. Graph resources remain texture-only. |
+| P1 upload submission | `e4294d7` | Mesh and texture writes queue into one upload command list per flush. CPU staging is retained through a GPU completion query, with byte and batch progress plus error reporting. |
+| P1 editor/runtime service boundary | `d032dcc` | Editor material operations use focused `RenderSystem` methods, renderer implementation getters were removed, and `EditorSceneDocument` reads/writes `SceneDocument` data through `AssetManager` without depending on `Application`. |
 | P2 scene document workflow | `8ae35df` | Path and canonicalization state moved into `EditorSceneDocument`. Load/save still call `Application` methods and the service is editor-specific; serialization ownership is only partially separated. |
 | P2 scene ID scans | `ad7fc02` | ID-to-index lookups are now indexed for entities, lights, and cameras. Removal still shifts vectors and rewrites following indexes, and pointer-to-ID lookup remains linear. This is a useful improvement without stable slot/generation handles. |
 | P3 placeholder/API cleanup | `a9e4515`, `369e3ea`, `91ff71e`, `64a314d`, `d0c569a` | Empty cache declarations were removed; sandbox primitive construction uses the factory; `EntityBuilder` is private to implementation; unsupported viewport flags were deleted; unsupported neural BRDF values are explicitly downgraded with a warning. These are scoped cleanups. |
 
-Related history includes model/material texture import and reimport (`4fc82a4` through `8dd9597`), per-submesh shader selection (`c03c7ab`), and editor file-dialog isolation (`6c31522`). Those commits add user-facing capability, but do not change the conclusions below about incomplete glTF material coverage, upload batching, and editor coordination.
+Related history includes model/material texture import and reimport (`4fc82a4` through `8dd9597`), per-submesh shader selection (`c03c7ab`), and editor file-dialog isolation (`6c31522`). Incomplete glTF material coverage remains open for P2.
 
 ### 1.1 Representative patterns in the diffs
 
@@ -88,9 +90,9 @@ Masked shadow casters need an alpha-aware depth shader and base-color texture/ma
 **Still coupled:**
 
 - `GraphicEngineCore` publicly links NVRHI and DirectXMath, and its public headers expose NVRHI types extensively. That may be appropriate for a renderer module, but `GraphicEngineCore` still combines runtime, renderer, asset manager, and platform-adjacent types instead of exposing smaller stable targets.
-- `GraphicEngineEditor/Editor.cpp` directly calls `GetRenderSystem()->GetMaterialSystem()` and renderer resource APIs for material creation, registration, texture assignment, and model import. This bypasses a narrow editor-facing service boundary and makes the 1,146-line editor coordinator a dependency hub.
+- Editor material creation, texture assignment, and cleanup use focused `RenderSystem` methods. Asset operations still pass through the application-owned `AssetManager` and render-system asset APIs; broader runtime/editor target separation remains open for P2.
 - `EditorUiIntegration` depends on `D3D11Backend`, GLFW, ImGui’s DX11 backend, and `nvrhi::ObjectTypes::D3D11_ShaderResourceView`. `ViewportTarget::GetColorTextureHandle()` returns `void*`, then the editor interprets it as `nvrhi::ITexture*`. Ownership and backend type are not encoded by this interface.
-- `EditorSceneDocument` owns path state, but delegates persistence back through `Engine::Application`. This moves code without establishing a reusable document service boundary.
+- `EditorSceneDocument` owns path state and reads/writes the serializable `SceneDocument` through `AssetManager`. Runtime scene construction remains an `Application` operation, separate from file persistence.
 - Naming, member casing, and getter/mutable-field conventions remain mixed. Treat this as secondary to ownership and lifecycle contracts; avoid a broad style-only rewrite.
 
 **Assessment:** module separation is better but incomplete. The engine is still one Windows-first renderer/runtime DLL with a concrete D3D11 editor integration, rather than a backend-neutral runtime plus a renderer contract and editor service layer.
@@ -100,9 +102,9 @@ Masked shadow casters need an alpha-aware depth shader and base-color texture/ma
 The active graph remains three passes: shadow, forward, debug. It does not yet own all render work.
 
 - `ShadowPass` creates framebuffers from the physical shadow texture and clears every allocated slice, including slices without a caster view. Four slices are reserved for every distinct scene, regardless of how many shadow-casting lights that scene uses.
-- `ForwardPass` creates a scene binding set for each view on every frame and issues color/depth clears directly against the framebuffer attachments. The graph has no imported viewport attachment declaration and cannot express target load, clear, or store intent.
-- `RenderPass::Execute` is `void`. `RenderGraph::Execute` returns `false` for graph/allocation errors, but a pass cannot report failure. `RenderSystem::EndFrame` logs an execution failure and continues to close and submit the command list, without a defined fallback frame policy.
-- The graph tracks texture access state and subresource ranges, but pass dependencies and first/last use remain resource-wide. There are no graph buffer resources, explicit access kind beyond NVRHI state flags, queue/fence ownership, or meaningful imported-resource use in the active passes.
+- `ForwardPass` reuses scene binding sets and consumes graph-imported viewport attachments. The graph declares color/depth accesses, clear/load/store intent, and final states; `DebugPass` declares its attachment writes.
+- Pass execution returns an error result. `RenderSystem::EndFrame` logs graph/execute failures and clears submitted targets to the error color before submission.
+- The graph tracks access hazards per texture subresource and exposes pass, resource, lifetime, and transition dumps. It still has no buffer resources or queue ownership, and first/last allocation lifetime remains resource-wide.
 - Forward geometry, material evaluation, lighting, and shadow sampling still live together in one pass/shader path. No HDR/tone-map or post-process stage is present. This can be a valid small forward renderer; the graph should not be described as a general frame scheduler yet.
 
 The graph’s new declarations are a positive move toward a strict pass contract. They should be expanded with validation and execution ownership before compute, async queues, or more complex post-process work is layered on top.
@@ -115,10 +117,10 @@ The graph’s new declarations are a positive move toward a strict pass contract
 
 - If `createEventQuery()` fails, the resource manager logs the failure, waits for GPU idle on that exceptional path, and clears resources whose use is then complete. Successful ordinary retirement remains query-based and does not wait device-wide.
 - `LightsCBData` uses a dedicated buffer for each view slot. Each slot is written once per frame and its three volatile versions cover reuse across the supported frames in flight.
-- `RenderView::CameraBuffer` is allocated lazily for each newly created view, and `m_ViewPool.clear()` destroys those view wrappers at the next `BeginFrame`. `ForwardPass` also builds a fresh scene binding set for each view every frame. Both are avoidable graphics object churn even after per-object resources were reused.
+- `FrameContext` owns the view wrappers and persistent camera, light, and object upload buffers. Scene binding sets are reused while their underlying handles remain stable. The blackboard keeps non-owning view references whose lifetime is bounded by the owning frame context.
 - Per-object data now avoids one GPU buffer and one binding set per draw, but still does one `writeBuffer` per draw. The volatile version count is based on an estimated worst-case draw count and can allocate a large number of versions for scenes with many visible candidates. Profile memory and CPU submission cost before considering it a finished frame allocator.
-- `RenderDevice::CreateMesh` and `CreateTexture` each create/open/close/submit their own immediate command list. Model upload repeats the mesh path per primitive. Large reimports therefore produce submission and synchronization overhead instead of one upload batch/queue.
-- Resource creation and graphics execution use one controlled graphics path today. Any move toward asynchronous CPU import/upload needs an explicit render-thread upload queue and ownership/completion contract.
+- `RenderDevice::CreateMesh` and `CreateTexture` allocate resources; `ResourceManager` queues their writes and submits one upload command list per flush. Staging data remains alive until a completion query retires it. Upload progress reports queued/submitted/completed bytes and failed batches.
+- Upload recording and graphics execution use the graphics queue. CPU import is still synchronous; a background import worker and asynchronous upload queue remain future work.
 
 ### 2.4 Materials, asset import, and rendering behavior
 
@@ -154,14 +156,14 @@ The editor has a separate executable, panels, commands, and file-dialog/UI integ
 
 ### P1 — Make the frame and graph contracts real
 
-1. **Add a frame context.** Own frame index, completion query/fence, view and object upload arenas, per-frame diagnostics, and transient resource lifetime in one object. Replace arbitrary raw view pointers in blackboard state where practical.
-2. **Remove remaining per-view object churn.** Reuse camera data storage and cache/rebuild scene binding sets only when their resource handles change. Record allocations, upload bytes, and descriptor/binding-set creation counts per frame.
-3. **Finish graph ownership for active passes.** Add imported viewport color/depth resources with initial/final states. Declare depth/color attachment accesses, clear/load/store intent, and shadow subresource ranges in graph setup. Move target clearing/framebuffer attachment policy behind the graph contract.
-4. **Add graph validation and diagnostics.** Track read/write hazards at subresource granularity; validate texture capabilities and conflicting same-pass declarations; expose pass/resource/lifetime/transition dumps. Give pass execution an error result.
-5. **Batch GPU uploads.** Replace one immediate command list per mesh or texture with an upload batch/queue, staged resources, progress/error reporting, and explicit completion-based staging retirement.
-6. **Create narrow editor/runtime services.** Replace editor calls through `GetRenderSystem()->GetMaterialSystem()` and resource-manager internals with scene, material, and asset services. Make scene document persistence independent of the `Application` coordinator.
+1. **[Completed] Add a frame context.** `FrameContext` owns frame timeline/query state, views, transient resource lifetime, upload buffers, and per-frame diagnostics. Blackboard view references are non-owning and bounded by this owner.
+2. **[Completed] Remove remaining per-view object churn.** Camera buffers and scene binding sets are reused by view slot and stable resource handles; frame counters track allocations, uploads, and draws.
+3. **[Completed] Finish graph ownership for active passes.** Viewport color/depth resources are imported with explicit states and attachment policy; viewport and shadow accesses declare subresource ranges.
+4. **[Completed] Add graph validation and diagnostics.** Subresource hazards, capabilities, and conflicting declarations are checked; `Dump()` exposes pass/resource/lifetime/transition data; pass execution errors propagate.
+5. **[Completed] Batch GPU uploads.** Mesh and texture writes share queued command-list flushes, progress/error reporting, and completion-based staging retirement.
+6. **[Completed] Create narrow editor/runtime services.** Editor material operations use `RenderSystem` service methods, while `EditorSceneDocument` persists DTOs through `AssetManager` without depending on `Application`.
 
-**Exit criteria:** active render targets and transitions are visible to the graph; stable frame data is allocated per frame rather than per draw/view; import does not submit a command list per resource; editor workflows can be exercised through focused service-level boundaries.
+**Implementation exit criteria: Completed.** Active render target states and transitions are graph-managed; camera/light/object buffers and bindings are reused; asset uploads batch and retire staging by completion; editor file persistence and material calls cross focused APIs. GPU visual behavior remains unverified until the documented scenarios are run.
 
 ### P2 — Improve scalability and imported-material fidelity
 
@@ -183,10 +185,9 @@ The editor has a separate executable, panels, commands, and file-dialog/UI integ
 
 - `git status --short` showed a pre-existing user change to `.gitignore`; it was preserved. This re-audit did not edit it.
 - Git commit history and the implementation diffs listed above were inspected. The report status-only commits were not mistaken for implementation.
-- `cmake --build out/build/x64-debug --config Debug -j 4` could not start because `cmake` is not available on the current shell `PATH`.
-- `ctest --test-dir out/build/x64-debug -N` could not start because `ctest` is not available on the current shell `PATH`.
-- Static review therefore confirms code paths and identifies contracts/risks, but does not establish a successful current build, test run, GPU validation run, runtime visual result, or performance improvement. Existing binaries/artifacts under `out` were not treated as current verification evidence.
+- The Visual Studio 2026 x64 Developer Command Prompt configured the existing CMake build. `cmake --build out/build/verify-p0 --config Debug --parallel 4` succeeded after the P1 changes.
+- CTest passed both registered tests after P0; it was not rerun after P1. No interactive GPU validation or performance capture was run.
 
 ## Final Assessment
 
-The P0 implementation is complete and has a passing Visual Studio Debug build and CTest run. P1 remains open: frame lifetime is not yet a single owned context, per-view allocations and binding sets still churn, graph attachment ownership and subresource validation are incomplete, uploads are not batched, and editor/runtime service boundaries remain broad. Interactive GPU validation is documented but has not been executed.
+P0 and P1 implementation is complete. The final Visual Studio x64 Debug build succeeds; the P0 CTest run passed 2/2, while tests were not rerun after P1. Interactive GPU validation and performance results remain outstanding. P2/P3 items, including full glTF material coverage, backend-neutral viewport texture registration, and broader module separation, remain open.
