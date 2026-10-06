@@ -33,6 +33,9 @@ namespace Renderer {
 
 		m_ShadowMapID = builder.CreateTexture(desc);
 		const auto& shadowViews = blackboard.GetShadowViews();
+		if (shadowViews.empty()) {
+			builder.Write(m_ShadowMapID, nvrhi::ResourceStates::DepthWrite);
+		}
 		for (uint32_t shadowSlot = 0; shadowSlot < shadowViews.size(); ++shadowSlot) {
 			nvrhi::TextureSubresourceSet subresources;
 			subresources.baseArraySlice = shadowSlot;
