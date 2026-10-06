@@ -164,7 +164,7 @@ bool ReadMaterial(const Json &value, SceneMaterialDocument &material, std::vecto
     }
     KnownKeys(value,
               {"baseColor", "emissive", "metallic", "roughness", "gtrGamma", "ior", "specularF0", "brdfModel",
-               "specularMode", "alphaMode", "alphaCutoff", "doubleSided", "baseColorTextureGuid",
+               "workflow", "specularMode", "alphaMode", "alphaCutoff", "doubleSided", "baseColorTextureGuid",
                "normalTextureGuid"},
               warnings, context);
     if (!ReadArrayField(value, "baseColor", material.baseColor, error) ||
@@ -185,6 +185,15 @@ bool ReadMaterial(const Json &value, SceneMaterialDocument &material, std::vecto
             return false;
         }
         material.brdfModel = value["brdfModel"].get<std::string>();
+    }
+    if (value.contains("workflow"))
+    {
+        if (!value["workflow"].is_string())
+        {
+            error = "workflow must be a string";
+            return false;
+        }
+        material.workflow = value["workflow"].get<std::string>();
     }
     if (value.contains("specularMode"))
     {
@@ -220,12 +229,27 @@ bool ReadMaterial(const Json &value, SceneMaterialDocument &material, std::vecto
         warnings.push_back(context + " uses the unsupported neural BRDF; GGX will be used instead");
         material.brdfModel = "ggx";
     }
-    const auto validBrdf =
-        material.brdfModel == "legacy" || material.brdfModel == "ggx" || material.brdfModel == "gtr" ||
-        material.brdfModel == "specularGlossiness";
+    if (material.brdfModel == "specularGlossiness")
+    {
+        if (value.contains("workflow"))
+        {
+            error = "specularGlossiness is a workflow, not a brdfModel";
+            return false;
+        }
+        material.brdfModel = "ggx";
+        material.workflow = "specularGlossiness";
+        warnings.push_back(context + " migrated specularGlossiness from brdfModel to workflow with GGX shading");
+    }
+    const auto validBrdf = material.brdfModel == "legacy" || material.brdfModel == "ggx" ||
+                           material.brdfModel == "gtr";
     if (!validBrdf)
     {
         error = "brdfModel has an unsupported value";
+        return false;
+    }
+    if (material.workflow != "metallicRoughness" && material.workflow != "specularGlossiness")
+    {
+        error = "workflow has an unsupported value";
         return false;
     }
     if (material.specularMode != "ior" && material.specularMode != "explicitF0")
@@ -278,10 +302,11 @@ bool IsValidPrimitiveType(const std::string &type)
 
 bool IsValidMaterial(const SceneMaterialDocument &material)
 {
-    const auto validBrdf =
-        material.brdfModel == "legacy" || material.brdfModel == "ggx" || material.brdfModel == "gtr" ||
-        material.brdfModel == "specularGlossiness";
-    if (!validBrdf || (material.specularMode != "ior" && material.specularMode != "explicitF0") ||
+    const auto validBrdf = material.brdfModel == "legacy" || material.brdfModel == "ggx" ||
+                           material.brdfModel == "gtr";
+    const bool validWorkflow = material.workflow == "metallicRoughness" ||
+                               material.workflow == "specularGlossiness";
+    if (!validBrdf || !validWorkflow || (material.specularMode != "ior" && material.specularMode != "explicitF0") ||
         (material.alphaMode != "opaque" && material.alphaMode != "mask" && material.alphaMode != "blend") ||
         !std::isfinite(material.metallic) || !std::isfinite(material.roughness) ||
         !std::isfinite(material.gtrGamma) || !std::isfinite(material.ior) ||
@@ -354,6 +379,7 @@ Json ToJson(const SceneDocument &document)
                 {"ior", material.ior},
                 {"specularF0", material.specularF0},
                 {"brdfModel", material.brdfModel},
+                {"workflow", material.workflow},
                 {"specularMode", material.specularMode},
                 {"alphaMode", material.alphaMode},
                 {"alphaCutoff", material.alphaCutoff},
@@ -383,6 +409,7 @@ Json ToJson(const SceneDocument &document)
                      {"ior", material.ior},
                      {"specularF0", material.specularF0},
                      {"brdfModel", material.brdfModel},
+                     {"workflow", material.workflow},
                      {"specularMode", material.specularMode},
                      {"alphaMode", material.alphaMode},
                      {"alphaCutoff", material.alphaCutoff},

@@ -408,8 +408,10 @@ std::shared_ptr<Renderer::Entity> RenderSystem::CreateModelEntity(
             properties.Metallic = sourceMaterial.metallic;
             properties.Roughness = sourceMaterial.specularGlossiness ? 1.0f - sourceMaterial.glossiness
                                                                       : sourceMaterial.roughness;
-            properties.Model = sourceMaterial.specularGlossiness ? Renderer::BrdfModel::SpecularGlossiness
-                                                                 : Renderer::BrdfModel::GGX;
+            properties.Model = Renderer::BrdfModel::GGX;
+            properties.Workflow = sourceMaterial.specularGlossiness
+                                      ? Renderer::MaterialWorkflow::SpecularGlossiness
+                                      : Renderer::MaterialWorkflow::MetallicRoughness;
             if (sourceMaterial.specularGlossiness)
                 properties.SpecularF0 = sourceMaterial.specular;
         }

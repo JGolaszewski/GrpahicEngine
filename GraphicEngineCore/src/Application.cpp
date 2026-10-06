@@ -28,9 +28,13 @@ Renderer::BrdfModel ParseBrdfModel(const std::string &value)
         return Renderer::BrdfModel::GGX;
     if (value == "gtr")
         return Renderer::BrdfModel::GTR;
-    if (value == "specularGlossiness")
-        return Renderer::BrdfModel::SpecularGlossiness;
     return Renderer::BrdfModel::Legacy;
+}
+
+Renderer::MaterialWorkflow ParseMaterialWorkflow(const std::string &value)
+{
+    return value == "specularGlossiness" ? Renderer::MaterialWorkflow::SpecularGlossiness
+                                          : Renderer::MaterialWorkflow::MetallicRoughness;
 }
 
 const char *BrdfModelName(Renderer::BrdfModel value)
@@ -41,8 +45,6 @@ const char *BrdfModelName(Renderer::BrdfModel value)
         return "ggx";
     case Renderer::BrdfModel::GTR:
         return "gtr";
-    case Renderer::BrdfModel::SpecularGlossiness:
-        return "specularGlossiness";
     default:
         return "legacy";
     }
@@ -60,6 +62,7 @@ Renderer::MaterialProperties ToMaterialProperties(const SceneMaterialDocument &d
     properties.Ior = document.ior;
     properties.SpecularF0 = {document.specularF0[0], document.specularF0[1], document.specularF0[2]};
     properties.Model = ParseBrdfModel(document.brdfModel);
+    properties.Workflow = ParseMaterialWorkflow(document.workflow);
     properties.SpecularMode = document.specularMode == "explicitF0"
                                   ? Renderer::DielectricSpecularMode::ExplicitF0
                                   : Renderer::DielectricSpecularMode::IndexOfRefraction;
@@ -83,6 +86,9 @@ SceneMaterialDocument ToMaterialDocument(const Renderer::MaterialProperties &pro
     document.ior = properties.Ior;
     document.specularF0 = {properties.SpecularF0.x, properties.SpecularF0.y, properties.SpecularF0.z};
     document.brdfModel = BrdfModelName(properties.Model);
+    document.workflow = properties.Workflow == Renderer::MaterialWorkflow::SpecularGlossiness
+                            ? "specularGlossiness"
+                            : "metallicRoughness";
     document.specularMode =
         properties.SpecularMode == Renderer::DielectricSpecularMode::ExplicitF0 ? "explicitF0" : "ior";
     document.alphaMode = properties.AlphaMode == Renderer::MaterialAlphaMode::Mask    ? "mask"

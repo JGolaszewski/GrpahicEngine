@@ -24,8 +24,13 @@ enum class BrdfModel : uint32_t
 {
     Legacy = 0,
     GGX = 1,
-    GTR = 2,
-    SpecularGlossiness = 3
+    GTR = 2
+};
+
+enum class MaterialWorkflow : uint32_t
+{
+    MetallicRoughness = 0,
+    SpecularGlossiness = 1
 };
 
 enum class DielectricSpecularMode : uint32_t
@@ -42,7 +47,7 @@ enum class MaterialAlphaMode : uint32_t
 };
 
 // The material buffer occupies b1; texture and sampler registers are listed in docs/material-binding-abi.md.
-inline constexpr uint32_t MaterialGpuAbiVersion = 3;
+inline constexpr uint32_t MaterialGpuAbiVersion = 4;
 inline constexpr float MaterialMinAlpha = 1.0e-3f;
 inline constexpr float MaterialMinGtrGamma = 1.0f;
 inline constexpr float MaterialMaxGtrGamma = 8.0f;
@@ -96,6 +101,7 @@ struct MaterialProperties
     float Ior = 1.5f;
     DirectX::XMFLOAT3 SpecularF0 = {0.04f, 0.04f, 0.04f};
     BrdfModel Model = BrdfModel::Legacy;
+    MaterialWorkflow Workflow = MaterialWorkflow::MetallicRoughness;
     DielectricSpecularMode SpecularMode = DielectricSpecularMode::IndexOfRefraction;
     MaterialAlphaMode AlphaMode = MaterialAlphaMode::Opaque;
     float AlphaCutoff = 0.5f;
@@ -125,8 +131,12 @@ inline MaterialGpu BuildMaterialGpu(const MaterialProperties &properties) noexce
     const float roughness = ClampFinite(properties.Roughness, 0.5f, 0.0f, 1.0f);
     const float ior = ClampFinite(properties.Ior, 1.5f, MaterialMinIor, MaterialMaxIor);
     const auto validModel = [](BrdfModel model) {
-        return static_cast<uint32_t>(model) <= static_cast<uint32_t>(BrdfModel::SpecularGlossiness) ? model
-                                                                                     : BrdfModel::Legacy;
+        return static_cast<uint32_t>(model) <= static_cast<uint32_t>(BrdfModel::GTR) ? model : BrdfModel::Legacy;
+    };
+    const auto validWorkflow = [](MaterialWorkflow workflow) {
+        return static_cast<uint32_t>(workflow) <= static_cast<uint32_t>(MaterialWorkflow::SpecularGlossiness)
+                   ? workflow
+                   : MaterialWorkflow::MetallicRoughness;
     };
     const auto validSpecularMode = [](DielectricSpecularMode mode) {
         return static_cast<uint32_t>(mode) <= static_cast<uint32_t>(DielectricSpecularMode::ExplicitF0)
@@ -151,7 +161,8 @@ inline MaterialGpu BuildMaterialGpu(const MaterialProperties &properties) noexce
              ClampFinite(properties.SpecularF0.y, 0.04f, 0.0f, 1.0f),
              ClampFinite(properties.SpecularF0.z, 0.04f, 0.0f, 1.0f), 0.0f},
             {MaterialGpuAbiVersion, static_cast<uint32_t>(validModel(properties.Model)),
-             static_cast<uint32_t>(validSpecularMode(properties.SpecularMode)),
+            static_cast<uint32_t>(validSpecularMode(properties.SpecularMode)) |
+                (validWorkflow(properties.Workflow) == MaterialWorkflow::SpecularGlossiness ? 0x100u : 0u),
              static_cast<uint32_t>(validAlphaMode(properties.AlphaMode)) |
                  (properties.DoubleSided ? 0x100u : 0u)},
             {ClampFinite(properties.AlphaCutoff, 0.5f, 0.0f, 1.0f), 0.0f, 0.0f, 0.0f}};

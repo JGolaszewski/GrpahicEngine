@@ -8,7 +8,7 @@ The importer accepts materials only when every used field has a matching rendere
 | `baseColorTexture` | Supported for `TEXCOORD_0` through `TEXCOORD_7` | Sampled with glTF sampler state and optional `KHR_texture_transform`. |
 | `metallicFactor`, `roughnessFactor` | Supported | Applied by the GGX renderer. |
 | `metallicRoughnessTexture` | Supported for `TEXCOORD_0` through `TEXCOORD_7` | Metallic uses B; roughness uses G. |
-| `KHR_materials_pbrSpecularGlossiness` | Supported | Diffuse factors and texture, specular factors and texture, and glossiness are rendered with the GGX BRDF. |
+| `KHR_materials_pbrSpecularGlossiness` | Supported | Diffuse factors and texture, specular factors and texture, and glossiness use the specular-glossiness workflow with the selected BRDF distribution. |
 | `normalTexture` | Supported for `TEXCOORD_0` through `TEXCOORD_7` | Sampled with the tangent basis and glTF normal scale. |
 | `occlusionTexture`, `occlusionStrength` | Supported for `TEXCOORD_0` through `TEXCOORD_7` | Multiplies the renderer's ambient term. |
 | `emissiveTexture` | Supported for `TEXCOORD_0` through `TEXCOORD_7` | Sampled in sRGB and multiplied by the emissive factor. |

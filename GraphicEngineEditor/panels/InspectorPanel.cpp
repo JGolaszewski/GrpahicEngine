@@ -293,23 +293,46 @@ void InspectorPanel::DrawObjectInspector()
     float roughness = properties.Roughness;
 
     bool materialChanged = false;
-    materialChanged |= ImGui::ColorEdit4("Base color", baseColor);
+    materialChanged |= ImGui::ColorEdit4(
+        properties.Workflow == Renderer::MaterialWorkflow::SpecularGlossiness ? "Diffuse factor" : "Base color",
+        baseColor);
     trackMaterialWidget();
     materialChanged |= ImGui::ColorEdit3("Emission", emissive);
     trackMaterialWidget();
-    materialChanged |= ImGui::SliderFloat("Metallic", &metallic, 0.0f, 1.0f);
-    trackMaterialWidget();
-    materialChanged |= ImGui::SliderFloat("Roughness", &roughness, 0.0f, 1.0f);
+    if (properties.Workflow == Renderer::MaterialWorkflow::MetallicRoughness)
+    {
+        materialChanged |= ImGui::SliderFloat("Metallic", &metallic, 0.0f, 1.0f);
+        trackMaterialWidget();
+        materialChanged |= ImGui::SliderFloat("Roughness", &roughness, 0.0f, 1.0f);
+    }
+    else
+    {
+        float glossiness = 1.0f - properties.Roughness;
+        if (ImGui::SliderFloat("Glossiness", &glossiness, 0.0f, 1.0f))
+        {
+            roughness = 1.0f - glossiness;
+            materialChanged = true;
+        }
+    }
     trackMaterialWidget();
 
-    static constexpr const char *brdfModelNames[] = {"Legacy", "GGX", "GTR", "Specular Glossiness"};
+    static constexpr const char *brdfModelNames[] = {"Legacy", "GGX", "GTR"};
     int selectedBrdfModel =
-        static_cast<uint32_t>(properties.Model) <= static_cast<uint32_t>(Renderer::BrdfModel::SpecularGlossiness)
+        static_cast<uint32_t>(properties.Model) <= static_cast<uint32_t>(Renderer::BrdfModel::GTR)
             ? static_cast<int>(properties.Model)
             : static_cast<int>(Renderer::BrdfModel::Legacy);
     if (ImGui::Combo("Light model", &selectedBrdfModel, brdfModelNames, IM_ARRAYSIZE(brdfModelNames)))
     {
         properties.Model = static_cast<Renderer::BrdfModel>(selectedBrdfModel);
+        materialChanged = true;
+    }
+    trackMaterialWidget();
+
+    static constexpr const char *workflowNames[] = {"Metallic Roughness", "Specular Glossiness"};
+    int selectedWorkflow = static_cast<int>(properties.Workflow);
+    if (ImGui::Combo("Material workflow", &selectedWorkflow, workflowNames, IM_ARRAYSIZE(workflowNames)))
+    {
+        properties.Workflow = static_cast<Renderer::MaterialWorkflow>(selectedWorkflow);
         materialChanged = true;
     }
     trackMaterialWidget();
@@ -320,7 +343,17 @@ void InspectorPanel::DrawObjectInspector()
         trackMaterialWidget();
     }
 
-    if (properties.Model != Renderer::BrdfModel::Legacy)
+    if (properties.Workflow == Renderer::MaterialWorkflow::SpecularGlossiness)
+    {
+        float specularFactor[3] = {properties.SpecularF0.x, properties.SpecularF0.y, properties.SpecularF0.z};
+        if (ImGui::ColorEdit3("Specular factor", specularFactor))
+        {
+            properties.SpecularF0 = {specularFactor[0], specularFactor[1], specularFactor[2]};
+            materialChanged = true;
+        }
+        trackMaterialWidget();
+    }
+    else if (properties.Model != Renderer::BrdfModel::Legacy)
     {
         int specularMode = static_cast<int>(properties.SpecularMode);
         static constexpr const char *specularModeNames[] = {"Index of refraction", "Explicit F0"};

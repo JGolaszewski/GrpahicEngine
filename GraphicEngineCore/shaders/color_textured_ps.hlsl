@@ -199,7 +199,7 @@ float4 main_ps(VS_OUTPUT input) : SV_TARGET
     tangentNormal.xy *= g_TextureParams.x;
     float3 N = BrdfNormalizeOr(tangent * tangentNormal.x + bitangent * tangentNormal.y + geometricNormal * tangentNormal.z,
         geometricNormal);
-    const bool isSpecularGlossiness = g_ModelFlags.y == 3u;
+    const bool isSpecularGlossiness = (g_ModelFlags.z & 0x100u) != 0u;
     float  metallic = saturate(g_EmissiveMetallic.w * metallicRoughnessSample.b);
     const bool isLegacy = g_ModelFlags.y == 0u;
     const float roughness = isSpecularGlossiness
@@ -208,7 +208,7 @@ float4 main_ps(VS_OUTPUT input) : SV_TARGET
     const float alpha = max(roughness * roughness, BRDF_MIN_ALPHA);
     const float ior = max(g_SurfaceParams.w, 1.0f);
     const float iorRatio = (ior - 1.0f) / (ior + 1.0f);
-    const float3 dielectricF0 = g_ModelFlags.z == 1u
+    const float3 dielectricF0 = (g_ModelFlags.z & 0xffu) == 1u
         ? saturate(g_SpecularParams.rgb)
         : float3(iorRatio * iorRatio, iorRatio * iorRatio, iorRatio * iorRatio);
     const float3 specularF0 = isSpecularGlossiness
@@ -218,7 +218,9 @@ float4 main_ps(VS_OUTPUT input) : SV_TARGET
         ? baseColor * (1.0f - max(specularF0.r, max(specularF0.g, specularF0.b)))
         : baseColor * (1.0f - metallic);
     const float3 legacyDiffuseColor = diffuseColor;
-    const float3 legacySpecularColor = lerp(float3(0.04f, 0.04f, 0.04f), baseColor, metallic);
+    const float3 legacySpecularColor = isSpecularGlossiness
+        ? specularF0
+        : lerp(float3(0.04f, 0.04f, 0.04f), baseColor, metallic);
     const float legacySpecularPower = lerp(8.0f, 128.0f, 1.0f - saturate(g_SurfaceParams.x));
     const float3 V = g_CameraPosition.xyz - input.worldPos;
 
@@ -273,11 +275,12 @@ float4 main_ps(VS_OUTPUT input) : SV_TARGET
         else
         {
             const BrdfQuery query = BuildBrdfQuery(N, V, L);
-            const float3 brdf = isSpecularGlossiness
-                ? EvaluateGgxBrdf(query, diffuseColor, 0.0f, specularF0, alpha)
-                : g_ModelFlags.y == 2u
-                    ? EvaluateGtrBrdf(query, baseColor, metallic, dielectricF0, alpha, g_SurfaceParams.z)
-                    : EvaluateGgxBrdf(query, baseColor, metallic, dielectricF0, alpha);
+            const float3 brdfBaseColor = isSpecularGlossiness ? diffuseColor : baseColor;
+            const float brdfMetallic = isSpecularGlossiness ? 0.0f : metallic;
+            const float3 brdfF0 = isSpecularGlossiness ? specularF0 : dielectricF0;
+            const float3 brdf = g_ModelFlags.y == 2u
+                ? EvaluateGtrBrdf(query, brdfBaseColor, brdfMetallic, brdfF0, alpha, g_SurfaceParams.z)
+                : EvaluateGgxBrdf(query, brdfBaseColor, brdfMetallic, brdfF0, alpha);
             brdfAccum += brdf * lightColor * (query.NoL * intensity * attenuation * shadow);
         }
     }
