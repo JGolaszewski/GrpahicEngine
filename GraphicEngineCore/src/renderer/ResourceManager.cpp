@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <functional>
+#include <iostream>
 
 namespace Renderer {
 	ResourceManager::ResourceManager(nvrhi::IDevice* device)
@@ -198,10 +199,22 @@ namespace Renderer {
 		} else {
 			query = m_Device->createEventQuery();
 		}
-		if (query) {
-			m_Device->setEventQuery(query, nvrhi::CommandQueue::Graphics);
-			m_InFlightFrames.push_back({ m_SubmittedFrames, std::move(query) });
+		if (!query) {
+			std::cerr << "ERROR: Could not create a GPU completion query; waiting for idle to retire resources safely." << std::endl;
+			m_Device->waitForIdle();
+			m_CompletedFrames = m_SubmittedFrames;
+			while (!m_InFlightFrames.empty()) {
+				auto& inFlight = m_InFlightFrames.front();
+				m_Device->resetEventQuery(inFlight.CompletionQuery);
+				m_FreeCompletionQueries.push_back(std::move(inFlight.CompletionQuery));
+				m_InFlightFrames.pop_front();
+			}
+			m_RetiredMeshes.clear();
+			m_RetiredTextures.clear();
+			return;
 		}
+		m_Device->setEventQuery(query, nvrhi::CommandQueue::Graphics);
+		m_InFlightFrames.push_back({ m_SubmittedFrames, std::move(query) });
 
 		while (!m_InFlightFrames.empty() && m_Device->pollEventQuery(m_InFlightFrames.front().CompletionQuery)) {
 			m_CompletedFrames = (std::max)(m_CompletedFrames, m_InFlightFrames.front().Frame);
