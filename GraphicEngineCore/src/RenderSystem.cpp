@@ -406,8 +406,12 @@ std::shared_ptr<Renderer::Entity> RenderSystem::CreateModelEntity(
             properties.BaseColor = sourceMaterial.baseColor;
             properties.Emissive = sourceMaterial.emissive;
             properties.Metallic = sourceMaterial.metallic;
-            properties.Roughness = sourceMaterial.roughness;
-            properties.Model = Renderer::BrdfModel::GGX;
+            properties.Roughness = sourceMaterial.specularGlossiness ? 1.0f - sourceMaterial.glossiness
+                                                                      : sourceMaterial.roughness;
+            properties.Model = sourceMaterial.specularGlossiness ? Renderer::BrdfModel::SpecularGlossiness
+                                                                 : Renderer::BrdfModel::GGX;
+            if (sourceMaterial.specularGlossiness)
+                properties.SpecularF0 = sourceMaterial.specular;
         }
         if (materialIndex >= materialOverrides.size() || !materialOverrides[materialIndex])
         {
@@ -472,7 +476,8 @@ std::shared_ptr<Renderer::Entity> RenderSystem::CreateModelEntity(
         };
         if (!resolveTexture(sourceMaterial.baseColorTexture, true, baseColorTexture) ||
             !resolveTexture(sourceMaterial.normalTexture, false, normalTexture) ||
-            !resolveTexture(sourceMaterial.metallicRoughnessTexture, false, metallicRoughnessTexture) ||
+            !resolveTexture(sourceMaterial.metallicRoughnessTexture, sourceMaterial.specularGlossiness,
+                            metallicRoughnessTexture) ||
             !resolveTexture(sourceMaterial.occlusionTexture, false, occlusionTexture) ||
             !resolveTexture(sourceMaterial.emissiveTexture, true, emissiveTexture) ||
             !m_MaterialSystem->SetPbrTextureBindings(material, baseColorTexture, normalTexture,

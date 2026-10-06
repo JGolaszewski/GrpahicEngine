@@ -38,14 +38,9 @@ bool IsSupportedImage(const tinygltf::Image &image)
     return extension == ".png" || extension == ".jpg" || extension == ".jpeg";
 }
 
-bool ReadTextureTransform(const tinygltf::ExtensionMap &extensions,
-                          ImportedTextureTransform &transform, uint32_t &texCoord,
-                          std::string &error, const std::string &label)
+bool ReadTextureTransformValue(const tinygltf::Value &value, ImportedTextureTransform &transform,
+                               uint32_t &texCoord, std::string &error, const std::string &label)
 {
-    const auto extension = extensions.find("KHR_texture_transform");
-    if (extension == extensions.end())
-        return true;
-    const tinygltf::Value &value = extension->second;
     const auto readPair = [&](const char *key, DirectX::XMFLOAT2 &destination) {
         if (!value.Has(key))
             return true;
@@ -80,6 +75,107 @@ bool ReadTextureTransform(const tinygltf::ExtensionMap &extensions,
             return false;
         }
         texCoord = static_cast<uint32_t>(coordinate.GetNumberAsInt());
+    }
+    return true;
+}
+
+bool ReadTextureTransform(const tinygltf::ExtensionMap &extensions,
+                          ImportedTextureTransform &transform, uint32_t &texCoord,
+                          std::string &error, const std::string &label)
+{
+    const auto extension = extensions.find("KHR_texture_transform");
+    return extension == extensions.end() ||
+           ReadTextureTransformValue(extension->second, transform, texCoord, error, label);
+}
+
+bool ReadExtensionFactor(const tinygltf::Value &value, const char *name, size_t componentCount,
+                         float *destination, std::string &error, const std::string &label)
+{
+    if (!value.Has(name))
+        return true;
+    const auto &factor = value.Get(name);
+    if (!factor.IsArray() || factor.ArrayLen() != componentCount)
+    {
+        error = label + " has a malformed " + name;
+        return false;
+    }
+    for (size_t i = 0; i < componentCount; ++i)
+    {
+        const auto &component = factor.Get(i);
+        if (!component.IsNumber())
+        {
+            error = label + " has a malformed " + name;
+            return false;
+        }
+        const double number = component.GetNumberAsDouble();
+        if (!std::isfinite(number) || number < 0.0 || number > 1.0)
+        {
+            error = label + " has an out-of-range " + name;
+            return false;
+        }
+        destination[i] = static_cast<float>(number);
+    }
+    return true;
+}
+
+bool ReadExtensionScalar(const tinygltf::Value &value, const char *name, float &destination,
+                         std::string &error, const std::string &label)
+{
+    if (!value.Has(name))
+        return true;
+    const auto &factor = value.Get(name);
+    if (!factor.IsNumber())
+    {
+        error = label + " has a malformed " + name;
+        return false;
+    }
+    const double number = factor.GetNumberAsDouble();
+    if (!std::isfinite(number) || number < 0.0 || number > 1.0)
+    {
+        error = label + " has an out-of-range " + name;
+        return false;
+    }
+    destination = static_cast<float>(number);
+    return true;
+}
+
+bool ReadExtensionTextureInfo(const tinygltf::Value &materialExtension, const char *name,
+                              int32_t &textureIndex, uint32_t &texCoord,
+                              ImportedTextureTransform &transform, std::string &error,
+                              const std::string &label)
+{
+    if (!materialExtension.Has(name))
+        return true;
+    const auto &info = materialExtension.Get(name);
+    if (!info.IsObject() || !info.Has("index") || !info.Get("index").IsInt() ||
+        info.Get("index").GetNumberAsInt() < 0)
+    {
+        error = label + " has a malformed " + name;
+        return false;
+    }
+    textureIndex = info.Get("index").GetNumberAsInt();
+    if (info.Has("texCoord"))
+    {
+        const auto &coordinate = info.Get("texCoord");
+        if (!coordinate.IsInt() || coordinate.GetNumberAsInt() < 0 || coordinate.GetNumberAsInt() > 1)
+        {
+            error = label + " selects an unsupported texture coordinate set";
+            return false;
+        }
+        texCoord = static_cast<uint32_t>(coordinate.GetNumberAsInt());
+    }
+    if (info.Has("extensions"))
+    {
+        const auto &extensions = info.Get("extensions");
+        if (!extensions.IsObject())
+        {
+            error = label + " has malformed texture extensions";
+            return false;
+        }
+        if (extensions.Has("KHR_texture_transform") &&
+            !ReadTextureTransformValue(extensions.Get("KHR_texture_transform"), transform, texCoord, error,
+                                       label + "." + name))
+            return false;
     }
     return true;
 }
@@ -599,13 +695,11 @@ AssetImportResult AssetImporter::ImportGltf(const std::filesystem::path &sourceP
             result.error = Context(sourcePath, "required glTF extension is unsupported: " + extensionName);
             return result;
         }
-        if (extensionName == "KHR_materials_pbrSpecularGlossiness")
-            result.warnings.push_back(
-                Context(sourcePath, "required glTF material extension will be ignored: " + extensionName));
     }
     for (const auto &extensionName : source.extensionsUsed)
     {
         if (extensionName != "KHR_texture_transform" &&
+            extensionName != "KHR_materials_pbrSpecularGlossiness" &&
             std::find(source.extensionsRequired.begin(), source.extensionsRequired.end(), extensionName) ==
                 source.extensionsRequired.end())
         {
@@ -811,6 +905,33 @@ AssetImportResult AssetImporter::ImportGltf(const std::filesystem::path &sourceP
         {
             result.error = Context(sourcePath, error);
             return result;
+        }
+        if (const auto extension = input.extensions.find("KHR_materials_pbrSpecularGlossiness");
+            extension != input.extensions.end())
+        {
+            const auto &value = extension->second;
+            material.specularGlossiness = true;
+            material.metallic = 0.0f;
+            material.glossiness = 1.0f;
+            float diffuseFactor[] = {1.0f, 1.0f, 1.0f, 1.0f};
+            float specularFactor[] = {1.0f, 1.0f, 1.0f};
+            if (!value.IsObject() ||
+                !ReadExtensionFactor(value, "diffuseFactor", 4, diffuseFactor, error, "specular-glossiness") ||
+                !ReadExtensionFactor(value, "specularFactor", 3, specularFactor, error, "specular-glossiness") ||
+                !ReadExtensionScalar(value, "glossinessFactor", material.glossiness, error,
+                                     "specular-glossiness") ||
+                !ReadExtensionTextureInfo(value, "diffuseTexture", material.baseColorTexture,
+                                          material.baseColorTexCoord, material.baseColorTransform, error,
+                                          "specular-glossiness") ||
+                !ReadExtensionTextureInfo(value, "specularGlossinessTexture", material.metallicRoughnessTexture,
+                                          material.metallicRoughnessTexCoord,
+                                          material.metallicRoughnessTransform, error, "specular-glossiness"))
+            {
+                result.error = Context(sourcePath, error.empty() ? "malformed specular-glossiness extension" : error);
+                return result;
+            }
+            material.baseColor = {diffuseFactor[0], diffuseFactor[1], diffuseFactor[2], diffuseFactor[3]};
+            material.specular = {specularFactor[0], specularFactor[1], specularFactor[2]};
         }
         if (material.baseColorTexCoord > 1 || material.metallicRoughnessTexCoord > 1 ||
             material.normalTexCoord > 1 || material.occlusionTexCoord > 1 || material.emissiveTexCoord > 1)

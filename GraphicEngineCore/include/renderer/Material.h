@@ -24,7 +24,8 @@ enum class BrdfModel : uint32_t
 {
     Legacy = 0,
     GGX = 1,
-    GTR = 2
+    GTR = 2,
+    SpecularGlossiness = 3
 };
 
 enum class DielectricSpecularMode : uint32_t
@@ -124,7 +125,7 @@ inline MaterialGpu BuildMaterialGpu(const MaterialProperties &properties) noexce
     const float roughness = ClampFinite(properties.Roughness, 0.5f, 0.0f, 1.0f);
     const float ior = ClampFinite(properties.Ior, 1.5f, MaterialMinIor, MaterialMaxIor);
     const auto validModel = [](BrdfModel model) {
-        return static_cast<uint32_t>(model) <= static_cast<uint32_t>(BrdfModel::GTR) ? model
+        return static_cast<uint32_t>(model) <= static_cast<uint32_t>(BrdfModel::SpecularGlossiness) ? model
                                                                                      : BrdfModel::Legacy;
     };
     const auto validSpecularMode = [](DielectricSpecularMode mode) {

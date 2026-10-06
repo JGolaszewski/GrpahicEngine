@@ -60,10 +60,13 @@ struct ImportedTextureTransform
 struct ImportedMaterial
 {
     std::string name;
+    bool specularGlossiness = false;
     DirectX::XMFLOAT4 baseColor = {1.0f, 1.0f, 1.0f, 1.0f};
     DirectX::XMFLOAT3 emissive = {};
+    DirectX::XMFLOAT3 specular = {1.0f, 1.0f, 1.0f};
     float metallic = 1.0f;
     float roughness = 1.0f;
+    float glossiness = 1.0f;
     float alphaCutoff = 0.5f;
     float normalScale = 1.0f;
     float occlusionStrength = 1.0f;

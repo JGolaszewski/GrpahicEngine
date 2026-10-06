@@ -302,9 +302,9 @@ void InspectorPanel::DrawObjectInspector()
     materialChanged |= ImGui::SliderFloat("Roughness", &roughness, 0.0f, 1.0f);
     trackMaterialWidget();
 
-    static constexpr const char *brdfModelNames[] = {"Legacy", "GGX", "GTR"};
+    static constexpr const char *brdfModelNames[] = {"Legacy", "GGX", "GTR", "Specular Glossiness"};
     int selectedBrdfModel =
-        static_cast<uint32_t>(properties.Model) <= static_cast<uint32_t>(Renderer::BrdfModel::GTR)
+        static_cast<uint32_t>(properties.Model) <= static_cast<uint32_t>(Renderer::BrdfModel::SpecularGlossiness)
             ? static_cast<int>(properties.Model)
             : static_cast<int>(Renderer::BrdfModel::Legacy);
     if (ImGui::Combo("Light model", &selectedBrdfModel, brdfModelNames, IM_ARRAYSIZE(brdfModelNames)))

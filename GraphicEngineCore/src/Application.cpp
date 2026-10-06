@@ -28,6 +28,8 @@ Renderer::BrdfModel ParseBrdfModel(const std::string &value)
         return Renderer::BrdfModel::GGX;
     if (value == "gtr")
         return Renderer::BrdfModel::GTR;
+    if (value == "specularGlossiness")
+        return Renderer::BrdfModel::SpecularGlossiness;
     return Renderer::BrdfModel::Legacy;
 }
 
@@ -39,6 +41,8 @@ const char *BrdfModelName(Renderer::BrdfModel value)
         return "ggx";
     case Renderer::BrdfModel::GTR:
         return "gtr";
+    case Renderer::BrdfModel::SpecularGlossiness:
+        return "specularGlossiness";
     default:
         return "legacy";
     }

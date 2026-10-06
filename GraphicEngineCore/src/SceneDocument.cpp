@@ -221,7 +221,8 @@ bool ReadMaterial(const Json &value, SceneMaterialDocument &material, std::vecto
         material.brdfModel = "ggx";
     }
     const auto validBrdf =
-        material.brdfModel == "legacy" || material.brdfModel == "ggx" || material.brdfModel == "gtr";
+        material.brdfModel == "legacy" || material.brdfModel == "ggx" || material.brdfModel == "gtr" ||
+        material.brdfModel == "specularGlossiness";
     if (!validBrdf)
     {
         error = "brdfModel has an unsupported value";
@@ -278,7 +279,8 @@ bool IsValidPrimitiveType(const std::string &type)
 bool IsValidMaterial(const SceneMaterialDocument &material)
 {
     const auto validBrdf =
-        material.brdfModel == "legacy" || material.brdfModel == "ggx" || material.brdfModel == "gtr";
+        material.brdfModel == "legacy" || material.brdfModel == "ggx" || material.brdfModel == "gtr" ||
+        material.brdfModel == "specularGlossiness";
     if (!validBrdf || (material.specularMode != "ior" && material.specularMode != "explicitF0") ||
         (material.alphaMode != "opaque" && material.alphaMode != "mask" && material.alphaMode != "blend") ||
         !std::isfinite(material.metallic) || !std::isfinite(material.roughness) ||
