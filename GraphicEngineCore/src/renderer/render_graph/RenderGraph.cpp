@@ -22,14 +22,13 @@ namespace {
 }
 
 namespace Renderer {
-	RenderGraph::RenderGraph(nvrhi::DeviceHandle device)
-		: m_Device(device), m_Pool(device) {
+	RenderGraph::RenderGraph(nvrhi::DeviceHandle device, FrameContext& frameContext)
+		: m_FrameContext(frameContext), m_Device(device) {
 	}
 
 	void RenderGraph::Reset() {
 		m_Registry.Clear();
 		m_Nodes.clear();
-		m_Blackboard.Clear();
 		m_LastError.clear();
 		m_Compiled = false;
 	}
@@ -42,7 +41,7 @@ namespace Renderer {
 
 		RGPassDependencies deps;
 		RGBuilder builder(m_Registry, deps);
-		pass->Setup(builder, m_Blackboard);
+		pass->Setup(builder, m_FrameContext.GetBlackboard());
 		if (!deps.valid) {
 			m_LastError = pass->GetName() + ": " + deps.error;
 			return false;
@@ -210,17 +209,18 @@ namespace Renderer {
 			return false;
 		}
 		m_LastError.clear();
-		const float deltaTime = m_Blackboard.Get<float>("DeltaTime", 0.016f);
-		RenderContext ctx(m_Device.Get(), &m_Registry, &m_Blackboard, deltaTime);
+		FrameBlackboard& blackboard = m_FrameContext.GetBlackboard();
+		const float deltaTime = blackboard.Get<float>("DeltaTime", 0.016f);
+		RenderContext ctx(m_Device.Get(), &m_Registry, &blackboard, deltaTime);
 
 		for (uint32_t passIndex = 0; passIndex < m_Nodes.size(); ++passIndex) {
 			for (RGResource& resource : m_Registry.GetAllResources()) {
 				if (resource.isImported || resource.firstPassUse != passIndex) continue;
-				resource.physicalHandle = m_Pool.Acquire(resource.desc);
+				resource.physicalHandle = m_FrameContext.GetTransientPool().Acquire(resource.desc);
 				if (!resource.physicalHandle) {
 					for (RGResource& allocated : m_Registry.GetAllResources()) {
 						if (!allocated.isImported && allocated.physicalHandle) {
-							m_Pool.Release(allocated.desc, allocated.physicalHandle);
+							m_FrameContext.GetTransientPool().Release(allocated.desc, allocated.physicalHandle);
 							allocated.physicalHandle = nullptr;
 						}
 					}
@@ -244,7 +244,7 @@ namespace Renderer {
 				m_LastError = m_Nodes[passIndex].pass->GetName() + ": pass execution failed";
 				for (RGResource& resource : m_Registry.GetAllResources()) {
 					if (!resource.isImported && resource.physicalHandle) {
-						m_Pool.Release(resource.desc, resource.physicalHandle);
+						m_FrameContext.GetTransientPool().Release(resource.desc, resource.physicalHandle);
 						resource.physicalHandle = nullptr;
 					}
 				}
@@ -257,7 +257,7 @@ namespace Renderer {
 						cmd->setTextureState(resource.physicalHandle, nvrhi::AllSubresources, resource.finalState);
 						cmd->commitBarriers();
 					} else {
-						m_Pool.Release(resource.desc, resource.physicalHandle);
+						m_FrameContext.GetTransientPool().Release(resource.desc, resource.physicalHandle);
 						resource.physicalHandle = nullptr;
 					}
 				}

@@ -9,6 +9,7 @@
 #include "renderer/ResourceManager.h"
 #include "renderer/ShaderFactory.h"
 #include "renderer/render_graph/RenderGraph.h"
+#include "renderer/render_graph/FrameContext.h"
 #include "renderer/ViewportBinding.h"
 #include "ViewportTarget.h"
 #include "PrimitiveFactory.h"
@@ -80,6 +81,7 @@ namespace Engine {
 		nvrhi::CommandListHandle m_CommandList;
 		bool m_FrameActive = false;
 
+		Renderer::FrameContext m_FrameContext;
 		std::unique_ptr<Renderer::RenderGraph> m_RenderGraph;
 
 		std::unique_ptr<SceneRenderer> m_SceneRenderer;
@@ -88,6 +90,5 @@ namespace Engine {
 		std::unique_ptr<Renderer::ShaderFactory> m_ShaderFactory;
 		std::unique_ptr<Engine::PrimitiveFactory> m_PrimitiveFactory;
 
-		std::vector<std::unique_ptr<Renderer::RenderView>> m_ViewPool;
 	};
 }

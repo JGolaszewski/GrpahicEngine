@@ -69,6 +69,7 @@ set(CORE_HEADERS
     include/renderer/RenderDevice.h
     include/renderer/ResourceManager.h
     include/renderer/render_graph/FrameBlackboard.h
+    include/renderer/render_graph/FrameContext.h
     include/renderer/render_graph/RenderContext.h
     include/renderer/render_graph/RenderGraph.h
     include/renderer/render_graph/RenderPass.h
@@ -106,6 +107,7 @@ set(CORE_SOURCES
     src/renderer/RenderDevice.cpp
     src/renderer/ResourceManager.cpp
     src/renderer/render_graph/RenderContext.cpp
+    src/renderer/render_graph/FrameContext.cpp
     src/renderer/render_graph/RenderGraph.cpp
     src/renderer/render_graph/RenderPass.cpp
     src/renderer/render_graph/RenderView.cpp

@@ -23,7 +23,8 @@ namespace Engine {
 
 	RenderSystem::RenderSystem(IRenderBackend* backend)
 		: m_RenderBackend(backend)
-		, m_CommandList(CreateImmediateCommandList(backend)) {
+		, m_CommandList(CreateImmediateCommandList(backend))
+		, m_FrameContext(backend ? backend->GetDevice() : nullptr) {
 		if (!m_CommandList) {
 			std::cerr << "ERROR: RenderSystem could not create its immediate command list." << std::endl;
 			return;
@@ -46,7 +47,7 @@ namespace Engine {
 		m_PrimitiveFactory = std::unique_ptr<Engine::PrimitiveFactory>(
 			new Engine::PrimitiveFactory(m_RenderBackend->GetDevice()));
 
-		m_RenderGraph = std::make_unique<Renderer::RenderGraph>(m_RenderBackend->GetDevice());
+		m_RenderGraph = std::make_unique<Renderer::RenderGraph>(m_RenderBackend->GetDevice(), m_FrameContext);
 	}
 
 	std::shared_ptr<Engine::ViewportTarget> RenderSystem::CreateViewportTarget(uint32_t width, uint32_t height) {
@@ -100,10 +101,9 @@ namespace Engine {
 		ClearFrameBuffer();
 		m_MaterialSystem->UpdateDirtyMaterials(m_CommandList);
 
-		m_ViewPool.clear();
+		m_FrameContext.BeginFrame();
 
 		m_RenderGraph->Reset();
-		m_RenderGraph->GetBlackboard().Clear();
 	}
 
 	void RenderSystem::SubmitViews(const std::vector<Engine::ViewportBinding>& views) {
@@ -122,7 +122,7 @@ namespace Engine {
 			view->DebugSettings = binding.DebugSettings;
 
 			sceneViews.push_back(view.get());
-			m_ViewPool.push_back(std::move(view));
+			m_FrameContext.GetViews().push_back(std::move(view));
 
 			if (std::find(scenes.begin(), scenes.end(), binding.TargetScene) == scenes.end())
 				scenes.push_back(binding.TargetScene);
@@ -137,7 +137,7 @@ namespace Engine {
 				auto view = std::make_unique<Renderer::RenderView>();
 				view->ViewType = Renderer::RenderView::Type::Shadow;
 				shadowViews.push_back(view.get());
-				m_ViewPool.push_back(std::move(view));
+				m_FrameContext.GetViews().push_back(std::move(view));
 			}
 			m_SceneRenderer->BuildShadowData(scenes[sceneIndex], shadowViews, firstShadowSlot);
 		}
@@ -404,7 +404,8 @@ namespace Engine {
 			m_RenderBackend->GetDevice()->executeCommandList(m_CommandList);
 			m_RenderBackend->EndGpuEvent();
 			m_FrameActive = false;
-			m_ResourceManager->AdvanceSubmittedFrame();
+			m_FrameContext.MarkSubmitted();
+			m_ResourceManager->AdvanceSubmittedFrame(m_FrameContext.GetSubmittedFrames(), m_FrameContext.GetCompletedFrames());
 			return;
 		}
 		if (!m_RenderGraph->Execute(m_CommandList)) {
@@ -416,7 +417,8 @@ namespace Engine {
 		m_RenderBackend->GetDevice()->executeCommandList(m_CommandList);
 		m_RenderBackend->EndGpuEvent();
 		m_FrameActive = false;
-		m_ResourceManager->AdvanceSubmittedFrame();
+		m_FrameContext.MarkSubmitted();
+		m_ResourceManager->AdvanceSubmittedFrame(m_FrameContext.GetSubmittedFrames(), m_FrameContext.GetCompletedFrames());
 
 	}
 
@@ -425,7 +427,7 @@ namespace Engine {
 			return std::nullopt;
 		}
 
-		for (const auto& view : m_ViewPool) {
+		for (const auto& view : m_FrameContext.GetViews()) {
 			if (view && view->ViewType == Renderer::RenderView::Type::Main) {
 				if (const auto lightId = m_SceneRenderer->PickLight(*view, viewportX, viewportY)) {
 					return lightId;

@@ -36,7 +36,7 @@ namespace Renderer {
 			bool srgb, std::string& error);
 		std::shared_ptr<TextureResource> GetFallbackTexture(bool srgb) const;
 		void Release(const std::string& guid);
-		void AdvanceSubmittedFrame();
+		void AdvanceSubmittedFrame(uint64_t submittedFrame, uint64_t completedFrame);
 
 	private:
 		struct Key {
@@ -56,11 +56,6 @@ namespace Renderer {
 			uint64_t RetireAfterFrame = 0;
 			std::shared_ptr<TextureResource> Resource;
 		};
-		struct InFlightFrame {
-			uint64_t Frame = 0;
-			nvrhi::EventQueryHandle CompletionQuery;
-		};
-
 		void Retire(std::shared_ptr<Mesh> mesh);
 		void Retire(std::shared_ptr<TextureResource> texture);
 
@@ -70,8 +65,6 @@ namespace Renderer {
 		std::unordered_map<Key, std::shared_ptr<TextureResource>, KeyHash> m_Textures;
 		std::deque<RetiredMesh> m_RetiredMeshes;
 		std::deque<RetiredTexture> m_RetiredTextures;
-		std::deque<InFlightFrame> m_InFlightFrames;
-		std::vector<nvrhi::EventQueryHandle> m_FreeCompletionQueries;
 		std::shared_ptr<TextureResource> m_FallbackColor;
 		std::shared_ptr<TextureResource> m_FallbackNormal;
 		uint64_t m_SubmittedFrames = 0;

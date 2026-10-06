@@ -12,6 +12,7 @@
 #include "RenderPass.h"
 #include "FrameBlackboard.h"
 #include "RenderContext.h"
+#include "FrameContext.h"
 
 namespace Renderer {
 
@@ -33,17 +34,16 @@ namespace Renderer {
 	class ENGINE_API RenderGraph {
 	private:
 		RGResourceRegistry m_Registry;
-		RGResourcePool m_Pool;
-		FrameBlackboard m_Blackboard;
+		FrameContext& m_FrameContext;
 		nvrhi::DeviceHandle m_Device;
 		std::vector<RGPassNode> m_Nodes;
 		std::string m_LastError;
 		bool m_Compiled = false;
 
 	public:
-		RenderGraph(nvrhi::DeviceHandle device);
+		RenderGraph(nvrhi::DeviceHandle device, FrameContext& frameContext);
 
-		FrameBlackboard& GetBlackboard() { return m_Blackboard; }
+		FrameBlackboard& GetBlackboard() { return m_FrameContext.GetBlackboard(); }
 
 		void Reset();
 		bool AddPass(std::unique_ptr<IRenderPass> pass);

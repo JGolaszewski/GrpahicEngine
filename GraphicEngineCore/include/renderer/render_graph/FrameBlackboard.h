@@ -41,7 +41,6 @@ namespace Renderer {
 			m_ShadowViews.clear();
 			m_DirectionalLights.clear();
 			m_ShadowMap = {};
-			m_LightBuffer = nullptr;
 			m_PerObjectBuffer = nullptr;
 			m_PerObjectBindingSet = nullptr;
 			m_ShadowSampler = nullptr;
@@ -54,9 +53,6 @@ namespace Renderer {
 
 		void SetDirectionalLights(std::vector<DirectionalLightData> lights) { m_DirectionalLights = std::move(lights); }
 		const std::vector<DirectionalLightData>& GetDirectionalLights() const { return m_DirectionalLights; }
-
-		void SetLightBuffer(nvrhi::BufferHandle buffer) { m_LightBuffer = buffer; }
-		nvrhi::BufferHandle GetLightBuffer() const { return m_LightBuffer; }
 
 		void SetPerObjectBuffer(nvrhi::BufferHandle buffer) { m_PerObjectBuffer = std::move(buffer); }
 		nvrhi::BufferHandle GetPerObjectBuffer() const { return m_PerObjectBuffer; }
@@ -85,7 +81,6 @@ namespace Renderer {
 		std::vector<RenderView*> m_ShadowViews;
 		std::vector<DirectionalLightData> m_DirectionalLights;
 		RGResourceID m_ShadowMap;
-		nvrhi::BufferHandle m_LightBuffer;
 		nvrhi::BufferHandle m_PerObjectBuffer;
 		nvrhi::BindingSetHandle m_PerObjectBindingSet;
 		nvrhi::SamplerHandle m_ShadowSampler;
