@@ -61,6 +61,8 @@ struct VS_OUTPUT
     float3 worldPos : TEXCOORD1;
     float2 uv       : TEXCOORD2;
     float4 tangentWS : TEXCOORD3;
+    float2 uv1 : TEXCOORD4;
+    float4 color : TEXCOORD5;
 };
 
 float SampleShadowPCF(uint lightIndex, float3 worldPos, float3 normalWS, float3 lightVec)
@@ -126,15 +128,16 @@ float SampleShadowPCF(uint lightIndex, float3 worldPos, float3 normalWS, float3 
 float4 main_ps(VS_OUTPUT input) : SV_TARGET
 {
     const float4 baseColorSample = g_BaseColorMap.Sample(g_BaseColorSampler, input.uv);
-    const float3 baseColor = g_BaseColor.rgb * baseColorSample.rgb;
-    if ((g_ModelFlags.w & 0xffu) == 1u && g_BaseColor.a * baseColorSample.a < g_AlphaParams.x)
+    const float4 baseColorFactor = g_BaseColor * input.color;
+    const float3 baseColor = baseColorFactor.rgb * baseColorSample.rgb;
+    if ((g_ModelFlags.w & 0xffu) == 1u && baseColorFactor.a * baseColorSample.a < g_AlphaParams.x)
     {
         discard;
     }
 
     if (g_ObjectParams.y > 0.5f)
     {
-        return float4(baseColor + g_EmissiveMetallic.rgb, g_BaseColor.a * baseColorSample.a);
+        return float4(baseColor + g_EmissiveMetallic.rgb, baseColorFactor.a * baseColorSample.a);
     }
 
     const float3 geometricNormal = BrdfNormalizeOr(input.normalWS, float3(0.0f, 0.0f, 1.0f));
@@ -219,5 +222,5 @@ float4 main_ps(VS_OUTPUT input) : SV_TARGET
     float3 emissive = g_EmissiveMetallic.rgb;
 
     const float3 directLighting = isLegacy ? diffuseAccum + specAccum : brdfAccum;
-    return float4(ambient + directLighting + emissive, g_BaseColor.a * baseColorSample.a);
+    return float4(ambient + directLighting + emissive, baseColorFactor.a * baseColorSample.a);
 }

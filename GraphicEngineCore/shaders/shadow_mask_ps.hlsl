@@ -18,10 +18,12 @@ struct PS_INPUT
     float3 worldPos : TEXCOORD1;
     float2 uv : TEXCOORD2;
     float4 tangentWS : TEXCOORD3;
+    float2 uv1 : TEXCOORD4;
+    float4 color : TEXCOORD5;
 };
 
 void main_ps(PS_INPUT input)
 {
-    const float alpha = g_BaseColor.a * g_BaseColorMap.Sample(g_BaseColorSampler, input.uv).a;
+    const float alpha = g_BaseColor.a * input.color.a * g_BaseColorMap.Sample(g_BaseColorSampler, input.uv).a;
     clip(alpha - g_AlphaParams.x);
 }

@@ -56,6 +56,8 @@ struct VS_OUTPUT
     float3 worldPos : TEXCOORD1;
     float2 uv       : TEXCOORD2;
     float4 tangentWS : TEXCOORD3;
+    float2 uv1 : TEXCOORD4;
+    float4 color : TEXCOORD5;
 };
 
 float SampleShadowPCF(uint lightIndex, float3 worldPos, float3 normalWS, float3 lightVec)
@@ -120,14 +122,15 @@ float SampleShadowPCF(uint lightIndex, float3 worldPos, float3 normalWS, float3 
 // MAIN PIXEL SHADER FUNCTION
 float4 main_ps(VS_OUTPUT input) : SV_TARGET
 {
-    if ((g_ModelFlags.w & 0xffu) == 1u && g_BaseColor.a < g_AlphaParams.x)
+    const float4 baseColor = g_BaseColor * input.color;
+    if ((g_ModelFlags.w & 0xffu) == 1u && baseColor.a < g_AlphaParams.x)
     {
         discard;
     }
 
     if (g_ObjectParams.y > 0.5f)
     {
-        return float4(g_BaseColor.rgb + g_EmissiveMetallic.rgb, g_BaseColor.a);
+        return float4(baseColor.rgb + g_EmissiveMetallic.rgb, baseColor.a);
     }
 
     float3 N        = BrdfNormalizeOr(input.normalWS, float3(0.0f, 0.0f, 1.0f));
@@ -139,8 +142,8 @@ float4 main_ps(VS_OUTPUT input) : SV_TARGET
     const float3 dielectricF0 = g_ModelFlags.z == 1u
         ? saturate(g_SpecularParams.rgb)
         : float3(iorRatio * iorRatio, iorRatio * iorRatio, iorRatio * iorRatio);
-    const float3 legacyDiffuseColor = g_BaseColor.rgb * (1.0f - metallic);
-    const float3 legacySpecularColor = lerp(float3(0.04f, 0.04f, 0.04f), g_BaseColor.rgb, metallic);
+    const float3 legacyDiffuseColor = baseColor.rgb * (1.0f - metallic);
+    const float3 legacySpecularColor = lerp(float3(0.04f, 0.04f, 0.04f), baseColor.rgb, metallic);
     const float legacySpecularPower = lerp(8.0f, 128.0f, 1.0f - saturate(g_SurfaceParams.x));
     const float3 V = g_CameraPosition.xyz - input.worldPos;
 
@@ -196,8 +199,8 @@ float4 main_ps(VS_OUTPUT input) : SV_TARGET
         {
             const BrdfQuery query = BuildBrdfQuery(N, V, L);
             const float3 brdf = g_ModelFlags.y == 2u
-                ? EvaluateGtrBrdf(query, g_BaseColor.rgb, metallic, dielectricF0, alpha, g_SurfaceParams.z)
-                : EvaluateGgxBrdf(query, g_BaseColor.rgb, metallic, dielectricF0, alpha);
+                ? EvaluateGtrBrdf(query, baseColor.rgb, metallic, dielectricF0, alpha, g_SurfaceParams.z)
+                : EvaluateGgxBrdf(query, baseColor.rgb, metallic, dielectricF0, alpha);
             brdfAccum += brdf * lightColor * (query.NoL * intensity * attenuation * shadow);
         }
     }
@@ -206,5 +209,5 @@ float4 main_ps(VS_OUTPUT input) : SV_TARGET
     float3 emissive = g_EmissiveMetallic.rgb;
 
     const float3 directLighting = isLegacy ? diffuseAccum + specAccum : brdfAccum;
-    return float4(ambient + directLighting + emissive, g_BaseColor.a);
+    return float4(ambient + directLighting + emissive, baseColor.a);
 }

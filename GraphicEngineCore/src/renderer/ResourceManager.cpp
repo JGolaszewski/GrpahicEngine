@@ -170,7 +170,8 @@ bool ResourceManager::GetOrCreateModelMeshes(const std::string &guid, uint64_t g
                 continue;
             }
             const auto &primitive = sourceMesh.primitives[primitiveIndex];
-            auto gpuMesh = m_RenderDevice.CreateMesh(primitive.vertices, primitive.indices, error);
+            auto gpuMesh = m_RenderDevice.CreateMesh(primitive.vertices, primitive.indices, error,
+                                                     primitive.primitiveType);
             if (!gpuMesh)
                 break;
             staged.push_back({key, gpuMesh, primitive.vertices, primitive.indices});

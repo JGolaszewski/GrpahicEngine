@@ -16,6 +16,7 @@ struct ImportedPrimitive
     std::string name;
     std::vector<Renderer::Vertex> vertices;
     std::vector<uint32_t> indices;
+    nvrhi::PrimitiveType primitiveType = nvrhi::PrimitiveType::TriangleList;
     int32_t materialIndex = -1;
     DirectX::XMFLOAT3 boundsMin = {};
     DirectX::XMFLOAT3 boundsMax = {};

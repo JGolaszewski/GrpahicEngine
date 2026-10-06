@@ -335,18 +335,27 @@ void GenerateTangents(ImportedPrimitive &primitive)
 bool ImportPrimitive(const tinygltf::Model &source, const tinygltf::Primitive &input,
                      ImportedPrimitive &output, std::string &error)
 {
-    if (input.mode != -1 && input.mode != TINYGLTF_MODE_TRIANGLES)
+    const int mode = input.mode < 0 ? TINYGLTF_MODE_TRIANGLES : input.mode;
+    if (mode < TINYGLTF_MODE_POINTS || mode > TINYGLTF_MODE_TRIANGLE_FAN)
     {
-        error = "only triangle-list glTF primitives are supported";
+        error = "primitive uses an unsupported topology";
         return false;
     }
+    if (mode == TINYGLTF_MODE_LINE)
+        output.primitiveType = nvrhi::PrimitiveType::LineList;
+    else if (mode == TINYGLTF_MODE_LINE_STRIP)
+        output.primitiveType = nvrhi::PrimitiveType::LineStrip;
+    else if (mode == TINYGLTF_MODE_LINE_LOOP)
+        output.primitiveType = nvrhi::PrimitiveType::LineList;
+    else if (mode == TINYGLTF_MODE_POINTS)
+        output.primitiveType = nvrhi::PrimitiveType::PointList;
     const auto positionIt = input.attributes.find("POSITION");
     if (positionIt == input.attributes.end())
     {
         error = "primitive is missing POSITION";
         return false;
     }
-    std::vector<std::array<float, 4>> positions, normals, uvs, tangents;
+    std::vector<std::array<float, 4>> positions, normals, uvs, uvs1, tangents, colors;
     if (!ReadFloatAttribute(source, positionIt->second, 3, positions, error, "POSITION"))
         return false;
     if (positions.empty() || positions.size() > std::numeric_limits<uint32_t>::max())
@@ -361,10 +370,42 @@ bool ImportPrimitive(const tinygltf::Model &source, const tinygltf::Primitive &i
                ReadFloatAttribute(source, it->second, components, values, error, name);
     };
     if (!readOptional("NORMAL", 3, normals) || !readOptional("TEXCOORD_0", 2, uvs) ||
-        !readOptional("TANGENT", 4, tangents))
+        !readOptional("TEXCOORD_1", 2, uvs1) || !readOptional("TANGENT", 4, tangents))
         return false;
+    if (const auto color = input.attributes.find("COLOR_0"); color != input.attributes.end())
+    {
+        const int accessorIndex = color->second;
+        if (accessorIndex < 0 || static_cast<size_t>(accessorIndex) >= source.accessors.size())
+        {
+            error = "COLOR_0 references an invalid accessor";
+            return false;
+        }
+        const int components = tinygltf::GetNumComponentsInType(source.accessors[accessorIndex].type);
+        if ((components != 3 && components != 4) ||
+            !ReadFloatAttribute(source, accessorIndex, components, colors, error, "COLOR_0"))
+        {
+            if (error.empty())
+                error = "COLOR_0 must use VEC3 or VEC4 values";
+            return false;
+        }
+    }
+    for (const auto &[semantic, accessor] : input.attributes)
+    {
+        if (semantic.starts_with("JOINTS_") || semantic.starts_with("WEIGHTS_"))
+        {
+            error = semantic + " requires skinning support, which is not implemented";
+            return false;
+        }
+        if (semantic.starts_with("TEXCOORD_") && semantic != "TEXCOORD_0" && semantic != "TEXCOORD_1")
+        {
+            error = semantic + " is not supported; only TEXCOORD_0 and TEXCOORD_1 are available";
+            return false;
+        }
+    }
     if ((!normals.empty() && normals.size() != positions.size()) ||
         (!uvs.empty() && uvs.size() != positions.size()) ||
+        (!uvs1.empty() && uvs1.size() != positions.size()) ||
+        (!colors.empty() && colors.size() != positions.size()) ||
         (!tangents.empty() && tangents.size() != positions.size()))
     {
         error = "vertex attribute counts do not match POSITION";
@@ -379,6 +420,13 @@ bool ImportPrimitive(const tinygltf::Model &source, const tinygltf::Primitive &i
             vertex.Normal = Normalize({normals[i][0], normals[i][1], normals[i][2]}, {0.0f, 1.0f, 0.0f});
         if (!uvs.empty())
             vertex.UV = {uvs[i][0], uvs[i][1]};
+        if (!uvs1.empty())
+            vertex.UV1 = {uvs1[i][0], uvs1[i][1]};
+        if (!colors.empty())
+            vertex.Color = {colors[i][0], colors[i][1], colors[i][2],
+                            source.accessors[input.attributes.at("COLOR_0")].type == TINYGLTF_TYPE_VEC4
+                                ? colors[i][3]
+                                : 1.0f};
         if (!tangents.empty())
         {
             const auto direction =
@@ -396,9 +444,54 @@ bool ImportPrimitive(const tinygltf::Model &source, const tinygltf::Primitive &i
     {
         return false;
     }
-    if (output.indices.size() < 3 || output.indices.size() % 3 != 0)
+    if (mode == TINYGLTF_MODE_LINE_LOOP)
     {
-        error = "triangle primitive index count must be a non-zero multiple of three";
+        if (output.indices.size() < 2)
+        {
+            error = "line loop requires at least two indices";
+            return false;
+        }
+        const auto sourceIndices = std::move(output.indices);
+        output.indices.clear();
+        output.indices.reserve(sourceIndices.size() * 2);
+        for (size_t i = 0; i < sourceIndices.size(); ++i)
+            output.indices.insert(output.indices.end(), {sourceIndices[i], sourceIndices[(i + 1) % sourceIndices.size()]});
+    }
+    else if (mode == TINYGLTF_MODE_TRIANGLE_STRIP || mode == TINYGLTF_MODE_TRIANGLE_FAN)
+    {
+        if (output.indices.size() < 3)
+        {
+            error = "triangle strip or fan requires at least three indices";
+            return false;
+        }
+        const auto sourceIndices = std::move(output.indices);
+        output.indices.clear();
+        output.indices.reserve((sourceIndices.size() - 2) * 3);
+        for (size_t i = 2; i < sourceIndices.size(); ++i)
+        {
+            if (mode == TINYGLTF_MODE_TRIANGLE_STRIP)
+            {
+                const uint32_t a = sourceIndices[i - 2], b = sourceIndices[i - 1], c = sourceIndices[i];
+                if ((i & 1u) == 0)
+                    output.indices.insert(output.indices.end(), {a, b, c});
+                else
+                    output.indices.insert(output.indices.end(), {b, a, c});
+            }
+            else
+            {
+                output.indices.insert(output.indices.end(), {sourceIndices[0], sourceIndices[i - 1], sourceIndices[i]});
+            }
+        }
+    }
+    const size_t elementCount = output.indices.size();
+    if ((output.primitiveType == nvrhi::PrimitiveType::TriangleList &&
+         (elementCount < 3 || elementCount % 3 != 0)) ||
+        (output.primitiveType == nvrhi::PrimitiveType::LineList &&
+         (elementCount < 2 || elementCount % 2 != 0)) ||
+        (output.primitiveType == nvrhi::PrimitiveType::LineStrip && elementCount < 2) ||
+        (output.primitiveType == nvrhi::PrimitiveType::PointList && elementCount == 0))
+    {
+        error = "primitive has too few elements or an invalid element count for its topology";
         return false;
     }
     output.materialIndex = input.material;
@@ -413,9 +506,9 @@ bool ImportPrimitive(const tinygltf::Model &source, const tinygltf::Primitive &i
         output.boundsMax.y = (std::max)(output.boundsMax.y, p.y);
         output.boundsMax.z = (std::max)(output.boundsMax.z, p.z);
     }
-    if (normals.empty())
+    if (normals.empty() && output.primitiveType == nvrhi::PrimitiveType::TriangleList)
         GenerateNormals(output);
-    if (tangents.empty())
+    if (tangents.empty() && output.primitiveType == nvrhi::PrimitiveType::TriangleList)
         GenerateTangents(output);
     return true;
 }

@@ -5,7 +5,8 @@
 namespace Renderer
 {
 std::shared_ptr<Mesh> RenderDevice::CreateMesh(const std::vector<Vertex> &vertices,
-                                               const std::vector<uint32_t> &indices, std::string &error) const
+                                               const std::vector<uint32_t> &indices, std::string &error,
+                                               nvrhi::PrimitiveType primitiveType) const
 {
     error.clear();
     if (!m_Device || vertices.empty() || vertices.size() > std::numeric_limits<uint32_t>::max() ||
@@ -23,7 +24,7 @@ std::shared_ptr<Mesh> RenderDevice::CreateMesh(const std::vector<Vertex> &vertic
             return nullptr;
         }
     }
-    auto mesh = std::make_shared<Mesh>(m_Device, vertices, indices);
+    auto mesh = std::make_shared<Mesh>(m_Device, vertices, indices, primitiveType);
     if (!mesh->IsValid())
     {
         error = "NVRHI failed to create mesh buffers";

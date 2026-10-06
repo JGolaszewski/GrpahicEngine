@@ -631,6 +631,7 @@ void Engine::SceneRenderer::CullAndFillView(Renderer::RenderView *view)
             m_SubmissionStats.PerObjectBytesUsed += PerObjectDataStride;
 
             Engine::PipelineKey key;
+            key.PrimType = submesh.mesh->GetPrimitiveType();
             key.VS = m_MaterialSystem->GetStandardVS();
             key.PerObjectLayout = m_PerObjectBindingLayout;
             key.SceneLayout = m_SceneBindingLayout;

@@ -13,7 +13,9 @@ struct VS_INPUT
     float3 pos    : POSITION;
     float3 normal : NORMAL;
     float2 UV     : TEXCOORD;
+    float2 UV1    : TEXCOORD1;
     float4 tangent : TANGENT;
+    float4 color : COLOR;
 };
 
 // Output structure (to pixel shader)
@@ -24,6 +26,8 @@ struct VS_OUTPUT
     float3 worldPos : TEXCOORD1;
     float2 UV       : TEXCOORD2;
     float4 tangentWS : TEXCOORD3;
+    float2 UV1 : TEXCOORD4;
+    float4 color : TEXCOORD5;
 };
 
 // MAIN VERTEX SHADER FUNCTION
@@ -40,6 +44,8 @@ VS_OUTPUT main_vs(VS_INPUT input)
     output.worldPos = worldPos.xyz;
 
     output.UV       = input.UV; 
+    output.UV1      = input.UV1;
+    output.color    = input.color;
 
     return output;
 }
