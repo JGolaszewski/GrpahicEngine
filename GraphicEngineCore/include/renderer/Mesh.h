@@ -1,9 +1,9 @@
 #pragma once
 
 #include "CoreExport.h"
-
 #include <DirectXMath.h>
 #include <nvrhi/nvrhi.h>
+#include <cstddef>
 #include <stdint.h>
 #include <vector>
 
@@ -11,10 +11,17 @@ namespace Renderer
 {
 struct ENGINE_API Vertex
 {
+    Vertex() = default;
+    Vertex(const DirectX::XMFLOAT3 &position, const DirectX::XMFLOAT3 &normal,
+           const DirectX::XMFLOAT2 &uv)
+        : Position(position), Normal(normal)
+    {
+        UV[0] = uv;
+    }
+
     DirectX::XMFLOAT3 Position;
     DirectX::XMFLOAT3 Normal;
-    DirectX::XMFLOAT2 UV;
-    DirectX::XMFLOAT2 UV1 = {};
+    DirectX::XMFLOAT2 UV[MaxTextureCoordinateSets] = {};
     DirectX::XMFLOAT4 Tangent = {1.0f, 0.0f, 0.0f, 1.0f};
     DirectX::XMFLOAT4 Color = {1.0f, 1.0f, 1.0f, 1.0f};
 };
@@ -43,7 +50,7 @@ class ENGINE_API Mesh
                     .setElementStride(sizeof(Vertex)),
                 nvrhi::VertexAttributeDesc()
                     .setName("TEXCOORD")
-                    .setArraySize(2)
+                    .setArraySize(MaxTextureCoordinateSets)
                     .setFormat(nvrhi::Format::RG32_FLOAT)
                     .setOffset(offsetof(Vertex, UV))
                     .setElementStride(sizeof(Vertex)),
@@ -96,4 +103,7 @@ class ENGINE_API Mesh
     uint32_t m_IndexCount = 0;
     nvrhi::PrimitiveType m_PrimitiveType = nvrhi::PrimitiveType::TriangleList;
 };
+
+static_assert(offsetof(Vertex, Tangent) == offsetof(Vertex, UV) +
+              sizeof(DirectX::XMFLOAT2) * MaxTextureCoordinateSets);
 } // namespace Renderer

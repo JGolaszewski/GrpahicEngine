@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <charconv>
 #include <cmath>
 #include <cstring>
 #include <iterator>
@@ -69,7 +70,8 @@ bool ReadTextureTransformValue(const tinygltf::Value &value, ImportedTextureTran
     if (value.Has("texCoord"))
     {
         const tinygltf::Value &coordinate = value.Get("texCoord");
-        if (!coordinate.IsInt() || coordinate.GetNumberAsInt() < 0 || coordinate.GetNumberAsInt() > 1)
+        if (!coordinate.IsInt() || coordinate.GetNumberAsInt() < 0 ||
+            coordinate.GetNumberAsInt() >= static_cast<int>(Renderer::MaxTextureCoordinateSets))
         {
             error = label + " selects an unsupported texture coordinate set";
             return false;
@@ -157,7 +159,8 @@ bool ReadExtensionTextureInfo(const tinygltf::Value &materialExtension, const ch
     if (info.Has("texCoord"))
     {
         const auto &coordinate = info.Get("texCoord");
-        if (!coordinate.IsInt() || coordinate.GetNumberAsInt() < 0 || coordinate.GetNumberAsInt() > 1)
+        if (!coordinate.IsInt() || coordinate.GetNumberAsInt() < 0 ||
+            coordinate.GetNumberAsInt() >= static_cast<int>(Renderer::MaxTextureCoordinateSets))
         {
             error = label + " selects an unsupported texture coordinate set";
             return false;
@@ -419,7 +422,7 @@ void GenerateNormals(ImportedPrimitive &primitive)
         primitive.vertices[i].Normal = Normalize(accumulated[i], {0.0f, 1.0f, 0.0f});
 }
 
-void GenerateTangents(ImportedPrimitive &primitive)
+void GenerateTangents(ImportedPrimitive &primitive, uint32_t texCoord)
 {
     std::vector<DirectX::XMFLOAT3> tangent(primitive.vertices.size());
     std::vector<DirectX::XMFLOAT3> bitangent(primitive.vertices.size());
@@ -433,8 +436,8 @@ void GenerateTangents(ImportedPrimitive &primitive)
         const float x1 = b.Position.x - a.Position.x, x2 = c.Position.x - a.Position.x;
         const float y1 = b.Position.y - a.Position.y, y2 = c.Position.y - a.Position.y;
         const float z1 = b.Position.z - a.Position.z, z2 = c.Position.z - a.Position.z;
-        const float s1 = b.UV.x - a.UV.x, s2 = c.UV.x - a.UV.x;
-        const float t1 = b.UV.y - a.UV.y, t2 = c.UV.y - a.UV.y;
+        const float s1 = b.UV[texCoord].x - a.UV[texCoord].x, s2 = c.UV[texCoord].x - a.UV[texCoord].x;
+        const float t1 = b.UV[texCoord].y - a.UV[texCoord].y, t2 = c.UV[texCoord].y - a.UV[texCoord].y;
         const float determinant = s1 * t2 - s2 * t1;
         if (!std::isfinite(determinant) || std::abs(determinant) <= 1.0e-20f)
             continue;
@@ -475,7 +478,7 @@ void GenerateTangents(ImportedPrimitive &primitive)
 }
 
 bool ImportPrimitive(const tinygltf::Model &source, const tinygltf::Primitive &input,
-                     ImportedPrimitive &output, std::string &error)
+                     ImportedPrimitive &output, std::string &error, uint32_t tangentTexCoord)
 {
     const int mode = input.mode < 0 ? TINYGLTF_MODE_TRIANGLES : input.mode;
     if (mode < TINYGLTF_MODE_POINTS || mode > TINYGLTF_MODE_TRIANGLE_FAN)
@@ -497,7 +500,8 @@ bool ImportPrimitive(const tinygltf::Model &source, const tinygltf::Primitive &i
         error = "primitive is missing POSITION";
         return false;
     }
-    std::vector<std::array<float, 4>> positions, normals, uvs, uvs1, tangents, colors;
+    std::vector<std::array<float, 4>> positions, normals, tangents, colors;
+    std::array<std::vector<std::array<float, 4>>, Renderer::MaxTextureCoordinateSets> uvs;
     if (!ReadFloatAttribute(source, positionIt->second, 3, positions, error, "POSITION"))
         return false;
     if (positions.empty() || positions.size() > std::numeric_limits<uint32_t>::max())
@@ -511,9 +515,14 @@ bool ImportPrimitive(const tinygltf::Model &source, const tinygltf::Primitive &i
         return it == input.attributes.end() ||
                ReadFloatAttribute(source, it->second, components, values, error, name);
     };
-    if (!readOptional("NORMAL", 3, normals) || !readOptional("TEXCOORD_0", 2, uvs) ||
-        !readOptional("TEXCOORD_1", 2, uvs1) || !readOptional("TANGENT", 4, tangents))
+    if (!readOptional("NORMAL", 3, normals) || !readOptional("TANGENT", 4, tangents))
         return false;
+    for (uint32_t uvIndex = 0; uvIndex < Renderer::MaxTextureCoordinateSets; ++uvIndex)
+    {
+        const std::string semantic = "TEXCOORD_" + std::to_string(uvIndex);
+        if (!readOptional(semantic.c_str(), 2, uvs[uvIndex]))
+            return false;
+    }
     if (const auto color = input.attributes.find("COLOR_0"); color != input.attributes.end())
     {
         const int accessorIndex = color->second;
@@ -538,20 +547,50 @@ bool ImportPrimitive(const tinygltf::Model &source, const tinygltf::Primitive &i
             error = semantic + " requires skinning support, which is not implemented";
             return false;
         }
-        if (semantic.starts_with("TEXCOORD_") && semantic != "TEXCOORD_0" && semantic != "TEXCOORD_1")
+        if (semantic.starts_with("TEXCOORD_") &&
+            semantic.find_first_not_of("0123456789", sizeof("TEXCOORD_") - 1) != std::string::npos)
         {
-            error = semantic + " is not supported; only TEXCOORD_0 and TEXCOORD_1 are available";
+            error = semantic + " has an invalid texture coordinate semantic";
             return false;
+        }
+        if (semantic.starts_with("TEXCOORD_") && semantic.size() == sizeof("TEXCOORD_") - 1)
+        {
+            error = semantic + " has an invalid texture coordinate semantic";
+            return false;
+        }
+        if (semantic.starts_with("TEXCOORD_"))
+        {
+            uint32_t coordinate = 0;
+            const char *begin = semantic.data() + sizeof("TEXCOORD_") - 1;
+            const char *end = semantic.data() + semantic.size();
+            const auto [parsedEnd, parseError] = std::from_chars(begin, end, coordinate);
+            if (parseError != std::errc{} || parsedEnd != end ||
+                semantic != "TEXCOORD_" + std::to_string(coordinate))
+            {
+                error = semantic + " has an invalid texture coordinate semantic";
+                return false;
+            }
+            if (coordinate >= Renderer::MaxTextureCoordinateSets)
+            {
+                error = semantic + " is not supported; texture coordinates are limited to TEXCOORD_7";
+                return false;
+            }
         }
     }
     if ((!normals.empty() && normals.size() != positions.size()) ||
-        (!uvs.empty() && uvs.size() != positions.size()) ||
-        (!uvs1.empty() && uvs1.size() != positions.size()) ||
         (!colors.empty() && colors.size() != positions.size()) ||
         (!tangents.empty() && tangents.size() != positions.size()))
     {
         error = "vertex attribute counts do not match POSITION";
         return false;
+    }
+    for (const auto &uv : uvs)
+    {
+        if (!uv.empty() && uv.size() != positions.size())
+        {
+            error = "vertex attribute counts do not match POSITION";
+            return false;
+        }
     }
     output.vertices.resize(positions.size());
     for (size_t i = 0; i < positions.size(); ++i)
@@ -560,10 +599,11 @@ bool ImportPrimitive(const tinygltf::Model &source, const tinygltf::Primitive &i
         vertex.Position = {positions[i][0], positions[i][1], positions[i][2]};
         if (!normals.empty())
             vertex.Normal = Normalize({normals[i][0], normals[i][1], normals[i][2]}, {0.0f, 1.0f, 0.0f});
-        if (!uvs.empty())
-            vertex.UV = {uvs[i][0], uvs[i][1]};
-        if (!uvs1.empty())
-            vertex.UV1 = {uvs1[i][0], uvs1[i][1]};
+        for (size_t uvIndex = 0; uvIndex < uvs.size(); ++uvIndex)
+        {
+            if (!uvs[uvIndex].empty())
+                vertex.UV[uvIndex] = {uvs[uvIndex][i][0], uvs[uvIndex][i][1]};
+        }
         if (!colors.empty())
             vertex.Color = {colors[i][0], colors[i][1], colors[i][2],
                             source.accessors[input.attributes.at("COLOR_0")].type == TINYGLTF_TYPE_VEC4
@@ -651,7 +691,7 @@ bool ImportPrimitive(const tinygltf::Model &source, const tinygltf::Primitive &i
     if (normals.empty() && output.primitiveType == nvrhi::PrimitiveType::TriangleList)
         GenerateNormals(output);
     if (tangents.empty() && output.primitiveType == nvrhi::PrimitiveType::TriangleList)
-        GenerateTangents(output);
+        GenerateTangents(output, tangentTexCoord);
     return true;
 }
 
@@ -933,10 +973,13 @@ AssetImportResult AssetImporter::ImportGltf(const std::filesystem::path &sourceP
             material.baseColor = {diffuseFactor[0], diffuseFactor[1], diffuseFactor[2], diffuseFactor[3]};
             material.specular = {specularFactor[0], specularFactor[1], specularFactor[2]};
         }
-        if (material.baseColorTexCoord > 1 || material.metallicRoughnessTexCoord > 1 ||
-            material.normalTexCoord > 1 || material.occlusionTexCoord > 1 || material.emissiveTexCoord > 1)
+        if (material.baseColorTexCoord >= Renderer::MaxTextureCoordinateSets ||
+            material.metallicRoughnessTexCoord >= Renderer::MaxTextureCoordinateSets ||
+            material.normalTexCoord >= Renderer::MaxTextureCoordinateSets ||
+            material.occlusionTexCoord >= Renderer::MaxTextureCoordinateSets ||
+            material.emissiveTexCoord >= Renderer::MaxTextureCoordinateSets)
         {
-            result.error = Context(sourcePath, "material selects a texture coordinate set above TEXCOORD_1");
+            result.error = Context(sourcePath, "material selects a texture coordinate set above TEXCOORD_7");
             return result;
         }
         result.model.materials.push_back(std::move(material));
@@ -1048,7 +1091,10 @@ AssetImportResult AssetImporter::ImportGltf(const std::filesystem::path &sourceP
             }
             ImportedPrimitive imported;
             imported.name = mesh.name;
-            if (!ImportPrimitive(source, primitive, imported, error))
+            const uint32_t tangentTexCoord = primitive.material >= 0
+                ? result.model.materials[static_cast<size_t>(primitive.material)].normalTexCoord
+                : 0;
+            if (!ImportPrimitive(source, primitive, imported, error, tangentTexCoord))
             {
                 result.error = Context(sourcePath, error);
                 return result;
@@ -1059,13 +1105,15 @@ AssetImportResult AssetImporter::ImportGltf(const std::filesystem::path &sourceP
                 const uint32_t coordinates[] = {material.baseColorTexCoord, material.metallicRoughnessTexCoord,
                                                 material.normalTexCoord, material.occlusionTexCoord,
                                                 material.emissiveTexCoord};
-                const bool needsUv1 = std::any_of(std::begin(coordinates), std::end(coordinates),
-                                                  [](uint32_t coordinate) { return coordinate == 1; });
-                if (needsUv1 && !primitive.attributes.contains("TEXCOORD_1"))
+                for (uint32_t coordinate : coordinates)
                 {
-                    result.error = Context(sourcePath,
-                                           "material selects TEXCOORD_1 but its primitive has no TEXCOORD_1 attribute");
-                    return result;
+                    if (coordinate != 0 &&
+                        !primitive.attributes.contains("TEXCOORD_" + std::to_string(coordinate)))
+                    {
+                        result.error = Context(sourcePath, "material selects TEXCOORD_" +
+                            std::to_string(coordinate) + " but its primitive has no matching attribute");
+                        return result;
+                    }
                 }
             }
             mesh.primitives.push_back(std::move(imported));

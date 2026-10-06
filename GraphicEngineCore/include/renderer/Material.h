@@ -155,11 +155,13 @@ inline MaterialGpu BuildMaterialGpu(const MaterialProperties &properties) noexce
              static_cast<uint32_t>(validAlphaMode(properties.AlphaMode)) |
                  (properties.DoubleSided ? 0x100u : 0u)},
             {ClampFinite(properties.AlphaCutoff, 0.5f, 0.0f, 1.0f), 0.0f, 0.0f, 0.0f}};
-    gpu.TextureCoordinates0 = {properties.BaseColorTexCoord <= 1 ? properties.BaseColorTexCoord : 0,
-                               properties.NormalTexCoord <= 1 ? properties.NormalTexCoord : 0,
-                               properties.MetallicRoughnessTexCoord <= 1 ? properties.MetallicRoughnessTexCoord : 0,
-                               properties.OcclusionTexCoord <= 1 ? properties.OcclusionTexCoord : 0};
-    gpu.TextureCoordinates1 = {properties.EmissiveTexCoord <= 1 ? properties.EmissiveTexCoord : 0, 0, 0, 0};
+    gpu.TextureCoordinates0 = {
+        properties.BaseColorTexCoord < MaxTextureCoordinateSets ? properties.BaseColorTexCoord : 0,
+        properties.NormalTexCoord < MaxTextureCoordinateSets ? properties.NormalTexCoord : 0,
+        properties.MetallicRoughnessTexCoord < MaxTextureCoordinateSets ? properties.MetallicRoughnessTexCoord : 0,
+        properties.OcclusionTexCoord < MaxTextureCoordinateSets ? properties.OcclusionTexCoord : 0};
+    gpu.TextureCoordinates1 = {
+        properties.EmissiveTexCoord < MaxTextureCoordinateSets ? properties.EmissiveTexCoord : 0, 0, 0, 0};
     gpu.TextureParams = {ClampFinite(properties.NormalScale, 1.0f, 0.0f, 1.0e6f),
                          ClampFinite(properties.OcclusionStrength, 1.0f, 0.0f, 1.0f), 0.0f, 0.0f};
     for (size_t i = 0; i < 5; ++i)

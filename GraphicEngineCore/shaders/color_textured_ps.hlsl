@@ -74,7 +74,28 @@ struct VS_OUTPUT
     float4 tangentWS : TEXCOORD3;
     float2 uv1 : TEXCOORD4;
     float4 color : TEXCOORD5;
+    float2 uv2 : TEXCOORD6;
+    float2 uv3 : TEXCOORD7;
+    float2 uv4 : TEXCOORD8;
+    float2 uv5 : TEXCOORD9;
+    float2 uv6 : TEXCOORD10;
+    float2 uv7 : TEXCOORD11;
 };
+
+float2 GetTextureCoordinate(uint index, VS_OUTPUT input)
+{
+    switch (index)
+    {
+    case 0u: return input.uv;
+    case 1u: return input.uv1;
+    case 2u: return input.uv2;
+    case 3u: return input.uv3;
+    case 4u: return input.uv4;
+    case 5u: return input.uv5;
+    case 6u: return input.uv6;
+    default: return input.uv7;
+    }
+}
 
 float SampleShadowPCF(uint lightIndex, float3 worldPos, float3 normalWS, float3 lightVec)
 {
@@ -138,11 +159,11 @@ float SampleShadowPCF(uint lightIndex, float3 worldPos, float3 normalWS, float3 
 // MAIN PIXEL SHADER FUNCTION
 float4 main_ps(VS_OUTPUT input) : SV_TARGET
 {
-    const float2 uvBase = g_TextureCoordinates0.x == 0u ? input.uv : input.uv1;
-    const float2 uvNormal = g_TextureCoordinates0.y == 0u ? input.uv : input.uv1;
-    const float2 uvMetallicRoughness = g_TextureCoordinates0.z == 0u ? input.uv : input.uv1;
-    const float2 uvOcclusion = g_TextureCoordinates0.w == 0u ? input.uv : input.uv1;
-    const float2 uvEmissive = g_TextureCoordinates1.x == 0u ? input.uv : input.uv1;
+    const float2 uvBase = GetTextureCoordinate(g_TextureCoordinates0.x, input);
+    const float2 uvNormal = GetTextureCoordinate(g_TextureCoordinates0.y, input);
+    const float2 uvMetallicRoughness = GetTextureCoordinate(g_TextureCoordinates0.z, input);
+    const float2 uvOcclusion = GetTextureCoordinate(g_TextureCoordinates0.w, input);
+    const float2 uvEmissive = GetTextureCoordinate(g_TextureCoordinates1.x, input);
     const float2 baseUv = float2(dot(uvBase, g_TextureTransformRows[0].xy),
                                  dot(uvBase, g_TextureTransformRows[0].zw)) + g_TextureTransformOffsets[0].xy;
     const float2 normalUv = float2(dot(uvNormal, g_TextureTransformRows[1].xy),
