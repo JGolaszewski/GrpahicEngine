@@ -4,12 +4,25 @@
 #include "renderer/RenderPacket.h"
 #include "renderer/DebugGeometry.h"
 #include "renderer/Light.h"
+#include "renderer/render_graph/RGResources.h"
 
 // Forward declarations
 namespace Engine { class Scene; class Viewport; }
 namespace Renderer { class Camera; }
 
 namespace Renderer {
+	enum class RGAttachmentLoadOp { Load, Clear, Discard };
+	enum class RGAttachmentStoreOp { Store, Discard };
+
+	struct RGViewportAttachment {
+		RGResourceID Resource;
+		nvrhi::TextureSubresourceSet Subresources = nvrhi::AllSubresources;
+		RGAttachmentLoadOp Load = RGAttachmentLoadOp::Clear;
+		RGAttachmentStoreOp Store = RGAttachmentStoreOp::Store;
+		nvrhi::Color ClearColor = nvrhi::Color(0.15f, 0.15f, 0.15f, 1.0f);
+		bool IsDepth = false;
+	};
+
 	struct CameraGpuData {
 		DirectX::XMFLOAT4 Position;
 	};
@@ -47,6 +60,7 @@ namespace Renderer {
 
 		Engine::Scene* TargetScene = nullptr;
 		nvrhi::IFramebuffer* TargetFramebuffer = nullptr;
+		std::vector<RGViewportAttachment> OutputAttachments;
 		DirectX::XMFLOAT3 CameraPosition = { 0.0f, 0.0f, 0.0f };
 		nvrhi::BufferHandle CameraBuffer;
 		nvrhi::BufferHandle LightBuffer;

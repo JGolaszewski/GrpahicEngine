@@ -139,6 +139,43 @@ namespace Renderer {
 	void ForwardPass::Setup(Renderer::RGBuilder& builder, FrameBlackboard& blackboard) {
 		m_ShadowMapInputID = blackboard.GetShadowMap();
 		builder.Read(m_ShadowMapInputID);
+		for (Renderer::RenderView* view : blackboard.GetSceneViews()) {
+			if (!view || !view->TargetFramebuffer) continue;
+			view->OutputAttachments.clear();
+			const nvrhi::FramebufferDesc& framebuffer = view->TargetFramebuffer->getDesc();
+			auto importAttachment = [&](const nvrhi::FramebufferAttachment& attachment, bool depth) {
+				if (!attachment.texture) return;
+				const nvrhi::TextureDesc& texture = attachment.texture->getDesc();
+				Renderer::RGTextureDesc desc;
+				desc.width = texture.width;
+				desc.height = texture.height;
+				desc.arraySize = texture.arraySize;
+				desc.mipLevels = texture.mipLevels;
+				desc.isRenderTarget = texture.isRenderTarget;
+				desc.isShaderResource = texture.isShaderResource;
+				desc.isUnorderedAccess = texture.isUAV;
+				desc.format = texture.format;
+				desc.dimension = texture.dimension;
+				const nvrhi::ResourceStates writeState = depth
+					? nvrhi::ResourceStates::DepthWrite : nvrhi::ResourceStates::RenderTarget;
+				const nvrhi::ResourceStates initialState = texture.initialState == nvrhi::ResourceStates::Unknown
+					? writeState : texture.initialState;
+				const nvrhi::ResourceStates finalState = depth || !texture.isShaderResource
+					? writeState : nvrhi::ResourceStates::ShaderResource;
+				const Renderer::RGResourceID id = builder.ImportTexture(desc,
+					nvrhi::TextureHandle(attachment.texture), initialState, finalState);
+				builder.Write(id, writeState, attachment.subresources);
+				Renderer::RGViewportAttachment output;
+				output.Resource = id;
+				output.Subresources = attachment.subresources;
+				output.IsDepth = depth;
+				view->OutputAttachments.push_back(output);
+			};
+			for (const nvrhi::FramebufferAttachment& attachment : framebuffer.colorAttachments) {
+				importAttachment(attachment, false);
+			}
+			if (framebuffer.depthAttachment.valid()) importAttachment(framebuffer.depthAttachment, true);
+		}
 	}
 
 	bool ForwardPass::Execute(nvrhi::ICommandList* cmd, const Renderer::RenderContext& ctx) {
@@ -217,13 +254,15 @@ namespace Renderer {
 			if (!sceneBindings) return false;
 
 			nvrhi::IFramebuffer* mainFramebuffer = view->TargetFramebuffer;
-
-			const nvrhi::FramebufferDesc& fbDesc = mainFramebuffer->getDesc();
-			if (!fbDesc.colorAttachments.empty() && fbDesc.colorAttachments[0].texture) {
-				cmd->clearTextureFloat(fbDesc.colorAttachments[0].texture, nvrhi::AllSubresources, nvrhi::Color(0.15f, 0.15f, 0.15f, 1.0f));
-			}
-			if (fbDesc.depthAttachment.valid() && fbDesc.depthAttachment.texture) {
-				cmd->clearDepthStencilTexture(fbDesc.depthAttachment.texture, nvrhi::AllSubresources, true, 1.0f, false, 0);
+			for (const Renderer::RGViewportAttachment& output : view->OutputAttachments) {
+				if (output.Load != Renderer::RGAttachmentLoadOp::Clear) continue;
+				nvrhi::TextureHandle texture = ctx.GetPhysicalTexture(output.Resource);
+				if (!texture) return false;
+				if (output.IsDepth) {
+					cmd->clearDepthStencilTexture(texture, output.Subresources, true, 1.0f, false, 0);
+				} else {
+					cmd->clearTextureFloat(texture, output.Subresources, output.ClearColor);
+				}
 			}
 
 			const nvrhi::FramebufferInfoEx& fbInfo = mainFramebuffer->getFramebufferInfo();
@@ -248,7 +287,15 @@ namespace Renderer {
 		: m_SceneRenderer(sceneRenderer) {
 	}
 
-	void DebugPass::Setup(Renderer::RGBuilder&, FrameBlackboard&) {
+	void DebugPass::Setup(Renderer::RGBuilder& builder, FrameBlackboard& blackboard) {
+		for (Renderer::RenderView* view : blackboard.GetSceneViews()) {
+			if (!view) continue;
+			for (const Renderer::RGViewportAttachment& output : view->OutputAttachments) {
+				builder.Write(output.Resource,
+					output.IsDepth ? nvrhi::ResourceStates::DepthWrite : nvrhi::ResourceStates::RenderTarget,
+					output.Subresources);
+			}
+		}
 	}
 
 	bool DebugPass::Execute(nvrhi::ICommandList* cmd, const Renderer::RenderContext& ctx) {
