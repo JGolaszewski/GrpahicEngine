@@ -89,12 +89,17 @@ set(CORE_HEADERS
     include/Window.h
 )
 
-set(CORE_SOURCES
+set(ENGINE_RUNTIME_SOURCES
     src/AssetManager.cpp
     src/AssetImporter.cpp
     src/Application.cpp
     src/components/Transform.cpp
     src/EditorCameraController.cpp
+    src/Scene.cpp
+    src/SceneDocument.cpp
+)
+
+set(RENDER_CORE_SOURCES
     src/PipelineCache.cpp
     src/PrimitiveFactory.cpp
     src/renderer/Camera.cpp
@@ -118,12 +123,38 @@ set(CORE_SOURCES
     src/renderer/Viewport.cpp
     src/ViewportTarget.cpp
     src/RenderSystem.cpp
-    src/Scene.cpp
-    src/SceneDocument.cpp
     src/SceneRenderer.cpp
 )
 
-add_library(GraphicEngineCore SHARED ${CORE_HEADERS} ${CORE_SOURCES})
+set(CORE_SOURCES ${ENGINE_RUNTIME_SOURCES} ${RENDER_CORE_SOURCES})
+
+add_library(EngineRuntime OBJECT ${ENGINE_RUNTIME_SOURCES})
+add_library(RenderCore OBJECT ${RENDER_CORE_SOURCES})
+foreach(MODULE_TARGET EngineRuntime RenderCore)
+    target_include_directories(${MODULE_TARGET} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    target_compile_definitions(${MODULE_TARGET} PRIVATE
+        EXPORTING_ENGINE_CORE
+        ENGINE_MAX_LIGHTS=${ENGINE_MAX_LIGHTS}
+        ENGINE_DEFAULT_ASSET_ROOT="${ENGINE_ASSET_ROOT}"
+    )
+    target_compile_features(${MODULE_TARGET} PRIVATE cxx_std_23)
+endforeach()
+
+target_link_libraries(EngineRuntime PRIVATE
+    nvrhi
+    Microsoft::DirectXMath
+    nlohmann_json::nlohmann_json
+)
+target_link_libraries(RenderCore PRIVATE nvrhi Microsoft::DirectXMath)
+target_include_directories(EngineRuntime SYSTEM PRIVATE
+    "${ENGINE_TINYGLTF_INCLUDE_DIR}"
+    "${ENGINE_STB_INCLUDE_DIR}"
+)
+
+add_library(GraphicEngineCore SHARED ${CORE_HEADERS}
+    $<TARGET_OBJECTS:EngineRuntime>
+    $<TARGET_OBJECTS:RenderCore>
+)
 add_dependencies(GraphicEngineCore CompileShaders)
 
 target_link_libraries(GraphicEngineCore PUBLIC
@@ -140,7 +171,6 @@ target_include_directories(GraphicEngineCore SYSTEM PRIVATE
 target_include_directories(GraphicEngineCore PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 target_compile_definitions(GraphicEngineCore PRIVATE
-    EXPORTING_ENGINE_CORE
     ENGINE_MAX_LIGHTS=${ENGINE_MAX_LIGHTS}
     ENGINE_DEFAULT_ASSET_ROOT="${ENGINE_ASSET_ROOT}"
 )

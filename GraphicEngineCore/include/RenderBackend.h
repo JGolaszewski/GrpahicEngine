@@ -17,6 +17,7 @@ namespace Engine {
 
 		virtual nvrhi::IDevice* GetDevice() const = 0;
 		virtual nvrhi::IFramebuffer* GetDefaultFramebuffer() const = 0;
+		virtual void* RegisterViewportTexture(void*) const { return nullptr; }
 
 		virtual void BeginGpuEvent(const wchar_t*) {}
 		virtual void EndGpuEvent() {}

@@ -38,6 +38,7 @@ namespace Engine {
 		inline nvrhi::IFramebuffer* GetDefaultFramebuffer() const override {
 			return m_NvrhiFramebuffer.Get();
 		}
+		void* RegisterViewportTexture(void* renderTexture) const override;
 
 	private:
 		bool CreateSwapChainResources(uint32_t width, uint32_t height);

@@ -75,7 +75,5 @@ void EditorUiIntegration::Shutdown() {
 
 void* EditorUiIntegration::GetTextureId(const Engine::ViewportTarget* target) const noexcept {
 	if (!m_Initialized || !target) return nullptr;
-	auto* texture = static_cast<nvrhi::ITexture*>(target->GetColorTextureHandle());
-	if (!texture) return nullptr;
-	return texture->getNativeView(nvrhi::ObjectTypes::D3D11_ShaderResourceView).pointer;
+	return m_Backend->RegisterViewportTexture(target->GetColorTextureHandle());
 }

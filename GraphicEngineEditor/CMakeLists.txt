@@ -1,5 +1,13 @@
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 
+add_library(EditorUI STATIC
+    "platform/EditorUiIntegration.h"
+    "platform/EditorUiIntegration.cpp"
+)
+target_include_directories(EditorUI PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(EditorUI PRIVATE GraphicEngineCore RenderBackendD3D11 imgui)
+target_compile_features(EditorUI PRIVATE cxx_std_23)
+
 add_executable(Editor
     "main.cpp"
     "Editor.h"
@@ -8,8 +16,6 @@ add_executable(Editor
     "EditorSceneDocument.cpp"
     "platform/EditorFileDialogs.h"
     "platform/EditorFileDialogs.cpp"
-    "platform/EditorUiIntegration.h"
-    "platform/EditorUiIntegration.cpp"
     "panels/EditorPanel.h"
     "panels/HierarchyPanel.h"
     "panels/HierarchyPanel.cpp"
@@ -63,7 +69,7 @@ set_target_properties(Editor PROPERTIES
     VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )
 
-target_link_libraries(Editor PRIVATE GraphicEngineCore GraphicEnginePlatformD3D11 imgui comdlg32 shell32 ole32)
+target_link_libraries(Editor PRIVATE GraphicEngineCore RenderBackendD3D11 EditorUI imgui comdlg32 shell32 ole32)
 
 target_include_directories(Editor PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 

@@ -6,6 +6,11 @@
 #include <nvrhi/validation.h>
 
 namespace Engine {
+	void* D3D11Backend::RegisterViewportTexture(void* renderTexture) const {
+		auto* texture = static_cast<nvrhi::ITexture*>(renderTexture);
+		return texture ? texture->getNativeView(nvrhi::ObjectTypes::D3D11_ShaderResourceView).pointer : nullptr;
+	}
+
 
 	class NvrhiMessageCallback final : public nvrhi::IMessageCallback {
 	public:
