@@ -7,22 +7,23 @@
 // Owns the lifetime of all commands via std::unique_ptr.
 // ================================================================================
 
+#include "Command.h"
 #include <memory>
 #include <vector>
-#include "Command.h"
 
-class CommandHistory {
-public:
+class CommandHistory
+{
+  public:
     CommandHistory() = default;
     ~CommandHistory() = default;
 
     // Non-copyable because of unique_ptr members.
-    CommandHistory(const CommandHistory&) = delete;
-    CommandHistory& operator=(const CommandHistory&) = delete;
+    CommandHistory(const CommandHistory &) = delete;
+    CommandHistory &operator=(const CommandHistory &) = delete;
 
     // Moveable. The stacks transfer ownership naturally.
-    CommandHistory(CommandHistory&&) noexcept = default;
-    CommandHistory& operator=(CommandHistory&&) noexcept = default;
+    CommandHistory(CommandHistory &&) noexcept = default;
+    CommandHistory &operator=(CommandHistory &&) noexcept = default;
 
     // ------------------------------------------------------------------------
     // Execute
@@ -58,7 +59,7 @@ public:
     // Destroys all commands and releases both stacks.
     void Clear();
 
-private:
+  private:
     // Undo stack: commands that have been executed, ordered from oldest to newest.
     std::vector<std::unique_ptr<ICommand>> m_UndoStack;
 

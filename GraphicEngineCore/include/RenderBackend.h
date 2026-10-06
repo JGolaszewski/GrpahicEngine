@@ -5,21 +5,30 @@
 
 #include <nvrhi/nvrhi.h>
 
-namespace Engine {
+namespace Engine
+{
 
-	class ENGINE_API IRenderBackend {
-	public:
-		virtual ~IRenderBackend() = default;
+class ENGINE_API IRenderBackend
+{
+  public:
+    virtual ~IRenderBackend() = default;
 
-		virtual bool Initialize(IWindow* window) = 0;
-		virtual void Present() = 0;
-		virtual void Resize(int width, int height) = 0;
+    virtual bool Initialize(IWindow *window) = 0;
+    virtual void Present() = 0;
+    virtual void Resize(int width, int height) = 0;
 
-		virtual nvrhi::IDevice* GetDevice() const = 0;
-		virtual nvrhi::IFramebuffer* GetDefaultFramebuffer() const = 0;
-		virtual void* RegisterViewportTexture(void*) const { return nullptr; }
+    virtual nvrhi::IDevice *GetDevice() const = 0;
+    virtual nvrhi::IFramebuffer *GetDefaultFramebuffer() const = 0;
+    virtual void *RegisterViewportTexture(void *) const
+    {
+        return nullptr;
+    }
 
-		virtual void BeginGpuEvent(const wchar_t*) {}
-		virtual void EndGpuEvent() {}
-	};
-}
+    virtual void BeginGpuEvent(const wchar_t *)
+    {
+    }
+    virtual void EndGpuEvent()
+    {
+    }
+};
+} // namespace Engine

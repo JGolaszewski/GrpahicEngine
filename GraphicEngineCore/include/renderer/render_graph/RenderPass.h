@@ -1,75 +1,105 @@
 #pragma once
 
-#include <string>
-#include <vector>
 #include "CoreExport.h"
 #include "RGBuilder.h"
-#include "renderer/RenderPacket.h"
-#include "renderer/Light.h"
 #include "RenderContext.h"
+#include "renderer/Light.h"
+#include "renderer/RenderPacket.h"
+#include <string>
+#include <vector>
 
-namespace Engine {
-	class SceneRenderer;
+namespace Engine
+{
+class SceneRenderer;
 }
 
-namespace Renderer {
+namespace Renderer
+{
 
-	class FrameBlackboard;
-	class RenderContext;
+class FrameBlackboard;
+class RenderContext;
 
-	class ENGINE_API IRenderPass {
-	public:
-		virtual ~IRenderPass() = default;
+class ENGINE_API IRenderPass
+{
+  public:
+    virtual ~IRenderPass() = default;
 
-		virtual std::string GetName() const = 0;
-		virtual bool HasSideEffect() const { return false; }
-		virtual void Setup(RGBuilder& builder, FrameBlackboard& blackboard) = 0;
-		virtual bool Execute(nvrhi::ICommandList* cmd, const RenderContext& ctx) = 0;
-		virtual RGResourceID GetOutputID() const { return RGResourceID(); }
-	};
+    virtual std::string GetName() const = 0;
+    virtual bool HasSideEffect() const
+    {
+        return false;
+    }
+    virtual void Setup(RGBuilder &builder, FrameBlackboard &blackboard) = 0;
+    virtual bool Execute(nvrhi::ICommandList *cmd, const RenderContext &ctx) = 0;
+    virtual RGResourceID GetOutputID() const
+    {
+        return RGResourceID();
+    }
+};
 
-	class ENGINE_API ShadowPass : public IRenderPass {
-	public:
-		ShadowPass();
+class ENGINE_API ShadowPass : public IRenderPass
+{
+  public:
+    ShadowPass();
 
-		std::string GetName() const override { return "ShadowPass"; }
+    std::string GetName() const override
+    {
+        return "ShadowPass";
+    }
 
-		void Setup(Renderer::RGBuilder& builder, Renderer::FrameBlackboard& blackboard) override;
-		bool Execute(nvrhi::ICommandList* cmd, const Renderer::RenderContext& ctx) override;
-		RGResourceID GetOutputID() const override { return m_ShadowMapID; }
-	
-	private:
-		RGResourceID m_ShadowMapID;
-		nvrhi::TextureHandle m_ShadowMapTexture;
-		std::vector<nvrhi::FramebufferHandle> m_ShadowFramebuffers;
-	};
+    void Setup(Renderer::RGBuilder &builder, Renderer::FrameBlackboard &blackboard) override;
+    bool Execute(nvrhi::ICommandList *cmd, const Renderer::RenderContext &ctx) override;
+    RGResourceID GetOutputID() const override
+    {
+        return m_ShadowMapID;
+    }
 
-	class ENGINE_API ForwardPass : public Renderer::IRenderPass {
-	private:
-		Renderer::RGResourceID m_ShadowMapInputID;
-		Engine::SceneRenderer* m_SceneRenderer = nullptr;
+  private:
+    RGResourceID m_ShadowMapID;
+    nvrhi::TextureHandle m_ShadowMapTexture;
+    std::vector<nvrhi::FramebufferHandle> m_ShadowFramebuffers;
+};
 
-	public:
-		explicit ForwardPass(Engine::SceneRenderer* sceneRenderer);
+class ENGINE_API ForwardPass : public Renderer::IRenderPass
+{
+  private:
+    Renderer::RGResourceID m_ShadowMapInputID;
+    Engine::SceneRenderer *m_SceneRenderer = nullptr;
 
-		std::string GetName() const override { return "ForwardPass"; }
-		bool HasSideEffect() const override { return true; }
+  public:
+    explicit ForwardPass(Engine::SceneRenderer *sceneRenderer);
 
-		void Setup(Renderer::RGBuilder& builder, Renderer::FrameBlackboard& blackboard) override;
-		bool Execute(nvrhi::ICommandList* cmd, const Renderer::RenderContext& ctx) override;
-	};
+    std::string GetName() const override
+    {
+        return "ForwardPass";
+    }
+    bool HasSideEffect() const override
+    {
+        return true;
+    }
 
-	class ENGINE_API DebugPass : public Renderer::IRenderPass {
-	public:
-		explicit DebugPass(Engine::SceneRenderer* sceneRenderer);
+    void Setup(Renderer::RGBuilder &builder, Renderer::FrameBlackboard &blackboard) override;
+    bool Execute(nvrhi::ICommandList *cmd, const Renderer::RenderContext &ctx) override;
+};
 
-		std::string GetName() const override { return "DebugPass"; }
-		bool HasSideEffect() const override { return true; }
+class ENGINE_API DebugPass : public Renderer::IRenderPass
+{
+  public:
+    explicit DebugPass(Engine::SceneRenderer *sceneRenderer);
 
-		void Setup(Renderer::RGBuilder& builder, Renderer::FrameBlackboard& blackboard) override;
-		bool Execute(nvrhi::ICommandList* cmd, const Renderer::RenderContext& ctx) override;
+    std::string GetName() const override
+    {
+        return "DebugPass";
+    }
+    bool HasSideEffect() const override
+    {
+        return true;
+    }
 
-	private:
-		Engine::SceneRenderer* m_SceneRenderer = nullptr;
-	};
-}
+    void Setup(Renderer::RGBuilder &builder, Renderer::FrameBlackboard &blackboard) override;
+    bool Execute(nvrhi::ICommandList *cmd, const Renderer::RenderContext &ctx) override;
+
+  private:
+    Engine::SceneRenderer *m_SceneRenderer = nullptr;
+};
+} // namespace Renderer

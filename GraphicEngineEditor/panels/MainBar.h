@@ -2,7 +2,8 @@
 
 #include "EditorPanel.h"
 
-class MainBar : public EditorPanel {
-public:
+class MainBar : public EditorPanel
+{
+  public:
     void Draw() override;
 };

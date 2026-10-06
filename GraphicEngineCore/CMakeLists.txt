@@ -58,6 +58,7 @@ set(CORE_HEADERS
     include/PipelineCache.h
     include/PrimitiveFactory.h
     include/RenderBackend.h
+    include/Result.h
     include/ViewportTarget.h
     include/renderer/Camera.h
     include/renderer/DebugGeometry.h
@@ -180,11 +181,19 @@ if(CMAKE_VERSION VERSION_GREATER 3.12)
 endif()
 
 find_program(CLANG_FORMAT_EXECUTABLE NAMES clang-format)
+if(NOT CLANG_FORMAT_EXECUTABLE AND DEFINED ENV{VSINSTALLDIR})
+    find_program(CLANG_FORMAT_EXECUTABLE NAMES clang-format
+        HINTS "$ENV{VSINSTALLDIR}/VC/Tools/Llvm/x64/bin")
+endif()
+file(GLOB_RECURSE EDITOR_STYLE_FILES CONFIGURE_DEPENDS
+    "${PROJECT_SOURCE_DIR}/GraphicEngineEditor/*.h"
+    "${PROJECT_SOURCE_DIR}/GraphicEngineEditor/*.cpp"
+)
 if(CLANG_FORMAT_EXECUTABLE)
     add_custom_target(format
-        COMMAND "${CLANG_FORMAT_EXECUTABLE}" --dry-run --Werror ${CORE_HEADERS} ${CORE_SOURCES}
+        COMMAND "${CLANG_FORMAT_EXECUTABLE}" --dry-run --Werror ${CORE_HEADERS} ${CORE_SOURCES} ${EDITOR_STYLE_FILES}
         WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
-        COMMENT "Checking core C++ formatting"
+        COMMENT "Checking core and editor C++ formatting"
     )
 else()
     add_custom_target(format
@@ -193,11 +202,15 @@ else()
 endif()
 
 find_program(CLANG_TIDY_EXECUTABLE NAMES clang-tidy)
+if(NOT CLANG_TIDY_EXECUTABLE AND DEFINED ENV{VSINSTALLDIR})
+    find_program(CLANG_TIDY_EXECUTABLE NAMES clang-tidy
+        HINTS "$ENV{VSINSTALLDIR}/VC/Tools/Llvm/x64/bin")
+endif()
 if(CLANG_TIDY_EXECUTABLE)
     add_custom_target(lint
-        COMMAND "${CLANG_TIDY_EXECUTABLE}" -p="${CMAKE_BINARY_DIR}" ${CORE_SOURCES}
+        COMMAND "${CLANG_TIDY_EXECUTABLE}" -p="${CMAKE_BINARY_DIR}" ${CORE_SOURCES} ${EDITOR_STYLE_FILES}
         WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
-        COMMENT "Running clang-tidy on core sources"
+        COMMENT "Running clang-tidy on core and editor sources"
     )
 else()
     add_custom_target(lint

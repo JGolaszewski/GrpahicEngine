@@ -7,8 +7,9 @@
 // must support Undo/Redo derive from this interface.
 // ================================================================================
 
-class ICommand {
-public:
+class ICommand
+{
+  public:
     virtual ~ICommand() = default;
 
     // Perform the action. Called on first execution AND on Redo.

@@ -7,31 +7,42 @@
 
 #include <components/Transform.h>
 
-namespace Renderer {
-	class ENGINE_API Camera {
-	public:
-		Components::Transform m_Transform;
+namespace Renderer
+{
+class ENGINE_API Camera
+{
+  public:
+    Components::Transform m_Transform;
 
-		// Projection values use radians for FOV and positive distances for planes.
-		Camera(float fovRadians, float znear, float zfar);
+    // Projection values use radians for FOV and positive distances for planes.
+    Camera(float fovRadians, float znear, float zfar);
 
-		bool SetProjection(float fovRadians, float znear, float zfar);
-		float GetFovRadians() const noexcept { return m_FovRadians; }
-		float GetNearPlane() const noexcept { return m_Near; }
-		float GetFarPlane() const noexcept { return m_Far; }
+    bool SetProjection(float fovRadians, float znear, float zfar);
+    float GetFovRadians() const noexcept
+    {
+        return m_FovRadians;
+    }
+    float GetNearPlane() const noexcept
+    {
+        return m_Near;
+    }
+    float GetFarPlane() const noexcept
+    {
+        return m_Far;
+    }
 
-		void SetPosition(Components::Transform transform);
+    void SetPosition(Components::Transform transform);
 
-		DirectX::XMMATRIX GetView() const;
-		DirectX::XMMATRIX GetProjection(float aspect) const;
-		DirectX::XMMATRIX GetViewProjection(float aspect) const;
+    DirectX::XMMATRIX GetView() const;
+    DirectX::XMMATRIX GetProjection(float aspect) const;
+    DirectX::XMMATRIX GetViewProjection(float aspect) const;
 
-	private:
-		float m_FovRadians = DirectX::XM_PIDIV4;
-		float m_Near = 0.0f;
-		float m_Far = 0.0f;
-		mutable bool m_ProjectionDirty = true;
-		mutable float m_CachedAspect = 0.0f;
-		mutable DirectX::XMMATRIX m_CachedProjection = DirectX::XMMatrixIdentity();
-	};
-}
+  private:
+    float m_FovRadians = DirectX::XM_PIDIV4;
+    float m_Near = 0.0f;
+    float m_Far = 0.0f;
+    mutable bool m_ProjectionDirty = true;
+    mutable float m_CachedAspect = 0.0f;
+    mutable DirectX::XMMATRIX m_CachedProjection = DirectX::XMMatrixIdentity();
+};
+} // namespace Renderer

@@ -5,91 +5,98 @@
 #include <algorithm>
 #include <cmath>
 
-namespace Renderer::Brdf {
-	inline constexpr float Pi = 3.14159265358979323846f;
-	inline constexpr float MinAlpha = 1.0e-3f;
-	inline constexpr float MinRoughness = 0.03162278f;
-	inline constexpr float MinGamma = 1.0f;
-	inline constexpr float MaxGamma = 8.0f;
-	inline constexpr float Epsilon = 1.0e-6f;
+namespace Renderer::Brdf
+{
+inline constexpr float Pi = 3.14159265358979323846f;
+inline constexpr float MinAlpha = 1.0e-3f;
+inline constexpr float MinRoughness = 0.03162278f;
+inline constexpr float MinGamma = 1.0f;
+inline constexpr float MaxGamma = 8.0f;
+inline constexpr float Epsilon = 1.0e-6f;
 
-	inline float ClampUnit(float value) noexcept {
-		return (std::clamp)(value, 0.0f, 1.0f);
-	}
-
-	inline float AlphaFromPerceptualRoughness(float roughness) noexcept {
-		const float safeRoughness = (std::clamp)(roughness, MinRoughness, 1.0f);
-		return (std::max)(safeRoughness * safeRoughness, MinAlpha);
-	}
-
-	inline float GtrNormalization(float alpha, float gamma) noexcept {
-		const float safeAlpha = (std::max)(alpha, MinAlpha);
-		const float safeGamma = (std::clamp)(gamma, MinGamma, MaxGamma);
-		const float alphaSquared = safeAlpha * safeAlpha;
-		if (std::abs(alphaSquared - 1.0f) <= Epsilon) {
-			return 1.0f / Pi;
-		}
-
-		const float logAlphaSquared = std::log(alphaSquared);
-		const float exponent = (1.0f - safeGamma) * logAlphaSquared;
-		const float denominator = -std::expm1(exponent);
-		if (std::abs(safeGamma - 1.0f) <= Epsilon) {
-			return (alphaSquared - 1.0f) / (Pi * logAlphaSquared);
-		}
-
-		return ((safeGamma - 1.0f) * (alphaSquared - 1.0f)) / (Pi * denominator);
-	}
-
-	inline float EvaluateGtrNdf(float noH, float alpha, float gamma) noexcept {
-		const float safeNoH = ClampUnit(noH);
-		const float safeAlpha = (std::max)(alpha, MinAlpha);
-		const float safeGamma = (std::clamp)(gamma, MinGamma, MaxGamma);
-		const float alphaSquared = safeAlpha * safeAlpha;
-		const float denominator = 1.0f + (alphaSquared - 1.0f) * safeNoH * safeNoH;
-		return GtrNormalization(safeAlpha, safeGamma) /
-			std::pow((std::max)(denominator, Epsilon), safeGamma);
-	}
-
-	inline float EvaluateGgxNdf(float noH, float alpha) noexcept {
-		return EvaluateGtrNdf(noH, alpha, 2.0f);
-	}
-
-	inline DirectX::XMFLOAT3 EvaluateGgxBrdf(
-		const DirectX::XMFLOAT3& normal,
-		const DirectX::XMFLOAT3& view,
-		const DirectX::XMFLOAT3& light,
-		const DirectX::XMFLOAT3& diffuseColor,
-		const DirectX::XMFLOAT3& f0,
-		float alpha) noexcept {
-		using namespace DirectX;
-		const XMVECTOR n = XMVector3Normalize(XMLoadFloat3(&normal));
-		const XMVECTOR v = XMVector3Normalize(XMLoadFloat3(&view));
-		const XMVECTOR l = XMVector3Normalize(XMLoadFloat3(&light));
-		const float noV = (std::max)(XMVectorGetX(XMVector3Dot(n, v)), 0.0f);
-		const float noL = (std::max)(XMVectorGetX(XMVector3Dot(n, l)), 0.0f);
-		if (noV <= Epsilon || noL <= Epsilon) {
-			return { 0.0f, 0.0f, 0.0f };
-		}
-
-		const XMVECTOR h = XMVector3Normalize(XMVectorAdd(v, l));
-		const float noH = ClampUnit(XMVectorGetX(XMVector3Dot(n, h)));
-		const float voH = ClampUnit(XMVectorGetX(XMVector3Dot(v, h)));
-		const float safeAlpha = (std::max)(alpha, MinAlpha);
-		const float alphaSquared = safeAlpha * safeAlpha;
-		const float smithV = noL * std::sqrt((std::max)(alphaSquared + (1.0f - alphaSquared) * noV * noV, 0.0f));
-		const float smithL = noV * std::sqrt((std::max)(alphaSquared + (1.0f - alphaSquared) * noL * noL, 0.0f));
-		const float geometry = (smithV + smithL) > Epsilon ?
-			(2.0f * noV * noL) / (smithV + smithL) : 0.0f;
-		const float fresnelWeight = std::pow(1.0f - voH, 5.0f);
-		const float ndf = EvaluateGgxNdf(noH, safeAlpha);
-		const float specularScale = ndf * geometry / (4.0f * noV * noL);
-
-		XMFLOAT3 result;
-		XMStoreFloat3(&result, XMVectorSet(
-			diffuseColor.x * (1.0f - f0.x) / Pi + (f0.x + (1.0f - f0.x) * fresnelWeight) * specularScale,
-			diffuseColor.y * (1.0f - f0.y) / Pi + (f0.y + (1.0f - f0.y) * fresnelWeight) * specularScale,
-			diffuseColor.z * (1.0f - f0.z) / Pi + (f0.z + (1.0f - f0.z) * fresnelWeight) * specularScale,
-			0.0f));
-		return result;
-	}
+inline float ClampUnit(float value) noexcept
+{
+    return (std::clamp)(value, 0.0f, 1.0f);
 }
+
+inline float AlphaFromPerceptualRoughness(float roughness) noexcept
+{
+    const float safeRoughness = (std::clamp)(roughness, MinRoughness, 1.0f);
+    return (std::max)(safeRoughness * safeRoughness, MinAlpha);
+}
+
+inline float GtrNormalization(float alpha, float gamma) noexcept
+{
+    const float safeAlpha = (std::max)(alpha, MinAlpha);
+    const float safeGamma = (std::clamp)(gamma, MinGamma, MaxGamma);
+    const float alphaSquared = safeAlpha * safeAlpha;
+    if (std::abs(alphaSquared - 1.0f) <= Epsilon)
+    {
+        return 1.0f / Pi;
+    }
+
+    const float logAlphaSquared = std::log(alphaSquared);
+    const float exponent = (1.0f - safeGamma) * logAlphaSquared;
+    const float denominator = -std::expm1(exponent);
+    if (std::abs(safeGamma - 1.0f) <= Epsilon)
+    {
+        return (alphaSquared - 1.0f) / (Pi * logAlphaSquared);
+    }
+
+    return ((safeGamma - 1.0f) * (alphaSquared - 1.0f)) / (Pi * denominator);
+}
+
+inline float EvaluateGtrNdf(float noH, float alpha, float gamma) noexcept
+{
+    const float safeNoH = ClampUnit(noH);
+    const float safeAlpha = (std::max)(alpha, MinAlpha);
+    const float safeGamma = (std::clamp)(gamma, MinGamma, MaxGamma);
+    const float alphaSquared = safeAlpha * safeAlpha;
+    const float denominator = 1.0f + (alphaSquared - 1.0f) * safeNoH * safeNoH;
+    return GtrNormalization(safeAlpha, safeGamma) / std::pow((std::max)(denominator, Epsilon), safeGamma);
+}
+
+inline float EvaluateGgxNdf(float noH, float alpha) noexcept
+{
+    return EvaluateGtrNdf(noH, alpha, 2.0f);
+}
+
+inline DirectX::XMFLOAT3 EvaluateGgxBrdf(const DirectX::XMFLOAT3 &normal, const DirectX::XMFLOAT3 &view,
+                                         const DirectX::XMFLOAT3 &light,
+                                         const DirectX::XMFLOAT3 &diffuseColor, const DirectX::XMFLOAT3 &f0,
+                                         float alpha) noexcept
+{
+    using namespace DirectX;
+    const XMVECTOR n = XMVector3Normalize(XMLoadFloat3(&normal));
+    const XMVECTOR v = XMVector3Normalize(XMLoadFloat3(&view));
+    const XMVECTOR l = XMVector3Normalize(XMLoadFloat3(&light));
+    const float noV = (std::max)(XMVectorGetX(XMVector3Dot(n, v)), 0.0f);
+    const float noL = (std::max)(XMVectorGetX(XMVector3Dot(n, l)), 0.0f);
+    if (noV <= Epsilon || noL <= Epsilon)
+    {
+        return {0.0f, 0.0f, 0.0f};
+    }
+
+    const XMVECTOR h = XMVector3Normalize(XMVectorAdd(v, l));
+    const float noH = ClampUnit(XMVectorGetX(XMVector3Dot(n, h)));
+    const float voH = ClampUnit(XMVectorGetX(XMVector3Dot(v, h)));
+    const float safeAlpha = (std::max)(alpha, MinAlpha);
+    const float alphaSquared = safeAlpha * safeAlpha;
+    const float smithV = noL * std::sqrt((std::max)(alphaSquared + (1.0f - alphaSquared) * noV * noV, 0.0f));
+    const float smithL = noV * std::sqrt((std::max)(alphaSquared + (1.0f - alphaSquared) * noL * noL, 0.0f));
+    const float geometry = (smithV + smithL) > Epsilon ? (2.0f * noV * noL) / (smithV + smithL) : 0.0f;
+    const float fresnelWeight = std::pow(1.0f - voH, 5.0f);
+    const float ndf = EvaluateGgxNdf(noH, safeAlpha);
+    const float specularScale = ndf * geometry / (4.0f * noV * noL);
+
+    XMFLOAT3 result;
+    XMStoreFloat3(
+        &result,
+        XMVectorSet(
+            diffuseColor.x * (1.0f - f0.x) / Pi + (f0.x + (1.0f - f0.x) * fresnelWeight) * specularScale,
+            diffuseColor.y * (1.0f - f0.y) / Pi + (f0.y + (1.0f - f0.y) * fresnelWeight) * specularScale,
+            diffuseColor.z * (1.0f - f0.z) / Pi + (f0.z + (1.0f - f0.z) * fresnelWeight) * specularScale,
+            0.0f));
+    return result;
+}
+} // namespace Renderer::Brdf

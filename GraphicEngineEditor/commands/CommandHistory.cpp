@@ -5,8 +5,10 @@
 // ================================================================================
 // ================================================================================
 
-void CommandHistory::Execute(std::unique_ptr<ICommand> cmd) {
-    if (!cmd) {
+void CommandHistory::Execute(std::unique_ptr<ICommand> cmd)
+{
+    if (!cmd)
+    {
         return;
     }
 
@@ -17,13 +19,16 @@ void CommandHistory::Execute(std::unique_ptr<ICommand> cmd) {
     m_UndoStack.push_back(std::move(cmd));
 
     // New command invalidates the redo timeline.
-    if (!m_RedoStack.empty()) {
+    if (!m_RedoStack.empty())
+    {
         m_RedoStack.clear();
     }
 }
 
-void CommandHistory::Undo() {
-    if (!CanUndo()) {
+void CommandHistory::Undo()
+{
+    if (!CanUndo())
+    {
         return;
     }
 
@@ -35,8 +40,10 @@ void CommandHistory::Undo() {
     m_RedoStack.push_back(std::move(cmd));
 }
 
-void CommandHistory::Redo() {
-    if (!CanRedo()) {
+void CommandHistory::Redo()
+{
+    if (!CanRedo())
+    {
         return;
     }
 
@@ -48,23 +55,28 @@ void CommandHistory::Redo() {
     m_UndoStack.push_back(std::move(cmd));
 }
 
-bool CommandHistory::CanUndo() const noexcept {
+bool CommandHistory::CanUndo() const noexcept
+{
     return !m_UndoStack.empty();
 }
 
-bool CommandHistory::CanRedo() const noexcept {
+bool CommandHistory::CanRedo() const noexcept
+{
     return !m_RedoStack.empty();
 }
 
-size_t CommandHistory::GetUndoStackSize() const noexcept {
+size_t CommandHistory::GetUndoStackSize() const noexcept
+{
     return m_UndoStack.size();
 }
 
-size_t CommandHistory::GetRedoStackSize() const noexcept {
+size_t CommandHistory::GetRedoStackSize() const noexcept
+{
     return m_RedoStack.size();
 }
 
-void CommandHistory::Clear() {
+void CommandHistory::Clear()
+{
     m_UndoStack.clear();
     m_RedoStack.clear();
 }

@@ -1,18 +1,19 @@
 #pragma once
 
-#include "EditorPanel.h"
-#include "events/EditorEvents.h"
-#include "Scene.h"
 #include "AssetManager.h"
+#include "EditorPanel.h"
+#include "Scene.h"
+#include "events/EditorEvents.h"
 #include <DirectXMath.h>
 #include <memory>
 #include <vector>
 
-namespace Renderer {
-    class Entity;
-    class SpotLight;
-    class Camera;
-}
+namespace Renderer
+{
+class Entity;
+class SpotLight;
+class Camera;
+} // namespace Renderer
 
 // ================================================================================
 // HierarchyPanel.h
@@ -22,14 +23,15 @@ namespace Renderer {
 // user clicks an item, and AddObjectRequestedEvent from the spawn modal.
 // ================================================================================
 
-class HierarchyPanel : public EditorPanel {
-public:
+class HierarchyPanel : public EditorPanel
+{
+  public:
     HierarchyPanel() = default;
 
     void Draw() override;
-    void OnEvent(Engine::Events::Event& event) override;
+    void OnEvent(Engine::Events::Event &event) override;
 
-private:
+  private:
     void DrawAddObjectModal();
 
     // Internal state — synchronised via events
@@ -43,7 +45,8 @@ private:
     int m_SelectedCameraIndex = -1;
 
     // Spawn modal state
-    enum class SpawnShapeType {
+    enum class SpawnShapeType
+    {
         Cube,
         Sphere,
         Plane,
@@ -51,10 +54,10 @@ private:
     };
 
     SpawnShapeType m_SpawnShape = SpawnShapeType::Cube;
-    DirectX::XMFLOAT3 m_SpawnPosition = { 0.0f, 0.0f, 8.0f };
-    DirectX::XMFLOAT3 m_SpawnScale = { 1.0f, 1.0f, 1.0f };
-    DirectX::XMFLOAT4 m_SpawnColor = { 0.95f, 0.95f, 0.95f, 1.0f };
-    DirectX::XMFLOAT3 m_SpawnEmissive = { 0.0f, 0.0f, 0.0f };
+    DirectX::XMFLOAT3 m_SpawnPosition = {0.0f, 0.0f, 8.0f};
+    DirectX::XMFLOAT3 m_SpawnScale = {1.0f, 1.0f, 1.0f};
+    DirectX::XMFLOAT4 m_SpawnColor = {0.95f, 0.95f, 0.95f, 1.0f};
+    DirectX::XMFLOAT3 m_SpawnEmissive = {0.0f, 0.0f, 0.0f};
     float m_SpawnMetallic = 0.0f;
     float m_SpawnRoughness = 0.8f;
     std::vector<Engine::AssetManager::ModelAssetInfo> m_Models;

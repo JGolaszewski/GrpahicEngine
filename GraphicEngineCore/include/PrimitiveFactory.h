@@ -6,45 +6,48 @@
 #include <cstdint>
 #include <memory>
 
-namespace Renderer {
-    class Entity;
-    class Material;
-}
+namespace Renderer
+{
+class Entity;
+class Material;
+} // namespace Renderer
 
-namespace Engine {
+namespace Engine
+{
 
-    class RenderSystem;
+class RenderSystem;
 
-    enum class PrimitiveShape : uint8_t {
-        Cube,
-        Sphere,
-        Plane,
-        Cone
-    };
+enum class PrimitiveShape : uint8_t
+{
+    Cube,
+    Sphere,
+    Plane,
+    Cone
+};
 
-    // Creates engine primitives and performs their GPU upload internally.
-    class ENGINE_API PrimitiveFactory {
-    public:
-        ~PrimitiveFactory();
+// Creates engine primitives and performs their GPU upload internally.
+class ENGINE_API PrimitiveFactory
+{
+  public:
+    ~PrimitiveFactory();
 
-        PrimitiveFactory(const PrimitiveFactory&) = delete;
-        PrimitiveFactory& operator=(const PrimitiveFactory&) = delete;
-        PrimitiveFactory(PrimitiveFactory&&) noexcept;
-        PrimitiveFactory& operator=(PrimitiveFactory&&) noexcept;
+    PrimitiveFactory(const PrimitiveFactory &) = delete;
+    PrimitiveFactory &operator=(const PrimitiveFactory &) = delete;
+    PrimitiveFactory(PrimitiveFactory &&) noexcept;
+    PrimitiveFactory &operator=(PrimitiveFactory &&) noexcept;
 
-        std::shared_ptr<Renderer::Entity> CreatePrimitive(
-            PrimitiveShape shape,
-            std::shared_ptr<Renderer::Material> material,
-            const DirectX::XMFLOAT3& position,
-            const DirectX::XMFLOAT3& scale = { 1.0f, 1.0f, 1.0f });
+    std::shared_ptr<Renderer::Entity> CreatePrimitive(PrimitiveShape shape,
+                                                      std::shared_ptr<Renderer::Material> material,
+                                                      const DirectX::XMFLOAT3 &position,
+                                                      const DirectX::XMFLOAT3 &scale = {1.0f, 1.0f, 1.0f});
 
-    private:
-        struct Impl;
+  private:
+    struct Impl;
 
-        explicit PrimitiveFactory(void* device);
+    explicit PrimitiveFactory(void *device);
 
-        std::unique_ptr<Impl> m_Impl;
+    std::unique_ptr<Impl> m_Impl;
 
-        friend class RenderSystem;
-    };
-}
+    friend class RenderSystem;
+};
+} // namespace Engine

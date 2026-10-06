@@ -1,7 +1,7 @@
 #pragma once
 
-#include "events/Event.h"
 #include "commands/Command.h"
+#include "events/Event.h"
 #include <memory>
 
 class ICommand;
@@ -14,22 +14,28 @@ class ICommand;
 // CommandHistory::Execute().
 // ================================================================================
 
-class CommandExecuteRequestedEvent : public Engine::Events::Event {
-public:
-    explicit CommandExecuteRequestedEvent(std::unique_ptr<ICommand> cmd)
-        : m_Command(std::move(cmd))
-    {}
+class CommandExecuteRequestedEvent : public Engine::Events::Event
+{
+  public:
+    explicit CommandExecuteRequestedEvent(std::unique_ptr<ICommand> cmd) : m_Command(std::move(cmd))
+    {
+    }
 
-    static Engine::Events::EventType GetStaticType() {
+    static Engine::Events::EventType GetStaticType()
+    {
         return Engine::Events::EventType::CommandExecuteRequested;
     }
 
-    Engine::Events::EventType GetType() const override {
+    Engine::Events::EventType GetType() const override
+    {
         return GetStaticType();
     }
 
-    std::unique_ptr<ICommand> TakeCommand() { return std::move(m_Command); }
+    std::unique_ptr<ICommand> TakeCommand()
+    {
+        return std::move(m_Command);
+    }
 
-private:
+  private:
     std::unique_ptr<ICommand> m_Command;
 };
