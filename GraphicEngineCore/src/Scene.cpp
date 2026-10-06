@@ -7,6 +7,16 @@
 #include <limits>
 
 namespace Engine {
+	namespace {
+		template<typename Id>
+		void EraseIdAt(std::vector<Id>& ids, std::unordered_map<Id, size_t>& indices, size_t index) {
+			indices.erase(ids[index]);
+			ids.erase(ids.begin() + index);
+			for (size_t shifted = index; shifted < ids.size(); ++shifted) {
+				indices[ids[shifted]] = shifted;
+			}
+		}
+	}
 
 	EntityId Scene::AddEntity(std::shared_ptr<Renderer::Entity> entity, EntityId persistentId)
 	{
@@ -14,7 +24,7 @@ namespace Engine {
 		EntityId id = m_NextEntityId;
 		if (persistentId != InvalidEntityId) {
 			if (persistentId == std::numeric_limits<EntityId>::max() ||
-				std::find(m_EntityIds.begin(), m_EntityIds.end(), persistentId) != m_EntityIds.end()) return InvalidEntityId;
+				m_EntityIndices.contains(persistentId)) return InvalidEntityId;
 			id = persistentId;
 			m_NextEntityId = (std::max)(m_NextEntityId, persistentId + 1);
 		} else {
@@ -23,6 +33,7 @@ namespace Engine {
 		}
 		m_Entities.push_back(std::move(entity));
 		m_EntityIds.push_back(id);
+		m_EntityIndices.emplace(id, m_EntityIds.size() - 1);
 		return id;
 	}
 
@@ -36,16 +47,16 @@ namespace Engine {
 		if (it != m_Entities.end()) {
 			const auto index = static_cast<size_t>(std::distance(m_Entities.begin(), it));
 			m_Entities.erase(it);
-			m_EntityIds.erase(m_EntityIds.begin() + index);
+			EraseIdAt(m_EntityIds, m_EntityIndices, index);
 		}
 	}
 
 	void Scene::RemoveEntity(EntityId id)
 	{
-		auto it = std::find(m_EntityIds.begin(), m_EntityIds.end(), id);
-		if (it != m_EntityIds.end()) {
-			const auto index = static_cast<size_t>(std::distance(m_EntityIds.begin(), it));
-			m_EntityIds.erase(it);
+		auto it = m_EntityIndices.find(id);
+		if (it != m_EntityIndices.end()) {
+			const size_t index = it->second;
+			EraseIdAt(m_EntityIds, m_EntityIndices, index);
 			m_Entities.erase(m_Entities.begin() + index);
 		}
 	}
@@ -53,9 +64,9 @@ namespace Engine {
 	bool Scene::ReplaceEntity(EntityId id, std::shared_ptr<Renderer::Entity> entity)
 	{
 		if (!entity) return false;
-		const auto it = std::find(m_EntityIds.begin(), m_EntityIds.end(), id);
-		if (it == m_EntityIds.end()) return false;
-		m_Entities[static_cast<size_t>(std::distance(m_EntityIds.begin(), it))] = std::move(entity);
+		const auto it = m_EntityIndices.find(id);
+		if (it == m_EntityIndices.end()) return false;
+		m_Entities[it->second] = std::move(entity);
 		return true;
 	}
 
@@ -74,10 +85,8 @@ namespace Engine {
 
 	std::shared_ptr<Renderer::Entity> Scene::FindEntity(EntityId id) const
 	{
-		for (size_t index = 0; index < m_EntityIds.size(); ++index) {
-			if (m_EntityIds[index] == id) return m_Entities[index];
-		}
-		return nullptr;
+		const auto it = m_EntityIndices.find(id);
+		return it == m_EntityIndices.end() ? nullptr : m_Entities[it->second];
 	}
 
 	DirectX::XMFLOAT3 Scene::FindFreeSpawnPosition(
@@ -123,7 +132,7 @@ namespace Engine {
 		LightId id = m_NextLightId;
 		if (persistentId != InvalidLightId) {
 			if (persistentId == std::numeric_limits<LightId>::max() ||
-				std::find(m_LightIds.begin(), m_LightIds.end(), persistentId) != m_LightIds.end()) return InvalidLightId;
+				m_LightIndices.contains(persistentId)) return InvalidLightId;
 			id = persistentId;
 			m_NextLightId = (std::max)(m_NextLightId, persistentId + 1);
 		} else {
@@ -132,6 +141,7 @@ namespace Engine {
 		}
 		m_Lights.push_back(std::move(light));
 		m_LightIds.push_back(id);
+		m_LightIndices.emplace(id, m_LightIds.size() - 1);
 		return id;
 	}
 
@@ -145,16 +155,16 @@ namespace Engine {
 		if (it != m_Lights.end()) {
 			const auto index = static_cast<size_t>(std::distance(m_Lights.begin(), it));
 			m_Lights.erase(it);
-			m_LightIds.erase(m_LightIds.begin() + index);
+			EraseIdAt(m_LightIds, m_LightIndices, index);
 		}
 	}
 
 	void Scene::RemoveLight(LightId id)
 	{
-		auto it = std::find(m_LightIds.begin(), m_LightIds.end(), id);
-		if (it != m_LightIds.end()) {
-			const auto index = static_cast<size_t>(std::distance(m_LightIds.begin(), it));
-			m_LightIds.erase(it);
+		auto it = m_LightIndices.find(id);
+		if (it != m_LightIndices.end()) {
+			const size_t index = it->second;
+			EraseIdAt(m_LightIds, m_LightIndices, index);
 			m_Lights.erase(m_Lights.begin() + index);
 		}
 	}
@@ -174,10 +184,8 @@ namespace Engine {
 
 	std::shared_ptr<Renderer::SpotLight> Scene::FindLight(LightId id) const
 	{
-		for (size_t index = 0; index < m_LightIds.size(); ++index) {
-			if (m_LightIds[index] == id) return m_Lights[index];
-		}
-		return nullptr;
+		const auto it = m_LightIndices.find(id);
+		return it == m_LightIndices.end() ? nullptr : m_Lights[it->second];
 	}
 
 	CameraId Scene::AddCamera(std::shared_ptr<Renderer::Camera> camera, CameraId persistentId)
@@ -186,7 +194,7 @@ namespace Engine {
 		CameraId id = m_NextCameraId;
 		if (persistentId != InvalidCameraId) {
 			if (persistentId == std::numeric_limits<CameraId>::max() ||
-				std::find(m_CameraIds.begin(), m_CameraIds.end(), persistentId) != m_CameraIds.end()) return InvalidCameraId;
+				m_CameraIndices.contains(persistentId)) return InvalidCameraId;
 			id = persistentId;
 			m_NextCameraId = (std::max)(m_NextCameraId, persistentId + 1);
 		} else {
@@ -195,6 +203,7 @@ namespace Engine {
 		}
 		m_Cameras.push_back(std::move(camera));
 		m_CameraIds.push_back(id);
+		m_CameraIndices.emplace(id, m_CameraIds.size() - 1);
 		return id;
 	}
 
@@ -208,16 +217,16 @@ namespace Engine {
 		if (it != m_Cameras.end()) {
 			const auto index = static_cast<size_t>(std::distance(m_Cameras.begin(), it));
 			m_Cameras.erase(it);
-			m_CameraIds.erase(m_CameraIds.begin() + index);
+			EraseIdAt(m_CameraIds, m_CameraIndices, index);
 		}
 	}
 
 	void Scene::RemoveCamera(CameraId id)
 	{
-		auto it = std::find(m_CameraIds.begin(), m_CameraIds.end(), id);
-		if (it != m_CameraIds.end()) {
-			const auto index = static_cast<size_t>(std::distance(m_CameraIds.begin(), it));
-			m_CameraIds.erase(it);
+		auto it = m_CameraIndices.find(id);
+		if (it != m_CameraIndices.end()) {
+			const size_t index = it->second;
+			EraseIdAt(m_CameraIds, m_CameraIndices, index);
 			m_Cameras.erase(m_Cameras.begin() + index);
 		}
 	}
@@ -237,10 +246,8 @@ namespace Engine {
 
 	std::shared_ptr<Renderer::Camera> Scene::FindCamera(CameraId id) const
 	{
-		for (size_t index = 0; index < m_CameraIds.size(); ++index) {
-			if (m_CameraIds[index] == id) return m_Cameras[index];
-		}
-		return nullptr;
+		const auto it = m_CameraIndices.find(id);
+		return it == m_CameraIndices.end() ? nullptr : m_Cameras[it->second];
 	}
 
 	void Scene::Update(float deltaTime)

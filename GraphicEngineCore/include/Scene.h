@@ -7,6 +7,7 @@
 #include <memory>
 #include <span>
 #include <cstdint>
+#include <unordered_map>
 
 namespace Renderer {
 	class SpotLight;
@@ -76,10 +77,13 @@ namespace Engine {
 	private:
 		std::vector<std::shared_ptr<Renderer::Entity>> m_Entities;
 		std::vector<EntityId> m_EntityIds;
+		std::unordered_map<EntityId, size_t> m_EntityIndices;
 		std::vector<std::shared_ptr<Renderer::SpotLight>> m_Lights;
 		std::vector<LightId> m_LightIds;
+		std::unordered_map<LightId, size_t> m_LightIndices;
 		std::vector<std::shared_ptr<Renderer::Camera>> m_Cameras;
 		std::vector<CameraId> m_CameraIds;
+		std::unordered_map<CameraId, size_t> m_CameraIndices;
 
 		EntityId m_NextEntityId = 1;
 		LightId m_NextLightId = 1;
