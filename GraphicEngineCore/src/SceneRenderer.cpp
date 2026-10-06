@@ -1,6 +1,8 @@
 #include "SceneRenderer.h"
 
 #include <algorithm>
+#include <chrono>
+#include <cstring>
 #include <cmath>
 #include <iostream>
 #include <limits>
@@ -493,33 +495,51 @@ void Engine::SceneRenderer::CullAndFillView(Renderer::RenderView* view) {
 				return;
 			}
 
+			const auto cullingStart = std::chrono::steady_clock::now();
 			const DirectX::XMMATRIX local = DirectX::XMLoadFloat4x4(&submesh.LocalTransform);
 			const DirectX::XMMATRIX world = local * entity->transform.GetWorldMat();
-			DirectX::XMFLOAT3 localCenter = {
-				(submesh.BoundsMin.x + submesh.BoundsMax.x) * 0.5f,
-				(submesh.BoundsMin.y + submesh.BoundsMax.y) * 0.5f,
-				(submesh.BoundsMin.z + submesh.BoundsMax.z) * 0.5f
-			};
-			const DirectX::XMVECTOR center = DirectX::XMVector3TransformCoord(
-				DirectX::XMLoadFloat3(&localCenter), world);
-			float radius = 0.0f;
-			for (uint32_t corner = 0; corner < 8; ++corner) {
-				const DirectX::XMFLOAT3 point = {
-					(corner & 1) ? submesh.BoundsMax.x : submesh.BoundsMin.x,
-					(corner & 2) ? submesh.BoundsMax.y : submesh.BoundsMin.y,
-					(corner & 4) ? submesh.BoundsMax.z : submesh.BoundsMin.z
+			DirectX::XMFLOAT4X4 worldTransform;
+			DirectX::XMStoreFloat4x4(&worldTransform, world);
+			const bool boundsCacheMatches = submesh.WorldBoundsCached &&
+				std::memcmp(&worldTransform, &submesh.CachedWorldTransform, sizeof(worldTransform)) == 0 &&
+				std::memcmp(&submesh.BoundsMin, &submesh.CachedBoundsMin, sizeof(submesh.BoundsMin)) == 0 &&
+				std::memcmp(&submesh.BoundsMax, &submesh.CachedBoundsMax, sizeof(submesh.BoundsMax)) == 0;
+			if (!boundsCacheMatches) {
+				const DirectX::XMFLOAT3 localCenter = {
+					(submesh.BoundsMin.x + submesh.BoundsMax.x) * 0.5f,
+					(submesh.BoundsMin.y + submesh.BoundsMax.y) * 0.5f,
+					(submesh.BoundsMin.z + submesh.BoundsMax.z) * 0.5f
 				};
-				const DirectX::XMVECTOR worldPoint = DirectX::XMVector3TransformCoord(DirectX::XMLoadFloat3(&point), world);
-				radius = (std::max)(radius, DirectX::XMVectorGetX(DirectX::XMVector3Length(
-					DirectX::XMVectorSubtract(worldPoint, center))));
+				const DirectX::XMVECTOR center = DirectX::XMVector3TransformCoord(
+					DirectX::XMLoadFloat3(&localCenter), world);
+				float radius = 0.0f;
+				for (uint32_t corner = 0; corner < 8; ++corner) {
+					const DirectX::XMFLOAT3 point = {
+						(corner & 1) ? submesh.BoundsMax.x : submesh.BoundsMin.x,
+						(corner & 2) ? submesh.BoundsMax.y : submesh.BoundsMin.y,
+						(corner & 4) ? submesh.BoundsMax.z : submesh.BoundsMin.z
+					};
+					const DirectX::XMVECTOR worldPoint = DirectX::XMVector3TransformCoord(DirectX::XMLoadFloat3(&point), world);
+					radius = (std::max)(radius, DirectX::XMVectorGetX(DirectX::XMVector3Length(
+						DirectX::XMVectorSubtract(worldPoint, center))));
+				}
+				DirectX::XMStoreFloat3(&submesh.CachedWorldBoundsCenter, center);
+				submesh.CachedWorldBoundsRadius = radius;
+				submesh.CachedWorldTransform = worldTransform;
+				submesh.CachedBoundsMin = submesh.BoundsMin;
+				submesh.CachedBoundsMax = submesh.BoundsMax;
+				submesh.WorldBoundsCached = true;
 			}
-			DirectX::XMFLOAT3 worldCenter;
-			DirectX::XMStoreFloat3(&worldCenter, center);
-			if (!view->IsSphereVisible(worldCenter, radius)) {
+			const bool visible = view->IsSphereVisible(
+				submesh.CachedWorldBoundsCenter, submesh.CachedWorldBoundsRadius);
+			m_SubmissionStats.CullingTimeMs += std::chrono::duration<double, std::milli>(
+				std::chrono::steady_clock::now() - cullingStart).count();
+			if (!visible) {
 				++m_SubmissionStats.ObjectsCulled;
 				return;
 			}
 
+			const auto packetBuildStart = std::chrono::steady_clock::now();
 			Renderer::PerObjectGpuData perObjectData{};
 			const DirectX::XMMATRIX mvp = world * viewProj;
 			DirectX::XMVECTOR determinant;
@@ -552,7 +572,8 @@ void Engine::SceneRenderer::CullAndFillView(Renderer::RenderView* view) {
 					: materialProperties.AlphaMode == Renderer::MaterialAlphaMode::Blend
 						? Renderer::RenderQueueType::Transparent
 						: Renderer::RenderQueueType::Opaque;
-			packet.CameraDepth = DirectX::XMVectorGetZ(DirectX::XMVector3TransformCoord(center, view->ViewMatrix));
+			packet.CameraDepth = DirectX::XMVectorGetZ(DirectX::XMVector3TransformCoord(
+				DirectX::XMLoadFloat3(&submesh.CachedWorldBoundsCenter), view->ViewMatrix));
 			++m_SubmissionStats.ObjectsSubmitted;
 			m_SubmissionStats.PerObjectBytesUsed += PerObjectDataStride;
 
@@ -594,6 +615,8 @@ void Engine::SceneRenderer::CullAndFillView(Renderer::RenderView* view) {
 			case Renderer::RenderQueueType::Transparent: view->Queues.Transparent.push_back(packet); break;
 			default: view->Queues.Opaque.push_back(packet); break;
 			}
+			m_SubmissionStats.PacketBuildTimeMs += std::chrono::duration<double, std::milli>(
+				std::chrono::steady_clock::now() - packetBuildStart).count();
 		};
 
 		if (entity->Submeshes.empty()) {

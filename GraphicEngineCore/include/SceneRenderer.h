@@ -34,6 +34,8 @@ namespace Engine {
 			uint32_t ObjectsSubmitted = 0;
 			uint32_t ObjectsCulled = 0;
 			uint32_t PerObjectBytesUsed = 0;
+			double CullingTimeMs = 0.0;
+			double PacketBuildTimeMs = 0.0;
 		};
 
 		SceneRenderer(nvrhi::IDevice* device);

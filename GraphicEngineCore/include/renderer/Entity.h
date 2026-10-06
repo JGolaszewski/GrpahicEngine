@@ -23,6 +23,12 @@ namespace Renderer {
 		DirectX::XMFLOAT3 BoundsMin{};
 		DirectX::XMFLOAT3 BoundsMax{};
 		int32_t MaterialSlot = -1;
+		mutable bool WorldBoundsCached = false;
+		mutable DirectX::XMFLOAT4X4 CachedWorldTransform{};
+		mutable DirectX::XMFLOAT3 CachedBoundsMin{};
+		mutable DirectX::XMFLOAT3 CachedBoundsMax{};
+		mutable DirectX::XMFLOAT3 CachedWorldBoundsCenter{};
+		mutable float CachedWorldBoundsRadius = 0.0f;
 	};
 
 	class ENGINE_API Entity {
