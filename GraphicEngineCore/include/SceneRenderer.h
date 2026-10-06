@@ -89,6 +89,7 @@ namespace Engine {
 		nvrhi::SamplerHandle m_ShadowSampler;
 		nvrhi::ShaderHandle m_DebugVS;
 		nvrhi::ShaderHandle m_DebugPS;
+		nvrhi::ShaderHandle m_ShadowMaskPS;
 		nvrhi::BindingLayoutHandle m_DebugBindingLayout;
 		nvrhi::BufferHandle m_DebugViewBuffer;
 		nvrhi::BufferHandle m_DebugLineBuffer;

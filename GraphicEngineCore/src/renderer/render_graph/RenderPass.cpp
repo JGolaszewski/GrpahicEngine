@@ -90,6 +90,7 @@ namespace Renderer {
 				state.viewport.addScissorRect(shadowScissor);
 
 				state.bindings = { perObjectBindings };
+				if (packet.ShadowAlphaTest) state.bindings.push_back(packet.MaterialBindings);
 
 				nvrhi::VertexBufferBinding vbb;
 				vbb.buffer = packet.VertexBuffer;

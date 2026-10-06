@@ -73,6 +73,7 @@ void Engine::SceneRenderer::Init(nvrhi::IDevice* device,
 	if (shaderFactory) {
 		m_DebugVS = shaderFactory->GetShader("shaders/debug_vs.dxbc", nvrhi::ShaderType::Vertex);
 		m_DebugPS = shaderFactory->GetShader("shaders/debug_ps.dxbc", nvrhi::ShaderType::Pixel);
+		m_ShadowMaskPS = shaderFactory->GetShader("shaders/shadow_mask_ps.dxbc", nvrhi::ShaderType::Pixel);
 	}
 
 	nvrhi::BindingLayoutDesc perObjectLayoutDesc;
@@ -517,6 +518,12 @@ void Engine::SceneRenderer::CullAndFillView(Renderer::RenderView* view) {
 			auto packet = CreateRenderPacket(submesh.mesh.get(), submesh.material.get());
 			packet.PerObjectData = perObjectData;
 			const Renderer::MaterialProperties materialProperties = submesh.material->GetProperties();
+			if (view->ViewType == Renderer::RenderView::Type::Shadow &&
+				materialProperties.AlphaMode == Renderer::MaterialAlphaMode::Blend) {
+				return;
+			}
+			packet.ShadowAlphaTest = view->ViewType == Renderer::RenderView::Type::Shadow &&
+				materialProperties.AlphaMode == Renderer::MaterialAlphaMode::Mask;
 			packet.Queue = view->ViewType == Renderer::RenderView::Type::Shadow
 				? Renderer::RenderQueueType::Opaque
 				: materialProperties.AlphaMode == Renderer::MaterialAlphaMode::Mask
@@ -535,12 +542,13 @@ void Engine::SceneRenderer::CullAndFillView(Renderer::RenderView* view) {
 			key.MaterialLayout = m_MaterialSystem->GetStandardMaterialLayout();
 			key.DepthWrite = packet.Queue != Renderer::RenderQueueType::Transparent;
 			if (view->ViewType == Renderer::RenderView::Type::Shadow) {
-				key.PS = nullptr;
+				key.PS = packet.ShadowAlphaTest ? m_ShadowMaskPS : nullptr;
 				key.SceneLayout = nullptr;
-				key.MaterialLayout = nullptr;
+				key.MaterialLayout = packet.ShadowAlphaTest ? m_MaterialSystem->GetStandardMaterialLayout() : nullptr;
 				key.Wireframe = false;
 				key.DepthTest = true;
-				key.CullMode = nvrhi::RasterCullMode::Back;
+				key.CullMode = materialProperties.DoubleSided
+					? nvrhi::RasterCullMode::None : nvrhi::RasterCullMode::Back;
 			} else {
 				key.PS = submesh.material && submesh.material->HasTextureOverrides()
 					? m_MaterialSystem->GetTexturedPS() : m_MaterialSystem->GetStandardPS();
