@@ -7,7 +7,7 @@
 
 ## Executive Summary
 
-**Implementation update (2026-10-06):** All five P0 actions and all six P1 actions below are implemented and committed. P2 glTF material coverage reporting, configurable demand-driven shadow slices, cached bounds and submission timings, and the runtime/render/backend/UI target split are also implemented and committed. The Visual Studio x64 Debug build succeeds after these changes. CTest passed 2/2 after P0; it was not rerun after later changes. Interactive GPU validation and performance captures have not been run in this session.
+**Implementation update (2026-10-06):** All five P0 actions and all six P1 actions below are implemented and committed. All six P2 roadmap items are marked completed: applicable implementation is committed, and conditional items were evaluated against their stated criteria. P3 formatting/result conventions, header isolation/dependency reduction, and editor event routing are implemented. The conditional second-backend item remains deferred until backend-neutral contracts are demonstrated. The Visual Studio x64 Debug build succeeds. CTest passed 2/2 after P0; it was not rerun after later changes. Interactive GPU validation and performance captures have not been run in this session.
 
 The implementation phase resolved several real problems from `ENGINE_AUDIT_REPORT.md`: lights are now prepared per view, imported alpha mode and sidedness reach forward draw state, ordinary resource retirement no longer calls `waitForIdle()`, editor ImGui/D3D11 integration moved out of the core target, scene ID lookups gained indexes, and multiple placeholder or misleading APIs were removed. The fixes are incremental and generally fit the existing design.
 
@@ -18,7 +18,7 @@ The completion markers in the original report overstate the degree of closure. S
 
 The P1 follow-up now puts reusable camera, light, and object upload buffers under `FrameContext`; caches per-view scene binding sets; imports viewport attachments and declares their states, ranges, and clear/store policy in the graph; validates subresource hazards; batches queued asset uploads with completion-based staging retirement; and routes editor material and scene-document workflows through narrower APIs. The P2 follow-up documents and rejects unsupported glTF material features, adds configurable demand-driven shadow slices and bounds/timing instrumentation, separates runtime/render/backend/UI build targets, and routes viewport texture registration through the backend contract. The graph remains texture-focused, and ImGui frame rendering remains D3D11-specific.
 
-**Review disposition:** P0 and P1 implementation is complete. Applicable unconditional P2 implementation work is also complete and builds with the Visual Studio x64 Debug toolchain. Conditional P2 work remains deferred where representative performance captures or a target presentation requirement are absent. Interactive GPU validation remains a documented manual step.
+**Review disposition:** P0, P1, and P2 roadmap review is complete. Conditional P2 implementation was deferred where the roadmap's evidence or presentation requirements were not met. Three P3 items are implemented; a second backend remains conditional on demonstrably backend-neutral contracts. The Visual Studio x64 Debug build succeeds. Interactive GPU validation remains a documented manual step.
 
 ## 1. Commit Verification and Diff Review
 
@@ -180,10 +180,10 @@ The editor has a separate executable, panels, commands, and file-dialog/UI integ
 
 ### P3 — Consistency and long-term maintainability
 
-1. Adopt a project C++ formatting/naming and error/result convention across core and editor, enforced in both targets.
-2. Reduce broad public headers and transitive type exposure; compile public headers independently.
-3. Consolidate editor requests, commands, notifications, and OS input into separately named interfaces with clear ownership and subscription lifetime.
-4. Add a second graphics backend only after device/swapchain/presentation/shader/lifetime contracts are demonstrably backend-neutral. A second backend should be validated with a clear-and-triangle conformance sample before a full renderer port.
+1. **[Completed]** Add `.clang-format`, document naming and `Engine::Result<T>`/`Engine::Status` conventions, migrate asset import and editor scene workflows while preserving compatibility overloads, and provide format checks across core/editor plus Clang-only naming lint.
+2. **[Completed]** Add isolated translation units for every core and editor header to the default build. Reduce `Application.h` dependencies and split scene IDs/debug settings into focused headers.
+3. **[Completed]** Route panel requests, notifications, and input dispatch through `EditorEventRouter`. Move-only panel connections disconnect their request handlers before panel destruction; commands remain owned by `CommandHistory`.
+4. **[Deferred]** The D3D11 UI frame path and native presentation/lifetime contracts are not yet demonstrated backend-neutral. Add a second backend and its clear-and-triangle conformance sample after those contracts are established.
 
 ## 4. Verification Record and Limitations
 
@@ -191,8 +191,9 @@ The editor has a separate executable, panels, commands, and file-dialog/UI integ
 - Git commit history and the implementation diffs listed above were inspected. The report status-only commits were not mistaken for implementation.
 - The Visual Studio 2026 x64 Developer Command Prompt configured the existing CMake build. `cmake --build out/build/verify-p0 --config Debug --parallel 4` succeeded after the P1 changes.
 - The same Visual Studio x64 Debug build succeeded after glTF rejection/coverage reporting, shadow policy controls, bounds/timing instrumentation, and the CMake target split.
+- The Visual Studio x64 Debug build succeeded with independent compilation of all core/editor headers. `cmake --build out/build/verify-p0 --config Debug --target format` passed across both targets. The `lint` target intentionally defers clang-tidy to a Clang CMake toolchain because LLVM clang-tidy cannot parse this MSVC/DirectXMath compilation database.
 - CTest passed both registered tests after P0; it was not rerun after P1. No interactive GPU validation or performance capture was run.
 
 ## Final Assessment
 
-P0 and P1 implementation is complete, and applicable unconditional P2 items are implemented. Unsupported glTF features are explicitly rejected and documented. Shadow controls and demand-driven slices, cached bounds/timing instrumentation, separate build targets, and backend-mediated viewport texture registration are in place. The Visual Studio x64 Debug build succeeds. The P0 CTest run passed 2/2; tests were not rerun after later changes. Interactive GPU validation remains outstanding. Conditional P2 work (directional cascades, batching, generational handles, HDR/post-processing) remains deferred pending representative content, performance evidence, or presentation requirements.
+P0, P1, and the P2 roadmap evaluation are complete. P2's conditional follow-ups remain deferred where their evidence or presentation criteria were not met. P3 formatting/result conventions, standalone header compilation and dependency reduction, and scoped editor event routing are complete. A second graphics backend remains deferred until the backend-neutral contracts can be demonstrated and validated with the required conformance sample. The Visual Studio x64 Debug build succeeds, and the P0 CTest run passed 2/2; tests were not rerun after later changes. Interactive GPU validation remains outstanding.
