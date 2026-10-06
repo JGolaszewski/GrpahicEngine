@@ -152,6 +152,8 @@ namespace {
 		overrideMaterial.baseColor = {0.2f, 0.4f, 0.6f, 1.0f};
 		overrideMaterial.metallic = 0.7f;
 		overrideMaterial.brdfModel = "ggx";
+		overrideMaterial.baseColorTextureGuid = "00000000-0000-4000-8000-000000000001";
+		overrideMaterial.normalTextureGuid = "00000000-0000-4000-8000-000000000002";
 		entity.materialOverrides.push_back(overrideMaterial);
 		entity.position = {1.0f, 2.0f, 3.0f};
 		entity.forceWireframe = true;
@@ -188,7 +190,9 @@ namespace {
 		Require(result.materialOverrides.size() == 1 && result.materialOverrides[0].has_value(),
 			"scene round-trip lost a model material override");
 		Require(result.materialOverrides[0]->baseColor == overrideMaterial.baseColor &&
-			result.materialOverrides[0]->metallic == overrideMaterial.metallic,
+			result.materialOverrides[0]->metallic == overrideMaterial.metallic &&
+			result.materialOverrides[0]->baseColorTextureGuid == overrideMaterial.baseColorTextureGuid &&
+			result.materialOverrides[0]->normalTextureGuid == overrideMaterial.normalTextureGuid,
 			"scene round-trip changed an editable material override");
 		Require(result.position == entity.position && result.forceWireframe, "scene round-trip changed entity settings");
 		Require(loaded.document.unitsPerMeter == document.unitsPerMeter,

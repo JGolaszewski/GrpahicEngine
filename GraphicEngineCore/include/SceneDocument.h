@@ -20,9 +20,11 @@ namespace Engine {
 		float gtrGamma = 2.0f;
 		float ior = 1.5f;
 		std::array<float, 3> specularF0 = { 0.04f, 0.04f, 0.04f };
-		std::string brdfModel = "legacy";
-		std::string specularMode = "ior";
-	};
+	std::string brdfModel = "legacy";
+	std::string specularMode = "ior";
+	std::optional<std::string> baseColorTextureGuid;
+	std::optional<std::string> normalTextureGuid;
+};
 
 	struct SceneEntityDocument {
 		uint64_t id = 0;

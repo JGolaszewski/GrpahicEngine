@@ -9,6 +9,8 @@
 #include <cstdint>
 #include <type_traits>
 #include <memory>
+#include <optional>
+#include <string>
 
 namespace Renderer { struct TextureResource; }
 
@@ -137,6 +139,12 @@ inline constexpr float MaterialMinAlpha = 1.0e-3f;
 
 	MaterialProperties GetProperties() const;
 	bool HasTextureOverrides() const noexcept { return m_HasTextureOverrides; }
+	const std::shared_ptr<TextureResource>& GetBaseColorTexture() const noexcept { return m_BaseColorTexture; }
+	const std::shared_ptr<TextureResource>& GetNormalTexture() const noexcept { return m_NormalTexture; }
+	const std::shared_ptr<TextureResource>& GetDefaultBaseColorTexture() const noexcept { return m_DefaultBaseColorTexture; }
+	const std::shared_ptr<TextureResource>& GetDefaultNormalTexture() const noexcept { return m_DefaultNormalTexture; }
+	const std::optional<std::string>& GetBaseColorTextureGuid() const noexcept { return m_BaseColorTextureGuid; }
+	const std::optional<std::string>& GetNormalTextureGuid() const noexcept { return m_NormalTextureGuid; }
 		inline nvrhi::BindingSetHandle GetBindingSet() const { return m_BindingSet; }
 	private:
 		bool m_IsDirty = true;
@@ -144,9 +152,13 @@ inline constexpr float MaterialMinAlpha = 1.0e-3f;
 
 		nvrhi::BufferHandle m_ConstantBuffer;
 		nvrhi::BindingSetHandle m_BindingSet;
-		std::shared_ptr<TextureResource> m_BaseColorTexture;
+	std::shared_ptr<TextureResource> m_BaseColorTexture;
 	std::shared_ptr<TextureResource> m_NormalTexture;
+	std::shared_ptr<TextureResource> m_DefaultBaseColorTexture;
+	std::shared_ptr<TextureResource> m_DefaultNormalTexture;
 	bool m_HasTextureOverrides = false;
+	std::optional<std::string> m_BaseColorTextureGuid;
+	std::optional<std::string> m_NormalTextureGuid;
 
 		MaterialGpu m_Constants;
 	};

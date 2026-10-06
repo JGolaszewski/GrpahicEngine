@@ -46,6 +46,8 @@ namespace Renderer {
 
 		material->m_BaseColorTexture = m_FallbackColor;
 		material->m_NormalTexture = m_FallbackNormal;
+		material->m_DefaultBaseColorTexture = m_FallbackColor;
+		material->m_DefaultNormalTexture = m_FallbackNormal;
 		material->m_HasTextureOverrides = false;
 		nvrhi::BindingSetDesc setDesc;
 		setDesc.bindings = {
@@ -98,7 +100,8 @@ namespace Renderer {
 	}
 
 	bool MaterialSystem::SetTextureBindings(const std::shared_ptr<Material>& material,
-		std::shared_ptr<TextureResource> baseColor, std::shared_ptr<TextureResource> normal) {
+		std::shared_ptr<TextureResource> baseColor, std::shared_ptr<TextureResource> normal,
+		std::optional<std::string> baseColorGuid, std::optional<std::string> normalGuid, bool setImportedDefaults) {
 		if (!material || !material->m_ConstantBuffer || !m_Device || !m_StandardLayout) return false;
 		if (!baseColor) baseColor = m_FallbackColor;
 		if (!normal) normal = m_FallbackNormal;
@@ -115,8 +118,14 @@ namespace Renderer {
 		if (!bindings) return false;
 		material->m_BaseColorTexture = std::move(baseColor);
 		material->m_NormalTexture = std::move(normal);
+		if (setImportedDefaults) {
+			material->m_DefaultBaseColorTexture = material->m_BaseColorTexture;
+			material->m_DefaultNormalTexture = material->m_NormalTexture;
+		}
 		material->m_HasTextureOverrides = material->m_BaseColorTexture != m_FallbackColor ||
 			material->m_NormalTexture != m_FallbackNormal;
+		material->m_BaseColorTextureGuid = std::move(baseColorGuid);
+		material->m_NormalTextureGuid = std::move(normalGuid);
 		material->m_BindingSet = std::move(bindings);
 		return true;
 	}

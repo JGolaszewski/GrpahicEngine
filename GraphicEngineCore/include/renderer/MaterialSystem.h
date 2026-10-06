@@ -6,6 +6,8 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
+#include <string>
 #include <vector>
 
 namespace Renderer {
@@ -19,7 +21,9 @@ namespace Renderer {
 		void UnregisterMaterial(std::shared_ptr<Material> material);
 		std::shared_ptr<Material> CreateMaterial(const MaterialProperties& properties = {});
 	bool SetTextureBindings(const std::shared_ptr<Material>& material,
-			std::shared_ptr<TextureResource> baseColor, std::shared_ptr<TextureResource> normal);
+			std::shared_ptr<TextureResource> baseColor, std::shared_ptr<TextureResource> normal,
+			std::optional<std::string> baseColorGuid = {}, std::optional<std::string> normalGuid = {},
+			bool setImportedDefaults = false);
 		void SetTexturedPixelShader(nvrhi::ShaderHandle shader) { m_TexturedPS = std::move(shader); }
 
 		void UpdateDirtyMaterials(nvrhi::ICommandList* commandList);

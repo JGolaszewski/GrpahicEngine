@@ -126,14 +126,16 @@ namespace {
 			error = "material must be an object";
 			return false;
 		}
-		KnownKeys(value, {"baseColor", "emissive", "metallic", "roughness", "gtrGamma", "ior", "specularF0", "brdfModel", "specularMode"}, warnings, context);
+		KnownKeys(value, {"baseColor", "emissive", "metallic", "roughness", "gtrGamma", "ior", "specularF0", "brdfModel", "specularMode", "baseColorTextureGuid", "normalTextureGuid"}, warnings, context);
 		if (!ReadArrayField(value, "baseColor", material.baseColor, error) ||
 			!ReadArrayField(value, "emissive", material.emissive, error) ||
 			!ReadNumber(value, "metallic", material.metallic, error) ||
 			!ReadNumber(value, "roughness", material.roughness, error) ||
 			!ReadNumber(value, "gtrGamma", material.gtrGamma, error) ||
 			!ReadNumber(value, "ior", material.ior, error) ||
-			!ReadArrayField(value, "specularF0", material.specularF0, error)) return false;
+			!ReadArrayField(value, "specularF0", material.specularF0, error) ||
+			!ReadOptionalGuid(value, "baseColorTextureGuid", material.baseColorTextureGuid, error) ||
+			!ReadOptionalGuid(value, "normalTextureGuid", material.normalTextureGuid, error)) return false;
 		if (value.contains("brdfModel")) {
 			if (!value["brdfModel"].is_string()) { error = "brdfModel must be a string"; return false; }
 			material.brdfModel = value["brdfModel"].get<std::string>();
@@ -174,6 +176,8 @@ namespace {
 			material.metallic < 0.0f || material.metallic > 1.0f || material.roughness < 0.0f ||
 			material.roughness > 1.0f || material.gtrGamma < 1.0f || material.gtrGamma > 8.0f ||
 			material.ior < 1.0f || material.ior > 3.0f) return false;
+		if ((material.baseColorTextureGuid && !IsGuid(*material.baseColorTextureGuid)) ||
+			(material.normalTextureGuid && !IsGuid(*material.normalTextureGuid))) return false;
 		for (float value : material.baseColor) if (!std::isfinite(value) || value < 0.0f || value > 1.0f) return false;
 		for (float value : material.emissive) if (!std::isfinite(value) || value < 0.0f) return false;
 		for (float value : material.specularF0) if (!std::isfinite(value) || value < 0.0f || value > 1.0f) return false;
@@ -214,7 +218,9 @@ namespace {
 					{"metallic", material.metallic}, {"roughness", material.roughness},
 					{"gtrGamma", material.gtrGamma}, {"ior", material.ior},
 					{"specularF0", material.specularF0}, {"brdfModel", material.brdfModel},
-					{"specularMode", material.specularMode}
+					{"specularMode", material.specularMode},
+					{"baseColorTextureGuid", material.baseColorTextureGuid ? Json(*material.baseColorTextureGuid) : Json(nullptr)},
+					{"normalTextureGuid", material.normalTextureGuid ? Json(*material.normalTextureGuid) : Json(nullptr)}
 				};
 			}
 			if (!entity.materialOverrides.empty()) {
@@ -230,7 +236,9 @@ namespace {
 						{"metallic", material.metallic}, {"roughness", material.roughness},
 						{"gtrGamma", material.gtrGamma}, {"ior", material.ior},
 						{"specularF0", material.specularF0}, {"brdfModel", material.brdfModel},
-						{"specularMode", material.specularMode}
+						{"specularMode", material.specularMode},
+						{"baseColorTextureGuid", material.baseColorTextureGuid ? Json(*material.baseColorTextureGuid) : Json(nullptr)},
+						{"normalTextureGuid", material.normalTextureGuid ? Json(*material.normalTextureGuid) : Json(nullptr)}
 					});
 				}
 			}

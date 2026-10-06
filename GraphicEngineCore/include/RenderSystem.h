@@ -45,7 +45,9 @@ namespace Engine {
 			const std::string& identity, uint64_t generation, const ImportedImage& image, bool srgb, std::string& error);
 		bool SetMaterialTextures(const std::shared_ptr<Renderer::Material>& material,
 			std::shared_ptr<Renderer::TextureResource> baseColor,
-			std::shared_ptr<Renderer::TextureResource> normal);
+			std::shared_ptr<Renderer::TextureResource> normal,
+			std::optional<std::string> baseColorGuid = {}, std::optional<std::string> normalGuid = {},
+			bool setImportedDefaults = false);
 		void ReleaseResource(const std::string& guid);
 		bool IsFrameActive() const noexcept { return m_FrameActive; }
 		bool UploadModel(

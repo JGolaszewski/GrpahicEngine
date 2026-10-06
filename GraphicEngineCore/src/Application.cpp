@@ -14,6 +14,7 @@
 #include <iostream>
 #include <chrono>
 #include <algorithm>
+#include <set>
 #include <thread>
 
 #include <imgui.h>
@@ -66,6 +67,13 @@ namespace Engine {
                 ? "explicitF0" : "ior";
             return document;
         }
+
+		SceneMaterialDocument ToMaterialDocument(const Renderer::Material& material) {
+			auto document = ToMaterialDocument(material.GetProperties());
+			document.baseColorTextureGuid = material.GetBaseColorTextureGuid();
+			document.normalTextureGuid = material.GetNormalTextureGuid();
+			return document;
+		}
 
         std::optional<PrimitiveShape> ParsePrimitiveType(const std::string& type) {
             if (type == "cube") return PrimitiveShape::Cube;
@@ -318,6 +326,48 @@ namespace Engine {
                     const std::string uploadError = std::move(error);
                     return fail("entity '" + source.name + "' model upload failed: " + uploadError);
                 }
+				std::set<int32_t> appliedSlots;
+				for (const auto& submesh : entity->Submeshes) {
+					if (submesh.MaterialSlot < 0 || !submesh.material ||
+						static_cast<size_t>(submesh.MaterialSlot) >= source.materialOverrides.size() ||
+						!source.materialOverrides[static_cast<size_t>(submesh.MaterialSlot)] ||
+						!appliedSlots.insert(submesh.MaterialSlot).second) continue;
+					const auto& materialDocument = *source.materialOverrides[static_cast<size_t>(submesh.MaterialSlot)];
+					auto baseColor = submesh.material->GetBaseColorTexture();
+					auto normal = submesh.material->GetNormalTexture();
+					const auto resolveOverride = [&](const std::optional<std::string>& textureGuid, bool srgb,
+						std::shared_ptr<Renderer::TextureResource>& destination) {
+						if (!textureGuid) return;
+						std::string textureError;
+						if (!m_AssetManager.LoadTexture(*textureGuid, textureError)) {
+							warnings.push_back("entity '" + source.name + "' material slot " + std::to_string(submesh.MaterialSlot) +
+								" texture " + *textureGuid + " is unavailable: " + textureError);
+							return;
+						}
+						const auto image = m_AssetManager.GetTexture(*textureGuid);
+						const auto generation = m_AssetManager.GetGeneration(*textureGuid);
+						if (!image || !generation) {
+							warnings.push_back("texture " + *textureGuid + " has no decoded image data; using the material default");
+							return;
+						}
+						auto uploaded = m_RenderSystem->GetOrCreateTexture(*textureGuid, *generation, *image, srgb, textureError);
+						if (!uploaded) {
+							warnings.push_back("texture " + *textureGuid + " could not be uploaded: " + textureError);
+							return;
+						}
+						destination = std::move(uploaded);
+					};
+					resolveOverride(materialDocument.baseColorTextureGuid, true, baseColor);
+					resolveOverride(materialDocument.normalTextureGuid, false, normal);
+					std::string bindingError;
+					if (!m_RenderSystem->SetMaterialTextures(submesh.material, baseColor, normal,
+						materialDocument.baseColorTextureGuid, materialDocument.normalTextureGuid)) {
+						for (const auto& modelSubmesh : entity->Submeshes) {
+							if (modelSubmesh.material) m_RenderSystem->GetMaterialSystem()->UnregisterMaterial(modelSubmesh.material);
+						}
+						return fail("entity '" + source.name + "' material texture binding failed");
+					}
+				}
             } else if (source.primitiveType) {
                 const auto shape = ParsePrimitiveType(*source.primitiveType);
                 if (!shape) return fail("entity '" + source.name + "' uses an unsupported primitive type");
@@ -331,6 +381,32 @@ namespace Engine {
                     return fail("entity '" + source.name + "' primitive upload failed");
                 }
                 entity->PrimitiveType = source.primitiveType;
+				if (source.material && (source.material->baseColorTextureGuid || source.material->normalTextureGuid)) {
+					auto baseColor = entity->material->GetBaseColorTexture();
+					auto normal = entity->material->GetNormalTexture();
+					const auto resolveOverride = [&](const std::optional<std::string>& textureGuid, bool srgb,
+						std::shared_ptr<Renderer::TextureResource>& destination) {
+						if (!textureGuid) return;
+						std::string textureError;
+						if (!m_AssetManager.LoadTexture(*textureGuid, textureError)) {
+							warnings.push_back("texture " + *textureGuid + " is unavailable: " + textureError);
+							return;
+						}
+						const auto image = m_AssetManager.GetTexture(*textureGuid);
+						const auto generation = m_AssetManager.GetGeneration(*textureGuid);
+						if (!image || !generation) return;
+						auto uploaded = m_RenderSystem->GetOrCreateTexture(*textureGuid, *generation, *image, srgb, textureError);
+						if (uploaded) destination = std::move(uploaded);
+						else warnings.push_back("texture " + *textureGuid + " could not be uploaded: " + textureError);
+					};
+					resolveOverride(source.material->baseColorTextureGuid, true, baseColor);
+					resolveOverride(source.material->normalTextureGuid, false, normal);
+					if (!m_RenderSystem->SetMaterialTextures(entity->material, baseColor, normal,
+						source.material->baseColorTextureGuid, source.material->normalTextureGuid)) {
+						m_RenderSystem->GetMaterialSystem()->UnregisterMaterial(entity->material);
+						return fail("entity '" + source.name + "' material texture binding failed");
+					}
+				}
             } else {
                 return fail("entity '" + source.name + "' has neither modelGuid nor primitiveType");
             }
@@ -404,7 +480,7 @@ namespace Engine {
             item.disableDepthTest = entity->DisableDepthTest;
             item.castShadows = entity->CastShadows;
             item.receiveShadows = entity->ReceiveShadows;
-            if (entity->material && !entity->ModelGuid) item.material = ToMaterialDocument(entity->material->GetProperties());
+            if (entity->material && !entity->ModelGuid) item.material = ToMaterialDocument(*entity->material);
             if (entity->ModelGuid) {
                 size_t materialSlotCount = 0;
                 for (const auto& submesh : entity->Submeshes) {
@@ -413,7 +489,7 @@ namespace Engine {
                 item.materialOverrides.resize(materialSlotCount);
                 for (const auto& submesh : entity->Submeshes) {
                     if (submesh.MaterialSlot >= 0 && submesh.material) {
-                        item.materialOverrides[static_cast<size_t>(submesh.MaterialSlot)] = ToMaterialDocument(submesh.material->GetProperties());
+						item.materialOverrides[static_cast<size_t>(submesh.MaterialSlot)] = ToMaterialDocument(*submesh.material);
                     }
                 }
             }

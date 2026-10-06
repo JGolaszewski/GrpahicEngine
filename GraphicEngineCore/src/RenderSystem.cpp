@@ -180,9 +180,11 @@ namespace Engine {
 
 	bool RenderSystem::SetMaterialTextures(const std::shared_ptr<Renderer::Material>& material,
 		std::shared_ptr<Renderer::TextureResource> baseColor,
-		std::shared_ptr<Renderer::TextureResource> normal) {
+		std::shared_ptr<Renderer::TextureResource> normal,
+		std::optional<std::string> baseColorGuid, std::optional<std::string> normalGuid, bool setImportedDefaults) {
 		return !m_FrameActive && m_MaterialSystem &&
-			m_MaterialSystem->SetTextureBindings(material, std::move(baseColor), std::move(normal));
+			m_MaterialSystem->SetTextureBindings(material, std::move(baseColor), std::move(normal),
+				std::move(baseColorGuid), std::move(normalGuid), setImportedDefaults);
 	}
 
 	void RenderSystem::ReleaseResource(const std::string& guid) {
@@ -319,7 +321,7 @@ namespace Engine {
 			};
 			if (!resolveTexture(sourceMaterial.baseColorTexture, true, baseColorTexture) ||
 				!resolveTexture(sourceMaterial.normalTexture, false, normalTexture) ||
-				!m_MaterialSystem->SetTextureBindings(material, baseColorTexture, normalTexture)) {
+				!m_MaterialSystem->SetTextureBindings(material, baseColorTexture, normalTexture, {}, {}, true)) {
 				m_MaterialSystem->UnregisterMaterial(material);
 				for (const auto& registered : materials) m_MaterialSystem->UnregisterMaterial(registered);
 				if (error.empty()) error = "renderer could not bind imported material textures";
