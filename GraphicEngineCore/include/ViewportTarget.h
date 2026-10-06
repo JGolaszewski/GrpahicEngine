@@ -25,8 +25,7 @@ namespace Engine {
         uint32_t GetWidth() const noexcept;
         uint32_t GetHeight() const noexcept;
 
-        // Returns the backend texture identifier expected by the UI layer.
-        void* GetTextureId() const noexcept;
+        void* GetColorTextureHandle() const noexcept;
 
     private:
         struct Impl;

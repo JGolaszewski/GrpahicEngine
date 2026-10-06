@@ -4,8 +4,6 @@
 #include <iomanip>
 #include <nvrhi/d3d11.h>
 #include <nvrhi/validation.h>
-#include <imgui.h>
-#include <imgui_impl_dx11.h>
 
 namespace Engine {
 
@@ -251,24 +249,6 @@ namespace Engine {
 			}
 		}
 		std::cerr << "ERROR: Swap-chain restore failed; rendering is unavailable until the device is recreated." << std::endl;
-	}
-
-	void D3D11Backend::InitImGui(IWindow* window) {
-		ImGui_ImplDX11_Init(m_Device.Get(), m_Context.Get());
-	}
-
-	void D3D11Backend::BeginImGuiFrame() {
-		ImGui_ImplDX11_NewFrame();
-	}
-
-	void D3D11Backend::RenderImGui() {
-		if (!m_RenderTargetView) return;
-		m_Context->OMSetRenderTargets(1, m_RenderTargetView.GetAddressOf(), nullptr);
-		ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
-	}
-
-	void D3D11Backend::ShutdownImGui() {
-		ImGui_ImplDX11_Shutdown();
 	}
 
 }

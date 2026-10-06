@@ -1,8 +1,6 @@
 #include "ViewportTarget.h"
 
-#include <d3d11.h>
 #include <nvrhi/nvrhi.h>
-#include <wrl/client.h>
 
 namespace Engine {
 
@@ -13,7 +11,6 @@ namespace Engine {
         nvrhi::TextureHandle ColorTexture;
         nvrhi::TextureHandle DepthTexture;
         nvrhi::FramebufferHandle Framebuffer;
-        Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> ColorSRV;
     };
 
     ViewportTarget::ViewportTarget(void* device, uint32_t width, uint32_t height)
@@ -69,9 +66,6 @@ namespace Engine {
             return;
         }
 
-        const nvrhi::Object nativeView = m_Impl->ColorTexture->getNativeView(
-            nvrhi::ObjectTypes::D3D11_ShaderResourceView);
-        m_Impl->ColorSRV = static_cast<ID3D11ShaderResourceView*>(nativeView);
     }
 
     ViewportTarget::~ViewportTarget() = default;
@@ -79,7 +73,7 @@ namespace Engine {
     ViewportTarget& ViewportTarget::operator=(ViewportTarget&&) noexcept = default;
 
     bool ViewportTarget::IsValid() const noexcept {
-        return m_Impl && m_Impl->ColorTexture && m_Impl->DepthTexture && m_Impl->Framebuffer && m_Impl->ColorSRV;
+        return m_Impl && m_Impl->ColorTexture && m_Impl->DepthTexture && m_Impl->Framebuffer;
     }
 
     uint32_t ViewportTarget::GetWidth() const noexcept {
@@ -90,8 +84,8 @@ namespace Engine {
         return m_Impl ? m_Impl->Height : 0;
     }
 
-    void* ViewportTarget::GetTextureId() const noexcept {
-        return m_Impl ? static_cast<void*>(m_Impl->ColorSRV.Get()) : nullptr;
+    void* ViewportTarget::GetColorTextureHandle() const noexcept {
+        return m_Impl ? static_cast<void*>(m_Impl->ColorTexture.Get()) : nullptr;
     }
 
     void* ViewportTarget::GetFramebufferHandle() const noexcept {

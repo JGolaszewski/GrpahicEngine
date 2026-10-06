@@ -16,6 +16,7 @@
 #include "events/SceneFileActionRequestedEvent.h"
 #include "events/AssetImportRequestedEvent.h"
 #include "commands/CommandHistory.h"
+#include "platform/EditorUiIntegration.h"
 
 namespace Engine::Events {
 	class Event;
@@ -41,6 +42,9 @@ protected:
 	void OnRender() override;
 	void OnUpdate(float deltaTime) override;
 	void OnUIRender() override;
+	void OnBeginUIFrame() override;
+	void OnEndUIFrame() override;
+	void OnShutdownUI() override;
 	void OnResize(uint32_t width, uint32_t height) override;
 	void OnEvent(Engine::Events::Event& event) override;
 
@@ -134,6 +138,7 @@ private:
 	bool                      m_ShowDebugWireframePlane = true;
 
 	Engine::EditorCameraController m_CameraController;
+	EditorUiIntegration m_UiIntegration;
 
 	CommandHistory m_CommandHistory;
 	std::filesystem::path m_ScenePath;

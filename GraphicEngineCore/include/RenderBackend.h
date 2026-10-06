@@ -18,10 +18,6 @@ namespace Engine {
 		virtual nvrhi::IDevice* GetDevice() const = 0;
 		virtual nvrhi::IFramebuffer* GetDefaultFramebuffer() const = 0;
 
-		virtual void InitImGui(IWindow* window) = 0;
-		virtual void BeginImGuiFrame() = 0;
-		virtual void RenderImGui() = 0;
-		virtual void ShutdownImGui() = 0;
 		virtual void BeginGpuEvent(const wchar_t*) {}
 		virtual void EndGpuEvent() {}
 	};

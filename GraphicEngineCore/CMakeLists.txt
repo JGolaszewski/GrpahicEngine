@@ -49,7 +49,6 @@ set(CORE_HEADERS
     include/AssetManager.h
     include/AssetImporter.h
     include/Application.h
-    include/backends/D3D11Backend.h
     include/components/Transform.h
     include/CoreExport.h
     include/EditorCameraController.h
@@ -87,14 +86,12 @@ set(CORE_HEADERS
     include/SceneDocument.h
     include/SceneRenderer.h
     include/Window.h
-    include/windows/GLFWWindow.h
 )
 
 set(CORE_SOURCES
     src/AssetManager.cpp
     src/AssetImporter.cpp
     src/Application.cpp
-    src/backends/D3D11Backend.cpp
     src/components/Transform.cpp
     src/EditorCameraController.cpp
     src/PipelineCache.cpp
@@ -122,7 +119,6 @@ set(CORE_SOURCES
     src/Scene.cpp
     src/SceneDocument.cpp
     src/SceneRenderer.cpp
-    src/windows/GLFWWindow.cpp
 )
 
 add_library(GraphicEngineCore SHARED ${CORE_HEADERS} ${CORE_SOURCES})
@@ -130,12 +126,7 @@ add_dependencies(GraphicEngineCore CompileShaders)
 
 target_link_libraries(GraphicEngineCore PUBLIC
     nvrhi
-    nvrhi_d3d11
     Microsoft::DirectXMath
-    glfw
-    d3d11
-    dxgi
-    imgui
 )
 
 target_link_libraries(GraphicEngineCore PRIVATE nlohmann_json::nlohmann_json)

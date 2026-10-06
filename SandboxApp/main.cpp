@@ -1,6 +1,8 @@
 #include <iostream>
 
 #include "Application.h"
+#include "backends/D3D11Backend.h"
+#include "windows/GLFWWindow.h"
 
 #include "Scene.h"
 #include "renderer/Entity.h"
@@ -45,7 +47,8 @@ protected:
 int main() {
 	
 	App app;
-	app.Run();
+	app.Run(std::make_unique<Engine::GLFWWindow>(1280, 720, "Sandbox"),
+		std::make_unique<Engine::D3D11Backend>());
 
 	return 0;
 }

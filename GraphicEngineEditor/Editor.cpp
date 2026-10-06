@@ -53,7 +53,9 @@ std::filesystem::path CanonicalScenePath(const std::filesystem::path& path) {
 }
 
 void Editor::OnInit() {
-	ImGui::SetCurrentContext(GetImGuiContext());
+	if (!m_UiIntegration.Initialize(GetWindow(), GetRenderer())) {
+		m_FileError = "Editor UI initialization failed.";
+	}
 	std::string projectError;
 	if (!GetAssetManager()->SetProjectRoot(EditorPlatform::LoadRememberedProjectRoot(), projectError)) {
 		m_FileError = std::move(projectError);
@@ -214,7 +216,7 @@ void Editor::DestroyViewport() {
 }
 
 void* Editor::GetViewportTextureID() const {
-	return m_EditorViewportTarget ? m_EditorViewportTarget->GetTextureId() : nullptr;
+	return m_UiIntegration.GetTextureId(m_EditorViewportTarget.get());
 }
 
 void Editor::OnSetupViews() {
@@ -1032,6 +1034,7 @@ void Editor::Redo() {
 }
 
 void Editor::OnUIRender() {
+	if (!m_UiIntegration.IsInitialized()) return;
 	if (m_ActiveScene && m_SelectedEntityId != Engine::InvalidEntityId && !m_ActiveScene->FindEntity(m_SelectedEntityId)) {
 		m_SelectedEntityId = Engine::InvalidEntityId;
 		if (m_SelectedItemType == SelectedItemType::Object) m_SelectedItemType = SelectedItemType::None;
@@ -1057,6 +1060,18 @@ void Editor::OnUIRender() {
 		}
 	}
 	DrawUnsavedChangesModal();
+}
+
+void Editor::OnBeginUIFrame() {
+	m_UiIntegration.BeginFrame();
+}
+
+void Editor::OnEndUIFrame() {
+	m_UiIntegration.EndFrame();
+}
+
+void Editor::OnShutdownUI() {
+	m_UiIntegration.Shutdown();
 }
 
 void Editor::RequestSceneAction(SceneFileActionRequestedEvent::Action action) {

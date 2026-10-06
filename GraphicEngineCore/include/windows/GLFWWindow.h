@@ -8,21 +8,18 @@ struct GLFWwindow;
 
 namespace Engine {
 
-	class ENGINE_API GLFWWindow : public IWindow {
+	class GLFWWindow : public IWindow {
 	public:
 		GLFWWindow(int width, int height, const char* title);
 		~GLFWWindow() override;
 
 		void* GetNativeHandle() override;
+		void* GetEventSourceHandle() const override;
 
 		bool ShouldClose() const override;
 		void PollEvents() override;
 		void SetEventCallback(Events::EventCallbackFn callback) override;
 		void SetCursorVisible(bool visible) override;
-
-		void InitImGui() override;
-		void ImGuiNewFrame() override;
-		void ShutdownImGui() override;
 
 		uint32_t GetWidth() const override;
 		uint32_t GetHeight() const override;

@@ -14,13 +14,7 @@
 #include <functional>
 #include <cstdint>
 
-struct ImGuiContext;
-
 namespace Engine {
-
-    enum class RenderAPI {
-        D3D11
-    };
 
     class ENGINE_API Application {
     public:
@@ -35,7 +29,7 @@ namespace Engine {
         Application();
         virtual ~Application();
 
-        void Run();
+        void Run(std::unique_ptr<IWindow> window, std::unique_ptr<IRenderBackend> backend);
 
         void AddScene(std::shared_ptr<Scene> scene);
         void RemoveScene(std::shared_ptr<Scene> scene);
@@ -47,7 +41,6 @@ namespace Engine {
 
         void RegisterView(const ViewportBinding& binding);
 
-        ImGuiContext* GetImGuiContext();
         IWindow* GetWindow() const;
         float GetLastFrameDeltaTime() const noexcept { return m_LastFrameDeltaTime; }
 		const FrameTimingStats& GetFrameTimingStats() const noexcept { return m_FrameTimingStats; }
@@ -77,12 +70,15 @@ namespace Engine {
         virtual void OnRender() {}
         virtual void OnSetupViews() {}
         virtual void OnUIRender() {}
+        virtual void OnBeginUIFrame() {}
+        virtual void OnEndUIFrame() {}
+        virtual void OnShutdownUI() {}
         virtual void OnResize(uint32_t width, uint32_t height) {}
         virtual void OnEvent(Events::Event& event) {}
 		virtual void OnSceneReplaced(const std::shared_ptr<Scene>&) {}
 
     private:
-        bool InitializeCore(RenderAPI api);
+        bool InitializeCore();
         void RegisterDefaultView();
 		void UpdateScenes(float deltaTime);
 

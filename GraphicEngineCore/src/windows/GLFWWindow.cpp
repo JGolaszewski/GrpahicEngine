@@ -4,9 +4,6 @@
 #include <iostream>
 #include <GLFW/glfw3.h>
 
-#include <imgui.h>
-#include <imgui_impl_glfw.h>
-
 #define GLFW_EXPOSE_NATIVE_WIN32
 #include <GLFW/glfw3native.h>
 
@@ -91,6 +88,10 @@ namespace Engine {
 		if(!m_Window) return nullptr;
 
 		return static_cast<void*>(glfwGetWin32Window(m_Window));
+	}
+
+	void* GLFWWindow::GetEventSourceHandle() const {
+		return static_cast<void*>(m_Window);
 	}
 
 	bool GLFWWindow::ShouldClose() const {
@@ -182,29 +183,6 @@ namespace Engine {
 			Events::MouseScrolledEvent event(xoffset, yoffset);
 			self->m_EventCallback(event);
 		});
-	}
-
-	void GLFWWindow::InitImGui() {
-		ImGui_ImplGlfw_InitForOther(m_Window, true);
-
-		float xScale = 1.0f;
-		float yScale = 1.0f;
-		glfwGetWindowContentScale(m_Window, &xScale, &yScale);
-
-		const float uiScale = xScale > yScale ? xScale : yScale;
-		if(uiScale > 1.0f) {
-			ImGuiStyle& style = ImGui::GetStyle();
-			style.ScaleAllSizes(uiScale);
-			ImGui::GetIO().FontGlobalScale = uiScale;
-		}
-	}
-
-	void GLFWWindow::ImGuiNewFrame() {
-		ImGui_ImplGlfw_NewFrame();
-	}
-
-	void GLFWWindow::ShutdownImGui() {
-		ImGui_ImplGlfw_Shutdown();
 	}
 
 }

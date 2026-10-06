@@ -105,11 +105,12 @@ target_link_libraries(imgui PUBLIC
 add_subdirectory(vendor/nvrhi)
 
 add_subdirectory ("GraphicEngineCore")
+add_subdirectory ("GraphicEnginePlatformD3D11")
 add_subdirectory ("GraphicEngineEditor")
 
 add_subdirectory ("SandboxApp")
 
-install(TARGETS GraphicEngineCore Editor Sandbox
+install(TARGETS GraphicEngineCore GraphicEnginePlatformD3D11 Editor Sandbox
     RUNTIME DESTINATION bin
     LIBRARY DESTINATION lib
     ARCHIVE DESTINATION lib

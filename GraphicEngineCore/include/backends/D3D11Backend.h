@@ -14,19 +14,19 @@
 
 namespace Engine {
 
-	class ENGINE_API D3D11Backend : public IRenderBackend {
+	class D3D11Backend : public IRenderBackend {
 	public:
 		bool Initialize(IWindow* window) override;
 
 		void Present() override;
 		void Resize(int width, int height) override;
 
-		void InitImGui(IWindow* window) override;
-		void BeginImGuiFrame() override;
-		void RenderImGui() override;
-		void ShutdownImGui() override;
 		void BeginGpuEvent(const wchar_t* name) override;
 		void EndGpuEvent() override;
+
+		ID3D11Device* GetNativeDevice() const noexcept { return m_Device.Get(); }
+		ID3D11DeviceContext* GetNativeContext() const noexcept { return m_Context.Get(); }
+		ID3D11RenderTargetView* GetBackBufferRenderTarget() const noexcept { return m_RenderTargetView.Get(); }
 
 		void SetVSyncEnabled(bool enabled) noexcept { m_VSyncEnabled = enabled; }
 		bool IsVSyncEnabled() const noexcept { return m_VSyncEnabled; }

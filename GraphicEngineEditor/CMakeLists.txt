@@ -6,6 +6,8 @@ add_executable(Editor
     "Editor.cpp"
     "platform/EditorFileDialogs.h"
     "platform/EditorFileDialogs.cpp"
+    "platform/EditorUiIntegration.h"
+    "platform/EditorUiIntegration.cpp"
     "panels/EditorPanel.h"
     "panels/HierarchyPanel.h"
     "panels/HierarchyPanel.cpp"
@@ -59,7 +61,7 @@ set_target_properties(Editor PROPERTIES
     VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )
 
-target_link_libraries(Editor PRIVATE GraphicEngineCore comdlg32 shell32 ole32)
+target_link_libraries(Editor PRIVATE GraphicEngineCore GraphicEnginePlatformD3D11 imgui comdlg32 shell32 ole32)
 
 target_include_directories(Editor PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 

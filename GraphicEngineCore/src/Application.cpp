@@ -2,8 +2,6 @@
 #include "Window.h"
 #include "RenderBackend.h"
 
-#include "windows/GLFWWindow.h"
-#include "backends/D3D11Backend.h"
 #include "renderer/Viewport.h"
 #include "renderer/Entity.h"
 #include "renderer/Camera.h"
@@ -16,8 +14,6 @@
 #include <algorithm>
 #include <set>
 #include <thread>
-
-#include <imgui.h>
 
 namespace Engine {
     namespace {
@@ -96,16 +92,6 @@ namespace Engine {
 
     Application::Application() {}
     Application::~Application() {
-        if (ImGui::GetCurrentContext()) {
-            if (m_RenderBackend) {
-                m_RenderBackend->ShutdownImGui();
-            }
-            if (m_Window) {
-                m_Window->ShutdownImGui();
-            }
-            ImGui::DestroyContext();
-        }
-
         m_ActiveViews.clear();
         m_ActiveScenes.clear();
         m_Viewports.clear();
@@ -118,16 +104,11 @@ namespace Engine {
         m_Window.reset();
     }
 
-    bool Application::InitializeCore(RenderAPI api) {
-        m_Window = std::make_unique<GLFWWindow>(1280, 720, "Editor");
-
-        if(api == RenderAPI::D3D11) {
-            m_RenderBackend = std::make_unique<D3D11Backend>();
-        } else {
-            std::cerr << "ERROR: Not supported API." << std::endl;
+    bool Application::InitializeCore() {
+        if (!m_Window || !m_RenderBackend) {
+            std::cerr << "ERROR: Application requires a window and render backend." << std::endl;
             return false;
         }
-
         if(!m_RenderBackend->Initialize(m_Window.get())) {
             std::cerr << "ERROR: Could not initialize renderer." << std::endl;
             return false;
@@ -143,15 +124,6 @@ namespace Engine {
 			m_Window->GetHeight(),
 			m_RenderBackend->GetDefaultFramebuffer());
 
-        IMGUI_CHECKVERSION();
-        ImGui::CreateContext();
-
-        ImGui::StyleColorsDark();
-        ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
-        ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable;
-
-        m_Window->InitImGui();
-		m_RenderBackend->InitImGui(m_Window.get());
         m_Window->SetEventCallback([this](Events::Event& event) {
             OnEvent(event);
         });
@@ -159,8 +131,10 @@ namespace Engine {
         return true;
     }
 
-	void Application::Run() {
-		if (!InitializeCore(RenderAPI::D3D11)) {
+	void Application::Run(std::unique_ptr<IWindow> window, std::unique_ptr<IRenderBackend> backend) {
+		m_Window = std::move(window);
+		m_RenderBackend = std::move(backend);
+		if (!InitializeCore()) {
 			return;
 		}
 
@@ -214,14 +188,9 @@ namespace Engine {
 
 			m_RenderSystem->EndFrame();
 
-			m_RenderBackend->BeginImGuiFrame();
-			m_Window->ImGuiNewFrame();
-			ImGui::NewFrame();
-
+			OnBeginUIFrame();
 			OnUIRender();
-
-			ImGui::Render();
-			m_RenderBackend->RenderImGui();
+			OnEndUIFrame();
 
 			m_RenderBackend->Present();
 
@@ -233,6 +202,7 @@ namespace Engine {
 				std::this_thread::sleep_until(frameStart + std::chrono::duration_cast<std::chrono::steady_clock::duration>(frameDuration));
 			}
 		}
+		OnShutdownUI();
 	}
 
 	void Application::UpdateScenes(float deltaTime) {
@@ -561,10 +531,6 @@ namespace Engine {
 			m_ActiveViews.push_back(binding);
 		}
 	}
-
-	ImGuiContext* Application::GetImGuiContext() {
-        return ImGui::GetCurrentContext();
-    }
 
     IWindow* Application::GetWindow() const {
         return m_Window.get();
