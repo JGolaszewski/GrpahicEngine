@@ -2,6 +2,7 @@
 #include "AssetManager.h"
 #include "renderer/render_graph/RenderPass.h"
 
+#include <algorithm>
 #include <iostream>
 #include <utility>
 
@@ -109,18 +110,7 @@ namespace Engine {
 		Renderer::FrameBlackboard& bb = m_RenderGraph->GetBlackboard();
 
 		std::vector<Renderer::RenderView*> sceneViews;
-		std::vector<Renderer::RenderView*> shadowViews;
-
-		for (uint32_t i = 0; i < SceneRenderer::MaxShadowedLights; ++i) {
-			auto view = std::make_unique<Renderer::RenderView>();
-			view->ViewType = Renderer::RenderView::Type::Shadow;
-
-			shadowViews.push_back(view.get());
-			m_ViewPool.push_back(std::move(view));
-		}
-		bb.SetShadowViews(std::move(shadowViews));
-
-		Engine::Scene* activeScene = nullptr;
+		std::vector<Engine::Scene*> scenes;
 
 		for (auto binding : views) {
 			if (!binding.IsValid()) continue;
@@ -134,16 +124,32 @@ namespace Engine {
 			sceneViews.push_back(view.get());
 			m_ViewPool.push_back(std::move(view));
 
-			if (!activeScene) {
-				activeScene = binding.TargetScene;
-			}
+			if (std::find(scenes.begin(), scenes.end(), binding.TargetScene) == scenes.end())
+				scenes.push_back(binding.TargetScene);
 		}
 		bb.SetSceneViews(std::move(sceneViews));
 
-		if (activeScene) {
-			m_SceneRenderer->BuildShadowData(activeScene, bb);
-			m_SceneRenderer->BuildViews(bb, m_CommandList);
-			m_SceneRenderer->BuildLighting(activeScene, bb);
+		std::vector<Renderer::RenderView*> shadowViews;
+		shadowViews.reserve(scenes.size() * SceneRenderer::MaxShadowedLights);
+		for (size_t sceneIndex = 0; sceneIndex < scenes.size(); ++sceneIndex) {
+			const uint32_t firstShadowSlot = static_cast<uint32_t>(shadowViews.size());
+			for (uint32_t i = 0; i < SceneRenderer::MaxShadowedLights; ++i) {
+				auto view = std::make_unique<Renderer::RenderView>();
+				view->ViewType = Renderer::RenderView::Type::Shadow;
+				shadowViews.push_back(view.get());
+				m_ViewPool.push_back(std::move(view));
+			}
+			m_SceneRenderer->BuildShadowData(scenes[sceneIndex], shadowViews, firstShadowSlot);
+		}
+		bb.SetShadowViews(std::move(shadowViews));
+		bb.Set<uint32_t>("ShadowMapSize", SceneRenderer::ShadowMapSize);
+		bb.Set<uint32_t>("MaxShadowedLights", (std::max)(1u,
+			static_cast<uint32_t>(scenes.size()) * SceneRenderer::MaxShadowedLights));
+
+		m_SceneRenderer->BuildViews(bb, m_CommandList);
+		for (Renderer::RenderView* view : bb.GetSceneViews()) {
+			if (view && view->TargetScene)
+				m_SceneRenderer->BuildLighting(view->TargetScene, bb.GetShadowViews(), view->Lights);
 		}
 
 		bb.SetLightBuffer(m_SceneRenderer->GetLightBuffer());

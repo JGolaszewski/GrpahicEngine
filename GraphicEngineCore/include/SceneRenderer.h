@@ -45,8 +45,10 @@ namespace Engine {
 		std::optional<Engine::LightId> PickLight(const Renderer::RenderView& view,
 			float viewportX,
 			float viewportY) const;
-		void BuildLighting(Engine::Scene* scene, Renderer::FrameBlackboard& blackboard);
-		void BuildShadowData(Engine::Scene* scene, Renderer::FrameBlackboard& blackboard);
+		void BuildLighting(Engine::Scene* scene, const std::vector<Renderer::RenderView*>& shadowViews,
+			std::vector<Renderer::DirectionalLightData>& lights);
+		void BuildShadowData(Engine::Scene* scene, const std::vector<Renderer::RenderView*>& shadowViews,
+			uint32_t firstShadowSlot);
 
 		inline nvrhi::BufferHandle GetLightBuffer() const { return m_LightBuffer; }
 		inline nvrhi::SamplerHandle GetShadowSampler() const { return m_ShadowSampler; }

@@ -3,6 +3,7 @@
 #include <DirectXMath.h>
 #include "renderer/RenderPacket.h"
 #include "renderer/DebugGeometry.h"
+#include "renderer/Light.h"
 
 // Forward declarations
 namespace Engine { class Scene; class Viewport; }
@@ -40,6 +41,7 @@ namespace Renderer {
 		Type ViewType = Type::Main;
 
 		RenderQueues Queues;
+		std::vector<DirectionalLightData> Lights;
 		DebugRenderSettings DebugSettings;
 		DebugGeometry DebugGeometryData;
 
@@ -67,6 +69,7 @@ namespace Renderer {
 
 		void Clear() {
 			Queues.Clear();
+			Lights.clear();
 			DebugGeometryData.Clear();
 		}
 	 };

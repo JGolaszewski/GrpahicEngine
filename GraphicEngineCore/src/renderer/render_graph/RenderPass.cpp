@@ -132,20 +132,10 @@ namespace Renderer {
 		const auto& sceneViews = ctx.GetBlackboard().GetSceneViews();
 		if (sceneViews.empty()) return;
 
-		const auto& lights = ctx.GetBlackboard().GetDirectionalLights();
-
 		nvrhi::TextureHandle physicalShadowMap = ctx.GetPhysicalTexture(m_ShadowMapInputID);
 		nvrhi::BufferHandle lightBuffer = ctx.GetBlackboard().GetLightBuffer();
 		nvrhi::SamplerHandle shadowSampler = ctx.GetBlackboard().GetShadowSampler();
 		nvrhi::BindingLayoutHandle sceneBindingLayout = ctx.GetBlackboard().GetSceneBindingLayout();
-
-		Renderer::LightsCBData lightData{};
-		const uint32_t lightCount = static_cast<uint32_t>(std::min(lights.size(), static_cast<size_t>(ENGINE_MAX_LIGHTS)));
-		for (uint32_t i = 0; i < lightCount; ++i) {
-			lightData.Lights[i] = lights[i];
-		}
-		lightData.LightCount = lightCount;
-		cmd->writeBuffer(lightBuffer, &lightData, sizeof(LightsCBData));
 
 		auto drawQueue = [&](const std::vector<Renderer::RenderPacket>& packets,
 			nvrhi::BindingSetHandle sceneBindings,
@@ -192,6 +182,12 @@ namespace Renderer {
 
 		for (Renderer::RenderView* view : sceneViews) {
 			if (!view || !view->TargetFramebuffer || !view->CameraBuffer || !sceneBindingLayout) continue;
+			Renderer::LightsCBData lightData{};
+			const uint32_t lightCount = static_cast<uint32_t>(std::min(view->Lights.size(),
+				static_cast<size_t>(ENGINE_MAX_LIGHTS)));
+			for (uint32_t i = 0; i < lightCount; ++i) lightData.Lights[i] = view->Lights[i];
+			lightData.LightCount = lightCount;
+			cmd->writeBuffer(lightBuffer, &lightData, sizeof(lightData));
 
 			nvrhi::BindingSetDesc sceneSetDesc;
 			sceneSetDesc.addItem(nvrhi::BindingSetItem::ConstantBuffer(2, lightBuffer));

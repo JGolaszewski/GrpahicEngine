@@ -611,14 +611,14 @@ void Engine::SceneRenderer::BuildDebugGeometry(Renderer::RenderView* view) {
 		view->DebugGeometryData);
 }
 
-void Engine::SceneRenderer::BuildShadowData(Engine::Scene* scene, Renderer::FrameBlackboard& blackboard) {
+void Engine::SceneRenderer::BuildShadowData(Engine::Scene* scene,
+	const std::vector<Renderer::RenderView*>& shadowViews, uint32_t firstShadowSlot) {
 	if (!scene) return;
 
-	const auto& shadowViews = blackboard.GetShadowViews();
-	uint32_t viewIdx = 0;
+	uint32_t viewIdx = firstShadowSlot;
 
 	for (uint32_t idx = 0; idx < scene->GetLights().size(); ++idx) {
-		if (viewIdx >= MaxShadowedLights || viewIdx >= shadowViews.size()) break;
+		if (viewIdx >= firstShadowSlot + MaxShadowedLights || viewIdx >= shadowViews.size()) break;
 
 		auto lightData = scene->GetLights()[idx]->GetDirectionalLightData();
 		const bool usePosition = lightData.ColorUsePosition.w > 0.5f;
@@ -628,26 +628,22 @@ void Engine::SceneRenderer::BuildShadowData(Engine::Scene* scene, Renderer::Fram
 		const DirectX::XMMATRIX lightViewProj = ComputeSpotLightViewProj(lightData);
 
 		Renderer::RenderView* currentShadowView = shadowViews[viewIdx];
+		currentShadowView->TargetScene = scene;
 		currentShadowView->ViewProjection = lightViewProj;
 		currentShadowView->ExtractFrustumPlanes();
 
-		currentShadowView->TargetScene = scene;
-
 		viewIdx++;
 	}
-
-	blackboard.Set<uint32_t>("ShadowMapSize", ShadowMapSize);
-	blackboard.Set<uint32_t>("MaxShadowedLights", MaxShadowedLights);
 }
 
-void Engine::SceneRenderer::BuildLighting(Engine::Scene* scene, Renderer::FrameBlackboard& blackboard) {
+void Engine::SceneRenderer::BuildLighting(Engine::Scene* scene,
+	const std::vector<Renderer::RenderView*>& shadowViews,
+	std::vector<Renderer::DirectionalLightData>& lights) {
 	if (!scene) return;
 
-	std::vector<Renderer::DirectionalLightData> lights;
 	lights.reserve(scene->GetLights().size());
 
-	const auto& shadowViews = blackboard.GetShadowViews();
-	uint32_t shadowIdx = 0;
+	uint32_t shadowSearchStart = 0;
 
 	for (const auto& light : scene->GetLights()) {
 		if (lights.size() >= MaxLights) {
@@ -659,14 +655,19 @@ void Engine::SceneRenderer::BuildLighting(Engine::Scene* scene, Renderer::FrameB
 		const bool usePosition = lightData.ColorUsePosition.w > 0.5f;
 		const bool castShadows = lightData.ShadowParams.w > 0.5f;
 
-		if (usePosition && castShadows && shadowIdx < shadowViews.size() && shadowIdx < MaxShadowedLights) {
-			DirectX::XMStoreFloat4x4(&lightData.LightViewProj, DirectX::XMMatrixTranspose(shadowViews[shadowIdx]->ViewProjection));
-			lightData.ShadowParams.x = static_cast<float>(shadowIdx);
-			shadowIdx++;
+		if (usePosition && castShadows) {
+			for (uint32_t shadowIdx = shadowSearchStart; shadowIdx < shadowViews.size(); ++shadowIdx) {
+				const Renderer::RenderView* shadowView = shadowViews[shadowIdx];
+				if (!shadowView || shadowView->TargetScene != scene) continue;
+				DirectX::XMStoreFloat4x4(&lightData.LightViewProj,
+					DirectX::XMMatrixTranspose(shadowView->ViewProjection));
+				lightData.ShadowParams.x = static_cast<float>(shadowIdx);
+				shadowSearchStart = shadowIdx + 1;
+				break;
+			}
 		}
 
 		lights.push_back(lightData);
 	}
 
-	blackboard.SetDirectionalLights(std::move(lights));
 }
