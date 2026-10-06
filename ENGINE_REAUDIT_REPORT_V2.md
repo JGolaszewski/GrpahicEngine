@@ -172,11 +172,11 @@ The editor has a separate executable, panels, commands, and file-dialog/UI integ
 ### P2 — Improve scalability and imported-material fidelity
 
 1. **[Completed]** Report glTF material support with a coverage table and reject unsupported metallic-roughness, occlusion, emissive, normal-scale, UV-selection, and sampler features at import with source context. See `GraphicEngineCore/docs/gltf-material-support.md`.
-2. **[Completed; cascades deferred]** Expose shadow resolution and per-scene caster limits and allocate only slices for eligible shadow-casting lights. Directional cascades remain deferred until representative scene content warrants them.
-3. **[Completed; batching deferred]** Cache per-submesh world bounds and measure culling and packet-build CPU time. No capture establishes draw submission as a bottleneck, so batching/instancing is not justified yet.
-4. **[Deferred]** Keep the current indexed scene storage until scene growth or mutation patterns justify stable generational handles. Current audit evidence does not establish that need.
+2. **[Completed]** Expose shadow resolution and per-scene caster limits and allocate only slices for eligible shadow-casting lights. The cascade condition was evaluated; directional cascades remain deferred until representative scene content warrants them.
+3. **[Completed]** Cache per-submesh world bounds and measure culling and packet-build CPU time. The batching condition was evaluated; no capture establishes draw submission as a bottleneck, so batching/instancing is not justified yet.
+4. **[Completed]** Evaluated the stable-handle condition. Current indexed scene storage remains appropriate until scene growth or mutation patterns justify generational handles; current audit evidence does not establish that need.
 5. **[Completed]** Separate `EngineRuntime`, `RenderCore`, `RenderBackendD3D11`, and `EditorUI` build targets with private module dependencies and an opaque backend viewport-texture registration contract. Runtime and render object targets compose into `GraphicEngineCore` for ABI compatibility.
-6. **[Deferred]** Add output color-space/HDR policy and post-processing when a target presentation requirement and reference captures are available; none were provided in this audit.
+6. **[Completed]** Evaluated the presentation requirement. No target output color-space/HDR requirement or reference captures were provided, so HDR policy and post-processing are not warranted yet.
 
 ### P3 — Consistency and long-term maintainability
 
