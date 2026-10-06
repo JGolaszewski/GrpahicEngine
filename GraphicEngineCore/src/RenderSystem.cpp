@@ -136,21 +136,23 @@ namespace Engine {
 		bb.SetSceneViews(std::move(sceneViews));
 
 		std::vector<Renderer::RenderView*> shadowViews;
-		shadowViews.reserve(scenes.size() * SceneRenderer::MaxShadowedLights);
+		shadowViews.reserve(scenes.size() * m_ShadowSettings.MaxShadowCastersPerScene);
 		for (size_t sceneIndex = 0; sceneIndex < scenes.size(); ++sceneIndex) {
 			const uint32_t firstShadowSlot = static_cast<uint32_t>(shadowViews.size());
-			for (uint32_t i = 0; i < SceneRenderer::MaxShadowedLights; ++i) {
+			const uint32_t shadowCasterCount = m_SceneRenderer->CountShadowCasters(
+				scenes[sceneIndex], m_ShadowSettings.MaxShadowCastersPerScene);
+			for (uint32_t i = 0; i < shadowCasterCount; ++i) {
 				auto view = std::make_unique<Renderer::RenderView>();
 				view->ViewType = Renderer::RenderView::Type::Shadow;
 				shadowViews.push_back(view.get());
 				m_FrameContext.GetViews().push_back(std::move(view));
 			}
-			m_SceneRenderer->BuildShadowData(scenes[sceneIndex], shadowViews, firstShadowSlot);
+			m_SceneRenderer->BuildShadowData(scenes[sceneIndex], shadowViews, firstShadowSlot, shadowCasterCount);
 		}
 		bb.SetShadowViews(std::move(shadowViews));
-		bb.Set<uint32_t>("ShadowMapSize", SceneRenderer::ShadowMapSize);
+		bb.Set<uint32_t>("ShadowMapSize", m_ShadowSettings.Resolution);
 		bb.Set<uint32_t>("MaxShadowedLights", (std::max)(1u,
-			static_cast<uint32_t>(scenes.size()) * SceneRenderer::MaxShadowedLights));
+			static_cast<uint32_t>(scenes.size()) * m_ShadowSettings.MaxShadowCastersPerScene));
 
 		Renderer::FrameDiagnostics& diagnostics = m_FrameContext.GetDiagnostics();
 		m_SceneRenderer->BuildViews(bb, m_CommandList, m_FrameContext, diagnostics);
@@ -172,6 +174,16 @@ namespace Engine {
 		m_RenderGraph->AddPass(std::make_unique<Renderer::ShadowPass>());
 		m_RenderGraph->AddPass(std::make_unique<Renderer::ForwardPass>(m_SceneRenderer.get()));
 		m_RenderGraph->AddPass(std::make_unique<Renderer::DebugPass>(m_SceneRenderer.get()));
+	}
+
+	bool RenderSystem::SetShadowSettings(const ShadowSettings& settings) noexcept {
+		if (settings.Resolution < 128 || settings.Resolution > 8192 ||
+			settings.MaxShadowCastersPerScene > SceneRenderer::MaxShadowedLights) {
+			return false;
+		}
+
+		m_ShadowSettings = settings;
+		return true;
 	}
 
 	std::shared_ptr<Renderer::Mesh> RenderSystem::GetOrCreateMesh(

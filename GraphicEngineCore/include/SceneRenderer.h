@@ -51,7 +51,8 @@ namespace Engine {
 		void BuildLighting(Engine::Scene* scene, const std::vector<Renderer::RenderView*>& shadowViews,
 			std::vector<Renderer::DirectionalLightData>& lights);
 		void BuildShadowData(Engine::Scene* scene, const std::vector<Renderer::RenderView*>& shadowViews,
-			uint32_t firstShadowSlot);
+			uint32_t firstShadowSlot, uint32_t maxShadowedLights);
+		uint32_t CountShadowCasters(const Engine::Scene* scene, uint32_t limit) const;
 
 		bool EnsureLightBuffers(size_t viewCount, Renderer::FrameContext& frameContext);
 		nvrhi::BufferHandle GetLightBuffer(size_t viewIndex, Renderer::FrameContext& frameContext) const;

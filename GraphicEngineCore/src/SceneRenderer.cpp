@@ -701,13 +701,14 @@ void Engine::SceneRenderer::BuildDebugGeometry(Renderer::RenderView* view) {
 }
 
 void Engine::SceneRenderer::BuildShadowData(Engine::Scene* scene,
-	const std::vector<Renderer::RenderView*>& shadowViews, uint32_t firstShadowSlot) {
+	const std::vector<Renderer::RenderView*>& shadowViews, uint32_t firstShadowSlot,
+	uint32_t maxShadowedLights) {
 	if (!scene) return;
 
 	uint32_t viewIdx = firstShadowSlot;
 
 	for (uint32_t idx = 0; idx < scene->GetLights().size(); ++idx) {
-		if (viewIdx >= firstShadowSlot + MaxShadowedLights || viewIdx >= shadowViews.size()) break;
+		if (viewIdx >= firstShadowSlot + maxShadowedLights || viewIdx >= shadowViews.size()) break;
 
 		auto lightData = scene->GetLights()[idx]->GetDirectionalLightData();
 		const bool usePosition = lightData.ColorUsePosition.w > 0.5f;
@@ -723,6 +724,20 @@ void Engine::SceneRenderer::BuildShadowData(Engine::Scene* scene,
 
 		viewIdx++;
 	}
+}
+
+uint32_t Engine::SceneRenderer::CountShadowCasters(const Engine::Scene* scene, uint32_t limit) const {
+	if (!scene || limit == 0) return 0;
+
+	uint32_t count = 0;
+	for (const auto& light : scene->GetLights()) {
+		if (!light || count == limit || count == MaxShadowedLights) break;
+		const Renderer::DirectionalLightData lightData = light->GetDirectionalLightData();
+		if (lightData.ColorUsePosition.w > 0.5f && lightData.ShadowParams.w > 0.5f) {
+			++count;
+		}
+	}
+	return count;
 }
 
 void Engine::SceneRenderer::BuildLighting(Engine::Scene* scene,

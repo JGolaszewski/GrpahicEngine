@@ -19,6 +19,11 @@
 #include <vector>
 
 namespace Engine {
+	struct ShadowSettings {
+		uint32_t Resolution = SceneRenderer::ShadowMapSize;
+		uint32_t MaxShadowCastersPerScene = SceneRenderer::MaxShadowedLights;
+	};
+
 	class ENGINE_API RenderSystem {
 	public:
 		RenderSystem(IRenderBackend* backend);
@@ -27,6 +32,8 @@ namespace Engine {
 		void BeginFrame();
 		void SubmitViews(const std::vector<Engine::ViewportBinding>& views);
 		void EndFrame();
+		bool SetShadowSettings(const ShadowSettings& settings) noexcept;
+		const ShadowSettings& GetShadowSettings() const noexcept { return m_ShadowSettings; }
 		std::optional<Engine::LightId> PickLight(float viewportX, float viewportY) const;
 		std::shared_ptr<Engine::ViewportTarget> CreateViewportTarget(uint32_t width, uint32_t height);
 		std::shared_ptr<Renderer::Entity> CreatePrimitive(
@@ -80,6 +87,7 @@ namespace Engine {
 		IRenderBackend* const m_RenderBackend;
 		nvrhi::CommandListHandle m_CommandList;
 		bool m_FrameActive = false;
+		ShadowSettings m_ShadowSettings;
 
 		Renderer::FrameContext m_FrameContext;
 		std::unique_ptr<Renderer::RenderGraph> m_RenderGraph;
