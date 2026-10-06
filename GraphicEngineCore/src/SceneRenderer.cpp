@@ -566,7 +566,8 @@ void Engine::SceneRenderer::CullAndFillView(Renderer::RenderView* view) {
 					key.BlendState.setRenderTarget(0, blendTarget);
 				}
 			}
-			packet.Pipeline = m_PipelineCache.GetOrCreatePipeline(key, fbInfo);
+			packet.Pipeline = packet.ShadowAlphaTest && !m_ShadowMaskPS
+				? nullptr : m_PipelineCache.GetOrCreatePipeline(key, fbInfo);
 			switch (packet.Queue) {
 			case Renderer::RenderQueueType::Masked: view->Queues.Masked.push_back(packet); break;
 			case Renderer::RenderQueueType::Transparent: view->Queues.Transparent.push_back(packet); break;

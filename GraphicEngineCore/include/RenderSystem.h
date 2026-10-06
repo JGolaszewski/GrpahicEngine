@@ -74,6 +74,7 @@ namespace Engine {
 
 	private:
 		void ClearFrameBuffer();
+		void ClearSubmittedTargets();
 
 		IRenderBackend* const m_RenderBackend;
 		nvrhi::CommandListHandle m_CommandList;

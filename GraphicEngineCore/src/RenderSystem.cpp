@@ -399,6 +399,7 @@ namespace Engine {
 
 		if (!m_RenderGraph->Compile()) {
 			std::cerr << "ERROR: Render graph compilation failed: " << m_RenderGraph->GetLastError() << std::endl;
+			ClearSubmittedTargets();
 			m_CommandList->close();
 			m_RenderBackend->GetDevice()->executeCommandList(m_CommandList);
 			m_RenderBackend->EndGpuEvent();
@@ -408,6 +409,7 @@ namespace Engine {
 		}
 		if (!m_RenderGraph->Execute(m_CommandList)) {
 			std::cerr << "ERROR: Render graph execution failed: " << m_RenderGraph->GetLastError() << std::endl;
+			ClearSubmittedTargets();
 		}
 
 		m_CommandList->close();
@@ -453,6 +455,29 @@ namespace Engine {
 		nvrhi::ITexture* depthTex = frameBuffer->getDesc().depthAttachment.texture;
 		if (depthTex) {
 			m_CommandList->clearDepthStencilTexture(depthTex, nvrhi::AllSubresources, true, 1.0f, false, 0);
+		}
+	}
+
+	void RenderSystem::ClearSubmittedTargets() {
+		if (!m_CommandList || !m_RenderGraph) return;
+
+		for (Renderer::RenderView* view : m_RenderGraph->GetBlackboard().GetSceneViews()) {
+			if (!view || !view->TargetFramebuffer) continue;
+			const nvrhi::FramebufferDesc& desc = view->TargetFramebuffer->getDesc();
+			for (const nvrhi::FramebufferAttachment& attachment : desc.colorAttachments) {
+				if (!attachment.texture) continue;
+				m_CommandList->setTextureState(attachment.texture, attachment.subresources, nvrhi::ResourceStates::RenderTarget);
+				m_CommandList->commitBarriers();
+				m_CommandList->clearTextureFloat(attachment.texture, attachment.subresources,
+					nvrhi::Color(0.15f, 0.0f, 0.15f, 1.0f));
+			}
+			if (desc.depthAttachment.valid() && desc.depthAttachment.texture) {
+				m_CommandList->setTextureState(desc.depthAttachment.texture, desc.depthAttachment.subresources,
+					nvrhi::ResourceStates::DepthWrite);
+				m_CommandList->commitBarriers();
+				m_CommandList->clearDepthStencilTexture(desc.depthAttachment.texture,
+					desc.depthAttachment.subresources, true, 1.0f, false, 0);
+			}
 		}
 	}
 }

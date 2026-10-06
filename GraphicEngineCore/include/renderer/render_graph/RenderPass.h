@@ -24,7 +24,7 @@ namespace Renderer {
 		virtual std::string GetName() const = 0;
 		virtual bool HasSideEffect() const { return false; }
 		virtual void Setup(RGBuilder& builder, FrameBlackboard& blackboard) = 0;
-		virtual void Execute(nvrhi::ICommandList* cmd, const RenderContext& ctx) = 0;
+		virtual bool Execute(nvrhi::ICommandList* cmd, const RenderContext& ctx) = 0;
 		virtual RGResourceID GetOutputID() const { return RGResourceID(); }
 	};
 
@@ -35,7 +35,7 @@ namespace Renderer {
 		std::string GetName() const override { return "ShadowPass"; }
 
 		void Setup(Renderer::RGBuilder& builder, Renderer::FrameBlackboard& blackboard) override;
-		void Execute(nvrhi::ICommandList* cmd, const Renderer::RenderContext& ctx) override;
+		bool Execute(nvrhi::ICommandList* cmd, const Renderer::RenderContext& ctx) override;
 		RGResourceID GetOutputID() const override { return m_ShadowMapID; }
 	
 	private:
@@ -55,7 +55,7 @@ namespace Renderer {
 		bool HasSideEffect() const override { return true; }
 
 		void Setup(Renderer::RGBuilder& builder, Renderer::FrameBlackboard& blackboard) override;
-		void Execute(nvrhi::ICommandList* cmd, const Renderer::RenderContext& ctx) override;
+		bool Execute(nvrhi::ICommandList* cmd, const Renderer::RenderContext& ctx) override;
 	};
 
 	class ENGINE_API DebugPass : public Renderer::IRenderPass {
@@ -66,7 +66,7 @@ namespace Renderer {
 		bool HasSideEffect() const override { return true; }
 
 		void Setup(Renderer::RGBuilder& builder, Renderer::FrameBlackboard& blackboard) override;
-		void Execute(nvrhi::ICommandList* cmd, const Renderer::RenderContext& ctx) override;
+		bool Execute(nvrhi::ICommandList* cmd, const Renderer::RenderContext& ctx) override;
 
 	private:
 		Engine::SceneRenderer* m_SceneRenderer = nullptr;

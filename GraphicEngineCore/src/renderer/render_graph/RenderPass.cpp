@@ -35,15 +35,15 @@ namespace Renderer {
 		blackboard.SetShadowMap(m_ShadowMapID);
 	}
 
-	void ShadowPass::Execute(nvrhi::ICommandList* cmd, const Renderer::RenderContext& ctx) {
+	bool ShadowPass::Execute(nvrhi::ICommandList* cmd, const Renderer::RenderContext& ctx) {
 		const auto& shadowViews = ctx.GetBlackboard().GetShadowViews();
-		if (shadowViews.empty()) return;
+		if (shadowViews.empty()) return true;
 		nvrhi::BufferHandle perObjectBuffer = ctx.GetBlackboard().GetPerObjectBuffer();
 		nvrhi::BindingSetHandle perObjectBindings = ctx.GetBlackboard().GetPerObjectBindingSet();
-		if (!perObjectBuffer || !perObjectBindings) return;
+		if (!perObjectBuffer || !perObjectBindings) return false;
 
 		nvrhi::TextureHandle physicalShadowMap = ctx.GetPhysicalTexture(m_ShadowMapID);
-		if (!physicalShadowMap) return;
+		if (!physicalShadowMap) return false;
 
 		const nvrhi::TextureDesc& shadowTexDesc = physicalShadowMap->getDesc();
 
@@ -73,6 +73,7 @@ namespace Renderer {
 				m_ShadowFramebuffers[shadowSlot] = ctx.GetDevice()->createFramebuffer(desc);
 			}
 			nvrhi::IFramebuffer* shadowFb = m_ShadowFramebuffers[shadowSlot];
+			if (!shadowFb) return false;
 
 			nvrhi::TextureSubresourceSet subresources;
 			subresources.baseArraySlice = shadowSlot;
@@ -82,6 +83,8 @@ namespace Renderer {
 			cmd->clearDepthStencilTexture(physicalShadowMap, subresources, true, 1.0f, false, 0);
 
 			for (const auto& packet : view->Queues.Opaque) {
+				if (!packet.Pipeline || !packet.VertexBuffer ||
+					(packet.ShadowAlphaTest && !packet.MaterialBindings)) return false;
 				cmd->writeBuffer(perObjectBuffer, &packet.PerObjectData, sizeof(packet.PerObjectData));
 				nvrhi::GraphicsState state;
 				state.pipeline = packet.Pipeline;
@@ -120,6 +123,7 @@ namespace Renderer {
 				}
 			}
 		}
+		return true;
 	}
 
 	// ==============================================================================
@@ -133,16 +137,16 @@ namespace Renderer {
 		builder.Read(m_ShadowMapInputID);
 	}
 
-	void ForwardPass::Execute(nvrhi::ICommandList* cmd, const Renderer::RenderContext& ctx) {
+	bool ForwardPass::Execute(nvrhi::ICommandList* cmd, const Renderer::RenderContext& ctx) {
 		const auto& sceneViews = ctx.GetBlackboard().GetSceneViews();
-		if (sceneViews.empty()) return;
+		if (sceneViews.empty()) return true;
 
 		nvrhi::TextureHandle physicalShadowMap = ctx.GetPhysicalTexture(m_ShadowMapInputID);
 		nvrhi::BufferHandle perObjectBuffer = ctx.GetBlackboard().GetPerObjectBuffer();
 		nvrhi::BindingSetHandle perObjectBindings = ctx.GetBlackboard().GetPerObjectBindingSet();
 		nvrhi::SamplerHandle shadowSampler = ctx.GetBlackboard().GetShadowSampler();
 		nvrhi::BindingLayoutHandle sceneBindingLayout = ctx.GetBlackboard().GetSceneBindingLayout();
-		if (!perObjectBuffer || !perObjectBindings || !shadowSampler || !sceneBindingLayout) return;
+		if (!physicalShadowMap || !perObjectBuffer || !perObjectBindings || !shadowSampler || !sceneBindingLayout) return false;
 
 		auto drawQueue = [&](const std::vector<Renderer::RenderPacket>& packets,
 			nvrhi::BindingSetHandle sceneBindings,
@@ -150,6 +154,7 @@ namespace Renderer {
 			const nvrhi::Viewport& vp,
 			const nvrhi::Rect& scissor) {
 			for (const auto& packet : packets) {
+				if (!packet.Pipeline || !packet.VertexBuffer || !sceneBindings) return false;
 				cmd->writeBuffer(perObjectBuffer, &packet.PerObjectData, sizeof(packet.PerObjectData));
 				nvrhi::GraphicsState state;
 				state.pipeline = packet.Pipeline;
@@ -186,10 +191,11 @@ namespace Renderer {
 					cmd->draw(args);
 				}
 			}
+			return true;
 			};
 
 		for (Renderer::RenderView* view : sceneViews) {
-			if (!view || !view->TargetFramebuffer || !view->CameraBuffer || !view->LightBuffer || !sceneBindingLayout) continue;
+			if (!view || !view->TargetFramebuffer || !view->CameraBuffer || !view->LightBuffer) return false;
 			Renderer::LightsCBData lightData{};
 			const uint32_t lightCount = static_cast<uint32_t>(std::min(view->Lights.size(),
 				static_cast<size_t>(ENGINE_MAX_LIGHTS)));
@@ -203,7 +209,7 @@ namespace Renderer {
 			sceneSetDesc.addItem(nvrhi::BindingSetItem::Sampler(3, shadowSampler));
 			sceneSetDesc.addItem(nvrhi::BindingSetItem::ConstantBuffer(4, view->CameraBuffer));
 			nvrhi::BindingSetHandle sceneBindings = ctx.GetDevice()->createBindingSet(sceneSetDesc, sceneBindingLayout);
-			if (!sceneBindings) continue;
+			if (!sceneBindings) return false;
 
 			nvrhi::IFramebuffer* mainFramebuffer = view->TargetFramebuffer;
 
@@ -220,12 +226,13 @@ namespace Renderer {
 			nvrhi::Viewport viewportState = nvrhi::Viewport(float(fbInfo.width), float(fbInfo.height));
 			nvrhi::Rect scissor = nvrhi::Rect(fbInfo.width, fbInfo.height);
 
-			drawQueue(view->Queues.Opaque, sceneBindings, mainFramebuffer, viewportState, scissor);
-			drawQueue(view->Queues.Masked, sceneBindings, mainFramebuffer, viewportState, scissor);
-			drawQueue(view->Queues.Skybox, sceneBindings, mainFramebuffer, viewportState, scissor);
-			drawQueue(view->Queues.Transparent, sceneBindings, mainFramebuffer, viewportState, scissor);
-			drawQueue(view->Queues.UI, sceneBindings, mainFramebuffer, viewportState, scissor);
+			if (!drawQueue(view->Queues.Opaque, sceneBindings, mainFramebuffer, viewportState, scissor) ||
+				!drawQueue(view->Queues.Masked, sceneBindings, mainFramebuffer, viewportState, scissor) ||
+				!drawQueue(view->Queues.Skybox, sceneBindings, mainFramebuffer, viewportState, scissor) ||
+				!drawQueue(view->Queues.Transparent, sceneBindings, mainFramebuffer, viewportState, scissor) ||
+				!drawQueue(view->Queues.UI, sceneBindings, mainFramebuffer, viewportState, scissor)) return false;
 		}
+		return true;
 	}
 
 	// ==============================================================================
@@ -239,9 +246,9 @@ namespace Renderer {
 	void DebugPass::Setup(Renderer::RGBuilder&, FrameBlackboard&) {
 	}
 
-	void DebugPass::Execute(nvrhi::ICommandList* cmd, const Renderer::RenderContext& ctx) {
+	bool DebugPass::Execute(nvrhi::ICommandList* cmd, const Renderer::RenderContext& ctx) {
 		if (!m_SceneRenderer) {
-			return;
+			return false;
 		}
 
 		for (const Renderer::RenderView* view : ctx.GetBlackboard().GetSceneViews()) {
@@ -249,5 +256,6 @@ namespace Renderer {
 				m_SceneRenderer->RenderDebugGeometry(cmd, *view);
 			}
 		}
+		return true;
 	}
 }

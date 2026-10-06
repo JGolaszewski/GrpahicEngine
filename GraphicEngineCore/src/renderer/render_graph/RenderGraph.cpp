@@ -240,7 +240,16 @@ namespace Renderer {
 			}
 			cmd->commitBarriers();
 
-			m_Nodes[passIndex].pass->Execute(cmd, ctx);
+			if (!m_Nodes[passIndex].pass->Execute(cmd, ctx)) {
+				m_LastError = m_Nodes[passIndex].pass->GetName() + ": pass execution failed";
+				for (RGResource& resource : m_Registry.GetAllResources()) {
+					if (!resource.isImported && resource.physicalHandle) {
+						m_Pool.Release(resource.desc, resource.physicalHandle);
+						resource.physicalHandle = nullptr;
+					}
+				}
+				return false;
+			}
 
 			for (RGResource& resource : m_Registry.GetAllResources()) {
 				if (resource.lastPassUse == passIndex && resource.physicalHandle) {
