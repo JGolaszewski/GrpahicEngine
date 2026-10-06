@@ -126,7 +126,7 @@ namespace {
 			error = "material must be an object";
 			return false;
 		}
-		KnownKeys(value, {"baseColor", "emissive", "metallic", "roughness", "gtrGamma", "ior", "specularF0", "brdfModel", "specularMode", "baseColorTextureGuid", "normalTextureGuid"}, warnings, context);
+		KnownKeys(value, {"baseColor", "emissive", "metallic", "roughness", "gtrGamma", "ior", "specularF0", "brdfModel", "specularMode", "alphaMode", "alphaCutoff", "doubleSided", "baseColorTextureGuid", "normalTextureGuid"}, warnings, context);
 		if (!ReadArrayField(value, "baseColor", material.baseColor, error) ||
 			!ReadArrayField(value, "emissive", material.emissive, error) ||
 			!ReadNumber(value, "metallic", material.metallic, error) ||
@@ -144,11 +144,28 @@ namespace {
 			if (!value["specularMode"].is_string()) { error = "specularMode must be a string"; return false; }
 			material.specularMode = value["specularMode"].get<std::string>();
 		}
+		if (value.contains("alphaMode")) {
+			if (!value["alphaMode"].is_string()) { error = "alphaMode must be a string"; return false; }
+			material.alphaMode = value["alphaMode"].get<std::string>();
+		}
+		if (value.contains("alphaCutoff") && !ReadNumber(value, "alphaCutoff", material.alphaCutoff, error)) return false;
+		if (value.contains("doubleSided")) {
+			if (!value["doubleSided"].is_boolean()) { error = "doubleSided must be a boolean"; return false; }
+			material.doubleSided = value["doubleSided"].get<bool>();
+		}
 		const auto validBrdf = material.brdfModel == "legacy" || material.brdfModel == "ggx" ||
 			material.brdfModel == "gtr" || material.brdfModel == "neural";
 		if (!validBrdf) { error = "brdfModel has an unsupported value"; return false; }
 		if (material.specularMode != "ior" && material.specularMode != "explicitF0") {
 			error = "specularMode has an unsupported value";
+			return false;
+		}
+		if (material.alphaMode != "opaque" && material.alphaMode != "mask" && material.alphaMode != "blend") {
+			error = "alphaMode has an unsupported value";
+			return false;
+		}
+		if (!std::isfinite(material.alphaCutoff) || material.alphaCutoff < 0.0f || material.alphaCutoff > 1.0f) {
+			error = "alphaCutoff must be within [0, 1]";
 			return false;
 		}
 		if (material.metallic < 0.0f || material.metallic > 1.0f || material.roughness < 0.0f ||
@@ -171,11 +188,12 @@ namespace {
 		const auto validBrdf = material.brdfModel == "legacy" || material.brdfModel == "ggx" ||
 			material.brdfModel == "gtr" || material.brdfModel == "neural";
 		if (!validBrdf || (material.specularMode != "ior" && material.specularMode != "explicitF0") ||
+			(material.alphaMode != "opaque" && material.alphaMode != "mask" && material.alphaMode != "blend") ||
 			!std::isfinite(material.metallic) || !std::isfinite(material.roughness) ||
-			!std::isfinite(material.gtrGamma) || !std::isfinite(material.ior) ||
+			!std::isfinite(material.gtrGamma) || !std::isfinite(material.ior) || !std::isfinite(material.alphaCutoff) ||
 			material.metallic < 0.0f || material.metallic > 1.0f || material.roughness < 0.0f ||
 			material.roughness > 1.0f || material.gtrGamma < 1.0f || material.gtrGamma > 8.0f ||
-			material.ior < 1.0f || material.ior > 3.0f) return false;
+			material.ior < 1.0f || material.ior > 3.0f || material.alphaCutoff < 0.0f || material.alphaCutoff > 1.0f) return false;
 		if ((material.baseColorTextureGuid && !IsGuid(*material.baseColorTextureGuid)) ||
 			(material.normalTextureGuid && !IsGuid(*material.normalTextureGuid))) return false;
 		for (float value : material.baseColor) if (!std::isfinite(value) || value < 0.0f || value > 1.0f) return false;
@@ -218,7 +236,8 @@ namespace {
 					{"metallic", material.metallic}, {"roughness", material.roughness},
 					{"gtrGamma", material.gtrGamma}, {"ior", material.ior},
 					{"specularF0", material.specularF0}, {"brdfModel", material.brdfModel},
-					{"specularMode", material.specularMode},
+					{"specularMode", material.specularMode}, {"alphaMode", material.alphaMode},
+					{"alphaCutoff", material.alphaCutoff}, {"doubleSided", material.doubleSided},
 					{"baseColorTextureGuid", material.baseColorTextureGuid ? Json(*material.baseColorTextureGuid) : Json(nullptr)},
 					{"normalTextureGuid", material.normalTextureGuid ? Json(*material.normalTextureGuid) : Json(nullptr)}
 				};
@@ -236,7 +255,8 @@ namespace {
 						{"metallic", material.metallic}, {"roughness", material.roughness},
 						{"gtrGamma", material.gtrGamma}, {"ior", material.ior},
 						{"specularF0", material.specularF0}, {"brdfModel", material.brdfModel},
-						{"specularMode", material.specularMode},
+						{"specularMode", material.specularMode}, {"alphaMode", material.alphaMode},
+						{"alphaCutoff", material.alphaCutoff}, {"doubleSided", material.doubleSided},
 						{"baseColorTextureGuid", material.baseColorTextureGuid ? Json(*material.baseColorTextureGuid) : Json(nullptr)},
 						{"normalTextureGuid", material.normalTextureGuid ? Json(*material.normalTextureGuid) : Json(nullptr)}
 					});

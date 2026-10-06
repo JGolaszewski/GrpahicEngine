@@ -27,5 +27,6 @@ namespace Renderer {
         uint32_t BaseVertexOffset;
         uint32_t StartIndexLocation;
         RenderQueueType Queue;
+        float CameraDepth = 0.0f;
     };
 }

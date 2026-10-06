@@ -50,6 +50,11 @@ namespace Engine {
             properties.SpecularMode = document.specularMode == "explicitF0"
                 ? Renderer::DielectricSpecularMode::ExplicitF0
                 : Renderer::DielectricSpecularMode::IndexOfRefraction;
+            properties.AlphaMode = document.alphaMode == "mask" ? Renderer::MaterialAlphaMode::Mask
+                : document.alphaMode == "blend" ? Renderer::MaterialAlphaMode::Blend
+                : Renderer::MaterialAlphaMode::Opaque;
+            properties.AlphaCutoff = document.alphaCutoff;
+            properties.DoubleSided = document.doubleSided;
             return properties;
         }
 
@@ -65,6 +70,10 @@ namespace Engine {
             document.brdfModel = BrdfModelName(properties.Model);
             document.specularMode = properties.SpecularMode == Renderer::DielectricSpecularMode::ExplicitF0
                 ? "explicitF0" : "ior";
+            document.alphaMode = properties.AlphaMode == Renderer::MaterialAlphaMode::Mask ? "mask"
+                : properties.AlphaMode == Renderer::MaterialAlphaMode::Blend ? "blend" : "opaque";
+            document.alphaCutoff = properties.AlphaCutoff;
+            document.doubleSided = properties.DoubleSided;
             return document;
         }
 

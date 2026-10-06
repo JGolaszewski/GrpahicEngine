@@ -20,6 +20,7 @@ cbuffer MaterialCB : register(b1)
     float4 g_SurfaceParams;
     float4 g_SpecularParams;
     uint4  g_ModelFlags;
+    float4 g_AlphaParams;
 };
 
 struct LightData
@@ -126,6 +127,11 @@ float4 main_ps(VS_OUTPUT input) : SV_TARGET
 {
     const float4 baseColorSample = g_BaseColorMap.Sample(g_BaseColorSampler, input.uv);
     const float3 baseColor = g_BaseColor.rgb * baseColorSample.rgb;
+    if ((g_ModelFlags.w & 0xffu) == 1u && g_BaseColor.a * baseColorSample.a < g_AlphaParams.x)
+    {
+        discard;
+    }
+
     if (g_ObjectParams.y > 0.5f)
     {
         return float4(baseColor + g_EmissiveMetallic.rgb, g_BaseColor.a * baseColorSample.a);

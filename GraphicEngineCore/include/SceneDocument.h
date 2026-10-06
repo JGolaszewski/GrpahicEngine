@@ -22,6 +22,9 @@ namespace Engine {
 		std::array<float, 3> specularF0 = { 0.04f, 0.04f, 0.04f };
 	std::string brdfModel = "legacy";
 	std::string specularMode = "ior";
+	std::string alphaMode = "opaque";
+	float alphaCutoff = 0.5f;
+	bool doubleSided = false;
 	std::optional<std::string> baseColorTextureGuid;
 	std::optional<std::string> normalTextureGuid;
 };

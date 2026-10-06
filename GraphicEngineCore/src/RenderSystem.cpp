@@ -300,6 +300,15 @@ namespace Engine {
 				properties.Roughness = sourceMaterial.roughness;
 				properties.Model = Renderer::BrdfModel::GGX;
 			}
+			if (materialIndex >= materialOverrides.size() || !materialOverrides[materialIndex]) {
+				properties.AlphaMode = sourceMaterial.alphaMode == "MASK"
+					? Renderer::MaterialAlphaMode::Mask
+					: sourceMaterial.alphaMode == "BLEND"
+						? Renderer::MaterialAlphaMode::Blend
+						: Renderer::MaterialAlphaMode::Opaque;
+				properties.AlphaCutoff = sourceMaterial.alphaCutoff;
+				properties.DoubleSided = sourceMaterial.doubleSided;
+			}
 			auto material = m_MaterialSystem->CreateMaterial(properties);
 			if (!material) {
 				for (const auto& registered : materials) m_MaterialSystem->UnregisterMaterial(registered);
@@ -336,9 +345,6 @@ namespace Engine {
 			materials.push_back(std::move(material));
 			if (sourceMaterial.metallicRoughnessTexture >= 0 || sourceMaterial.occlusionTexture >= 0 || sourceMaterial.emissiveTexture >= 0) {
 				warnings.push_back("model material '" + sourceMaterial.name + "' uses metallic-roughness, occlusion, or emissive maps that are not bound yet");
-			}
-			if (sourceMaterial.alphaMode != "OPAQUE" || sourceMaterial.doubleSided) {
-				warnings.push_back("model material '" + sourceMaterial.name + "' uses alpha or sidedness settings not represented by the current render pipeline");
 			}
 		}
 		Renderer::MaterialProperties fallbackProperties;

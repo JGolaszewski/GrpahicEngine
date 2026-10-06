@@ -28,8 +28,14 @@ namespace Renderer {
 		ExplicitF0 = 1
 	};
 
+	enum class MaterialAlphaMode : uint32_t {
+		Opaque = 0,
+		Mask = 1,
+		Blend = 2
+	};
+
 	// The material buffer occupies b1; texture and sampler registers are listed in docs/material-binding-abi.md.
-	inline constexpr uint32_t MaterialGpuAbiVersion = 1;
+	inline constexpr uint32_t MaterialGpuAbiVersion = 2;
 inline constexpr float MaterialMinAlpha = 1.0e-3f;
 	inline constexpr float MaterialMinGtrGamma = 1.0f;
 	inline constexpr float MaterialMaxGtrGamma = 8.0f;
@@ -42,6 +48,7 @@ inline constexpr float MaterialMinAlpha = 1.0e-3f;
 		DirectX::XMFLOAT4 SurfaceParams;
 		DirectX::XMFLOAT4 SpecularParams;
 		DirectX::XMUINT4 ModelFlags;
+		DirectX::XMFLOAT4 AlphaParams;
 	};
 
 	static_assert(sizeof(DirectX::XMFLOAT4) == 16);
@@ -51,7 +58,8 @@ inline constexpr float MaterialMinAlpha = 1.0e-3f;
 	static_assert(offsetof(MaterialGpu, SurfaceParams) == 32);
 	static_assert(offsetof(MaterialGpu, SpecularParams) == 48);
 	static_assert(offsetof(MaterialGpu, ModelFlags) == 64);
-	static_assert(sizeof(MaterialGpu) == 80);
+	static_assert(offsetof(MaterialGpu, AlphaParams) == 80);
+	static_assert(sizeof(MaterialGpu) == 96);
 
 	struct MaterialProperties {
 		DirectX::XMFLOAT4 BaseColor = { 1.0f, 1.0f, 1.0f, 1.0f };
@@ -63,6 +71,9 @@ inline constexpr float MaterialMinAlpha = 1.0e-3f;
 		DirectX::XMFLOAT3 SpecularF0 = { 0.04f, 0.04f, 0.04f };
 		BrdfModel Model = BrdfModel::Legacy;
 		DielectricSpecularMode SpecularMode = DielectricSpecularMode::IndexOfRefraction;
+		MaterialAlphaMode AlphaMode = MaterialAlphaMode::Opaque;
+		float AlphaCutoff = 0.5f;
+		bool DoubleSided = false;
 	};
 
 	inline float ClampFinite(float value, float fallback, float minimum, float maximum) noexcept {
@@ -83,6 +94,10 @@ inline constexpr float MaterialMinAlpha = 1.0e-3f;
 		const auto validSpecularMode = [](DielectricSpecularMode mode) {
 			return static_cast<uint32_t>(mode) <= static_cast<uint32_t>(DielectricSpecularMode::ExplicitF0) ?
 				mode : DielectricSpecularMode::IndexOfRefraction;
+		};
+		const auto validAlphaMode = [](MaterialAlphaMode mode) {
+			return static_cast<uint32_t>(mode) <= static_cast<uint32_t>(MaterialAlphaMode::Blend) ?
+				mode : MaterialAlphaMode::Opaque;
 		};
 
 		return {
@@ -114,8 +129,11 @@ inline constexpr float MaterialMinAlpha = 1.0e-3f;
 				MaterialGpuAbiVersion,
 				static_cast<uint32_t>(validModel(properties.Model)),
 				static_cast<uint32_t>(validSpecularMode(properties.SpecularMode)),
-				0u
-		}
+				static_cast<uint32_t>(validAlphaMode(properties.AlphaMode)) | (properties.DoubleSided ? 0x100u : 0u)
+			},
+			{
+				ClampFinite(properties.AlphaCutoff, 0.5f, 0.0f, 1.0f), 0.0f, 0.0f, 0.0f
+			}
 		};
 	}
 

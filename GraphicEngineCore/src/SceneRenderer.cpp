@@ -478,7 +478,15 @@ void Engine::SceneRenderer::CullAndFillView(Renderer::RenderView* view, nvrhi::I
 			commandList->writeBuffer(perObjectBuffer, &perObjectData, PerObjectDataStride);
 
 			auto packet = CreateRenderPacket(submesh.mesh.get(), submesh.material.get(), perObjectBuffer);
-			packet.Queue = Renderer::RenderQueueType::Opaque;
+			const Renderer::MaterialProperties materialProperties = submesh.material->GetProperties();
+			packet.Queue = view->ViewType == Renderer::RenderView::Type::Shadow
+				? Renderer::RenderQueueType::Opaque
+				: materialProperties.AlphaMode == Renderer::MaterialAlphaMode::Mask
+					? Renderer::RenderQueueType::Masked
+					: materialProperties.AlphaMode == Renderer::MaterialAlphaMode::Blend
+						? Renderer::RenderQueueType::Transparent
+						: Renderer::RenderQueueType::Opaque;
+			packet.CameraDepth = DirectX::XMVectorGetZ(DirectX::XMVector3TransformCoord(center, view->ViewMatrix));
 			++m_SubmissionStats.ObjectsSubmitted;
 			m_SubmissionStats.PerObjectBytesUsed += PerObjectDataStride;
 
@@ -487,7 +495,7 @@ void Engine::SceneRenderer::CullAndFillView(Renderer::RenderView* view, nvrhi::I
 			key.PerObjectLayout = m_PerObjectBindingLayout;
 			key.SceneLayout = m_SceneBindingLayout;
 			key.MaterialLayout = m_MaterialSystem->GetStandardMaterialLayout();
-			key.DepthWrite = true;
+			key.DepthWrite = packet.Queue != Renderer::RenderQueueType::Transparent;
 			if (view->ViewType == Renderer::RenderView::Type::Shadow) {
 				key.PS = nullptr;
 				key.SceneLayout = nullptr;
@@ -500,10 +508,24 @@ void Engine::SceneRenderer::CullAndFillView(Renderer::RenderView* view, nvrhi::I
 					? m_MaterialSystem->GetTexturedPS() : m_MaterialSystem->GetStandardPS();
 				key.Wireframe = entity->ForceWireframe;
 				key.DepthTest = !entity->DisableDepthTest;
-				key.CullMode = entity->ForceWireframe ? nvrhi::RasterCullMode::None : entity->CullMode;
+				key.CullMode = entity->ForceWireframe || materialProperties.DoubleSided
+					? nvrhi::RasterCullMode::None : entity->CullMode;
+				if (packet.Queue == Renderer::RenderQueueType::Transparent) {
+					nvrhi::BlendState::RenderTarget blendTarget;
+					blendTarget.enableBlend()
+						.setSrcBlend(nvrhi::BlendFactor::SrcAlpha)
+						.setDestBlend(nvrhi::BlendFactor::InvSrcAlpha)
+						.setSrcBlendAlpha(nvrhi::BlendFactor::One)
+						.setDestBlendAlpha(nvrhi::BlendFactor::InvSrcAlpha);
+					key.BlendState.setRenderTarget(0, blendTarget);
+				}
 			}
 			packet.Pipeline = m_PipelineCache.GetOrCreatePipeline(key, fbInfo);
-			view->Queues.Opaque.push_back(packet);
+			switch (packet.Queue) {
+			case Renderer::RenderQueueType::Masked: view->Queues.Masked.push_back(packet); break;
+			case Renderer::RenderQueueType::Transparent: view->Queues.Transparent.push_back(packet); break;
+			default: view->Queues.Opaque.push_back(packet); break;
+			}
 		};
 
 		if (entity->Submeshes.empty()) {
@@ -553,7 +575,10 @@ void Engine::SceneRenderer::SortViewQueues(Renderer::RenderView* view) {
 
 	std::stable_sort(view->Queues.Opaque.begin(), view->Queues.Opaque.end(), lessBySubmissionState);
 	std::stable_sort(view->Queues.Masked.begin(), view->Queues.Masked.end(), lessBySubmissionState);
-	std::stable_sort(view->Queues.Transparent.begin(), view->Queues.Transparent.end(), lessBySubmissionState);
+	std::stable_sort(view->Queues.Transparent.begin(), view->Queues.Transparent.end(),
+		[](const Renderer::RenderPacket& left, const Renderer::RenderPacket& right) {
+			return left.CameraDepth > right.CameraDepth;
+		});
 }
 
 // --- View Building ---

@@ -59,6 +59,9 @@ namespace Renderer {
 		};
 		properties.Model = static_cast<BrdfModel>(m_Constants.ModelFlags.y);
 		properties.SpecularMode = static_cast<DielectricSpecularMode>(m_Constants.ModelFlags.z);
+		properties.AlphaMode = static_cast<MaterialAlphaMode>(m_Constants.ModelFlags.w & 0xffu);
+		properties.DoubleSided = (m_Constants.ModelFlags.w & 0x100u) != 0;
+		properties.AlphaCutoff = m_Constants.AlphaParams.x;
 		return properties;
 	}
 }
