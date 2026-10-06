@@ -137,12 +137,11 @@ namespace Renderer {
 		if (sceneViews.empty()) return;
 
 		nvrhi::TextureHandle physicalShadowMap = ctx.GetPhysicalTexture(m_ShadowMapInputID);
-		nvrhi::BufferHandle lightBuffer = ctx.GetBlackboard().GetLightBuffer();
 		nvrhi::BufferHandle perObjectBuffer = ctx.GetBlackboard().GetPerObjectBuffer();
 		nvrhi::BindingSetHandle perObjectBindings = ctx.GetBlackboard().GetPerObjectBindingSet();
 		nvrhi::SamplerHandle shadowSampler = ctx.GetBlackboard().GetShadowSampler();
 		nvrhi::BindingLayoutHandle sceneBindingLayout = ctx.GetBlackboard().GetSceneBindingLayout();
-		if (!lightBuffer || !perObjectBuffer || !perObjectBindings || !shadowSampler || !sceneBindingLayout) return;
+		if (!perObjectBuffer || !perObjectBindings || !shadowSampler || !sceneBindingLayout) return;
 
 		auto drawQueue = [&](const std::vector<Renderer::RenderPacket>& packets,
 			nvrhi::BindingSetHandle sceneBindings,
@@ -189,16 +188,16 @@ namespace Renderer {
 			};
 
 		for (Renderer::RenderView* view : sceneViews) {
-			if (!view || !view->TargetFramebuffer || !view->CameraBuffer || !sceneBindingLayout) continue;
+			if (!view || !view->TargetFramebuffer || !view->CameraBuffer || !view->LightBuffer || !sceneBindingLayout) continue;
 			Renderer::LightsCBData lightData{};
 			const uint32_t lightCount = static_cast<uint32_t>(std::min(view->Lights.size(),
 				static_cast<size_t>(ENGINE_MAX_LIGHTS)));
 			for (uint32_t i = 0; i < lightCount; ++i) lightData.Lights[i] = view->Lights[i];
 			lightData.LightCount = lightCount;
-			cmd->writeBuffer(lightBuffer, &lightData, sizeof(lightData));
+			cmd->writeBuffer(view->LightBuffer, &lightData, sizeof(lightData));
 
 			nvrhi::BindingSetDesc sceneSetDesc;
-			sceneSetDesc.addItem(nvrhi::BindingSetItem::ConstantBuffer(2, lightBuffer));
+			sceneSetDesc.addItem(nvrhi::BindingSetItem::ConstantBuffer(2, view->LightBuffer));
 			sceneSetDesc.addItem(nvrhi::BindingSetItem::Texture_SRV(3, physicalShadowMap));
 			sceneSetDesc.addItem(nvrhi::BindingSetItem::Sampler(3, shadowSampler));
 			sceneSetDesc.addItem(nvrhi::BindingSetItem::ConstantBuffer(4, view->CameraBuffer));

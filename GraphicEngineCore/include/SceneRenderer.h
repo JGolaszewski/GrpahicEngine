@@ -51,7 +51,8 @@ namespace Engine {
 		void BuildShadowData(Engine::Scene* scene, const std::vector<Renderer::RenderView*>& shadowViews,
 			uint32_t firstShadowSlot);
 
-		inline nvrhi::BufferHandle GetLightBuffer() const { return m_LightBuffer; }
+		bool EnsureLightBuffers(size_t viewCount);
+		nvrhi::BufferHandle GetLightBuffer(size_t viewIndex) const;
 		inline nvrhi::BufferHandle GetPerObjectBuffer() const { return m_PerObjectBuffer; }
 		inline nvrhi::BindingSetHandle GetPerObjectBindingSet() const { return m_PerObjectBindingSet; }
 		inline nvrhi::SamplerHandle GetShadowSampler() const { return m_ShadowSampler; }
@@ -79,7 +80,7 @@ namespace Engine {
 		PipelineCache m_PipelineCache;
 
 		nvrhi::DeviceHandle m_Device;
-		nvrhi::BufferHandle m_LightBuffer;
+		std::vector<nvrhi::BufferHandle> m_LightBuffers;
 		nvrhi::BindingLayoutHandle m_PerObjectBindingLayout;
 		nvrhi::BufferHandle m_PerObjectBuffer;
 		nvrhi::BindingSetHandle m_PerObjectBindingSet;

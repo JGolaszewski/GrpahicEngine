@@ -147,14 +147,17 @@ namespace Engine {
 			static_cast<uint32_t>(scenes.size()) * SceneRenderer::MaxShadowedLights));
 
 		m_SceneRenderer->BuildViews(bb, m_CommandList);
+		if (!m_SceneRenderer->EnsureLightBuffers(bb.GetSceneViews().size())) {
+			std::cerr << "ERROR: Could not allocate per-view light buffers." << std::endl;
+		}
 		bb.SetPerObjectBuffer(m_SceneRenderer->GetPerObjectBuffer());
 		bb.SetPerObjectBindingSet(m_SceneRenderer->GetPerObjectBindingSet());
-		for (Renderer::RenderView* view : bb.GetSceneViews()) {
+		for (size_t viewIndex = 0; viewIndex < bb.GetSceneViews().size(); ++viewIndex) {
+			Renderer::RenderView* view = bb.GetSceneViews()[viewIndex];
+			if (view) view->LightBuffer = m_SceneRenderer->GetLightBuffer(viewIndex);
 			if (view && view->TargetScene)
 				m_SceneRenderer->BuildLighting(view->TargetScene, bb.GetShadowViews(), view->Lights);
 		}
-
-		bb.SetLightBuffer(m_SceneRenderer->GetLightBuffer());
 		bb.SetShadowSampler(m_SceneRenderer->GetShadowSampler());
 		bb.SetPerObjectBindingLayout(m_SceneRenderer->GetPerObjectBindingLayout());
 		bb.SetSceneBindingLayout(m_SceneRenderer->GetSceneBindingLayout());

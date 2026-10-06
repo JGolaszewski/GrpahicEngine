@@ -75,14 +75,6 @@ void Engine::SceneRenderer::Init(nvrhi::IDevice* device,
 		m_DebugPS = shaderFactory->GetShader("shaders/debug_ps.dxbc", nvrhi::ShaderType::Pixel);
 	}
 
-	nvrhi::BufferDesc lightCbDesc;
-	lightCbDesc.byteSize = sizeof(Renderer::LightsCBData);
-	lightCbDesc.isConstantBuffer = true;
-	lightCbDesc.isVolatile = true;
-	lightCbDesc.debugName = "Lights_Buffer";
-	lightCbDesc.maxVersions = 3;
-	m_LightBuffer = device->createBuffer(lightCbDesc);
-
 	nvrhi::BindingLayoutDesc perObjectLayoutDesc;
 	perObjectLayoutDesc.visibility = nvrhi::ShaderType::All;
 	perObjectLayoutDesc.bindings = {
@@ -399,6 +391,25 @@ size_t Engine::SceneRenderer::EstimateDrawCount(const Renderer::FrameBlackboard&
 	accumulate(blackboard.GetShadowViews());
 	accumulate(blackboard.GetSceneViews());
 	return count;
+}
+
+bool Engine::SceneRenderer::EnsureLightBuffers(size_t viewCount) {
+	while (m_LightBuffers.size() < viewCount) {
+		nvrhi::BufferDesc desc;
+		desc.byteSize = sizeof(Renderer::LightsCBData);
+		desc.isConstantBuffer = true;
+		desc.isVolatile = true;
+		desc.maxVersions = 3;
+		desc.debugName = "ViewLights_Buffer";
+		nvrhi::BufferHandle buffer = m_Device ? m_Device->createBuffer(desc) : nullptr;
+		if (!buffer) return false;
+		m_LightBuffers.push_back(std::move(buffer));
+	}
+	return true;
+}
+
+nvrhi::BufferHandle Engine::SceneRenderer::GetLightBuffer(size_t viewIndex) const {
+	return viewIndex < m_LightBuffers.size() ? m_LightBuffers[viewIndex] : nullptr;
 }
 
 bool Engine::SceneRenderer::EnsurePerObjectResources(size_t maxDrawCount) {

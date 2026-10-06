@@ -49,6 +49,7 @@ namespace Renderer {
 		nvrhi::IFramebuffer* TargetFramebuffer = nullptr;
 		DirectX::XMFLOAT3 CameraPosition = { 0.0f, 0.0f, 0.0f };
 		nvrhi::BufferHandle CameraBuffer;
+		nvrhi::BufferHandle LightBuffer;
 
 		DirectX::XMMATRIX ViewMatrix = DirectX::XMMatrixIdentity();
 		DirectX::XMMATRIX ProjectionMatrix = DirectX::XMMatrixIdentity();
