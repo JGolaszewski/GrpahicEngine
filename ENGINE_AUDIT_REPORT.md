@@ -29,9 +29,9 @@ The most urgent correctness and scale risks found in source are:
 | P1 | Device-wide idle wait during deferred resource retirement | Periodic frame-time spikes while assets are reimported or removed | **Completed** (`a3e6a0f`) |
 | P1 | Core, viewport, and editor UI are coupled to D3D11 | Backend portability and testing are blocked | **Completed** (`64f94cb`, `2bdfdc4`) |
 | P1 | Render graph texture declarations lack explicit access states and ranges | Pass transitions and resource use are difficult to validate | **Completed** (`4b06573`) |
-| P2 | Editor orchestration and application lifecycle are large and tightly coupled | Slower changes, harder editor automation, weaker unit-test seams |
-| P2 | Scene is a flat shared-pointer collection with linear ID lookup | Scaling, hierarchy, transform propagation, and serialization evolution need redesign |
-| P3 | Inconsistent conventions and unfinished APIs | Higher maintenance cost and unclear ownership |
+| P2 | Scene file path and serialization workflows are owned by the editor coordinator | Scene persistence changes are coupled to UI and editor state | **Completed** (`8ae35df`) |
+| P2 | Scene ID operations scan parallel ID arrays | ID-based lookup, removal, and replacement slow down as scenes grow | **Completed** (`ad7fc02`) |
+| P3 | Empty cache types, public low-level primitive builder, unused viewport flags, and unsupported Neural BRDF | Unclear API support and inconsistent material behavior | **Completed** (`a9e4515`, `369e3ea`, `91ff71e`, `64a314d`, `d0c569a`) |
 
 ## 1. Current State Assessment
 
