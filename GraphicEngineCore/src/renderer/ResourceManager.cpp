@@ -1,5 +1,6 @@
 #include "renderer/ResourceManager.h"
 
+#include <algorithm>
 #include <functional>
 
 namespace Renderer {
@@ -188,14 +189,31 @@ namespace Renderer {
 
 	void ResourceManager::AdvanceSubmittedFrame() {
 		++m_SubmittedFrames;
-		const bool meshesReady = !m_RetiredMeshes.empty() && m_RetiredMeshes.front().RetireAfterFrame <= m_SubmittedFrames;
-		const bool texturesReady = !m_RetiredTextures.empty() && m_RetiredTextures.front().RetireAfterFrame <= m_SubmittedFrames;
-		if (!meshesReady && !texturesReady) return;
-		if (!m_Device || !m_Device->waitForIdle()) return;
-		while (!m_RetiredMeshes.empty() && m_RetiredMeshes.front().RetireAfterFrame <= m_SubmittedFrames) {
+		if (!m_Device) return;
+
+		nvrhi::EventQueryHandle query;
+		if (!m_FreeCompletionQueries.empty()) {
+			query = std::move(m_FreeCompletionQueries.back());
+			m_FreeCompletionQueries.pop_back();
+		} else {
+			query = m_Device->createEventQuery();
+		}
+		if (query) {
+			m_Device->setEventQuery(query, nvrhi::CommandQueue::Graphics);
+			m_InFlightFrames.push_back({ m_SubmittedFrames, std::move(query) });
+		}
+
+		while (!m_InFlightFrames.empty() && m_Device->pollEventQuery(m_InFlightFrames.front().CompletionQuery)) {
+			m_CompletedFrames = (std::max)(m_CompletedFrames, m_InFlightFrames.front().Frame);
+			m_Device->resetEventQuery(m_InFlightFrames.front().CompletionQuery);
+			m_FreeCompletionQueries.push_back(std::move(m_InFlightFrames.front().CompletionQuery));
+			m_InFlightFrames.pop_front();
+		}
+
+		while (!m_RetiredMeshes.empty() && m_RetiredMeshes.front().RetireAfterFrame <= m_CompletedFrames) {
 			m_RetiredMeshes.pop_front();
 		}
-		while (!m_RetiredTextures.empty() && m_RetiredTextures.front().RetireAfterFrame <= m_SubmittedFrames) {
+		while (!m_RetiredTextures.empty() && m_RetiredTextures.front().RetireAfterFrame <= m_CompletedFrames) {
 			m_RetiredTextures.pop_front();
 		}
 	}
