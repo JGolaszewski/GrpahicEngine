@@ -41,6 +41,11 @@ namespace Engine {
 			const std::vector<Renderer::Vertex>& vertices,
 			const std::vector<uint32_t>& indices,
 			std::string& error);
+		std::shared_ptr<Renderer::TextureResource> GetOrCreateTexture(
+			const std::string& identity, uint64_t generation, const ImportedImage& image, bool srgb, std::string& error);
+		bool SetMaterialTextures(const std::shared_ptr<Renderer::Material>& material,
+			std::shared_ptr<Renderer::TextureResource> baseColor,
+			std::shared_ptr<Renderer::TextureResource> normal);
 		void ReleaseResource(const std::string& guid);
 		bool IsFrameActive() const noexcept { return m_FrameActive; }
 		bool UploadModel(

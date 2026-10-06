@@ -8,6 +8,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <type_traits>
+#include <memory>
+
+namespace Renderer { struct TextureResource; }
 
 namespace Renderer {
 
@@ -23,6 +26,7 @@ namespace Renderer {
 		ExplicitF0 = 1
 	};
 
+	// The material buffer occupies b1; texture and sampler registers are listed in docs/material-binding-abi.md.
 	inline constexpr uint32_t MaterialGpuAbiVersion = 1;
 inline constexpr float MaterialMinAlpha = 1.0e-3f;
 	inline constexpr float MaterialMinGtrGamma = 1.0f;
@@ -131,7 +135,8 @@ inline constexpr float MaterialMinAlpha = 1.0e-3f;
 		inline void ClearDirtyFlag() { m_IsDirty = false; }
 		inline bool IsDirty() const { return m_IsDirty; }
 
-		MaterialProperties GetProperties() const;
+	MaterialProperties GetProperties() const;
+	bool HasTextureOverrides() const noexcept { return m_HasTextureOverrides; }
 		inline nvrhi::BindingSetHandle GetBindingSet() const { return m_BindingSet; }
 	private:
 		bool m_IsDirty = true;
@@ -139,6 +144,9 @@ inline constexpr float MaterialMinAlpha = 1.0e-3f;
 
 		nvrhi::BufferHandle m_ConstantBuffer;
 		nvrhi::BindingSetHandle m_BindingSet;
+		std::shared_ptr<TextureResource> m_BaseColorTexture;
+	std::shared_ptr<TextureResource> m_NormalTexture;
+	bool m_HasTextureOverrides = false;
 
 		MaterialGpu m_Constants;
 	};

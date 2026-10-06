@@ -6,6 +6,7 @@ set(ENGINE_ASSET_ROOT "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}" CACHE PATH
 set(SHADER_FILES
     "${CMAKE_CURRENT_SOURCE_DIR}/shaders/color_vs.hlsl"
     "${CMAKE_CURRENT_SOURCE_DIR}/shaders/color_ps.hlsl"
+    "${CMAKE_CURRENT_SOURCE_DIR}/shaders/color_textured_ps.hlsl"
     "${CMAKE_CURRENT_SOURCE_DIR}/shaders/debug_vs.hlsl"
     "${CMAKE_CURRENT_SOURCE_DIR}/shaders/debug_ps.hlsl"
 )

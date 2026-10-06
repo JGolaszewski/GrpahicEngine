@@ -3,12 +3,18 @@
 #include <algorithm>
 
 namespace Renderer {
-	MaterialSystem::MaterialSystem(nvrhi::IDevice* device, nvrhi::ShaderHandle standardVS, nvrhi::ShaderHandle standardPS)
-		: m_Device(device), m_StandardVS(standardVS), m_StandardPS(standardPS) {
+	MaterialSystem::MaterialSystem(nvrhi::IDevice* device, nvrhi::ShaderHandle standardVS, nvrhi::ShaderHandle standardPS,
+		std::shared_ptr<TextureResource> fallbackColor, std::shared_ptr<TextureResource> fallbackNormal)
+		: m_Device(device), m_StandardVS(standardVS), m_StandardPS(standardPS),
+		m_FallbackColor(std::move(fallbackColor)), m_FallbackNormal(std::move(fallbackNormal)) {
 		nvrhi::BindingLayoutDesc layoutDesc;
 		layoutDesc.visibility = nvrhi::ShaderType::All;
 		layoutDesc.bindings = {
-			nvrhi::BindingLayoutItem::ConstantBuffer(1)
+			nvrhi::BindingLayoutItem::ConstantBuffer(1),
+			nvrhi::BindingLayoutItem::Texture_SRV(0),
+			nvrhi::BindingLayoutItem::Sampler(0),
+			nvrhi::BindingLayoutItem::Texture_SRV(1),
+			nvrhi::BindingLayoutItem::Sampler(1)
 		};
 		m_StandardLayout = m_Device->createBindingLayout(layoutDesc);
 	}
@@ -23,7 +29,7 @@ namespace Renderer {
 		})) {
 			return false;
 		}
-		if (!m_Device || !m_StandardLayout) {
+		if (!m_Device || !m_StandardLayout || !m_FallbackColor || !m_FallbackNormal) {
 			return false;
 		}
 
@@ -38,10 +44,16 @@ namespace Renderer {
 			return false;
 		}
 
-		// Create binding set for the material
+		material->m_BaseColorTexture = m_FallbackColor;
+		material->m_NormalTexture = m_FallbackNormal;
+		material->m_HasTextureOverrides = false;
 		nvrhi::BindingSetDesc setDesc;
 		setDesc.bindings = {
-				nvrhi::BindingSetItem::ConstantBuffer(1, material->m_ConstantBuffer)
+			nvrhi::BindingSetItem::ConstantBuffer(1, material->m_ConstantBuffer),
+			nvrhi::BindingSetItem::Texture_SRV(0, material->m_BaseColorTexture->Texture),
+			nvrhi::BindingSetItem::Sampler(0, material->m_BaseColorTexture->Sampler),
+			nvrhi::BindingSetItem::Texture_SRV(1, material->m_NormalTexture->Texture),
+			nvrhi::BindingSetItem::Sampler(1, material->m_NormalTexture->Sampler)
 		};
 		material->m_BindingSet = m_Device->createBindingSet(setDesc, m_StandardLayout);
 		if (!material->m_BindingSet) {
@@ -83,6 +95,30 @@ namespace Renderer {
 		auto material = std::make_shared<Material>(m_NextMaterialID++);
 		material->SetProperties(properties);
 		return RegisterMaterial(material) ? material : nullptr;
+	}
+
+	bool MaterialSystem::SetTextureBindings(const std::shared_ptr<Material>& material,
+		std::shared_ptr<TextureResource> baseColor, std::shared_ptr<TextureResource> normal) {
+		if (!material || !material->m_ConstantBuffer || !m_Device || !m_StandardLayout) return false;
+		if (!baseColor) baseColor = m_FallbackColor;
+		if (!normal) normal = m_FallbackNormal;
+		if (!baseColor || !normal) return false;
+		nvrhi::BindingSetDesc setDesc;
+		setDesc.bindings = {
+			nvrhi::BindingSetItem::ConstantBuffer(1, material->m_ConstantBuffer),
+			nvrhi::BindingSetItem::Texture_SRV(0, baseColor->Texture),
+			nvrhi::BindingSetItem::Sampler(0, baseColor->Sampler),
+			nvrhi::BindingSetItem::Texture_SRV(1, normal->Texture),
+			nvrhi::BindingSetItem::Sampler(1, normal->Sampler)
+		};
+		auto bindings = m_Device->createBindingSet(setDesc, m_StandardLayout);
+		if (!bindings) return false;
+		material->m_BaseColorTexture = std::move(baseColor);
+		material->m_NormalTexture = std::move(normal);
+		material->m_HasTextureOverrides = material->m_BaseColorTexture != m_FallbackColor ||
+			material->m_NormalTexture != m_FallbackNormal;
+		material->m_BindingSet = std::move(bindings);
+		return true;
 	}
 
 	nvrhi::BindingLayoutHandle MaterialSystem::GetStandardMaterialLayout() const {

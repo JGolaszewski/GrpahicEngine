@@ -1,4 +1,5 @@
 #include "RenderSystem.h"
+#include "AssetManager.h"
 #include "renderer/render_graph/RenderPass.h"
 
 #include <iostream>
@@ -30,9 +31,12 @@ namespace Engine {
 		m_ShaderFactory = std::make_unique<Renderer::ShaderFactory>(m_RenderBackend->GetDevice());
 		auto m_DefaultVS = m_ShaderFactory->GetShader("shaders/color_vs.dxbc", nvrhi::ShaderType::Vertex);
 		auto m_DefaultPS = m_ShaderFactory->GetShader("shaders/color_ps.dxbc", nvrhi::ShaderType::Pixel);
+		auto m_TexturedPS = m_ShaderFactory->GetShader("shaders/color_textured_ps.dxbc", nvrhi::ShaderType::Pixel);
 
-		m_MaterialSystem = std::make_unique<Renderer::MaterialSystem>(m_RenderBackend->GetDevice(), m_DefaultVS, m_DefaultPS);
 		m_ResourceManager = std::make_unique<Renderer::ResourceManager>(m_RenderBackend->GetDevice());
+		m_MaterialSystem = std::make_unique<Renderer::MaterialSystem>(m_RenderBackend->GetDevice(), m_DefaultVS, m_DefaultPS,
+			m_ResourceManager->GetFallbackTexture(true), m_ResourceManager->GetFallbackTexture(false));
+		m_MaterialSystem->SetTexturedPixelShader(m_TexturedPS);
 		m_SceneRenderer = std::make_unique<SceneRenderer>(m_RenderBackend->GetDevice());
 		m_SceneRenderer->Init(
 			m_RenderBackend->GetDevice(),
@@ -165,6 +169,22 @@ namespace Engine {
 		return m_ResourceManager->GetOrCreateMesh(guid, generation, vertices, indices, error);
 	}
 
+	std::shared_ptr<Renderer::TextureResource> RenderSystem::GetOrCreateTexture(
+		const std::string& identity, uint64_t generation, const ImportedImage& image, bool srgb, std::string& error) {
+		if (m_FrameActive || !m_ResourceManager) {
+			error = "texture upload requires an initialized renderer outside an active frame";
+			return nullptr;
+		}
+		return m_ResourceManager->GetOrCreateTexture(identity, generation, image, srgb, error);
+	}
+
+	bool RenderSystem::SetMaterialTextures(const std::shared_ptr<Renderer::Material>& material,
+		std::shared_ptr<Renderer::TextureResource> baseColor,
+		std::shared_ptr<Renderer::TextureResource> normal) {
+		return !m_FrameActive && m_MaterialSystem &&
+			m_MaterialSystem->SetTextureBindings(material, std::move(baseColor), std::move(normal));
+	}
+
 	void RenderSystem::ReleaseResource(const std::string& guid) {
 		if (m_ResourceManager) m_ResourceManager->Release(guid);
 	}
@@ -278,10 +298,36 @@ namespace Engine {
 				error = "renderer could not create a material for the imported model";
 				return nullptr;
 			}
+			auto baseColorTexture = m_ResourceManager->GetFallbackTexture(true);
+			auto normalTexture = m_ResourceManager->GetFallbackTexture(false);
+			const auto resolveTexture = [&](int32_t textureIndex, bool srgb,
+				std::shared_ptr<Renderer::TextureResource>& destination) -> bool {
+				if (textureIndex < 0) return true;
+				if (static_cast<size_t>(textureIndex) >= model.textures.size()) {
+					error = "imported material references an invalid texture slot";
+					return false;
+				}
+				const int32_t imageIndex = model.textures[static_cast<size_t>(textureIndex)].imageIndex;
+				if (imageIndex < 0 || static_cast<size_t>(imageIndex) >= model.images.size()) {
+					error = "imported texture references an invalid image slot";
+					return false;
+				}
+				const auto& image = model.images[static_cast<size_t>(imageIndex)];
+				destination = m_ResourceManager->GetOrCreateTexture(
+					AssetManager::GetEmbeddedImageIdentity(guid, static_cast<size_t>(imageIndex)), generation, image, srgb, error);
+				return destination != nullptr;
+			};
+			if (!resolveTexture(sourceMaterial.baseColorTexture, true, baseColorTexture) ||
+				!resolveTexture(sourceMaterial.normalTexture, false, normalTexture) ||
+				!m_MaterialSystem->SetTextureBindings(material, baseColorTexture, normalTexture)) {
+				m_MaterialSystem->UnregisterMaterial(material);
+				for (const auto& registered : materials) m_MaterialSystem->UnregisterMaterial(registered);
+				if (error.empty()) error = "renderer could not bind imported material textures";
+				return nullptr;
+			}
 			materials.push_back(std::move(material));
-			if (sourceMaterial.baseColorTexture >= 0 || sourceMaterial.metallicRoughnessTexture >= 0 ||
-				sourceMaterial.normalTexture >= 0 || sourceMaterial.occlusionTexture >= 0 || sourceMaterial.emissiveTexture >= 0) {
-				warnings.push_back("model material '" + sourceMaterial.name + "' references textures that are not yet bound by the standard material renderer");
+			if (sourceMaterial.metallicRoughnessTexture >= 0 || sourceMaterial.occlusionTexture >= 0 || sourceMaterial.emissiveTexture >= 0) {
+				warnings.push_back("model material '" + sourceMaterial.name + "' uses metallic-roughness, occlusion, or emissive maps that are not bound yet");
 			}
 			if (sourceMaterial.alphaMode != "OPAQUE" || sourceMaterial.doubleSided) {
 				warnings.push_back("model material '" + sourceMaterial.name + "' uses alpha or sidedness settings not represented by the current render pipeline");

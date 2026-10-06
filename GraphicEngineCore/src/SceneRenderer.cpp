@@ -496,7 +496,8 @@ void Engine::SceneRenderer::CullAndFillView(Renderer::RenderView* view, nvrhi::I
 				key.DepthTest = true;
 				key.CullMode = nvrhi::RasterCullMode::Back;
 			} else {
-				key.PS = m_MaterialSystem->GetStandardPS();
+				key.PS = material->HasTextureOverrides()
+					? m_MaterialSystem->GetTexturedPS() : m_MaterialSystem->GetStandardPS();
 				key.Wireframe = entity->ForceWireframe;
 				key.DepthTest = !entity->DisableDepthTest;
 				key.CullMode = entity->ForceWireframe ? nvrhi::RasterCullMode::None : entity->CullMode;

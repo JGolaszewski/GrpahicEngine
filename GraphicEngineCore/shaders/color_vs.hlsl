@@ -34,7 +34,9 @@ VS_OUTPUT main_vs(VS_INPUT input)
 
     output.pos      = mul(float4(input.pos, 1.0f), g_MVP);
     output.normalWS = normalize(mul(float4(input.normal, 0.0f), g_NormalMatrix).xyz);
-    output.tangentWS = float4(normalize(mul(float4(input.tangent.xyz, 0.0f), g_World).xyz), input.tangent.w);
+    const float3 tangentWS = mul(float4(input.tangent.xyz, 0.0f), g_World).xyz;
+    const float handedness = input.tangent.w * (determinant((float3x3)g_World) < 0.0f ? -1.0f : 1.0f);
+    output.tangentWS = float4(normalize(tangentWS), handedness);
     output.worldPos = worldPos.xyz;
 
     output.UV       = input.UV; 
