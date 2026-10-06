@@ -24,17 +24,6 @@ namespace Renderer {
 			error = "NVRHI failed to create mesh buffers";
 			return nullptr;
 		}
-		nvrhi::CommandListParameters parameters;
-		parameters.setEnableImmediateExecution(true);
-		auto commandList = m_Device->createCommandList(parameters);
-		if (!commandList) {
-			error = "NVRHI failed to create an upload command list";
-			return nullptr;
-		}
-		commandList->open();
-		mesh->UploadData(commandList, vertices, indices);
-		commandList->close();
-		m_Device->executeCommandList(commandList);
 		return mesh;
 	}
 
@@ -71,18 +60,6 @@ namespace Renderer {
 			return nullptr;
 		}
 
-		nvrhi::CommandListParameters parameters;
-		parameters.setEnableImmediateExecution(true);
-		auto commandList = m_Device->createCommandList(parameters);
-		if (!commandList) {
-			error = "NVRHI failed to create a texture upload command list";
-			return nullptr;
-		}
-		commandList->open();
-		commandList->writeTexture(resource->Texture, 0, 0, image.rgba8.data(),
-			static_cast<size_t>(image.width) * 4, 0);
-		commandList->close();
-		m_Device->executeCommandList(commandList);
 		return resource;
 	}
 }

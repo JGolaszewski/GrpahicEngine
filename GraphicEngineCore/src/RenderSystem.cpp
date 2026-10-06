@@ -94,6 +94,11 @@ namespace Engine {
 		if (!m_CommandList) {
 			return;
 		}
+		std::string uploadError;
+		if (!m_ResourceManager->FlushUploads(uploadError)) {
+			std::cerr << "ERROR: Could not submit queued GPU uploads: " << uploadError << std::endl;
+			return;
+		}
 
 		m_CommandList->open();
 		m_FrameActive = true;
@@ -107,6 +112,7 @@ namespace Engine {
 	}
 
 	void RenderSystem::SubmitViews(const std::vector<Engine::ViewportBinding>& views) {
+		if (!m_FrameActive) return;
 		Renderer::FrameBlackboard& bb = m_RenderGraph->GetBlackboard();
 
 		std::vector<Renderer::RenderView*> sceneViews;
@@ -394,7 +400,7 @@ namespace Engine {
 	}
 
 	void RenderSystem::EndFrame() {
-		if (!m_CommandList) {
+		if (!m_CommandList || !m_FrameActive) {
 			return;
 		}
 
