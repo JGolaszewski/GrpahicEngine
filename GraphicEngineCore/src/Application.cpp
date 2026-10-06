@@ -1,5 +1,8 @@
 #include "Application.h"
+#include "AssetManager.h"
 #include "RenderBackend.h"
+#include "RenderSystem.h"
+#include "SceneDocument.h"
 #include "Window.h"
 
 #include "Scene.h"
@@ -108,7 +111,7 @@ std::optional<PrimitiveShape> ParsePrimitiveType(const std::string &type)
 }
 } // namespace
 
-Application::Application()
+Application::Application() : m_AssetManager(std::make_unique<AssetManager>())
 {
 }
 Application::~Application()
@@ -291,7 +294,7 @@ bool Application::LoadScene(const std::filesystem::path &path, std::string &erro
 {
     error.clear();
     warnings.clear();
-    SceneDocumentResult loaded = m_AssetManager.LoadScene(path);
+    SceneDocumentResult loaded = m_AssetManager->LoadScene(path);
     if (!loaded)
     {
         error = std::move(loaded.error);
@@ -349,13 +352,13 @@ bool Application::LoadSceneDocument(const SceneDocument &document, std::string &
         std::shared_ptr<Renderer::Entity> entity;
         if (source.modelGuid)
         {
-            if (!m_AssetManager.LoadModel(*source.modelGuid, error))
+            if (!m_AssetManager->LoadModel(*source.modelGuid, error))
             {
                 const std::string importError = std::move(error);
                 return fail("entity '" + source.name + "' model " + *source.modelGuid + ": " + importError);
             }
-            const auto model = m_AssetManager.GetModel(*source.modelGuid);
-            const auto generation = m_AssetManager.GetGeneration(*source.modelGuid);
+            const auto model = m_AssetManager->GetModel(*source.modelGuid);
+            const auto generation = m_AssetManager->GetGeneration(*source.modelGuid);
             if (!model || !generation)
                 return fail("entity '" + source.name + "' model was not available after registry load");
             std::vector<std::optional<Renderer::MaterialProperties>> overrides;
@@ -388,15 +391,15 @@ bool Application::LoadSceneDocument(const SceneDocument &document, std::string &
                     if (!textureGuid)
                         return;
                     std::string textureError;
-                    if (!m_AssetManager.LoadTexture(*textureGuid, textureError))
+                    if (!m_AssetManager->LoadTexture(*textureGuid, textureError))
                     {
                         warnings.push_back("entity '" + source.name + "' material slot " +
                                            std::to_string(submesh.MaterialSlot) + " texture " + *textureGuid +
                                            " is unavailable: " + textureError);
                         return;
                     }
-                    const auto image = m_AssetManager.GetTexture(*textureGuid);
-                    const auto generation = m_AssetManager.GetGeneration(*textureGuid);
+                    const auto image = m_AssetManager->GetTexture(*textureGuid);
+                    const auto generation = m_AssetManager->GetGeneration(*textureGuid);
                     if (!image || !generation)
                     {
                         warnings.push_back("texture " + *textureGuid +
@@ -457,13 +460,13 @@ bool Application::LoadSceneDocument(const SceneDocument &document, std::string &
                     if (!textureGuid)
                         return;
                     std::string textureError;
-                    if (!m_AssetManager.LoadTexture(*textureGuid, textureError))
+                    if (!m_AssetManager->LoadTexture(*textureGuid, textureError))
                     {
                         warnings.push_back("texture " + *textureGuid + " is unavailable: " + textureError);
                         return;
                     }
-                    const auto image = m_AssetManager.GetTexture(*textureGuid);
-                    const auto generation = m_AssetManager.GetGeneration(*textureGuid);
+                    const auto image = m_AssetManager->GetTexture(*textureGuid);
+                    const auto generation = m_AssetManager->GetGeneration(*textureGuid);
                     if (!image || !generation)
                         return;
                     auto uploaded = m_RenderSystem->GetOrCreateTexture(*textureGuid, *generation, *image,
@@ -554,7 +557,7 @@ bool Application::LoadSceneDocument(const SceneDocument &document, std::string &
 
 bool Application::SaveScene(const std::filesystem::path &path, const Scene &scene, std::string &error) const
 {
-    return m_AssetManager.SaveScene(path, CreateSceneDocument(scene), error);
+    return m_AssetManager->SaveScene(path, CreateSceneDocument(scene), error);
 }
 
 SceneDocument Application::CreateSceneDocument(const Scene &scene) const
@@ -672,5 +675,23 @@ void Application::RegisterView(const ViewportBinding &binding)
 IWindow *Application::GetWindow() const
 {
     return m_Window.get();
+}
+
+SceneRenderer *Application::GetSceneRenderer() const
+{
+    return m_RenderSystem ? m_RenderSystem->GetSceneRenderer() : nullptr;
+}
+
+Renderer::ShaderFactory *Application::GetShaderFactory() const
+{
+    return m_RenderSystem ? m_RenderSystem->GetShaderFactory() : nullptr;
+}
+
+void Application::ExecuteImmediate(std::function<void(nvrhi::ICommandList *)> fn)
+{
+    if (m_RenderSystem)
+    {
+        m_RenderSystem->ExecuteImmediate(std::move(fn));
+    }
 }
 } // namespace Engine

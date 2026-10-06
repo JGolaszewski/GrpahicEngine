@@ -1,6 +1,7 @@
 #include "renderer/DebugGeometry.h"
 
 #include "renderer/Light.h"
+#include "Scene.h"
 
 #include <algorithm>
 #include <cmath>

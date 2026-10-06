@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreExport.h"
+#include "SceneIds.h"
 
 #include <DirectXMath.h>
 #include <cstdint>
@@ -18,14 +19,6 @@ class Camera;
 
 namespace Engine
 {
-using EntityId = uint64_t;
-using LightId = uint64_t;
-using CameraId = uint64_t;
-
-inline constexpr EntityId InvalidEntityId = 0;
-inline constexpr LightId InvalidLightId = 0;
-inline constexpr CameraId InvalidCameraId = 0;
-
 class ENGINE_API Scene
 {
   public:

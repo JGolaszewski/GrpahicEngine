@@ -74,3 +74,25 @@ target_link_libraries(Editor PRIVATE GraphicEngineCore RenderBackendD3D11 Editor
 target_include_directories(Editor PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
 add_dependencies(Editor CompileShaders)
+
+file(GLOB_RECURSE EDITOR_PUBLIC_HEADERS CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/*.h"
+)
+set(EDITOR_HEADER_CHECK_SOURCES)
+set(EDITOR_HEADER_CHECK_DIR "${CMAKE_CURRENT_BINARY_DIR}/public_header_checks")
+file(MAKE_DIRECTORY "${EDITOR_HEADER_CHECK_DIR}")
+foreach(HEADER IN LISTS EDITOR_PUBLIC_HEADERS)
+    file(RELATIVE_PATH HEADER_INCLUDE "${CMAKE_CURRENT_SOURCE_DIR}" "${HEADER}")
+    string(REPLACE "/" "_" HEADER_ID "${HEADER_INCLUDE}")
+    set(HEADER_CHECK_SOURCE "${EDITOR_HEADER_CHECK_DIR}/${HEADER_ID}.cpp")
+    file(WRITE "${HEADER_CHECK_SOURCE}" "#include \"${HEADER_INCLUDE}\"\n")
+    list(APPEND EDITOR_HEADER_CHECK_SOURCES "${HEADER_CHECK_SOURCE}")
+endforeach()
+add_library(EditorPublicHeaderChecks OBJECT ${EDITOR_HEADER_CHECK_SOURCES})
+target_include_directories(EditorPublicHeaderChecks PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(EditorPublicHeaderChecks PRIVATE
+    GraphicEngineCore
+    RenderBackendD3D11
+    EditorUI
+    imgui
+)

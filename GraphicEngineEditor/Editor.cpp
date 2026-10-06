@@ -1,8 +1,12 @@
 #include "Editor.h"
 
+#include "AssetManager.h"
 #include "PrimitiveFactory.h"
+#include "RenderSystem.h"
 #include "Scene.h"
+#include "SceneRenderer.h"
 #include "ViewportTarget.h"
+#include "Window.h"
 #include "commands/ChangeMaterialTextureCommand.h"
 #include "commands/EntityMembershipCommand.h"
 #include "commands/ReplaceEntityCommand.h"

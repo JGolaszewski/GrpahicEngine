@@ -1,7 +1,7 @@
 #pragma once
 
 #include "CoreExport.h"
-#include "renderer/DebugGeometry.h"
+#include "renderer/DebugRenderSettings.h"
 
 namespace Renderer
 {

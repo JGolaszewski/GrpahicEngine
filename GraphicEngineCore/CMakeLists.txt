@@ -62,6 +62,7 @@ set(CORE_HEADERS
     include/ViewportTarget.h
     include/renderer/Camera.h
     include/renderer/DebugGeometry.h
+    include/renderer/DebugRenderSettings.h
     include/renderer/Entity.h
     include/renderer/Light.h
     include/renderer/Material.h
@@ -86,6 +87,7 @@ set(CORE_HEADERS
     include/RenderSystem.h
     include/Scene.h
     include/SceneDocument.h
+    include/SceneIds.h
     include/SceneRenderer.h
     include/Window.h
 )
@@ -179,6 +181,23 @@ target_compile_definitions(GraphicEngineCore PRIVATE
 if(CMAKE_VERSION VERSION_GREATER 3.12)
     set_property(TARGET GraphicEngineCore PROPERTY CXX_STANDARD 23)
 endif()
+
+file(GLOB_RECURSE CORE_PUBLIC_HEADERS CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/include/*.h"
+)
+set(CORE_HEADER_CHECK_SOURCES)
+set(CORE_HEADER_CHECK_DIR "${CMAKE_CURRENT_BINARY_DIR}/public_header_checks")
+file(MAKE_DIRECTORY "${CORE_HEADER_CHECK_DIR}")
+foreach(HEADER IN LISTS CORE_PUBLIC_HEADERS)
+    file(RELATIVE_PATH HEADER_INCLUDE "${CMAKE_CURRENT_SOURCE_DIR}/include" "${HEADER}")
+    string(REPLACE "/" "_" HEADER_ID "${HEADER_INCLUDE}")
+    set(HEADER_CHECK_SOURCE "${CORE_HEADER_CHECK_DIR}/${HEADER_ID}.cpp")
+    file(WRITE "${HEADER_CHECK_SOURCE}" "#include \"${HEADER_INCLUDE}\"\n")
+    list(APPEND CORE_HEADER_CHECK_SOURCES "${HEADER_CHECK_SOURCE}")
+endforeach()
+add_library(CorePublicHeaderChecks OBJECT ${CORE_HEADER_CHECK_SOURCES})
+target_link_libraries(CorePublicHeaderChecks PRIVATE GraphicEngineCore)
+target_compile_definitions(CorePublicHeaderChecks PRIVATE ENGINE_MAX_LIGHTS=${ENGINE_MAX_LIGHTS})
 
 find_program(CLANG_FORMAT_EXECUTABLE NAMES clang-format)
 if(NOT CLANG_FORMAT_EXECUTABLE AND DEFINED ENV{VSINSTALLDIR})

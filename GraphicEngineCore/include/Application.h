@@ -1,21 +1,40 @@
 #pragma once
 
-#include "AssetManager.h"
 #include "CoreExport.h"
-#include "RenderBackend.h"
-#include "RenderSystem.h"
-#include "SceneDocument.h"
-#include "Window.h"
-
 #include "renderer/ViewportBinding.h"
 
 #include <cstdint>
+#include <filesystem>
 #include <functional>
 #include <memory>
+#include <string>
 #include <vector>
+
+namespace nvrhi
+{
+class ICommandList;
+}
+
+namespace Engine::Events
+{
+class Event;
+}
+
+namespace Renderer
+{
+class ShaderFactory;
+}
 
 namespace Engine
 {
+class AssetManager;
+class IRenderBackend;
+class IWindow;
+class RenderSystem;
+class Scene;
+class SceneRenderer;
+struct SceneDocument;
+class Viewport;
 
 class ENGINE_API Application
 {
@@ -72,28 +91,15 @@ class ENGINE_API Application
     }
     AssetManager *GetAssetManager() noexcept
     {
-        return &m_AssetManager;
+        return m_AssetManager.get();
     }
     const AssetManager *GetAssetManager() const noexcept
     {
-        return &m_AssetManager;
+        return m_AssetManager.get();
     }
-    SceneRenderer *GetSceneRenderer() const
-    {
-        return m_RenderSystem ? m_RenderSystem->GetSceneRenderer() : nullptr;
-    }
-    Renderer::ShaderFactory *GetShaderFactory() const
-    {
-        return m_RenderSystem ? m_RenderSystem->GetShaderFactory() : nullptr;
-    }
-
-    void ExecuteImmediate(std::function<void(nvrhi::ICommandList *)> fn)
-    {
-        if (m_RenderSystem)
-        {
-            m_RenderSystem->ExecuteImmediate(std::move(fn));
-        }
-    }
+    SceneRenderer *GetSceneRenderer() const;
+    Renderer::ShaderFactory *GetShaderFactory() const;
+    void ExecuteImmediate(std::function<void(nvrhi::ICommandList *)> fn);
 
     const std::vector<std::shared_ptr<Scene>> &GetScenes() const
     {
@@ -157,7 +163,7 @@ class ENGINE_API Application
     std::unique_ptr<IWindow> m_Window;
     std::unique_ptr<IRenderBackend> m_RenderBackend;
     std::unique_ptr<RenderSystem> m_RenderSystem;
-    AssetManager m_AssetManager;
+    std::unique_ptr<AssetManager> m_AssetManager;
 
     std::vector<std::shared_ptr<Scene>> m_ActiveScenes;
     std::vector<std::shared_ptr<Engine::Viewport>> m_Viewports;

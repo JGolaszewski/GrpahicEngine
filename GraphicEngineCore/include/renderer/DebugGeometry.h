@@ -1,29 +1,21 @@
 #pragma once
 
 #include "CoreExport.h"
-#include "Scene.h"
+#include "SceneIds.h"
+#include "renderer/DebugRenderSettings.h"
 
 #include <DirectXMath.h>
 #include <cstdint>
 #include <vector>
 
+namespace Engine
+{
+class Scene;
+} // namespace Engine
+
 namespace Renderer
 {
 class SpotLight;
-
-enum class DebugDepthMode : uint8_t
-{
-    Test,
-    AlwaysOnTop
-};
-
-struct ENGINE_API DebugRenderSettings
-{
-    bool ShowLightGizmos = false;
-    bool ShowWireframePlane = false;
-    DebugDepthMode DepthMode = DebugDepthMode::AlwaysOnTop;
-    Engine::LightId SelectedLightId = Engine::InvalidLightId;
-};
 
 struct ENGINE_API DebugVertex
 {
