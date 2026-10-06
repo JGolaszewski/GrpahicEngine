@@ -152,7 +152,7 @@ namespace Engine {
 		bb.SetShadowViews(std::move(shadowViews));
 		bb.Set<uint32_t>("ShadowMapSize", m_ShadowSettings.Resolution);
 		bb.Set<uint32_t>("MaxShadowedLights", (std::max)(1u,
-			static_cast<uint32_t>(scenes.size()) * m_ShadowSettings.MaxShadowCastersPerScene));
+			static_cast<uint32_t>(bb.GetShadowViews().size())));
 
 		Renderer::FrameDiagnostics& diagnostics = m_FrameContext.GetDiagnostics();
 		m_SceneRenderer->BuildViews(bb, m_CommandList, m_FrameContext, diagnostics);
