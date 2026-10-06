@@ -238,6 +238,7 @@ void Editor::OnSetupViews() {
 }
 
 void Editor::OnUpdate(float deltaTime) {
+	if (!m_UiIntegration.IsInitialized()) return;
 	const auto keyDown = [this](Engine::Events::KeyCode key) {
 		return m_KeyDown[static_cast<size_t>(key)];
 		};
