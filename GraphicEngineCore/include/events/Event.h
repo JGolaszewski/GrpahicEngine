@@ -58,6 +58,8 @@ namespace Engine::Events {
         DebugRenderToggled,
         SceneFileActionRequested,
         AssetImportRequested,
+        MaterialTextureAssignmentRequested,
+        AssetReimportRequested,
         AssetRegistryChanged,
         AddModelRequested,
         RemoveEntityRequested,

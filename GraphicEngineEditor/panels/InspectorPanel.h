@@ -6,6 +6,8 @@
 #include <DirectXMath.h>
 #include <memory>
 #include "renderer/Material.h"
+#include "AssetManager.h"
+#include "events/AssetImportRequestedEvent.h"
 
 namespace Renderer {
     class Entity;
@@ -33,6 +35,8 @@ private:
     void DrawObjectInspector();
     void DrawLightInspector();
     void DrawCameraInspector();
+    void DrawTextureAssignment(const char* label, const std::shared_ptr<Renderer::Material>& material,
+        AssetImportRequestedEvent::TextureSemantic semantic);
 
     // Selection state — received via EntitySelectedEvent
     EntitySelectedEvent::ItemType m_SelectedItemType = EntitySelectedEvent::ItemType::None;
@@ -42,6 +46,8 @@ private:
 	Engine::EntityId m_SelectedEntityId = Engine::InvalidEntityId;
 	Engine::LightId m_SelectedLightId = Engine::InvalidLightId;
 	Engine::CameraId m_SelectedCameraId = Engine::InvalidCameraId;
+	int32_t m_SelectedMaterialSlot = -1;
+	std::vector<Engine::AssetManager::TextureAssetInfo> m_Textures;
 
     // Non-owning handles to the inspected objects
     std::weak_ptr<Renderer::Entity> m_SelectedEntity;

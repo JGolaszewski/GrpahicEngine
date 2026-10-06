@@ -50,6 +50,15 @@ namespace Engine {
 		}
 	}
 
+	bool Scene::ReplaceEntity(EntityId id, std::shared_ptr<Renderer::Entity> entity)
+	{
+		if (!entity) return false;
+		const auto it = std::find(m_EntityIds.begin(), m_EntityIds.end(), id);
+		if (it == m_EntityIds.end()) return false;
+		m_Entities[static_cast<size_t>(std::distance(m_EntityIds.begin(), it))] = std::move(entity);
+		return true;
+	}
+
 	EntityId Scene::GetEntityIdAt(size_t index) const
 	{
 		return index < m_EntityIds.size() ? m_EntityIds[index] : InvalidEntityId;

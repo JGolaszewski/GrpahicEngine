@@ -9,7 +9,7 @@ namespace Renderer { class Entity; }
 
 class EntityMembershipCommand final : public ICommand {
 public:
-	using ChangeCallback = std::function<void(Engine::EntityId, const std::shared_ptr<Renderer::Entity>&, bool)>;
+	using ChangeCallback = std::function<void(Engine::EntityId, const std::shared_ptr<Renderer::Entity>&, bool, bool)>;
 
 	EntityMembershipCommand(std::shared_ptr<Engine::Scene> scene,
 		std::shared_ptr<Renderer::Entity> entity,
@@ -20,7 +20,7 @@ public:
 	void Undo() override;
 
 private:
-	void SetPresent(bool present);
+	void SetPresent(bool present, bool undo);
 	std::shared_ptr<Engine::Scene> m_Scene;
 	std::shared_ptr<Renderer::Entity> m_Entity;
 	Engine::EntityId m_Id;

@@ -10,7 +10,10 @@
 #include <vector>
 #include <utility>
 #include <filesystem>
+#include <optional>
+#include <string>
 #include "events/SceneFileActionRequestedEvent.h"
+#include "events/AssetImportRequestedEvent.h"
 #include "commands/CommandHistory.h"
 
 namespace Engine::Events {
@@ -73,6 +76,17 @@ private:
 	bool SaveCurrentScene(bool choosePath);
 	void DrawUnsavedChangesModal();
 	void OnEntityMembershipChanged(Engine::EntityId id, const std::shared_ptr<Renderer::Entity>& entity, bool present);
+	bool AssignTexture(Engine::EntityId entityId, int32_t materialSlot,
+		AssetImportRequestedEvent::TextureSemantic semantic, const std::optional<std::string>& textureGuid);
+	void ReimportAsset(const std::string& guid);
+	struct SelectionSnapshot {
+		SelectedItemType Type = SelectedItemType::None;
+		Engine::EntityId EntityId = Engine::InvalidEntityId;
+		Engine::LightId LightId = Engine::InvalidLightId;
+		Engine::CameraId CameraId = Engine::InvalidCameraId;
+	};
+	SelectionSnapshot CaptureSelection() const noexcept;
+	void RestoreSelection(const SelectionSnapshot& selection);
 	CommandHistory& GetCommandHistory() noexcept { return m_CommandHistory; }
 
 	// ------------------------------------------------------------------------

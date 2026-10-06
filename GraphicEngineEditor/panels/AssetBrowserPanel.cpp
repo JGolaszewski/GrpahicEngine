@@ -2,6 +2,7 @@
 
 #include "events/AssetImportRequestedEvent.h"
 #include "events/AssetRegistryChangedEvent.h"
+#include "events/AssetReimportRequestedEvent.h"
 #include <imgui.h>
 #include <algorithm>
 
@@ -10,20 +11,27 @@ void AssetBrowserPanel::Draw() {
 	if (ImGui::Button("Import model...")) EmitEvent(std::make_unique<AssetImportRequestedEvent>());
 	ImGui::SameLine();
 	if (ImGui::Button("Import texture...")) EmitEvent(std::make_unique<AssetImportRequestedEvent>(AssetImportRequestedEvent::AssetType::Texture));
+	ImGui::SameLine();
+	if (ImGui::Button("Reimport selected") && !m_SelectedGuid.empty())
+		EmitEvent(std::make_unique<AssetReimportRequestedEvent>(m_SelectedGuid));
 	ImGui::Separator();
 	if (m_Models.empty() && m_Textures.empty()) ImGui::TextDisabled("No assets found in this project.");
 	if (!m_Models.empty()) ImGui::TextDisabled("Models");
 	for (const auto& model : m_Models) {
+		ImGui::PushID(model.guid.c_str());
 		const bool selected = m_SelectedGuid == model.guid;
 		if (ImGui::Selectable(model.name.c_str(), selected)) m_SelectedGuid = model.guid;
 		if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s\n%s", model.guid.c_str(), model.sourcePath.generic_string().c_str());
+		ImGui::PopID();
 	}
 	if (!m_Textures.empty()) ImGui::TextDisabled("Textures");
 	for (const auto& texture : m_Textures) {
+		ImGui::PushID(texture.guid.c_str());
 		const bool selected = m_SelectedGuid == texture.guid;
 		const std::string label = texture.name + "  [Texture]";
 		if (ImGui::Selectable(label.c_str(), selected)) m_SelectedGuid = texture.guid;
 		if (ImGui::IsItemHovered()) ImGui::SetTooltip("Texture\n%s\n%s", texture.guid.c_str(), texture.sourcePath.generic_string().c_str());
+		ImGui::PopID();
 	}
 	ImGui::End();
 }

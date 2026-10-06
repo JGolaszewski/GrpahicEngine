@@ -5,9 +5,12 @@
 #include "renderer/Material.h"
 #include "commands/TransformEntityCommand.h"
 #include "commands/ChangeMaterialPropertiesCommand.h"
+#include "events/AssetRegistryChangedEvent.h"
+#include "events/MaterialTextureAssignmentRequestedEvent.h"
 
 #include <imgui.h>
 
+#include <algorithm>
 #include <cmath>
 
 // ================================================================================
@@ -48,6 +51,12 @@ void InspectorPanel::OnEvent(Engine::Events::Event& event) {
         m_SelectedLight = e.GetLight();
         m_SelectedCamera = e.GetCamera();
         m_MaterialEditActive = false;
+		m_SelectedMaterialSlot = -1;
+		if (const auto entity = m_SelectedEntity.lock(); entity && entity->ModelGuid) {
+			for (const auto& submesh : entity->Submeshes) {
+				if (submesh.MaterialSlot >= 0) { m_SelectedMaterialSlot = submesh.MaterialSlot; break; }
+			}
+		}
 
         m_SelectedEulerDegrees = { 0.0f, 0.0f, 0.0f };
         return false;
@@ -65,6 +74,7 @@ void InspectorPanel::OnEvent(Engine::Events::Event& event) {
 		m_SelectedEntity.reset();
 		m_SelectedLight.reset();
         m_SelectedCamera.reset();
+		m_SelectedMaterialSlot = -1;
         m_MaterialEditActive = false;
         return false;
     });
@@ -76,6 +86,10 @@ void InspectorPanel::OnEvent(Engine::Events::Event& event) {
         m_CameraFarPlane = e.GetFarPlane();
         return false;
     });
+	dispatcher.Dispatch<AssetRegistryChangedEvent>([this](const auto& e) {
+		m_Textures = e.GetTextures();
+		return false;
+	});
 }
 
 void InspectorPanel::Draw() {
@@ -194,7 +208,36 @@ void InspectorPanel::DrawObjectInspector() {
     sceneChanged |= ImGui::Checkbox("Cast shadows", &selectedEntity->CastShadows);
     sceneChanged |= ImGui::Checkbox("Receive shadows", &selectedEntity->ReceiveShadows);
 
-    if (!selectedEntity->material) {
+	if (selectedEntity->ModelGuid) {
+		ImGui::Text("Model GUID: %s", selectedEntity->ModelGuid->c_str());
+		std::vector<int32_t> slots;
+		for (const auto& submesh : selectedEntity->Submeshes) {
+			if (submesh.MaterialSlot >= 0 && std::find(slots.begin(), slots.end(), submesh.MaterialSlot) == slots.end())
+				slots.push_back(submesh.MaterialSlot);
+		}
+		std::sort(slots.begin(), slots.end());
+		if (!slots.empty()) {
+			const std::string slotLabel = "Material slot " + std::to_string(m_SelectedMaterialSlot);
+			if (ImGui::BeginCombo("Material Slot", slotLabel.c_str())) {
+				for (int32_t slot : slots) {
+					const std::string label = "Material slot " + std::to_string(slot);
+					if (ImGui::Selectable(label.c_str(), slot == m_SelectedMaterialSlot)) {
+						m_SelectedMaterialSlot = slot;
+						m_MaterialEditActive = false;
+					}
+				}
+				ImGui::EndCombo();
+			}
+		}
+	}
+	auto selectedMaterial = selectedEntity->material;
+	if (selectedEntity->ModelGuid && m_SelectedMaterialSlot >= 0) {
+		const auto found = std::find_if(selectedEntity->Submeshes.begin(), selectedEntity->Submeshes.end(),
+			[this](const auto& submesh) { return submesh.MaterialSlot == m_SelectedMaterialSlot; });
+		selectedMaterial = found == selectedEntity->Submeshes.end() ? nullptr : found->material;
+	}
+
+    if (!selectedMaterial) {
         if (sceneChanged) EmitEvent(std::make_unique<SceneModifiedEvent>());
         return;
     }
@@ -202,7 +245,10 @@ void InspectorPanel::DrawObjectInspector() {
     ImGui::Separator();
     ImGui::TextUnformatted("Material");
 
-    Renderer::MaterialProperties properties = selectedEntity->material->GetProperties();
+    DrawTextureAssignment("Base color map", selectedMaterial, AssetImportRequestedEvent::TextureSemantic::BaseColor);
+	DrawTextureAssignment("Normal map", selectedMaterial, AssetImportRequestedEvent::TextureSemantic::Normal);
+
+	Renderer::MaterialProperties properties = selectedMaterial->GetProperties();
     const Renderer::MaterialProperties materialPropertiesBeforeFrame = properties;
     bool materialEditFinished = false;
     const auto trackMaterialWidget = [this, &materialPropertiesBeforeFrame, &materialEditFinished]() {
@@ -276,17 +322,54 @@ void InspectorPanel::DrawObjectInspector() {
         properties.Metallic = metallic;
         properties.Roughness = roughness;
 
-        EmitEvent(std::make_unique<MaterialChangedEvent>(m_SelectedEntityId, properties));
+		EmitEvent(std::make_unique<MaterialChangedEvent>(m_SelectedEntityId, properties, m_SelectedMaterialSlot));
     }
 	if (materialEditFinished && m_MaterialEditActive) {
 		if (materialChanged) {
 			EmitEvent(std::make_unique<CommandExecuteRequestedEvent>(
-				std::make_unique<ChangeMaterialPropertiesCommand>(selectedEntity->material,
+				std::make_unique<ChangeMaterialPropertiesCommand>(selectedMaterial,
 					m_MaterialBeforeEdit, properties)));
 		}
 		m_MaterialEditActive = false;
 	}
 	if (sceneChanged) EmitEvent(std::make_unique<SceneModifiedEvent>());
+}
+
+void InspectorPanel::DrawTextureAssignment(const char* label,
+	const std::shared_ptr<Renderer::Material>& material, AssetImportRequestedEvent::TextureSemantic semantic) {
+	const auto& reference = semantic == AssetImportRequestedEvent::TextureSemantic::BaseColor
+		? material->GetBaseColorTextureGuid() : material->GetNormalTextureGuid();
+	std::string preview = "Imported/default";
+	if (reference) {
+		const auto asset = std::find_if(m_Textures.begin(), m_Textures.end(), [&](const auto& item) {
+			return item.guid == *reference;
+		});
+		preview = asset == m_Textures.end() ? "Missing texture: " + *reference : asset->name;
+	}
+	if (ImGui::BeginCombo(label, preview.c_str())) {
+		const bool defaultSelected = !reference;
+		if (ImGui::Selectable("Imported/default", defaultSelected)) {
+			EmitEvent(std::make_unique<MaterialTextureAssignmentRequestedEvent>(
+				m_SelectedEntityId, m_SelectedMaterialSlot, semantic, std::nullopt));
+		}
+		for (const auto& texture : m_Textures) {
+			const bool selected = reference && *reference == texture.guid;
+			if (ImGui::Selectable(texture.name.c_str(), selected)) {
+				EmitEvent(std::make_unique<MaterialTextureAssignmentRequestedEvent>(
+					m_SelectedEntityId, m_SelectedMaterialSlot, semantic, texture.guid));
+			}
+			if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s\n%s", texture.guid.c_str(), texture.sourcePath.generic_string().c_str());
+		}
+		ImGui::EndCombo();
+	}
+	if (reference && std::none_of(m_Textures.begin(), m_Textures.end(), [&](const auto& item) { return item.guid == *reference; })) {
+		ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.25f, 1.0f), "Missing texture reference: %s", reference->c_str());
+	}
+	ImGui::SameLine();
+	if (ImGui::SmallButton((std::string("Import##") + label).c_str())) {
+		EmitEvent(std::make_unique<AssetImportRequestedEvent>(AssetImportRequestedEvent::AssetType::Texture,
+			m_SelectedEntityId, m_SelectedMaterialSlot, semantic));
+	}
 }
 
 void InspectorPanel::DrawLightInspector() {

@@ -24,3 +24,5 @@
 #include "events/AddModelRequestedEvent.h"
 #include "events/RemoveEntityRequestedEvent.h"
 #include "events/SceneModifiedEvent.h"
+#include "events/MaterialTextureAssignmentRequestedEvent.h"
+#include "events/AssetReimportRequestedEvent.h"

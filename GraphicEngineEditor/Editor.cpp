@@ -16,6 +16,7 @@
 #include "panels/AssetBrowserPanel.h"
 #include "events/EditorEvents.h"
 #include "commands/EntityMembershipCommand.h"
+#include "commands/ChangeMaterialTextureCommand.h"
 
 #include <DirectXMath.h>
 #include <imgui.h>
@@ -25,8 +26,10 @@
 #include <commdlg.h>
 #include <shlobj.h>
 #include <filesystem>
+#include <algorithm>
 #include <fstream>
 #include <string>
+#include <unordered_set>
 
 namespace {
 std::optional<std::filesystem::path> ShowSceneDialog(
@@ -544,19 +547,35 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
 		if (!m_ActiveScene) return false;
 		createdEntity->PrimitiveType = primitiveType;
 		createdEntity->Name = primitiveType;
+		const auto selectionBefore = CaptureSelection();
 		m_CommandHistory.Execute(std::make_unique<EntityMembershipCommand>(m_ActiveScene, createdEntity,
 			Engine::InvalidEntityId, true,
-			[this](auto id, const auto& entity, bool present) { OnEntityMembershipChanged(id, entity, present); }));
+			[this, selectionBefore](auto id, const auto& entity, bool present, bool undo) {
+				if (undo) { m_SceneDirty = true; RestoreSelection(selectionBefore); }
+				else OnEntityMembershipChanged(id, entity, present);
+			}));
 		return false;
 		});
 
 	dispatcher.Dispatch<MaterialChangedEvent>([this](const auto& e) {
 		auto entity = m_ActiveScene ? m_ActiveScene->FindEntity(e.GetEntityId()) : nullptr;
-		if (!entity || !entity->material) return false;
-
-		entity->material->SetProperties(e.GetProperties());
+		if (!entity) return false;
+		auto material = entity->material;
+		if (entity->ModelGuid && e.GetMaterialSlot() >= 0) {
+			const auto found = std::find_if(entity->Submeshes.begin(), entity->Submeshes.end(), [&](const auto& submesh) {
+				return submesh.MaterialSlot == e.GetMaterialSlot();
+			});
+			material = found == entity->Submeshes.end() ? nullptr : found->material;
+		}
+		if (!material) return false;
+		material->SetProperties(e.GetProperties());
 		m_SceneDirty = true;
 		return false;
+		});
+
+	dispatcher.Dispatch<MaterialTextureAssignmentRequestedEvent>([this](const auto& e) {
+		AssignTexture(e.GetEntityId(), e.GetMaterialSlot(), e.GetSemantic(), e.GetTextureGuid());
+		return true;
 		});
 
 	dispatcher.Dispatch<SceneModifiedEvent>([this](const auto&) {
@@ -640,6 +659,17 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
 		if (!imported) return true;
 		AssetRegistryChangedEvent assetUpdate(GetAssetManager()->GetKnownModels(), GetAssetManager()->GetKnownTextures());
 		BroadcastEvent(assetUpdate);
+		if (request.GetTargetEntity() != Engine::InvalidEntityId) {
+			const auto textureGuid = request.GetAssetType() == AssetImportRequestedEvent::AssetType::Texture
+				? std::optional<std::string>(guid) : std::nullopt;
+			if (!textureGuid || !AssignTexture(request.GetTargetEntity(), request.GetMaterialSlot(), request.GetSemantic(), textureGuid))
+				return true;
+		}
+		return true;
+		});
+
+	dispatcher.Dispatch<AssetReimportRequestedEvent>([this](const auto& request) {
+		ReimportAsset(request.GetGuid());
 		return true;
 		});
 
@@ -666,9 +696,13 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
 		const auto position = m_ActiveScene->FindFreeSpawnPosition(request.GetPosition());
 		entity->transform.SetPosition(position.x, position.y, position.z);
 		entity->transform.SetScale(request.GetScale().x, request.GetScale().y, request.GetScale().z);
+		const auto selectionBefore = CaptureSelection();
 		m_CommandHistory.Execute(std::make_unique<EntityMembershipCommand>(m_ActiveScene, entity,
 			Engine::InvalidEntityId, true,
-			[this](auto id, const auto& addedEntity, bool present) { OnEntityMembershipChanged(id, addedEntity, present); }));
+			[this, selectionBefore](auto id, const auto& addedEntity, bool present, bool undo) {
+				if (undo) { m_SceneDirty = true; RestoreSelection(selectionBefore); }
+				else OnEntityMembershipChanged(id, addedEntity, present);
+			}));
 		if (!warnings.empty()) m_FileError = JoinWarnings(warnings);
 		return true;
 		});
@@ -677,9 +711,13 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
 		if (!m_ActiveScene) return true;
 		const auto entity = m_ActiveScene->FindEntity(request.GetId());
 		if (!entity) return true;
+		const auto selectionBefore = CaptureSelection();
 		m_CommandHistory.Execute(std::make_unique<EntityMembershipCommand>(m_ActiveScene, entity,
 			request.GetId(), false,
-			[this](auto id, const auto& removedEntity, bool present) { OnEntityMembershipChanged(id, removedEntity, present); }));
+			[this, selectionBefore](auto id, const auto& removedEntity, bool present, bool undo) {
+				if (undo) { m_SceneDirty = true; RestoreSelection(selectionBefore); }
+				else OnEntityMembershipChanged(id, removedEntity, present);
+			}));
 		return true;
 		});
 }
@@ -710,6 +748,207 @@ void Editor::OnEntityMembershipChanged(
 		EntityDeselectedEvent deselected;
 		BroadcastEvent(deselected);
 	}
+}
+
+Editor::SelectionSnapshot Editor::CaptureSelection() const noexcept {
+	return { m_SelectedItemType, m_SelectedEntityId, m_SelectedLightId, m_SelectedCameraId };
+}
+
+void Editor::RestoreSelection(const SelectionSnapshot& snapshot) {
+	if (!m_ActiveScene) return;
+	if (snapshot.Type == SelectedItemType::Object && m_ActiveScene->FindEntity(snapshot.EntityId)) {
+		int index = -1;
+		for (size_t i = 0; i < m_ActiveScene->GetEntityCount(); ++i)
+			if (m_ActiveScene->GetEntityIdAt(i) == snapshot.EntityId) { index = static_cast<int>(i); break; }
+		ProcessPanelEvent(std::make_unique<EntitySelectedEvent>(EntitySelectedEvent::ItemType::Object,
+			index, -1, -1, snapshot.EntityId, Engine::InvalidLightId, Engine::InvalidCameraId));
+		return;
+	}
+	if (snapshot.Type == SelectedItemType::Light && m_ActiveScene->FindLight(snapshot.LightId)) {
+		ProcessPanelEvent(std::make_unique<EntitySelectedEvent>(EntitySelectedEvent::ItemType::Light,
+			-1, -1, -1, Engine::InvalidEntityId, snapshot.LightId, Engine::InvalidCameraId));
+		return;
+	}
+	if (snapshot.Type == SelectedItemType::Camera && m_ActiveScene->FindCamera(snapshot.CameraId)) {
+		ProcessPanelEvent(std::make_unique<EntitySelectedEvent>(EntitySelectedEvent::ItemType::Camera,
+			-1, -1, -1, Engine::InvalidEntityId, Engine::InvalidLightId, snapshot.CameraId));
+		return;
+	}
+	ProcessPanelEvent(std::make_unique<EntityDeselectedEvent>());
+}
+
+bool Editor::AssignTexture(Engine::EntityId entityId, int32_t materialSlot,
+	AssetImportRequestedEvent::TextureSemantic semantic, const std::optional<std::string>& textureGuid) {
+	auto entity = m_ActiveScene ? m_ActiveScene->FindEntity(entityId) : nullptr;
+	if (!entity || !GetRenderSystem()) return false;
+	auto material = entity->material;
+	if (entity->ModelGuid && materialSlot >= 0) {
+		const auto found = std::find_if(entity->Submeshes.begin(), entity->Submeshes.end(), [materialSlot](const auto& submesh) {
+			return submesh.MaterialSlot == materialSlot;
+		});
+		material = found == entity->Submeshes.end() ? nullptr : found->material;
+	}
+	if (!material) { m_FileError = "The selected material slot is no longer available."; return false; }
+	auto baseColor = material->GetBaseColorTexture();
+	auto normal = material->GetNormalTexture();
+	auto baseGuid = material->GetBaseColorTextureGuid();
+	auto normalGuid = material->GetNormalTextureGuid();
+	const auto beforeBaseColor = baseColor;
+	const auto beforeNormal = normal;
+	const auto beforeBaseGuid = baseGuid;
+	const auto beforeNormalGuid = normalGuid;
+	if (semantic == AssetImportRequestedEvent::TextureSemantic::BaseColor) {
+		baseGuid = textureGuid;
+		if (textureGuid) {
+			std::string error;
+			if (!GetAssetManager()->LoadTexture(*textureGuid, error)) { m_FileError = std::move(error); return false; }
+			const auto image = GetAssetManager()->GetTexture(*textureGuid);
+			const auto generation = GetAssetManager()->GetGeneration(*textureGuid);
+			if (!image || !generation) { m_FileError = "The selected texture has no decoded image data."; return false; }
+			baseColor = GetRenderSystem()->GetOrCreateTexture(*textureGuid, *generation, *image, true, error);
+			if (!baseColor) { m_FileError = std::move(error); return false; }
+		} else baseColor = material->GetDefaultBaseColorTexture();
+	} else {
+		normalGuid = textureGuid;
+		if (textureGuid) {
+			std::string error;
+			if (!GetAssetManager()->LoadTexture(*textureGuid, error)) { m_FileError = std::move(error); return false; }
+			const auto image = GetAssetManager()->GetTexture(*textureGuid);
+			const auto generation = GetAssetManager()->GetGeneration(*textureGuid);
+			if (!image || !generation) { m_FileError = "The selected texture has no decoded image data."; return false; }
+			normal = GetRenderSystem()->GetOrCreateTexture(*textureGuid, *generation, *image, false, error);
+			if (!normal) { m_FileError = std::move(error); return false; }
+		} else normal = material->GetDefaultNormalTexture();
+	}
+	if (baseGuid == beforeBaseGuid && normalGuid == beforeNormalGuid) return true;
+	m_CommandHistory.Execute(std::make_unique<ChangeMaterialTextureCommand>(material,
+		beforeBaseColor, beforeNormal, beforeBaseGuid, beforeNormalGuid, std::move(baseColor), std::move(normal),
+		baseGuid, normalGuid,
+		[this](const auto& target, const auto& base, const auto& normalMap, const auto& baseId, const auto& normalId) {
+			if (!GetRenderSystem()->SetMaterialTextures(target, base, normalMap, baseId, normalId)) {
+				m_FileError = "The renderer could not update the material texture bindings.";
+				return false;
+			}
+			m_FileError.clear();
+			m_SceneDirty = true;
+			return true;
+		}));
+	return true;
+}
+
+void Editor::ReimportAsset(const std::string& guid) {
+	const auto sourcePath = GetAssetManager()->GetSourcePath(guid);
+	if (!sourcePath) { m_FileError = "The selected asset is no longer in the project registry."; return; }
+	std::string error, importedGuid;
+	if (GetAssetManager()->GetTexture(guid)) {
+		if (!m_ActiveScene) { m_FileError = "There is no active scene to refresh."; return; }
+		if (!GetAssetManager()->ImportTexture(*sourcePath, importedGuid, error)) { m_FileError = std::move(error); return; }
+		const auto image = GetAssetManager()->GetTexture(guid);
+		const auto generation = GetAssetManager()->GetGeneration(guid);
+		if (!image || !generation) { m_FileError = "Texture reimport completed without decoded image data."; return; }
+		std::unordered_set<Renderer::Material*> updated;
+		for (const auto& entity : m_ActiveScene->GetEntities()) {
+			if (!entity) continue;
+			std::vector<std::shared_ptr<Renderer::Material>> materials;
+			if (entity->material) materials.push_back(entity->material);
+			for (const auto& submesh : entity->Submeshes) if (submesh.material) materials.push_back(submesh.material);
+			for (const auto& material : materials) {
+				if (!updated.insert(material.get()).second) continue;
+				const bool baseMatch = material->GetBaseColorTextureGuid() == std::optional<std::string>(guid);
+				const bool normalMatch = material->GetNormalTextureGuid() == std::optional<std::string>(guid);
+				if (!baseMatch && !normalMatch) continue;
+				auto base = material->GetBaseColorTexture();
+				auto normal = material->GetNormalTexture();
+				if (baseMatch) base = GetRenderSystem()->GetOrCreateTexture(guid, *generation, *image, true, error);
+				if (normalMatch) normal = GetRenderSystem()->GetOrCreateTexture(guid, *generation, *image, false, error);
+				if (!base || !normal || !GetRenderSystem()->SetMaterialTextures(material, base, normal,
+					material->GetBaseColorTextureGuid(), material->GetNormalTextureGuid())) {
+					m_FileError = error.empty() ? "Texture reimport could not refresh all live material bindings." : error;
+					return;
+				}
+			}
+		}
+		AssetRegistryChangedEvent update(GetAssetManager()->GetKnownModels(), GetAssetManager()->GetKnownTextures());
+		BroadcastEvent(update);
+		m_FileError.clear();
+		return;
+	}
+
+	if (!GetAssetManager()->ImportModel(*sourcePath, importedGuid, error)) { m_FileError = std::move(error); return; }
+	if (!m_ActiveScene) return;
+	const auto model = GetAssetManager()->GetModel(guid);
+	const auto generation = GetAssetManager()->GetGeneration(guid);
+	if (!model || !generation) { m_FileError = "Model reimport completed without an imported model."; return; }
+	struct Replacement { Engine::EntityId id; std::shared_ptr<Renderer::Entity> entity; };
+	std::vector<Replacement> replacements;
+	std::vector<std::string> warnings;
+	const auto cleanup = [&]() {
+		for (const auto& replacement : replacements) {
+			for (const auto& submesh : replacement.entity->Submeshes)
+				if (submesh.material) GetRenderSystem()->GetMaterialSystem()->UnregisterMaterial(submesh.material);
+		}
+	};
+	for (size_t i = 0; i < m_ActiveScene->GetEntities().size(); ++i) {
+		const auto oldEntity = m_ActiveScene->GetEntities()[i];
+		if (!oldEntity || oldEntity->ModelGuid != std::optional<std::string>(guid)) continue;
+		std::vector<std::optional<Renderer::MaterialProperties>> overrides(model->materials.size());
+		for (const auto& submesh : oldEntity->Submeshes) {
+			if (submesh.MaterialSlot >= 0 && static_cast<size_t>(submesh.MaterialSlot) < overrides.size() && submesh.material)
+				overrides[static_cast<size_t>(submesh.MaterialSlot)] = submesh.material->GetProperties();
+		}
+		auto replacement = GetRenderSystem()->CreateModelEntity(guid, *generation, *model, overrides, error, warnings);
+		if (!replacement) { cleanup(); m_FileError = std::move(error); return; }
+		replacement->Name = oldEntity->Name;
+		replacement->transform.SetPosition(oldEntity->transform.Position.x, oldEntity->transform.Position.y, oldEntity->transform.Position.z);
+		replacement->transform.Rotation = oldEntity->transform.Rotation;
+		replacement->transform.SetScale(oldEntity->transform.Scale.x, oldEntity->transform.Scale.y, oldEntity->transform.Scale.z);
+		replacement->ForceWireframe = oldEntity->ForceWireframe;
+		replacement->DisableDepthTest = oldEntity->DisableDepthTest;
+		replacement->CastShadows = oldEntity->CastShadows;
+		replacement->ReceiveShadows = oldEntity->ReceiveShadows;
+		replacement->CullMode = oldEntity->CullMode;
+		std::unordered_set<int32_t> appliedSlots;
+		for (const auto& oldSubmesh : oldEntity->Submeshes) {
+			if (oldSubmesh.MaterialSlot < 0 || !oldSubmesh.material || !appliedSlots.insert(oldSubmesh.MaterialSlot).second) continue;
+			const auto next = std::find_if(replacement->Submeshes.begin(), replacement->Submeshes.end(), [&](const auto& item) {
+				return item.MaterialSlot == oldSubmesh.MaterialSlot;
+			});
+			if (next == replacement->Submeshes.end()) continue;
+			auto base = next->material->GetBaseColorTexture();
+			auto normal = next->material->GetNormalTexture();
+			const auto rebind = [&](const std::optional<std::string>& textureGuid, bool srgb,
+				std::shared_ptr<Renderer::TextureResource>& destination) {
+				if (!textureGuid) return;
+				std::string textureError;
+				if (!GetAssetManager()->LoadTexture(*textureGuid, textureError)) { warnings.push_back(textureError); return; }
+				const auto texture = GetAssetManager()->GetTexture(*textureGuid);
+				const auto textureGeneration = GetAssetManager()->GetGeneration(*textureGuid);
+				if (!texture || !textureGeneration) { warnings.push_back("missing texture " + *textureGuid); return; }
+				auto uploaded = GetRenderSystem()->GetOrCreateTexture(*textureGuid, *textureGeneration, *texture, srgb, textureError);
+				if (uploaded) destination = std::move(uploaded);
+				else warnings.push_back(textureError);
+			};
+			rebind(oldSubmesh.material->GetBaseColorTextureGuid(), true, base);
+			rebind(oldSubmesh.material->GetNormalTextureGuid(), false, normal);
+			if (!GetRenderSystem()->SetMaterialTextures(next->material, base, normal,
+				oldSubmesh.material->GetBaseColorTextureGuid(), oldSubmesh.material->GetNormalTextureGuid())) {
+				for (const auto& submesh : replacement->Submeshes)
+					if (submesh.material) GetRenderSystem()->GetMaterialSystem()->UnregisterMaterial(submesh.material);
+				cleanup();
+				m_FileError = "Model reimport could not restore material texture bindings.";
+				return;
+			}
+		}
+		replacements.push_back({ m_ActiveScene->GetEntityIdAt(i), std::move(replacement) });
+	}
+	for (auto& replacement : replacements) m_ActiveScene->ReplaceEntity(replacement.id, replacement.entity);
+	BroadcastSceneChanged();
+	AssetRegistryChangedEvent update(GetAssetManager()->GetKnownModels(), GetAssetManager()->GetKnownTextures());
+	BroadcastEvent(update);
+	if (m_SelectedEntityId != Engine::InvalidEntityId)
+		ProcessPanelEvent(std::make_unique<EntitySelectedEvent>(EntitySelectedEvent::ItemType::Object, -1, -1, -1,
+			m_SelectedEntityId, Engine::InvalidLightId, Engine::InvalidCameraId));
+	m_FileError = JoinWarnings(warnings);
 }
 
 void Editor::BroadcastEvent(Engine::Events::Event& event) {

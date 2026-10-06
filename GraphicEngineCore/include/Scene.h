@@ -33,6 +33,7 @@ namespace Engine {
 		EntityId AddEntity(std::shared_ptr<Renderer::Entity> entity, EntityId persistentId = InvalidEntityId);
 		void RemoveEntity(Renderer::Entity* entity);
 		void RemoveEntity(EntityId id);
+		bool ReplaceEntity(EntityId id, std::shared_ptr<Renderer::Entity> entity);
 		inline std::span<const std::shared_ptr<Renderer::Entity>> GetEntities() const {
 			return m_Entities;
 		}
