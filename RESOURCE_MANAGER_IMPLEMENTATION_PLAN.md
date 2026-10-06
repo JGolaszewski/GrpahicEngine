@@ -68,14 +68,16 @@ Complete these steps in order. Keep each independently reviewable change in its 
 
 - Expand the Assets panel to import and browse models and standalone textures, showing friendly names, asset types, GUIDs, source paths relative to the project, and import/load errors.
 - Add explicit reimport for known assets. Preserve GUIDs, update generations, and refresh live scene instances transactionally so the browser, registry, GPU cache, and rendered scene do not disagree.
-- Extend the Inspector to show the selected model GUID and per-submesh material slots. Provide albedo and normal assignment from known texture assets, show semantic and missing-resource state, and display friendly names while persisting GUIDs.
+- Extend the Inspector to show the selected model GUID and per-submesh material slots. Let users manually assign or replace an albedo texture and a normal texture on an already-existing scene object, including generated primitives and individual model submesh material slots; assignments must work independently of the textures authored in the imported glTF.
+- Let users choose an already imported texture from the Assets panel or import a standalone image as part of the assignment flow. Show the texture semantic and missing-resource state, display friendly asset names, and persist GUID references rather than file paths.
 - Keep panel code event-driven. Panels should request import, assignment, or reimport; AssetManager owns file/metadata operations and RenderSystem owns GPU resource operations.
 
-**Acceptance:** a user can import/select a model, select the intended material slot, assign color and normal textures, see missing references clearly, and save/reopen the scene.
+**Acceptance:** a user can import/select a model, then manually add or replace albedo and normal textures on an existing primitive or model object, select the intended model material slot, see missing references clearly, and save/reopen those overrides.
 
 ### 6. Complete undo/redo for assignments
 
 - Add commands for model reassignment, per-slot material reassignment, and texture-reference changes. Commands must retain old and new asset/material references for redo and must not delete imported source assets.
+- Treat manual texture choices as editable scene overrides on the existing object/material slot; preserve the imported material defaults so clearing an override restores the source material behavior.
 - Extend material-property undo to cover the selected model submesh/material slot rather than only Entity::material (which currently aliases the first submesh material).
 - Make entity membership undo restore stable runtime identity and selection state. Current add/remove commands retain the entity and ID, but selection restoration should be defined for both the affected entity and the selection that preceded the operation.
 - Clear or segment history on New/Open/project switch. Keep saved-state tracking independent of whether the undo stack is empty.
@@ -111,5 +113,4 @@ Do this after the functional changes are complete, so refactoring follows the fi
 
 ## Final completion criteria
 
-The remaining work is complete when the editor can import and browse model and texture assets, instantiate models, assign and render albedo/normal maps to a chosen material slot, save and reopen those GUID references, undo/redo supported scene/material assignments without changing another scene or deleting imported files, and shut down without unsafe GPU resource release.
-
+The remaining work is complete when the editor can import and browse model and texture assets, instantiate models, manually add or replace albedo/normal textures on existing primitives and model material slots, save and reopen those GUID-based overrides, undo/redo supported scene/material assignments without changing another scene or deleting imported files, and shut down without unsafe GPU resource release.
