@@ -98,8 +98,8 @@ void Engine::SceneRenderer::Init(nvrhi::IDevice *device, Renderer::MaterialSyste
     nvrhi::BindingLayoutDesc sceneLayoutDesc;
     sceneLayoutDesc.visibility = nvrhi::ShaderType::All;
     sceneLayoutDesc.bindings = {
-        nvrhi::BindingLayoutItem::ConstantBuffer(2), nvrhi::BindingLayoutItem::Texture_SRV(3),
-        nvrhi::BindingLayoutItem::Sampler(3), nvrhi::BindingLayoutItem::ConstantBuffer(4)};
+        nvrhi::BindingLayoutItem::ConstantBuffer(2), nvrhi::BindingLayoutItem::Texture_SRV(6),
+        nvrhi::BindingLayoutItem::Sampler(6), nvrhi::BindingLayoutItem::ConstantBuffer(4)};
     m_SceneBindingLayout = device->createBindingLayout(sceneLayoutDesc);
 
     nvrhi::BindingLayoutDesc debugLayoutDesc;
@@ -460,8 +460,8 @@ nvrhi::BindingSetHandle Engine::SceneRenderer::GetSceneBindingSet(size_t viewInd
 
     nvrhi::BindingSetDesc desc;
     desc.addItem(nvrhi::BindingSetItem::ConstantBuffer(2, lightBuffer));
-    desc.addItem(nvrhi::BindingSetItem::Texture_SRV(3, shadowMap));
-    desc.addItem(nvrhi::BindingSetItem::Sampler(3, shadowSampler));
+    desc.addItem(nvrhi::BindingSetItem::Texture_SRV(6, shadowMap));
+    desc.addItem(nvrhi::BindingSetItem::Sampler(6, shadowSampler));
     desc.addItem(nvrhi::BindingSetItem::ConstantBuffer(4, cameraBuffer));
     nvrhi::BindingSetHandle bindings = m_Device->createBindingSet(desc, m_SceneBindingLayout);
     if (!bindings)

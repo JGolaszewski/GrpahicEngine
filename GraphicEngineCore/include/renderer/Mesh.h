@@ -43,13 +43,9 @@ class ENGINE_API Mesh
                     .setElementStride(sizeof(Vertex)),
                 nvrhi::VertexAttributeDesc()
                     .setName("TEXCOORD")
+                    .setArraySize(2)
                     .setFormat(nvrhi::Format::RG32_FLOAT)
                     .setOffset(offsetof(Vertex, UV))
-                    .setElementStride(sizeof(Vertex)),
-                nvrhi::VertexAttributeDesc()
-                    .setName("TEXCOORD1")
-                    .setFormat(nvrhi::Format::RG32_FLOAT)
-                    .setOffset(offsetof(Vertex, UV1))
                     .setElementStride(sizeof(Vertex)),
                 nvrhi::VertexAttributeDesc()
                     .setName("TANGENT")

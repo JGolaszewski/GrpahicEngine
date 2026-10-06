@@ -10,7 +10,7 @@ The standard graphics pipeline uses these shader registers. Keep the material, s
 | `t0` / `s0` | Base-color map and sampler | `MaterialSystem` |
 | `t1` / `s1` | Tangent-space normal map and sampler | `MaterialSystem` |
 | `t2` / `s2` | Metallic-roughness map and sampler | `MaterialSystem` |
-| `t3` / `s3` | Shadow-map array and comparison sampler | `SceneRenderer` |
+| `t6` / `s6` | Shadow-map array and comparison sampler | `SceneRenderer` |
 | `b4` | Camera position | `SceneRenderer` |
 | `t4` / `s4` | Occlusion map and sampler | `MaterialSystem` |
 | `t5` / `s5` | Emissive map and sampler | `MaterialSystem` |

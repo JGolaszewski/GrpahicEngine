@@ -50,8 +50,8 @@ cbuffer CameraCB : register(b4)
     float4 g_CameraPosition;
 };
 
-Texture2DArray<float>  g_ShadowMaps    : register(t3);
-SamplerComparisonState g_ShadowSampler : register(s3);
+Texture2DArray<float>  g_ShadowMaps    : register(t6);
+SamplerComparisonState g_ShadowSampler : register(s6);
 
 Texture2D<float4> g_BaseColorMap : register(t0);
 SamplerState g_BaseColorSampler : register(s0);
