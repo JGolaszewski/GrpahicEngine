@@ -225,11 +225,15 @@ if(NOT CLANG_TIDY_EXECUTABLE AND DEFINED ENV{VSINSTALLDIR})
     find_program(CLANG_TIDY_EXECUTABLE NAMES clang-tidy
         HINTS "$ENV{VSINSTALLDIR}/VC/Tools/Llvm/x64/bin")
 endif()
-if(CLANG_TIDY_EXECUTABLE)
+if(CLANG_TIDY_EXECUTABLE AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     add_custom_target(lint
         COMMAND "${CLANG_TIDY_EXECUTABLE}" -p="${CMAKE_BINARY_DIR}" ${CORE_SOURCES} ${EDITOR_STYLE_FILES}
         WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
         COMMENT "Running clang-tidy on core and editor sources"
+    )
+elseif(MSVC)
+    add_custom_target(lint
+        COMMAND ${CMAKE_COMMAND} -E echo "clang-tidy naming checks require a Clang CMake toolchain; format checks support Visual Studio"
     )
 else()
     add_custom_target(lint
