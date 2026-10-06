@@ -310,7 +310,7 @@ bool ResourceManager::FlushUploads(std::string &error)
     else
     {
         nvrhi::CommandListParameters parameters;
-        parameters.setEnableImmediateExecution(false);
+        parameters.setEnableImmediateExecution(true);
         nvrhi::CommandListHandle commandList = m_Device->createCommandList(parameters);
         if (!commandList)
         {
