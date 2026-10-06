@@ -7,7 +7,7 @@
 
 ## Executive Summary
 
-**Implementation update (2026-10-06):** All five P0 actions and all six P1 actions below are implemented and committed. The Visual Studio x64 Debug build succeeds. CTest passed 2/2 after the P0 work; it was not rerun after the P1 changes. The documented interactive GPU validation scenarios have not been run in this session.
+**Implementation update (2026-10-06):** All five P0 actions and all six P1 actions below are implemented and committed. P2 glTF material coverage reporting, configurable demand-driven shadow slices, cached bounds and submission timings, and the runtime/render/backend/UI target split are also implemented and committed. The Visual Studio x64 Debug build succeeds after these changes. CTest passed 2/2 after P0; it was not rerun after later changes. Interactive GPU validation and performance captures have not been run in this session.
 
 The implementation phase resolved several real problems from `ENGINE_AUDIT_REPORT.md`: lights are now prepared per view, imported alpha mode and sidedness reach forward draw state, ordinary resource retirement no longer calls `waitForIdle()`, editor ImGui/D3D11 integration moved out of the core target, scene ID lookups gained indexes, and multiple placeholder or misleading APIs were removed. The fixes are incremental and generally fit the existing design.
 
@@ -16,9 +16,9 @@ The completion markers in the original report overstate the degree of closure. S
 1. Per-view light uploads now use a separate volatile buffer per submitted view slot, so the view count is not constrained by one buffer's version budget.
 2. Masked shadow casters use a depth-only alpha-test shader and material bindings. Shadow culling respects double-sided materials; blended materials are excluded from shadow casting by documented policy.
 
-The P1 follow-up now puts reusable camera, light, and object upload buffers under `FrameContext`; caches per-view scene binding sets; imports viewport attachments and declares their states, ranges, and clear/store policy in the graph; validates subresource hazards; batches queued asset uploads with completion-based staging retirement; and routes editor material and scene-document workflows through narrower APIs. The graph remains texture-focused, and viewport UI interop remains an untyped `void*` bridge converted to a D3D11 SRV in the editor.
+The P1 follow-up now puts reusable camera, light, and object upload buffers under `FrameContext`; caches per-view scene binding sets; imports viewport attachments and declares their states, ranges, and clear/store policy in the graph; validates subresource hazards; batches queued asset uploads with completion-based staging retirement; and routes editor material and scene-document workflows through narrower APIs. The P2 follow-up documents and rejects unsupported glTF material features, adds configurable demand-driven shadow slices and bounds/timing instrumentation, separates runtime/render/backend/UI build targets, and routes viewport texture registration through the backend contract. The graph remains texture-focused, and ImGui frame rendering remains D3D11-specific.
 
-**Review disposition:** P0 and P1 implementation is complete and builds with the Visual Studio x64 Debug toolchain. Interactive GPU validation remains a documented manual step.
+**Review disposition:** P0 and P1 implementation is complete. Applicable unconditional P2 implementation work is also complete and builds with the Visual Studio x64 Debug toolchain. Conditional P2 work remains deferred where representative performance captures or a target presentation requirement are absent. Interactive GPU validation remains a documented manual step.
 
 ## 1. Commit Verification and Diff Review
 
@@ -30,15 +30,19 @@ The original report was introduced in `730ae10` after the P0 implementation comm
 | P0 alpha mode and sidedness | `2ddb8b6`, `7848385` | Forward and shadow paths honor mask alpha and double-sided state. Blended materials do not cast shadows by policy. |
 | P1 frame and per-view allocation churn | `44d83e7`, `aa3f9c0`, `6ccf7e6` | `FrameContext` owns persistent camera/light/object upload buffers and view lifetime; scene binding sets are cached by resource handles. Per-object data still uses one write per draw and sizes volatile versions from an estimate. |
 | P1 device-wide idle during retirement | `a3e6a0f`, `f15b51a` | Normal retirement polls graphics event queries. Query allocation failure is diagnosed and falls back to an explicit idle wait before releasing retained resources; teardown also waits idle. |
-| P1 ImGui/D3D11 coupling | `64f94cb`, `2bdfdc4` | Core no longer owns ImGui frame lifecycle and no longer links D3D11/GLFW/ImGui directly. UI backend integration is editor-owned. This is a real boundary improvement, not a backend-neutral UI texture API: `EditorUiIntegration` dynamically casts to D3D11 and converts a `void*` NVRHI texture to a D3D11 SRV. |
+| P1 ImGui/D3D11 coupling | `64f94cb`, `2bdfdc4` | Core no longer owns ImGui frame lifecycle or links D3D11/GLFW/ImGui. The P2 follow-up adds a backend-mediated opaque viewport texture registration contract and an `EditorUI` target; ImGui frame rendering remains D3D11-specific. |
 | P1 render graph access states | `4b06573`, `2dc188f`, `fa207d1`, `79e7ae6` | Viewport color/depth attachments are imported with clear/store policy; shadow and viewport accesses use subresource ranges; overlapping declarations and subresource read/write hazards are checked. `RenderGraph::Dump()` exposes passes, resources, lifetimes, and planned transitions. Graph resources remain texture-only. |
 | P1 upload submission | `e4294d7` | Mesh and texture writes queue into one upload command list per flush. CPU staging is retained through a GPU completion query, with byte and batch progress plus error reporting. |
 | P1 editor/runtime service boundary | `d032dcc` | Editor material operations use focused `RenderSystem` methods, renderer implementation getters were removed, and `EditorSceneDocument` reads/writes `SceneDocument` data through `AssetManager` without depending on `Application`. |
 | P2 scene document workflow | `8ae35df` | Path and canonicalization state moved into `EditorSceneDocument`. Load/save still call `Application` methods and the service is editor-specific; serialization ownership is only partially separated. |
 | P2 scene ID scans | `ad7fc02` | ID-to-index lookups are now indexed for entities, lights, and cameras. Removal still shifts vectors and rewrites following indexes, and pointer-to-ID lookup remains linear. This is a useful improvement without stable slot/generation handles. |
+| P2 glTF material coverage | `39b37e9` | Unsupported material channels and states are rejected with source context; `GraphicEngineCore/docs/gltf-material-support.md` records supported and rejected fields. |
+| P2 shadow policy and slice allocation | `7dd3818`, `f72182e` | Shadow resolution and per-scene caster limits are configurable. The shadow array is sized to active caster views, with one fallback slice when no views exist. |
+| P2 bounds and submission timing | `ce32ab9` | Per-submesh world bounds are cached by effective transform and local bounds; culling and packet-build CPU time are exposed in submission statistics. |
+| P2 module targets and texture registration | `e3c70a7` | Runtime, render core, D3D11 backend, and editor UI have separate CMake targets. Viewport texture registration now crosses an opaque backend contract; runtime/render objects preserve the existing core DLL ABI. |
 | P3 placeholder/API cleanup | `a9e4515`, `369e3ea`, `91ff71e`, `64a314d`, `d0c569a` | Empty cache declarations were removed; sandbox primitive construction uses the factory; `EntityBuilder` is private to implementation; unsupported viewport flags were deleted; unsupported neural BRDF values are explicitly downgraded with a warning. These are scoped cleanups. |
 
-Related history includes model/material texture import and reimport (`4fc82a4` through `8dd9597`), per-submesh shader selection (`c03c7ab`), and editor file-dialog isolation (`6c31522`). Incomplete glTF material coverage remains open for P2.
+Related history includes model/material texture import and reimport (`4fc82a4` through `8dd9597`), per-submesh shader selection (`c03c7ab`), and editor file-dialog isolation (`6c31522`). Unsupported glTF material features are now rejected with a checked-in coverage table.
 
 ### 1.1 Representative patterns in the diffs
 
@@ -89,19 +93,19 @@ Masked shadow casters need an alpha-aware depth shader and base-color texture/ma
 
 **Still coupled:**
 
-- `GraphicEngineCore` publicly links NVRHI and DirectXMath, and its public headers expose NVRHI types extensively. That may be appropriate for a renderer module, but `GraphicEngineCore` still combines runtime, renderer, asset manager, and platform-adjacent types instead of exposing smaller stable targets.
-- Editor material creation, texture assignment, and cleanup use focused `RenderSystem` methods. Asset operations still pass through the application-owned `AssetManager` and render-system asset APIs; broader runtime/editor target separation remains open for P2.
-- `EditorUiIntegration` depends on `D3D11Backend`, GLFW, ImGui’s DX11 backend, and `nvrhi::ObjectTypes::D3D11_ShaderResourceView`. `ViewportTarget::GetColorTextureHandle()` returns `void*`, then the editor interprets it as `nvrhi::ITexture*`. Ownership and backend type are not encoded by this interface.
+- `GraphicEngineCore` publicly links NVRHI and DirectXMath, and its public headers expose NVRHI types extensively. Runtime and render sources now compile as separate `EngineRuntime` and `RenderCore` object targets while composing into the existing core DLL for ABI compatibility.
+- Editor material creation, texture assignment, and cleanup use focused `RenderSystem` methods. Asset operations still pass through the application-owned `AssetManager` and render-system asset APIs.
+- `EditorUiIntegration` is now part of its own `EditorUI` target. Viewport texture registration crosses the backend through an opaque-handle contract, while current ImGui frame rendering remains D3D11/GLFW-specific.
 - `EditorSceneDocument` owns path state and reads/writes the serializable `SceneDocument` through `AssetManager`. Runtime scene construction remains an `Application` operation, separate from file persistence.
 - Naming, member casing, and getter/mutable-field conventions remain mixed. Treat this as secondary to ownership and lifecycle contracts; avoid a broad style-only rewrite.
 
-**Assessment:** module separation is better but incomplete. The engine is still one Windows-first renderer/runtime DLL with a concrete D3D11 editor integration, rather than a backend-neutral runtime plus a renderer contract and editor service layer.
+**Assessment:** target boundaries now distinguish `EngineRuntime`, `RenderCore`, `RenderBackendD3D11`, and `EditorUI`; the first two compose the existing `GraphicEngineCore` DLL. The current editor UI frame renderer remains tied to the D3D11/GLFW/ImGui path, while viewport texture registration is routed through the backend contract.
 
 ### 2.2 Render pass health and graph maturity
 
 The active graph remains three passes: shadow, forward, debug. It does not yet own all render work.
 
-- `ShadowPass` creates framebuffers from the physical shadow texture and clears every allocated slice, including slices without a caster view. Four slices are reserved for every distinct scene, regardless of how many shadow-casting lights that scene uses.
+- `ShadowPass` creates framebuffers from the physical shadow texture and clears each submitted shadow slice. Slice count now follows eligible casters and configured per-scene limits.
 - `ForwardPass` reuses scene binding sets and consumes graph-imported viewport attachments. The graph declares color/depth accesses, clear/load/store intent, and final states; `DebugPass` declares its attachment writes.
 - Pass execution returns an error result. `RenderSystem::EndFrame` logs graph/execute failures and clears submitted targets to the error color before submission.
 - The graph tracks access hazards per texture subresource and exposes pass, resource, lifetime, and transition dumps. It still has no buffer resources or queue ownership, and first/last allocation lifetime remains resource-wide.
@@ -129,10 +133,10 @@ Forward rendering now classifies opaque/masked/blended materials, applies mask c
 The contract is not yet end-to-end:
 
 - Masked alpha is evaluated in the shadow map. Blended materials intentionally do not cast shadows because the depth-only representation does not model partial coverage.
-- Only base-color and normal maps are bound in the current material system. The renderer still lacks full glTF metallic-roughness texture channels, occlusion, emissive texture, normal scale, alternate UV sets, and imported sampler behavior. Current texture creation uses one mip, linear filtering, and wrap addressing. This is known coverage debt, but imported values should remain explicit in diagnostics/UI.
+- Only base-color and normal maps are bound in the current material system. The importer rejects unsupported metallic-roughness texture channels, occlusion, emissive texture, non-default normal scale, alternate UV sets, and sampler state with source context. The supported/rejected field table is in `GraphicEngineCore/docs/gltf-material-support.md`.
 - Alpha blend sorting uses view-space center depth and descending order, which is a sensible baseline. It does not split intersecting geometry or handle order-independent transparency; keep its scope documented and validate representative scenes.
-- Shadow generation remains positional/spot-light only. Directional light cascades, quality controls, and demand-driven slice allocation remain absent. The fixed 2048 resolution is not configurable from scene/editor settings.
-- Bounds are transformed and all eight corners are visited for every submesh/view. This is conservative, but repeats CPU work across main and shadow views; cache world bounds or use a conservative scale transform once profiling shows culling cost matters.
+- Shadow generation remains positional/spot-light only. Resolution and per-scene caster limits are configurable, and the graph allocates slices only for eligible casters. Directional cascades remain deferred until representative scene content warrants them.
+- World-space submesh bounds are cached by effective transform and local bounds, and submission statistics measure culling and packet-build CPU time. No performance capture was available, so batching/instancing remains deferred until timings identify draw submission as a bottleneck.
 
 ### 2.5 Scene data and editor health
 
@@ -167,12 +171,12 @@ The editor has a separate executable, panels, commands, and file-dialog/UI integ
 
 ### P2 — Improve scalability and imported-material fidelity
 
-1. Implement the supported glTF material fields end-to-end (metallic-roughness, occlusion, emissive, normal scale, UV selection, sampler state) or reject/report unsupported fields at import with a clear coverage table.
-2. Add shadow resolution/caster policy controls and allocate only required shadow slices. Add directional cascades only when representative content warrants them.
-3. Cache per-submesh/world bounds and measure culling and packet-build CPU time. Add batching/instancing only when captured CPU/GPU timings identify draw submission as a bottleneck.
-4. Move from parallel scene vectors/index maps to stable generational handles only when scene growth or mutation patterns justify it. Keep editor metadata separate from compact render instances.
-5. Separate `EngineRuntime`, `RenderCore`, `RenderBackendD3D11`, and `EditorUI` targets with private dependencies and backend-neutral surface/texture-registration contracts. Preserve NVRHI as the render API seam.
-6. Add explicit output color-space/HDR policy and post-processing only with a target presentation requirement and reference captures.
+1. **[Completed]** Report glTF material support with a coverage table and reject unsupported metallic-roughness, occlusion, emissive, normal-scale, UV-selection, and sampler features at import with source context. See `GraphicEngineCore/docs/gltf-material-support.md`.
+2. **[Completed; cascades deferred]** Expose shadow resolution and per-scene caster limits and allocate only slices for eligible shadow-casting lights. Directional cascades remain deferred until representative scene content warrants them.
+3. **[Completed; batching deferred]** Cache per-submesh world bounds and measure culling and packet-build CPU time. No capture establishes draw submission as a bottleneck, so batching/instancing is not justified yet.
+4. **[Deferred]** Keep the current indexed scene storage until scene growth or mutation patterns justify stable generational handles. Current audit evidence does not establish that need.
+5. **[Completed]** Separate `EngineRuntime`, `RenderCore`, `RenderBackendD3D11`, and `EditorUI` build targets with private module dependencies and an opaque backend viewport-texture registration contract. Runtime and render object targets compose into `GraphicEngineCore` for ABI compatibility.
+6. **[Deferred]** Add output color-space/HDR policy and post-processing when a target presentation requirement and reference captures are available; none were provided in this audit.
 
 ### P3 — Consistency and long-term maintainability
 
@@ -186,8 +190,9 @@ The editor has a separate executable, panels, commands, and file-dialog/UI integ
 - `git status --short` showed a pre-existing user change to `.gitignore`; it was preserved. This re-audit did not edit it.
 - Git commit history and the implementation diffs listed above were inspected. The report status-only commits were not mistaken for implementation.
 - The Visual Studio 2026 x64 Developer Command Prompt configured the existing CMake build. `cmake --build out/build/verify-p0 --config Debug --parallel 4` succeeded after the P1 changes.
+- The same Visual Studio x64 Debug build succeeded after glTF rejection/coverage reporting, shadow policy controls, bounds/timing instrumentation, and the CMake target split.
 - CTest passed both registered tests after P0; it was not rerun after P1. No interactive GPU validation or performance capture was run.
 
 ## Final Assessment
 
-P0 and P1 implementation is complete. The final Visual Studio x64 Debug build succeeds; the P0 CTest run passed 2/2, while tests were not rerun after P1. Interactive GPU validation and performance results remain outstanding. P2/P3 items, including full glTF material coverage, backend-neutral viewport texture registration, and broader module separation, remain open.
+P0 and P1 implementation is complete, and applicable unconditional P2 items are implemented. Unsupported glTF features are explicitly rejected and documented. Shadow controls and demand-driven slices, cached bounds/timing instrumentation, separate build targets, and backend-mediated viewport texture registration are in place. The Visual Studio x64 Debug build succeeds. The P0 CTest run passed 2/2; tests were not rerun after later changes. Interactive GPU validation remains outstanding. Conditional P2 work (directional cascades, batching, generational handles, HDR/post-processing) remains deferred pending representative content, performance evidence, or presentation requirements.
