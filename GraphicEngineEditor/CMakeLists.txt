@@ -4,6 +4,8 @@ add_executable(Editor
     "main.cpp"
     "Editor.h"
     "Editor.cpp"
+    "EditorSceneDocument.h"
+    "EditorSceneDocument.cpp"
     "platform/EditorFileDialogs.h"
     "platform/EditorFileDialogs.cpp"
     "platform/EditorUiIntegration.h"

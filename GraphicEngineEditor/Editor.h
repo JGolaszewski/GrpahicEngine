@@ -17,6 +17,7 @@
 #include "events/AssetImportRequestedEvent.h"
 #include "commands/CommandHistory.h"
 #include "platform/EditorUiIntegration.h"
+#include "EditorSceneDocument.h"
 
 namespace Engine::Events {
 	class Event;
@@ -141,7 +142,7 @@ private:
 	EditorUiIntegration m_UiIntegration;
 
 	CommandHistory m_CommandHistory;
-	std::filesystem::path m_ScenePath;
+	EditorSceneDocument m_SceneDocument;
 	std::string m_FileError;
 	struct PendingUnsupportedModelLoad {
 		std::string Guid;

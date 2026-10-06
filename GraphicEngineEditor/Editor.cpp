@@ -45,11 +45,6 @@ bool HasIgnoredExtensionWarning(const std::vector<std::string>& warnings) {
 	});
 }
 
-std::filesystem::path CanonicalScenePath(const std::filesystem::path& path) {
-	std::error_code ec;
-	auto canonical = std::filesystem::weakly_canonical(path, ec);
-	return ec ? path.lexically_normal() : canonical;
-}
 }
 
 void Editor::OnInit() {
@@ -1090,12 +1085,12 @@ void Editor::RequestSceneAction(SceneFileActionRequestedEvent::Action action) {
 		if (m_ActiveScene) RemoveScene(m_ActiveScene);
 		AddScene(scene);
 		OnSceneReplaced(scene);
-		m_ScenePath.clear();
+		m_SceneDocument.Reset();
 		m_SceneDirty = false;
 		return;
 	}
 	if (action == SceneFileActionRequestedEvent::Action::SaveScene) {
-		SaveCurrentScene(m_ScenePath.empty());
+		SaveCurrentScene(m_SceneDocument.GetPath().empty());
 		return;
 	}
 	if (action == SceneFileActionRequestedEvent::Action::SaveSceneAs) {
@@ -1123,20 +1118,19 @@ void Editor::RequestSceneAction(SceneFileActionRequestedEvent::Action action) {
 		if (m_ActiveScene) RemoveScene(m_ActiveScene);
 		AddScene(scene);
 		OnSceneReplaced(scene);
-		m_ScenePath.clear();
+		m_SceneDocument.Reset();
 		m_SceneDirty = false;
 		if (!registryWarnings.empty()) m_FileError = JoinWarnings(registryWarnings);
 		return;
 	}
-	const auto path = EditorPlatform::ChooseSceneFile(false, m_ScenePath, GetAssetManager()->GetProjectRoot());
+	const auto path = EditorPlatform::ChooseSceneFile(false, m_SceneDocument.GetPath(), GetAssetManager()->GetProjectRoot());
 	if (!path) return;
 	std::string error;
 	std::vector<std::string> warnings;
-	if (!LoadScene(*path, error, warnings)) {
+	if (!m_SceneDocument.Load(*this, *path, error, warnings)) {
 		m_FileError = std::move(error);
 		return;
 	}
-	m_ScenePath = CanonicalScenePath(*path);
 	m_SceneDirty = false;
 	if (!warnings.empty()) m_FileError = JoinWarnings(warnings);
 }
@@ -1147,15 +1141,14 @@ bool Editor::SaveCurrentScene(bool choosePath) {
 		return false;
 	}
 	auto path = choosePath
-		? EditorPlatform::ChooseSceneFile(true, m_ScenePath, GetAssetManager()->GetProjectRoot())
-		: std::optional(m_ScenePath);
+		? EditorPlatform::ChooseSceneFile(true, m_SceneDocument.GetPath(), GetAssetManager()->GetProjectRoot())
+		: (m_SceneDocument.GetPath().empty() ? std::nullopt : std::optional(m_SceneDocument.GetPath()));
 	if (!path) return false;
 	std::string error;
-	if (!SaveScene(*path, *m_ActiveScene, error)) {
+	if (!m_SceneDocument.Save(*this, *m_ActiveScene, *path, error)) {
 		m_FileError = std::move(error);
 		return false;
 	}
-	m_ScenePath = CanonicalScenePath(*path);
 	m_SceneDirty = false;
 	m_FileError.clear();
 	return true;
@@ -1169,7 +1162,7 @@ void Editor::DrawUnsavedChangesModal() {
 	if (ImGui::BeginPopupModal("Unsaved changes", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
 		ImGui::TextUnformatted("Save changes to the current scene before continuing?");
 		if (ImGui::Button("Save", ImVec2(120, 0))) {
-			if (SaveCurrentScene(m_ScenePath.empty())) {
+			if (SaveCurrentScene(m_SceneDocument.GetPath().empty())) {
 				const auto action = m_PendingSceneAction;
 				ImGui::CloseCurrentPopup();
 				RequestSceneAction(action);
