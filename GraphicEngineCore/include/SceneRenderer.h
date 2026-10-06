@@ -19,6 +19,7 @@
 #include "renderer/Camera.h"
 #include "renderer/RenderPacket.h"
 #include "renderer/render_graph/FrameBlackboard.h"
+#include "renderer/render_graph/FrameContext.h"
 
 namespace Engine {
 
@@ -40,7 +41,8 @@ namespace Engine {
 			Renderer::MaterialSystem* materialSystem,
 			Renderer::ShaderFactory* shaderFactory);
 		
-		void BuildViews(Renderer::FrameBlackboard& blackboard, nvrhi::ICommandList* commandList);
+		void BuildViews(Renderer::FrameBlackboard& blackboard, nvrhi::ICommandList* commandList,
+			Renderer::FrameDiagnostics& diagnostics);
 		void BuildDebugGeometry(Renderer::RenderView* view);
 		void RenderDebugGeometry(nvrhi::ICommandList* commandList, const Renderer::RenderView& view);
 		std::optional<Engine::LightId> PickLight(const Renderer::RenderView& view,
@@ -51,8 +53,11 @@ namespace Engine {
 		void BuildShadowData(Engine::Scene* scene, const std::vector<Renderer::RenderView*>& shadowViews,
 			uint32_t firstShadowSlot);
 
-		bool EnsureLightBuffers(size_t viewCount);
+		bool EnsureLightBuffers(size_t viewCount, Renderer::FrameDiagnostics& diagnostics);
 		nvrhi::BufferHandle GetLightBuffer(size_t viewIndex) const;
+		nvrhi::BindingSetHandle GetSceneBindingSet(size_t viewIndex, nvrhi::BufferHandle lightBuffer,
+			nvrhi::TextureHandle shadowMap, nvrhi::SamplerHandle shadowSampler,
+			nvrhi::BufferHandle cameraBuffer, Renderer::FrameDiagnostics& diagnostics);
 		inline nvrhi::BufferHandle GetPerObjectBuffer() const { return m_PerObjectBuffer; }
 		inline nvrhi::BindingSetHandle GetPerObjectBindingSet() const { return m_PerObjectBindingSet; }
 		inline nvrhi::SamplerHandle GetShadowSampler() const { return m_ShadowSampler; }
@@ -73,7 +78,7 @@ namespace Engine {
 		nvrhi::GraphicsPipelineHandle GetDebugPipeline(const nvrhi::FramebufferInfo& framebuffer,
 			nvrhi::PrimitiveType primitiveType,
 			Renderer::DebugDepthMode depthMode);
-		bool EnsurePerObjectResources(size_t maxDrawCount);
+		bool EnsurePerObjectResources(size_t maxDrawCount, Renderer::FrameDiagnostics& diagnostics);
 		size_t EstimateDrawCount(const Renderer::FrameBlackboard& blackboard) const;
 		Renderer::RenderPacket CreateRenderPacket(const Renderer::Mesh* mesh, const Renderer::Material* material);
 
@@ -81,6 +86,16 @@ namespace Engine {
 
 		nvrhi::DeviceHandle m_Device;
 		std::vector<nvrhi::BufferHandle> m_LightBuffers;
+		std::vector<nvrhi::BufferHandle> m_CameraBuffers;
+		struct SceneBindingCache {
+			nvrhi::BufferHandle LightBuffer;
+			nvrhi::TextureHandle ShadowMap;
+			nvrhi::SamplerHandle ShadowSampler;
+			nvrhi::BufferHandle CameraBuffer;
+			nvrhi::BindingLayoutHandle Layout;
+			nvrhi::BindingSetHandle Bindings;
+		};
+		std::vector<SceneBindingCache> m_SceneBindingCaches;
 		nvrhi::BindingLayoutHandle m_PerObjectBindingLayout;
 		nvrhi::BufferHandle m_PerObjectBuffer;
 		nvrhi::BindingSetHandle m_PerObjectBindingSet;

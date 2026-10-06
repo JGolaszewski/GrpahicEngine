@@ -86,6 +86,8 @@ namespace Renderer {
 				if (!packet.Pipeline || !packet.VertexBuffer ||
 					(packet.ShadowAlphaTest && !packet.MaterialBindings)) return false;
 				cmd->writeBuffer(perObjectBuffer, &packet.PerObjectData, sizeof(packet.PerObjectData));
+				ctx.GetFrameContext().GetDiagnostics().UploadBytes += sizeof(packet.PerObjectData);
+				++ctx.GetFrameContext().GetDiagnostics().DrawCalls;
 				nvrhi::GraphicsState state;
 				state.pipeline = packet.Pipeline;
 				state.framebuffer = shadowFb;
@@ -130,7 +132,9 @@ namespace Renderer {
 	// FORWARD PASS
 	// ==============================================================================
 
-	ForwardPass::ForwardPass() = default;
+	ForwardPass::ForwardPass(Engine::SceneRenderer* sceneRenderer)
+		: m_SceneRenderer(sceneRenderer) {
+	}
 
 	void ForwardPass::Setup(Renderer::RGBuilder& builder, FrameBlackboard& blackboard) {
 		m_ShadowMapInputID = blackboard.GetShadowMap();
@@ -156,6 +160,7 @@ namespace Renderer {
 			for (const auto& packet : packets) {
 				if (!packet.Pipeline || !packet.VertexBuffer || !sceneBindings) return false;
 				cmd->writeBuffer(perObjectBuffer, &packet.PerObjectData, sizeof(packet.PerObjectData));
+				ctx.GetFrameContext().GetDiagnostics().UploadBytes += sizeof(packet.PerObjectData);
 				nvrhi::GraphicsState state;
 				state.pipeline = packet.Pipeline;
 				state.framebuffer = fb;
@@ -190,11 +195,13 @@ namespace Renderer {
 					args.vertexCount = packet.VertexCount;
 					cmd->draw(args);
 				}
+				++ctx.GetFrameContext().GetDiagnostics().DrawCalls;
 			}
 			return true;
 			};
 
-		for (Renderer::RenderView* view : sceneViews) {
+		for (size_t viewIndex = 0; viewIndex < sceneViews.size(); ++viewIndex) {
+			Renderer::RenderView* view = sceneViews[viewIndex];
 			if (!view || !view->TargetFramebuffer || !view->CameraBuffer || !view->LightBuffer) return false;
 			Renderer::LightsCBData lightData{};
 			const uint32_t lightCount = static_cast<uint32_t>(std::min(view->Lights.size(),
@@ -202,13 +209,11 @@ namespace Renderer {
 			for (uint32_t i = 0; i < lightCount; ++i) lightData.Lights[i] = view->Lights[i];
 			lightData.LightCount = lightCount;
 			cmd->writeBuffer(view->LightBuffer, &lightData, sizeof(lightData));
-
-			nvrhi::BindingSetDesc sceneSetDesc;
-			sceneSetDesc.addItem(nvrhi::BindingSetItem::ConstantBuffer(2, view->LightBuffer));
-			sceneSetDesc.addItem(nvrhi::BindingSetItem::Texture_SRV(3, physicalShadowMap));
-			sceneSetDesc.addItem(nvrhi::BindingSetItem::Sampler(3, shadowSampler));
-			sceneSetDesc.addItem(nvrhi::BindingSetItem::ConstantBuffer(4, view->CameraBuffer));
-			nvrhi::BindingSetHandle sceneBindings = ctx.GetDevice()->createBindingSet(sceneSetDesc, sceneBindingLayout);
+			ctx.GetFrameContext().GetDiagnostics().UploadBytes += sizeof(lightData);
+			nvrhi::BindingSetHandle sceneBindings = m_SceneRenderer
+				? m_SceneRenderer->GetSceneBindingSet(viewIndex, view->LightBuffer, physicalShadowMap,
+					shadowSampler, view->CameraBuffer, ctx.GetFrameContext().GetDiagnostics())
+				: nullptr;
 			if (!sceneBindings) return false;
 
 			nvrhi::IFramebuffer* mainFramebuffer = view->TargetFramebuffer;

@@ -146,8 +146,9 @@ namespace Engine {
 		bb.Set<uint32_t>("MaxShadowedLights", (std::max)(1u,
 			static_cast<uint32_t>(scenes.size()) * SceneRenderer::MaxShadowedLights));
 
-		m_SceneRenderer->BuildViews(bb, m_CommandList);
-		if (!m_SceneRenderer->EnsureLightBuffers(bb.GetSceneViews().size())) {
+		Renderer::FrameDiagnostics& diagnostics = m_FrameContext.GetDiagnostics();
+		m_SceneRenderer->BuildViews(bb, m_CommandList, diagnostics);
+		if (!m_SceneRenderer->EnsureLightBuffers(bb.GetSceneViews().size(), diagnostics)) {
 			std::cerr << "ERROR: Could not allocate per-view light buffers." << std::endl;
 		}
 		bb.SetPerObjectBuffer(m_SceneRenderer->GetPerObjectBuffer());
@@ -163,7 +164,7 @@ namespace Engine {
 		bb.SetSceneBindingLayout(m_SceneRenderer->GetSceneBindingLayout());
 
 		m_RenderGraph->AddPass(std::make_unique<Renderer::ShadowPass>());
-		m_RenderGraph->AddPass(std::make_unique<Renderer::ForwardPass>());
+		m_RenderGraph->AddPass(std::make_unique<Renderer::ForwardPass>(m_SceneRenderer.get()));
 		m_RenderGraph->AddPass(std::make_unique<Renderer::DebugPass>(m_SceneRenderer.get()));
 	}
 

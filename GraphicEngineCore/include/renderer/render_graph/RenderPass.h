@@ -47,9 +47,10 @@ namespace Renderer {
 	class ENGINE_API ForwardPass : public Renderer::IRenderPass {
 	private:
 		Renderer::RGResourceID m_ShadowMapInputID;
+		Engine::SceneRenderer* m_SceneRenderer = nullptr;
 
 	public:
-		ForwardPass();
+		explicit ForwardPass(Engine::SceneRenderer* sceneRenderer);
 
 		std::string GetName() const override { return "ForwardPass"; }
 		bool HasSideEffect() const override { return true; }

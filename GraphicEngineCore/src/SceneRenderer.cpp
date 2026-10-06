@@ -394,7 +394,7 @@ size_t Engine::SceneRenderer::EstimateDrawCount(const Renderer::FrameBlackboard&
 	return count;
 }
 
-bool Engine::SceneRenderer::EnsureLightBuffers(size_t viewCount) {
+bool Engine::SceneRenderer::EnsureLightBuffers(size_t viewCount, Renderer::FrameDiagnostics& diagnostics) {
 	while (m_LightBuffers.size() < viewCount) {
 		nvrhi::BufferDesc desc;
 		desc.byteSize = sizeof(Renderer::LightsCBData);
@@ -405,6 +405,7 @@ bool Engine::SceneRenderer::EnsureLightBuffers(size_t viewCount) {
 		nvrhi::BufferHandle buffer = m_Device ? m_Device->createBuffer(desc) : nullptr;
 		if (!buffer) return false;
 		m_LightBuffers.push_back(std::move(buffer));
+		++diagnostics.BufferAllocations;
 	}
 	return true;
 }
@@ -413,7 +414,37 @@ nvrhi::BufferHandle Engine::SceneRenderer::GetLightBuffer(size_t viewIndex) cons
 	return viewIndex < m_LightBuffers.size() ? m_LightBuffers[viewIndex] : nullptr;
 }
 
-bool Engine::SceneRenderer::EnsurePerObjectResources(size_t maxDrawCount) {
+ nvrhi::BindingSetHandle Engine::SceneRenderer::GetSceneBindingSet(size_t viewIndex,
+	nvrhi::BufferHandle lightBuffer, nvrhi::TextureHandle shadowMap,
+	nvrhi::SamplerHandle shadowSampler, nvrhi::BufferHandle cameraBuffer,
+	Renderer::FrameDiagnostics& diagnostics) {
+	if (!m_Device || !lightBuffer || !shadowMap || !shadowSampler || !cameraBuffer || !m_SceneBindingLayout) return nullptr;
+	if (m_SceneBindingCaches.size() <= viewIndex) m_SceneBindingCaches.resize(viewIndex + 1);
+	auto& cache = m_SceneBindingCaches[viewIndex];
+	if (cache.Bindings && cache.LightBuffer == lightBuffer && cache.ShadowMap == shadowMap &&
+		cache.ShadowSampler == shadowSampler && cache.CameraBuffer == cameraBuffer &&
+		cache.Layout == m_SceneBindingLayout) {
+		return cache.Bindings;
+	}
+
+	nvrhi::BindingSetDesc desc;
+	desc.addItem(nvrhi::BindingSetItem::ConstantBuffer(2, lightBuffer));
+	desc.addItem(nvrhi::BindingSetItem::Texture_SRV(3, shadowMap));
+	desc.addItem(nvrhi::BindingSetItem::Sampler(3, shadowSampler));
+	desc.addItem(nvrhi::BindingSetItem::ConstantBuffer(4, cameraBuffer));
+	nvrhi::BindingSetHandle bindings = m_Device->createBindingSet(desc, m_SceneBindingLayout);
+	if (!bindings) return nullptr;
+	cache.LightBuffer = std::move(lightBuffer);
+	cache.ShadowMap = std::move(shadowMap);
+	cache.ShadowSampler = std::move(shadowSampler);
+	cache.CameraBuffer = std::move(cameraBuffer);
+	cache.Layout = m_SceneBindingLayout;
+	cache.Bindings = std::move(bindings);
+	++diagnostics.BindingSetAllocations;
+	return cache.Bindings;
+}
+
+bool Engine::SceneRenderer::EnsurePerObjectResources(size_t maxDrawCount, Renderer::FrameDiagnostics& diagnostics) {
 	maxDrawCount = (std::max)(maxDrawCount, size_t{ 1 });
 	if (maxDrawCount <= m_PerObjectBufferCapacity && m_PerObjectBuffer && m_PerObjectBindingSet) return true;
 	if (maxDrawCount > std::numeric_limits<uint32_t>::max()) return false;
@@ -435,6 +466,8 @@ bool Engine::SceneRenderer::EnsurePerObjectResources(size_t maxDrawCount) {
 	m_PerObjectBuffer = std::move(buffer);
 	m_PerObjectBindingSet = std::move(bindingSet);
 	m_PerObjectBufferCapacity = maxDrawCount;
+	++diagnostics.BufferAllocations;
+	++diagnostics.BindingSetAllocations;
 	return true;
 }
 
@@ -625,13 +658,14 @@ void Engine::SceneRenderer::SortViewQueues(Renderer::RenderView* view) {
 
 // --- View Building ---
 
-void Engine::SceneRenderer::BuildViews(Renderer::FrameBlackboard& blackboard, nvrhi::ICommandList* commandList) {
+void Engine::SceneRenderer::BuildViews(Renderer::FrameBlackboard& blackboard, nvrhi::ICommandList* commandList,
+	Renderer::FrameDiagnostics& diagnostics) {
 	if (!commandList) {
 		return;
 	}
 
 	m_SubmissionStats = {};
-	if (!EnsurePerObjectResources(EstimateDrawCount(blackboard))) {
+	if (!EnsurePerObjectResources(EstimateDrawCount(blackboard), diagnostics)) {
 		std::cerr << "ERROR: Could not allocate per-object frame data resources." << std::endl;
 		return;
 	}
@@ -647,22 +681,29 @@ void Engine::SceneRenderer::BuildViews(Renderer::FrameBlackboard& blackboard, nv
 	}
 
 	const auto& sceneViews = blackboard.GetSceneViews();
+	while (m_CameraBuffers.size() < sceneViews.size()) {
+		nvrhi::BufferDesc desc;
+		desc.byteSize = sizeof(Renderer::CameraGpuData);
+		desc.isConstantBuffer = true;
+		desc.isVolatile = true;
+		desc.maxVersions = static_cast<uint32_t>(Renderer::FrameContext::FramesInFlight + 1);
+		desc.debugName = "ViewCameraPosition";
+		nvrhi::BufferHandle buffer = m_Device->createBuffer(desc);
+		if (!buffer) break;
+		m_CameraBuffers.push_back(std::move(buffer));
+		++diagnostics.BufferAllocations;
+	}
 	for (uint32_t viewIndex = 0; viewIndex < sceneViews.size(); ++viewIndex) {
 		Renderer::RenderView* view = sceneViews[viewIndex];
 		if (view) {
 			view->Clear();
-			if (!view->CameraBuffer) {
-				nvrhi::BufferDesc cameraBufferDesc;
-				cameraBufferDesc.byteSize = sizeof(Renderer::CameraGpuData);
-				cameraBufferDesc.isConstantBuffer = true;
-				cameraBufferDesc.debugName = "ViewCameraPosition";
-				view->CameraBuffer = m_Device->createBuffer(cameraBufferDesc);
-			}
+			view->CameraBuffer = viewIndex < m_CameraBuffers.size() ? m_CameraBuffers[viewIndex] : nullptr;
 			if (view->CameraBuffer) {
 				const Renderer::CameraGpuData cameraData{
 					{ view->CameraPosition.x, view->CameraPosition.y, view->CameraPosition.z, 1.0f }
 				};
 				commandList->writeBuffer(view->CameraBuffer, &cameraData, sizeof(cameraData));
+				diagnostics.UploadBytes += sizeof(cameraData);
 			}
 			CullAndFillView(view);
 			SortViewQueues(view);

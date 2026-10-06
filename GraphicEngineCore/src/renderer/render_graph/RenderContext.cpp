@@ -1,9 +1,11 @@
 #include "renderer/render_graph/RenderContext.h"
+#include "renderer/render_graph/FrameContext.h"
 
 namespace Renderer {
 
-	RenderContext::RenderContext(nvrhi::IDevice* device, RGResourceRegistry* registry, FrameBlackboard* blackboard, float dt):
-		m_Device(device), m_Registry(registry), m_Blackboard(blackboard), m_DeltaTime(dt) {}
+	RenderContext::RenderContext(nvrhi::IDevice* device, RGResourceRegistry* registry, FrameContext* frameContext, float dt)
+		: m_Device(device), m_Registry(registry), m_Blackboard(frameContext ? &frameContext->GetBlackboard() : nullptr),
+		m_FrameContext(frameContext), m_DeltaTime(dt) {}
 
 
 	nvrhi::TextureHandle RenderContext::GetPhysicalTexture(RGResourceID id) const

@@ -211,7 +211,7 @@ namespace Renderer {
 		m_LastError.clear();
 		FrameBlackboard& blackboard = m_FrameContext.GetBlackboard();
 		const float deltaTime = blackboard.Get<float>("DeltaTime", 0.016f);
-		RenderContext ctx(m_Device.Get(), &m_Registry, &blackboard, deltaTime);
+		RenderContext ctx(m_Device.Get(), &m_Registry, &m_FrameContext, deltaTime);
 
 		for (uint32_t passIndex = 0; passIndex < m_Nodes.size(); ++passIndex) {
 			for (RGResource& resource : m_Registry.GetAllResources()) {
