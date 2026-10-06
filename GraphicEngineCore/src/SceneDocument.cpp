@@ -153,8 +153,12 @@ namespace {
 			if (!value["doubleSided"].is_boolean()) { error = "doubleSided must be a boolean"; return false; }
 			material.doubleSided = value["doubleSided"].get<bool>();
 		}
+		if (material.brdfModel == "neural") {
+			warnings.push_back(context + " uses the unsupported neural BRDF; GGX will be used instead");
+			material.brdfModel = "ggx";
+		}
 		const auto validBrdf = material.brdfModel == "legacy" || material.brdfModel == "ggx" ||
-			material.brdfModel == "gtr" || material.brdfModel == "neural";
+			material.brdfModel == "gtr";
 		if (!validBrdf) { error = "brdfModel has an unsupported value"; return false; }
 		if (material.specularMode != "ior" && material.specularMode != "explicitF0") {
 			error = "specularMode has an unsupported value";
@@ -186,7 +190,7 @@ namespace {
 
 	bool IsValidMaterial(const SceneMaterialDocument& material) {
 		const auto validBrdf = material.brdfModel == "legacy" || material.brdfModel == "ggx" ||
-			material.brdfModel == "gtr" || material.brdfModel == "neural";
+			material.brdfModel == "gtr";
 		if (!validBrdf || (material.specularMode != "ior" && material.specularMode != "explicitF0") ||
 			(material.alphaMode != "opaque" && material.alphaMode != "mask" && material.alphaMode != "blend") ||
 			!std::isfinite(material.metallic) || !std::isfinite(material.roughness) ||

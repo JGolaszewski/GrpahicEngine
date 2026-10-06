@@ -20,7 +20,6 @@ namespace Engine {
         Renderer::BrdfModel ParseBrdfModel(const std::string& value) {
             if (value == "ggx") return Renderer::BrdfModel::GGX;
             if (value == "gtr") return Renderer::BrdfModel::GTR;
-            if (value == "neural") return Renderer::BrdfModel::Neural;
             return Renderer::BrdfModel::Legacy;
         }
 
@@ -28,7 +27,6 @@ namespace Engine {
             switch (value) {
             case Renderer::BrdfModel::GGX: return "ggx";
             case Renderer::BrdfModel::GTR: return "gtr";
-            case Renderer::BrdfModel::Neural: return "neural";
             default: return "legacy";
             }
         }
