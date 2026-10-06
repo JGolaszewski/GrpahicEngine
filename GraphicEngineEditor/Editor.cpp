@@ -17,6 +17,7 @@
 #include "events/EditorEvents.h"
 #include "commands/EntityMembershipCommand.h"
 #include "commands/ChangeMaterialTextureCommand.h"
+#include "commands/ReplaceEntityCommand.h"
 
 #include <DirectXMath.h>
 #include <imgui.h>
@@ -29,6 +30,7 @@
 #include <algorithm>
 #include <fstream>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 
 namespace {
@@ -673,6 +675,11 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
 		return true;
 		});
 
+	dispatcher.Dispatch<ModelReassignmentRequestedEvent>([this](const auto& request) {
+		ReassignModel(m_SelectedEntityId, request.GetGuid());
+		return true;
+		});
+
 	dispatcher.Dispatch<AddModelRequestedEvent>([this](const auto& request) {
 		if (!m_ActiveScene || !GetRenderSystem()) return true;
 		std::string error;
@@ -834,6 +841,82 @@ bool Editor::AssignTexture(Engine::EntityId entityId, int32_t materialSlot,
 			return true;
 		}));
 	return true;
+}
+
+void Editor::ReassignModel(Engine::EntityId entityId, const std::string& guid) {
+	if (!m_ActiveScene || !GetRenderSystem()) return;
+	auto before = m_ActiveScene->FindEntity(entityId);
+	if (!before) { m_FileError = "Select a scene object before replacing its model."; return; }
+	std::string error;
+	if (!GetAssetManager()->LoadModel(guid, error)) { m_FileError = std::move(error); return; }
+	const auto model = GetAssetManager()->GetModel(guid);
+	const auto generation = GetAssetManager()->GetGeneration(guid);
+	if (!model || !generation) { m_FileError = "The selected model is unavailable in the asset registry."; return; }
+	std::vector<std::optional<Renderer::MaterialProperties>> overrides(model->materials.size());
+	std::unordered_map<int32_t, std::shared_ptr<Renderer::Material>> oldSlots;
+	for (const auto& submesh : before->Submeshes) {
+		if (submesh.MaterialSlot >= 0 && submesh.material) oldSlots.try_emplace(submesh.MaterialSlot, submesh.material);
+	}
+	std::shared_ptr<Renderer::Material> primitiveMaterial = before->ModelGuid ? nullptr : before->material;
+	for (size_t slot = 0; slot < overrides.size(); ++slot) {
+		const auto found = oldSlots.find(static_cast<int32_t>(slot));
+		if (found != oldSlots.end()) overrides[slot] = found->second->GetProperties();
+		else if (primitiveMaterial && slot == 0) overrides[slot] = primitiveMaterial->GetProperties();
+	}
+	std::vector<std::string> warnings;
+	auto after = GetRenderSystem()->CreateModelEntity(guid, *generation, *model, overrides, error, warnings);
+	if (!after) { m_FileError = std::move(error); return; }
+	after->Name = before->Name;
+	after->transform.SetPosition(before->transform.Position.x, before->transform.Position.y, before->transform.Position.z);
+	after->transform.Rotation = before->transform.Rotation;
+	after->transform.SetScale(before->transform.Scale.x, before->transform.Scale.y, before->transform.Scale.z);
+	after->ForceWireframe = before->ForceWireframe;
+	after->DisableDepthTest = before->DisableDepthTest;
+	after->CastShadows = before->CastShadows;
+	after->ReceiveShadows = before->ReceiveShadows;
+	after->CullMode = before->CullMode;
+	std::unordered_set<int32_t> appliedSlots;
+	for (const auto& submesh : after->Submeshes) {
+		if (submesh.MaterialSlot < 0 || !submesh.material || !appliedSlots.insert(submesh.MaterialSlot).second) continue;
+		std::shared_ptr<Renderer::Material> sourceMaterial;
+		if (const auto found = oldSlots.find(submesh.MaterialSlot); found != oldSlots.end()) sourceMaterial = found->second;
+		else if (primitiveMaterial && submesh.MaterialSlot == 0) sourceMaterial = primitiveMaterial;
+		if (!sourceMaterial) continue;
+		auto base = submesh.material->GetBaseColorTexture();
+		auto normal = submesh.material->GetNormalTexture();
+		const auto rebind = [&](const std::optional<std::string>& textureGuid, bool srgb,
+			std::shared_ptr<Renderer::TextureResource>& destination) {
+			if (!textureGuid) return;
+			std::string textureError;
+			if (!GetAssetManager()->LoadTexture(*textureGuid, textureError)) { warnings.push_back(textureError); return; }
+			const auto image = GetAssetManager()->GetTexture(*textureGuid);
+			const auto textureGeneration = GetAssetManager()->GetGeneration(*textureGuid);
+			if (!image || !textureGeneration) { warnings.push_back("missing texture " + *textureGuid); return; }
+			auto uploaded = GetRenderSystem()->GetOrCreateTexture(*textureGuid, *textureGeneration, *image, srgb, textureError);
+			if (uploaded) destination = std::move(uploaded);
+			else warnings.push_back(textureError);
+		};
+		rebind(sourceMaterial->GetBaseColorTextureGuid(), true, base);
+		rebind(sourceMaterial->GetNormalTextureGuid(), false, normal);
+		if (!GetRenderSystem()->SetMaterialTextures(submesh.material, base, normal,
+			sourceMaterial->GetBaseColorTextureGuid(), sourceMaterial->GetNormalTextureGuid())) {
+			for (const auto& staged : after->Submeshes)
+				if (staged.material) GetRenderSystem()->GetMaterialSystem()->UnregisterMaterial(staged.material);
+			m_FileError = "The new model's texture bindings could not be created.";
+			return;
+		}
+	}
+	m_CommandHistory.Execute(std::make_unique<ReplaceEntityCommand>(m_ActiveScene, entityId, before, after,
+		[this](Engine::EntityId id, const std::shared_ptr<Renderer::Entity>& entity) {
+			m_SceneDirty = true;
+			BroadcastSceneChanged();
+			int index = -1;
+			for (size_t i = 0; i < m_ActiveScene->GetEntityCount(); ++i)
+				if (m_ActiveScene->GetEntityIdAt(i) == id) { index = static_cast<int>(i); break; }
+			ProcessPanelEvent(std::make_unique<EntitySelectedEvent>(EntitySelectedEvent::ItemType::Object,
+				index, -1, -1, id, Engine::InvalidLightId, Engine::InvalidCameraId, entity, {}, {}));
+		}));
+	m_FileError = JoinWarnings(warnings);
 }
 
 void Editor::ReimportAsset(const std::string& guid) {

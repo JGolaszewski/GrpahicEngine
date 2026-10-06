@@ -220,6 +220,14 @@ namespace {
 		Require(scene.AddEntity(std::make_shared<Renderer::Entity>(nullptr, nullptr), 17) == Engine::InvalidEntityId,
 			"scene accepted a duplicate entity ID");
 
+		auto replacement = std::make_shared<Renderer::Entity>(nullptr, nullptr);
+		Require(scene.ReplaceEntity(17, replacement), "scene did not replace an entity by stable ID");
+		Require(scene.FindEntity(17) == replacement && scene.GetEntityId(replacement.get()) == 17,
+			"entity replacement did not preserve stable scene identity");
+		Require(!scene.ReplaceEntity(999, std::make_shared<Renderer::Entity>(nullptr, nullptr)),
+			"scene replaced a missing entity ID");
+		Require(!scene.ReplaceEntity(18, nullptr), "scene accepted a null replacement entity");
+
 		Require(scene.AddLight(std::make_shared<Renderer::SpotLight>(), 27) == 27,
 			"scene did not accept a persisted light ID");
 		Require(scene.AddLight(std::make_shared<Renderer::SpotLight>()) == 28,

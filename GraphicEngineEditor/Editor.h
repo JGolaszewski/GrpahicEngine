@@ -79,6 +79,7 @@ private:
 	bool AssignTexture(Engine::EntityId entityId, int32_t materialSlot,
 		AssetImportRequestedEvent::TextureSemantic semantic, const std::optional<std::string>& textureGuid);
 	void ReimportAsset(const std::string& guid);
+	void ReassignModel(Engine::EntityId entityId, const std::string& guid);
 	struct SelectionSnapshot {
 		SelectedItemType Type = SelectedItemType::None;
 		Engine::EntityId EntityId = Engine::InvalidEntityId;

@@ -26,3 +26,4 @@
 #include "events/SceneModifiedEvent.h"
 #include "events/MaterialTextureAssignmentRequestedEvent.h"
 #include "events/AssetReimportRequestedEvent.h"
+#include "events/ModelReassignmentRequestedEvent.h"

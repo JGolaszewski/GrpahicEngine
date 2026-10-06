@@ -60,6 +60,7 @@ namespace Engine::Events {
         AssetImportRequested,
         MaterialTextureAssignmentRequested,
         AssetReimportRequested,
+        ModelReassignmentRequested,
         AssetRegistryChanged,
         AddModelRequested,
         RemoveEntityRequested,

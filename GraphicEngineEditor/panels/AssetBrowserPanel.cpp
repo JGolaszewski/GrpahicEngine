@@ -3,6 +3,7 @@
 #include "events/AssetImportRequestedEvent.h"
 #include "events/AssetRegistryChangedEvent.h"
 #include "events/AssetReimportRequestedEvent.h"
+#include "events/ModelReassignmentRequestedEvent.h"
 #include <imgui.h>
 #include <algorithm>
 
@@ -14,6 +15,14 @@ void AssetBrowserPanel::Draw() {
 	ImGui::SameLine();
 	if (ImGui::Button("Reimport selected") && !m_SelectedGuid.empty())
 		EmitEvent(std::make_unique<AssetReimportRequestedEvent>(m_SelectedGuid));
+	const bool selectedModel = std::any_of(m_Models.begin(), m_Models.end(), [this](const auto& model) {
+		return model.guid == m_SelectedGuid;
+	});
+	ImGui::SameLine();
+	if (!selectedModel) ImGui::BeginDisabled();
+	if (ImGui::Button("Replace selected object model") && selectedModel)
+		EmitEvent(std::make_unique<ModelReassignmentRequestedEvent>(m_SelectedGuid));
+	if (!selectedModel) ImGui::EndDisabled();
 	ImGui::Separator();
 	if (m_Models.empty() && m_Textures.empty()) ImGui::TextDisabled("No assets found in this project.");
 	if (!m_Models.empty()) ImGui::TextDisabled("Models");

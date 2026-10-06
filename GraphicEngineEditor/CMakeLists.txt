@@ -42,11 +42,14 @@ add_executable(Editor
     "commands/EntityMembershipCommand.cpp"
     "commands/ChangeMaterialTextureCommand.h"
     "commands/ChangeMaterialTextureCommand.cpp"
+    "commands/ReplaceEntityCommand.h"
+    "commands/ReplaceEntityCommand.cpp"
     "events/RemoveEntityRequestedEvent.h"
     "events/SceneModifiedEvent.h"
     "events/AssetImportRequestedEvent.h"
     "events/AssetReimportRequestedEvent.h"
     "events/MaterialTextureAssignmentRequestedEvent.h"
+    "events/ModelReassignmentRequestedEvent.h"
 )
 
 set_target_properties(Editor PROPERTIES
