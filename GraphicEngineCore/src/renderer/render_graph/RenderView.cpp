@@ -33,7 +33,7 @@ void RenderView::Initialize(const Renderer::Camera *camera, const Engine::Viewpo
 
 void RenderView::ExtractFrustumPlanes()
 {
-    const DirectX::XMMATRIX &matrix = ViewProjection;
+    const DirectX::XMMATRIX matrix = DirectX::XMMatrixTranspose(ViewProjection);
     FrustumPlanes[0] = DirectX::XMPlaneNormalize(DirectX::XMVectorAdd(matrix.r[3], matrix.r[0]));
     FrustumPlanes[1] = DirectX::XMPlaneNormalize(DirectX::XMVectorSubtract(matrix.r[3], matrix.r[0]));
     FrustumPlanes[2] = DirectX::XMPlaneNormalize(DirectX::XMVectorAdd(matrix.r[3], matrix.r[1]));
