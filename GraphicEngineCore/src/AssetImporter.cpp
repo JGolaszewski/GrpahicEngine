@@ -348,11 +348,18 @@ namespace {
 			return result;
 		}
 		for (const auto& extensionName : source.extensionsRequired) {
-			result.error = Context(sourcePath, "required glTF extension is unsupported: " + extensionName);
-			return result;
+			if (extensionName != "KHR_materials_pbrSpecularGlossiness") {
+				result.error = Context(sourcePath, "required glTF extension is unsupported: " + extensionName);
+				return result;
+			}
+			result.warnings.push_back(Context(sourcePath,
+				"required glTF material extension will be ignored: " + extensionName));
 		}
 		for (const auto& extensionName : source.extensionsUsed) {
-			result.warnings.push_back(Context(sourcePath, "optional glTF extension is ignored: " + extensionName));
+			if (std::find(source.extensionsRequired.begin(), source.extensionsRequired.end(), extensionName) ==
+				source.extensionsRequired.end()) {
+				result.warnings.push_back(Context(sourcePath, "optional glTF extension will be ignored: " + extensionName));
+			}
 		}
 		if (!source.skins.empty()) result.warnings.push_back(Context(sourcePath, "skinning is not imported; bind-pose geometry is used"));
 		if (!source.animations.empty()) result.warnings.push_back(Context(sourcePath, "animations are not imported"));

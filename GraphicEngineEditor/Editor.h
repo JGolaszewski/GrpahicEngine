@@ -4,6 +4,7 @@
 #include "panels/EditorPanel.h"
 #include "EditorCameraController.h"
 #include <imgui.h>
+#include <DirectXMath.h>
 #include <array>
 #include <cstdint>
 #include <memory>
@@ -80,6 +81,8 @@ private:
 		AssetImportRequestedEvent::TextureSemantic semantic, const std::optional<std::string>& textureGuid);
 	void ReimportAsset(const std::string& guid);
 	void ReassignModel(Engine::EntityId entityId, const std::string& guid);
+	void AddModelToScene(const std::string& guid, const DirectX::XMFLOAT3& position,
+		const DirectX::XMFLOAT3& scale);
 	struct SelectionSnapshot {
 		SelectedItemType Type = SelectedItemType::None;
 		Engine::EntityId EntityId = Engine::InvalidEntityId;
@@ -135,6 +138,13 @@ private:
 	CommandHistory m_CommandHistory;
 	std::filesystem::path m_ScenePath;
 	std::string m_FileError;
+	struct PendingUnsupportedModelLoad {
+		std::string Guid;
+		DirectX::XMFLOAT3 Position{};
+		DirectX::XMFLOAT3 Scale{ 1.0f, 1.0f, 1.0f };
+	};
+	std::optional<PendingUnsupportedModelLoad> m_PendingUnsupportedModelLoad;
+	std::string m_UnsupportedModelWarnings;
 	bool m_SceneDirty = false;
 	bool m_ShowUnsavedModal = false;
 	SceneFileActionRequestedEvent::Action m_PendingSceneAction = SceneFileActionRequestedEvent::Action::NewScene;

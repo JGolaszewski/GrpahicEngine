@@ -78,6 +78,7 @@ namespace Engine {
 
 	struct ImportedModel {
 		std::filesystem::path sourcePath;
+		std::vector<std::string> importWarnings;
 		int32_t defaultScene = -1;
 		std::vector<std::vector<uint32_t>> scenes;
 		std::vector<ImportedNode> nodes;

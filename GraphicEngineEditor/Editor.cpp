@@ -39,6 +39,12 @@ std::string JoinWarnings(const std::vector<std::string>& warnings) {
 	return message;
 }
 
+bool HasIgnoredExtensionWarning(const std::vector<std::string>& warnings) {
+	return std::any_of(warnings.begin(), warnings.end(), [](const std::string& warning) {
+		return warning.find("extension will be ignored:") != std::string::npos;
+	});
+}
+
 std::filesystem::path CanonicalScenePath(const std::filesystem::path& path) {
 	std::error_code ec;
 	auto canonical = std::filesystem::weakly_canonical(path, ec);
@@ -589,6 +595,7 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
 
 	dispatcher.Dispatch<AddModelRequestedEvent>([this](const auto& request) {
 		if (!m_ActiveScene || !GetRenderSystem()) return true;
+		m_FileError.clear();
 		std::string error;
 		if (!GetAssetManager()->LoadModel(request.GetGuid(), error)) {
 			m_FileError = std::move(error);
@@ -600,24 +607,18 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
 			m_FileError = "The imported model is not available in the asset registry.";
 			return true;
 		}
-		std::vector<std::string> warnings;
-		auto entity = GetRenderSystem()->CreateModelEntity(request.GetGuid(), *generation, *model, {}, error, warnings);
-		if (!entity) {
-			m_FileError = std::move(error);
+		if (HasIgnoredExtensionWarning(model->importWarnings)) {
+			std::vector<std::string> extensionWarnings;
+			std::copy_if(model->importWarnings.begin(), model->importWarnings.end(),
+				std::back_inserter(extensionWarnings), [](const std::string& warning) {
+					return warning.find("extension will be ignored:") != std::string::npos;
+				});
+			m_PendingUnsupportedModelLoad = PendingUnsupportedModelLoad{
+				request.GetGuid(), request.GetPosition(), request.GetScale() };
+			m_UnsupportedModelWarnings = JoinWarnings(extensionWarnings);
 			return true;
 		}
-		entity->Name = model->sourcePath.stem().string();
-		const auto position = m_ActiveScene->FindFreeSpawnPosition(request.GetPosition());
-		entity->transform.SetPosition(position.x, position.y, position.z);
-		entity->transform.SetScale(request.GetScale().x, request.GetScale().y, request.GetScale().z);
-		const auto selectionBefore = CaptureSelection();
-		m_CommandHistory.Execute(std::make_unique<EntityMembershipCommand>(m_ActiveScene, entity,
-			Engine::InvalidEntityId, true,
-			[this, selectionBefore](auto id, const auto& addedEntity, bool present, bool undo) {
-				if (undo) { m_SceneDirty = true; RestoreSelection(selectionBefore); }
-				else OnEntityMembershipChanged(id, addedEntity, present);
-			}));
-		if (!warnings.empty()) m_FileError = JoinWarnings(warnings);
+		AddModelToScene(request.GetGuid(), request.GetPosition(), request.GetScale());
 		return true;
 		});
 
@@ -634,6 +635,40 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
 			}));
 		return true;
 		});
+}
+
+void Editor::AddModelToScene(const std::string& guid, const DirectX::XMFLOAT3& requestedPosition,
+	const DirectX::XMFLOAT3& scale) {
+	if (!m_ActiveScene || !GetRenderSystem()) return;
+	std::string error;
+	if (!GetAssetManager()->LoadModel(guid, error)) {
+		m_FileError = std::move(error);
+		return;
+	}
+	const auto model = GetAssetManager()->GetModel(guid);
+	const auto generation = GetAssetManager()->GetGeneration(guid);
+	if (!model || !generation) {
+		m_FileError = "The imported model is not available in the asset registry.";
+		return;
+	}
+	std::vector<std::string> warnings;
+	auto entity = GetRenderSystem()->CreateModelEntity(guid, *generation, *model, {}, error, warnings);
+	if (!entity) {
+		m_FileError = std::move(error);
+		return;
+	}
+	entity->Name = model->sourcePath.stem().string();
+	const auto position = m_ActiveScene->FindFreeSpawnPosition(requestedPosition);
+	entity->transform.SetPosition(position.x, position.y, position.z);
+	entity->transform.SetScale(scale.x, scale.y, scale.z);
+	const auto selectionBefore = CaptureSelection();
+	m_CommandHistory.Execute(std::make_unique<EntityMembershipCommand>(m_ActiveScene, entity,
+		Engine::InvalidEntityId, true,
+		[this, selectionBefore](auto id, const auto& addedEntity, bool present, bool undo) {
+			if (undo) { m_SceneDirty = true; RestoreSelection(selectionBefore); }
+			else OnEntityMembershipChanged(id, addedEntity, present);
+		}));
+	if (!warnings.empty()) m_FileError = JoinWarnings(warnings);
 }
 
 void Editor::OnEntityMembershipChanged(
@@ -1148,6 +1183,29 @@ void Editor::DrawUnsavedChangesModal() {
 		if (ImGui::Button("OK")) {
 			m_FileError.clear();
 			ImGui::CloseCurrentPopup();
+		}
+		ImGui::EndPopup();
+	}
+	if (m_PendingUnsupportedModelLoad) ImGui::OpenPopup("Unsupported model extensions");
+	ImGui::SetNextWindowSize(ImVec2(640.0f, 300.0f), ImGuiCond_Appearing);
+	if (ImGui::BeginPopupModal("Unsupported model extensions", nullptr, ImGuiWindowFlags_NoResize)) {
+		ImGui::TextWrapped("This model uses a glTF extension that the renderer does not support. Its geometry can still be loaded, but the affected material may look different.");
+		ImGui::Spacing();
+		ImGui::BeginChild("Unsupported extension details", ImVec2(0.0f, 150.0f), true);
+		ImGui::TextWrapped("%s", m_UnsupportedModelWarnings.c_str());
+		ImGui::EndChild();
+		if (ImGui::Button("Cancel", ImVec2(140.0f, 0.0f))) {
+			m_PendingUnsupportedModelLoad.reset();
+			m_UnsupportedModelWarnings.clear();
+			ImGui::CloseCurrentPopup();
+		}
+		ImGui::SameLine();
+		if (ImGui::Button("Load unsupported", ImVec2(180.0f, 0.0f))) {
+			auto pending = std::move(*m_PendingUnsupportedModelLoad);
+			m_PendingUnsupportedModelLoad.reset();
+			m_UnsupportedModelWarnings.clear();
+			ImGui::CloseCurrentPopup();
+			AddModelToScene(pending.Guid, pending.Position, pending.Scale);
 		}
 		ImGui::EndPopup();
 	}

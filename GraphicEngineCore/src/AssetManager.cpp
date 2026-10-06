@@ -349,6 +349,7 @@ namespace {
 			error = imported.error;
 			return false;
 		}
+		imported.model.importWarnings = std::move(imported.warnings);
 		if (!hasMetadata && !WriteMetadata(metadataPath, assetGuid, error)) return false;
 
 		uint64_t generation = 1;
