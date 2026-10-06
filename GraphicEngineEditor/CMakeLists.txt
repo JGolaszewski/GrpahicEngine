@@ -49,8 +49,7 @@ set_target_properties(Editor PROPERTIES
     VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )
 
-target_link_libraries(Editor PRIVATE GraphicEngineCore comdlg32)
-target_compile_definitions(Editor PRIVATE ENGINE_PROJECT_ROOT="${PROJECT_SOURCE_DIR}")
+target_link_libraries(Editor PRIVATE GraphicEngineCore comdlg32 shell32 ole32)
 
 target_include_directories(Editor PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 

@@ -23,7 +23,9 @@
 #define NOMINMAX
 #include <windows.h>
 #include <commdlg.h>
+#include <shlobj.h>
 #include <filesystem>
+#include <fstream>
 #include <string>
 
 namespace {
@@ -63,13 +65,68 @@ std::optional<std::filesystem::path> ShowModelDialog(const std::filesystem::path
 	dialog.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR;
 	return GetOpenFileNameW(&dialog) ? std::optional(std::filesystem::path(filename)) : std::nullopt;
 }
+
+std::optional<std::filesystem::path> ShowProjectFolderDialog(const std::filesystem::path& initialPath) {
+	BROWSEINFOW dialog{};
+	dialog.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE;
+	dialog.lpszTitle = L"Choose a GraphicEngine project folder";
+	PIDLIST_ABSOLUTE selection = SHBrowseForFolderW(&dialog);
+	if (!selection) return std::nullopt;
+	wchar_t path[MAX_PATH]{};
+	const bool selected = SHGetPathFromIDListW(selection, path) != FALSE;
+	CoTaskMemFree(selection);
+	(void)initialPath;
+	return selected ? std::optional(std::filesystem::path(path)) : std::nullopt;
+}
+
+std::filesystem::path ProjectPreferencePath() {
+	if (const wchar_t* appData = _wgetenv(L"LOCALAPPDATA"))
+		return std::filesystem::path(appData) / L"GraphicEngine" / L"project.txt";
+	return {};
+}
+
+std::filesystem::path LoadRememberedProjectRoot() {
+	const auto preference = ProjectPreferencePath();
+	if (preference.empty()) return std::filesystem::current_path();
+	std::wifstream input(preference);
+	std::wstring saved;
+	if (input && std::getline(input, saved) && !saved.empty()) return std::filesystem::path(saved);
+	return std::filesystem::current_path();
+}
+
+void RememberProjectRoot(const std::filesystem::path& root) {
+	const auto preference = ProjectPreferencePath();
+	if (preference.empty()) return;
+	std::error_code ec;
+	std::filesystem::create_directories(preference.parent_path(), ec);
+	if (ec) return;
+	std::wofstream output(preference, std::ios::trunc);
+	if (output) output << root.native() << L'\n';
+}
+
+std::string JoinWarnings(const std::vector<std::string>& warnings) {
+	std::string message;
+	for (const auto& warning : warnings) {
+		if (!message.empty()) message += "\n";
+		message += warning;
+	}
+	return message;
+}
+
+std::filesystem::path CanonicalScenePath(const std::filesystem::path& path) {
+	std::error_code ec;
+	auto canonical = std::filesystem::weakly_canonical(path, ec);
+	return ec ? path.lexically_normal() : canonical;
+}
 }
 
 void Editor::OnInit() {
 	ImGui::SetCurrentContext(GetImGuiContext());
 	std::string projectError;
-	if (!GetAssetManager()->SetProjectRoot(ENGINE_PROJECT_ROOT, projectError)) {
+	if (!GetAssetManager()->SetProjectRoot(LoadRememberedProjectRoot(), projectError)) {
 		m_FileError = std::move(projectError);
+	} else {
+		RememberProjectRoot(GetAssetManager()->GetProjectRoot());
 	}
 
 	// --- Create Core Scene ---
@@ -590,7 +647,7 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
 		m_CommandHistory.Execute(std::make_unique<EntityMembershipCommand>(m_ActiveScene, entity,
 			Engine::InvalidEntityId, true,
 			[this](auto id, const auto& addedEntity, bool present) { OnEntityMembershipChanged(id, addedEntity, present); }));
-		if (!warnings.empty()) m_FileError = warnings.front();
+		if (!warnings.empty()) m_FileError = JoinWarnings(warnings);
 		return true;
 		});
 
@@ -742,6 +799,26 @@ void Editor::RequestSceneAction(SceneFileActionRequestedEvent::Action action) {
 		SaveCurrentScene(true);
 		return;
 	}
+	if (action == SceneFileActionRequestedEvent::Action::OpenProject) {
+		const auto folder = ShowProjectFolderDialog(GetAssetManager()->GetProjectRoot());
+		if (!folder) return;
+		std::string error;
+		if (!GetAssetManager()->SetProjectRoot(*folder, error)) {
+			m_FileError = std::move(error);
+			return;
+		}
+		RememberProjectRoot(GetAssetManager()->GetProjectRoot());
+		auto scene = std::make_shared<Engine::Scene>();
+		auto camera = std::make_shared<Renderer::Camera>(m_CameraFov, m_CameraNearPlane, m_CameraFarPlane);
+		camera->m_Transform.SetPosition(0.0f, 0.0f, -5.0f);
+		scene->AddCamera(camera);
+		if (m_ActiveScene) RemoveScene(m_ActiveScene);
+		AddScene(scene);
+		OnSceneReplaced(scene);
+		m_ScenePath.clear();
+		m_SceneDirty = false;
+		return;
+	}
 	const auto path = ShowSceneDialog(false, m_ScenePath, GetAssetManager()->GetProjectRoot());
 	if (!path) return;
 	std::string error;
@@ -750,11 +827,9 @@ void Editor::RequestSceneAction(SceneFileActionRequestedEvent::Action action) {
 		m_FileError = std::move(error);
 		return;
 	}
-	m_ScenePath = *path;
+	m_ScenePath = CanonicalScenePath(*path);
 	m_SceneDirty = false;
-	if (!warnings.empty()) {
-		m_FileError = warnings.front();
-	}
+	if (!warnings.empty()) m_FileError = JoinWarnings(warnings);
 }
 
 bool Editor::SaveCurrentScene(bool choosePath) {
@@ -771,7 +846,7 @@ bool Editor::SaveCurrentScene(bool choosePath) {
 		m_FileError = std::move(error);
 		return false;
 	}
-	m_ScenePath = *path;
+	m_ScenePath = CanonicalScenePath(*path);
 	m_SceneDirty = false;
 	m_FileError.clear();
 	return true;
