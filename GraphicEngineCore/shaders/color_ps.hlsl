@@ -21,6 +21,11 @@ cbuffer MaterialCB : register(b1)
     float4 g_SpecularParams;
     uint4  g_ModelFlags;
     float4 g_AlphaParams;
+    uint4 g_TextureCoordinates0;
+    uint4 g_TextureCoordinates1;
+    float4 g_TextureParams;
+    float4 g_TextureTransformRows[5];
+    float4 g_TextureTransformOffsets[5];
 };
 
 struct LightData

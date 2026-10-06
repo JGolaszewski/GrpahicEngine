@@ -6,6 +6,11 @@ cbuffer MaterialCB : register(b1)
     float4 g_SpecularParams;
     uint4  g_ModelFlags;
     float4 g_AlphaParams;
+    uint4 g_TextureCoordinates0;
+    uint4 g_TextureCoordinates1;
+    float4 g_TextureParams;
+    float4 g_TextureTransformRows[5];
+    float4 g_TextureTransformOffsets[5];
 };
 
 Texture2D<float4> g_BaseColorMap : register(t0);
@@ -24,6 +29,10 @@ struct PS_INPUT
 
 void main_ps(PS_INPUT input)
 {
-    const float alpha = g_BaseColor.a * input.color.a * g_BaseColorMap.Sample(g_BaseColorSampler, input.uv).a;
+    const float2 uv = g_TextureCoordinates0.x == 0u ? input.uv : input.uv1;
+    const float2 transformedUv = float2(dot(uv, g_TextureTransformRows[0].xy),
+                                        dot(uv, g_TextureTransformRows[0].zw)) +
+                                 g_TextureTransformOffsets[0].xy;
+    const float alpha = g_BaseColor.a * input.color.a * g_BaseColorMap.Sample(g_BaseColorSampler, transformedUv).a;
     clip(alpha - g_AlphaParams.x);
 }

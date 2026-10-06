@@ -28,6 +28,13 @@ class ENGINE_API MaterialSystem
                             std::shared_ptr<TextureResource> normal,
                             std::optional<std::string> baseColorGuid = {},
                             std::optional<std::string> normalGuid = {}, bool setImportedDefaults = false);
+    bool SetPbrTextureBindings(const std::shared_ptr<Material> &material,
+                               std::shared_ptr<TextureResource> baseColor,
+                               std::shared_ptr<TextureResource> normal,
+                               std::shared_ptr<TextureResource> metallicRoughness,
+                               std::shared_ptr<TextureResource> occlusion,
+                               std::shared_ptr<TextureResource> emissive,
+                               bool setImportedDefaults = false);
     void SetTexturedPixelShader(nvrhi::ShaderHandle shader)
     {
         m_TexturedPS = std::move(shader);

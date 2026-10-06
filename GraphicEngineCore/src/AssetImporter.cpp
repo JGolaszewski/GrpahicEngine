@@ -38,6 +38,52 @@ bool IsSupportedImage(const tinygltf::Image &image)
     return extension == ".png" || extension == ".jpg" || extension == ".jpeg";
 }
 
+bool ReadTextureTransform(const tinygltf::ExtensionMap &extensions,
+                          ImportedTextureTransform &transform, uint32_t &texCoord,
+                          std::string &error, const std::string &label)
+{
+    const auto extension = extensions.find("KHR_texture_transform");
+    if (extension == extensions.end())
+        return true;
+    const tinygltf::Value &value = extension->second;
+    const auto readPair = [&](const char *key, DirectX::XMFLOAT2 &destination) {
+        if (!value.Has(key))
+            return true;
+        const tinygltf::Value &pair = value.Get(key);
+        if (!pair.IsArray() || pair.ArrayLen() != 2 || !pair.Get(0).IsNumber() || !pair.Get(1).IsNumber())
+            return false;
+        destination = {static_cast<float>(pair.Get(0).GetNumberAsDouble()),
+                       static_cast<float>(pair.Get(1).GetNumberAsDouble())};
+        return std::isfinite(destination.x) && std::isfinite(destination.y);
+    };
+    if (!value.IsObject() || !readPair("offset", transform.offset) || !readPair("scale", transform.scale))
+    {
+        error = label + " has a malformed KHR_texture_transform offset or scale";
+        return false;
+    }
+    if (value.Has("rotation"))
+    {
+        const tinygltf::Value &rotation = value.Get("rotation");
+        if (!rotation.IsNumber() || !std::isfinite(rotation.GetNumberAsDouble()))
+        {
+            error = label + " has a malformed KHR_texture_transform rotation";
+            return false;
+        }
+        transform.rotation = static_cast<float>(rotation.GetNumberAsDouble());
+    }
+    if (value.Has("texCoord"))
+    {
+        const tinygltf::Value &coordinate = value.Get("texCoord");
+        if (!coordinate.IsInt() || coordinate.GetNumberAsInt() < 0 || coordinate.GetNumberAsInt() > 1)
+        {
+            error = label + " selects an unsupported texture coordinate set";
+            return false;
+        }
+        texCoord = static_cast<uint32_t>(coordinate.GetNumberAsInt());
+    }
+    return true;
+}
+
 bool GetAccessorData(const tinygltf::Model &model, int accessorIndex, const tinygltf::Accessor *&accessor,
                      const uint8_t *&data, size_t &stride, std::string &error, const std::string &label)
 {
@@ -547,18 +593,21 @@ AssetImportResult AssetImporter::ImportGltf(const std::filesystem::path &sourceP
     }
     for (const auto &extensionName : source.extensionsRequired)
     {
-        if (extensionName != "KHR_materials_pbrSpecularGlossiness")
+        if (extensionName != "KHR_materials_pbrSpecularGlossiness" &&
+            extensionName != "KHR_texture_transform")
         {
             result.error = Context(sourcePath, "required glTF extension is unsupported: " + extensionName);
             return result;
         }
-        result.warnings.push_back(
-            Context(sourcePath, "required glTF material extension will be ignored: " + extensionName));
+        if (extensionName == "KHR_materials_pbrSpecularGlossiness")
+            result.warnings.push_back(
+                Context(sourcePath, "required glTF material extension will be ignored: " + extensionName));
     }
     for (const auto &extensionName : source.extensionsUsed)
     {
-        if (std::find(source.extensionsRequired.begin(), source.extensionsRequired.end(), extensionName) ==
-            source.extensionsRequired.end())
+        if (extensionName != "KHR_texture_transform" &&
+            std::find(source.extensionsRequired.begin(), source.extensionsRequired.end(), extensionName) ==
+                source.extensionsRequired.end())
         {
             result.warnings.push_back(
                 Context(sourcePath, "optional glTF extension will be ignored: " + extensionName));
@@ -748,23 +797,25 @@ AssetImportResult AssetImporter::ImportGltf(const std::filesystem::path &sourceP
         material.normalTexCoord = input.normalTexture.texCoord;
         material.occlusionTexCoord = input.occlusionTexture.texCoord;
         material.emissiveTexCoord = input.emissiveTexture.texCoord;
-        if (material.metallicRoughnessTexture >= 0 || material.occlusionTexture >= 0 ||
-            material.emissiveTexture >= 0)
+        if (!ReadTextureTransform(input.pbrMetallicRoughness.baseColorTexture.extensions,
+                                  material.baseColorTransform, material.baseColorTexCoord, error, "baseColorTexture") ||
+            !ReadTextureTransform(input.pbrMetallicRoughness.metallicRoughnessTexture.extensions,
+                                  material.metallicRoughnessTransform, material.metallicRoughnessTexCoord, error,
+                                  "metallicRoughnessTexture") ||
+            !ReadTextureTransform(input.normalTexture.extensions, material.normalTransform,
+                                  material.normalTexCoord, error, "normalTexture") ||
+            !ReadTextureTransform(input.occlusionTexture.extensions, material.occlusionTransform,
+                                  material.occlusionTexCoord, error, "occlusionTexture") ||
+            !ReadTextureTransform(input.emissiveTexture.extensions, material.emissiveTransform,
+                                  material.emissiveTexCoord, error, "emissiveTexture"))
         {
-            result.error =
-                Context(sourcePath,
-                        "material uses an unsupported metallic-roughness, occlusion, or emissive texture");
+            result.error = Context(sourcePath, error);
             return result;
         }
-        if (std::abs(material.normalScale - 1.0f) > 1.0e-6f)
+        if (material.baseColorTexCoord > 1 || material.metallicRoughnessTexCoord > 1 ||
+            material.normalTexCoord > 1 || material.occlusionTexCoord > 1 || material.emissiveTexCoord > 1)
         {
-            result.error = Context(sourcePath, "material uses an unsupported normal texture scale");
-            return result;
-        }
-        if (material.baseColorTexCoord != 0 || material.metallicRoughnessTexCoord != 0 ||
-            material.normalTexCoord != 0 || material.occlusionTexCoord != 0 || material.emissiveTexCoord != 0)
-        {
-            result.error = Context(sourcePath, "only TEXCOORD_0 material texture coordinates are supported");
+            result.error = Context(sourcePath, "material selects a texture coordinate set above TEXCOORD_1");
             return result;
         }
         result.model.materials.push_back(std::move(material));
@@ -794,6 +845,21 @@ AssetImportResult AssetImporter::ImportGltf(const std::filesystem::path &sourceP
             texture.wrapS = sampler.wrapS;
             texture.wrapT = sampler.wrapT;
         }
+        const auto validMinFilter = [](int filter) {
+            return filter < 0 || filter == 9728 || filter == 9729 ||
+                   (filter >= 9984 && filter <= 9987);
+        };
+        const auto validMagFilter = [](int filter) { return filter < 0 || filter == 9728 || filter == 9729; };
+        const auto validAddress = [](int address) {
+            return address == 33071 || address == 33648 || address == 10497;
+        };
+        if (!validMagFilter(texture.magFilter) || !validMinFilter(texture.minFilter) ||
+            texture.wrapS < 0 || texture.wrapT < 0 || !validAddress(texture.wrapS) ||
+            !validAddress(texture.wrapT))
+        {
+            result.error = Context(sourcePath, "texture uses an invalid glTF sampler state");
+            return result;
+        }
         result.model.textures.push_back(texture);
     }
     for (const auto &material : result.model.materials)
@@ -809,14 +875,6 @@ AssetImportResult AssetImporter::ImportGltf(const std::filesystem::path &sourceP
             if (texture < 0)
                 continue;
             const ImportedTexture &imported = result.model.textures[static_cast<size_t>(texture)];
-            if ((imported.magFilter >= 0 && imported.magFilter != 9729) ||
-                (imported.minFilter >= 0 && imported.minFilter != 9729) || imported.wrapS != 10497 ||
-                imported.wrapT != 10497)
-            {
-                result.error = Context(sourcePath, "material references an unsupported sampler state; only "
-                                                   "linear filtering and repeat addressing are supported");
-                return result;
-            }
         }
     }
 
@@ -873,6 +931,21 @@ AssetImportResult AssetImporter::ImportGltf(const std::filesystem::path &sourceP
             {
                 result.error = Context(sourcePath, error);
                 return result;
+            }
+            if (primitive.material >= 0)
+            {
+                const auto &material = result.model.materials[static_cast<size_t>(primitive.material)];
+                const uint32_t coordinates[] = {material.baseColorTexCoord, material.metallicRoughnessTexCoord,
+                                                material.normalTexCoord, material.occlusionTexCoord,
+                                                material.emissiveTexCoord};
+                const bool needsUv1 = std::any_of(std::begin(coordinates), std::end(coordinates),
+                                                  [](uint32_t coordinate) { return coordinate == 1; });
+                if (needsUv1 && !primitive.attributes.contains("TEXCOORD_1"))
+                {
+                    result.error = Context(sourcePath,
+                                           "material selects TEXCOORD_1 but its primitive has no TEXCOORD_1 attribute");
+                    return result;
+                }
             }
             mesh.primitives.push_back(std::move(imported));
         }

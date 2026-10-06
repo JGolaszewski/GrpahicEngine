@@ -1,5 +1,6 @@
 #include "renderer/RenderDevice.h"
 
+#include <algorithm>
 #include <limits>
 
 namespace Renderer
@@ -34,7 +35,8 @@ std::shared_ptr<Mesh> RenderDevice::CreateMesh(const std::vector<Vertex> &vertic
 }
 
 std::shared_ptr<TextureResource> RenderDevice::CreateTexture(const Engine::ImportedImage &image, bool srgb,
-                                                             std::string &error) const
+                                                             std::string &error,
+                                                             const Engine::ImportedTexture *sampler) const
 {
     error.clear();
     if (!m_Device || image.width == 0 || image.height == 0 ||
@@ -46,12 +48,15 @@ std::shared_ptr<TextureResource> RenderDevice::CreateTexture(const Engine::Impor
     }
     auto resource = std::make_shared<TextureResource>();
     nvrhi::TextureDesc textureDesc;
+    uint32_t mipLevels = 1;
+    for (uint32_t dimension = (std::max)(image.width, image.height); dimension > 1; dimension >>= 1)
+        ++mipLevels;
     textureDesc.setDimension(nvrhi::TextureDimension::Texture2D)
         .setWidth(image.width)
         .setHeight(image.height)
         .setDepth(1)
         .setArraySize(1)
-        .setMipLevels(1)
+        .setMipLevels(mipLevels)
         .setFormat(srgb ? nvrhi::Format::SRGBA8_UNORM : nvrhi::Format::RGBA8_UNORM)
         .setDebugName(image.name.empty() ? "AssetTexture" : image.name)
         .enableAutomaticStateTracking(nvrhi::ResourceStates::ShaderResource);
@@ -62,13 +67,26 @@ std::shared_ptr<TextureResource> RenderDevice::CreateTexture(const Engine::Impor
         return nullptr;
     }
 
+    const auto addressMode = [](int value) {
+        switch (value)
+        {
+        case 33071: return nvrhi::SamplerAddressMode::Clamp;
+        case 33648: return nvrhi::SamplerAddressMode::Mirror;
+        default: return nvrhi::SamplerAddressMode::Wrap;
+        }
+    };
+    const int minFilter = sampler ? sampler->minFilter : -1;
+    const int magFilter = sampler ? sampler->magFilter : -1;
+    const bool minLinear = minFilter != 9728 && minFilter != 9984 && minFilter != 9986;
+    const bool magLinear = magFilter != 9728;
+    const bool mipLinear = minFilter == 9986 || minFilter == 9987;
     nvrhi::SamplerDesc samplerDesc;
-    samplerDesc.setAddressU(nvrhi::SamplerAddressMode::Wrap)
-        .setAddressV(nvrhi::SamplerAddressMode::Wrap)
+    samplerDesc.setAddressU(addressMode(sampler ? sampler->wrapS : 10497))
+        .setAddressV(addressMode(sampler ? sampler->wrapT : 10497))
         .setAddressW(nvrhi::SamplerAddressMode::Wrap)
-        .setMinFilter(true)
-        .setMagFilter(true)
-        .setMipFilter(false);
+        .setMinFilter(minLinear)
+        .setMagFilter(magLinear)
+        .setMipFilter(mipLinear);
     resource->Sampler = m_Device->createSampler(samplerDesc);
     if (!resource->Sampler)
     {

@@ -63,6 +63,25 @@ MaterialProperties Material::GetProperties() const
     properties.AlphaMode = static_cast<MaterialAlphaMode>(m_Constants.ModelFlags.w & 0xffu);
     properties.DoubleSided = (m_Constants.ModelFlags.w & 0x100u) != 0;
     properties.AlphaCutoff = m_Constants.AlphaParams.x;
+    properties.BaseColorTexCoord = m_Constants.TextureCoordinates0.x;
+    properties.NormalTexCoord = m_Constants.TextureCoordinates0.y;
+    properties.MetallicRoughnessTexCoord = m_Constants.TextureCoordinates0.z;
+    properties.OcclusionTexCoord = m_Constants.TextureCoordinates0.w;
+    properties.EmissiveTexCoord = m_Constants.TextureCoordinates1.x;
+    properties.NormalScale = m_Constants.TextureParams.x;
+    properties.OcclusionStrength = m_Constants.TextureParams.y;
+    for (size_t i = 0; i < 5; ++i)
+    {
+        const auto &rows = m_Constants.TextureTransformRows[i];
+        const auto &offset = m_Constants.TextureTransformOffsets[i];
+        auto &transform = properties.TextureTransforms[i];
+        transform.Offset = {offset.x, offset.y};
+        transform.Scale.x = std::sqrt(rows.x * rows.x + rows.z * rows.z);
+        transform.Scale.y = transform.Scale.x > 0.0f
+                                ? (rows.x * rows.w - rows.y * rows.z) / transform.Scale.x
+                                : 0.0f;
+        transform.Rotation = std::atan2(rows.z, rows.x);
+    }
     return properties;
 }
 } // namespace Renderer

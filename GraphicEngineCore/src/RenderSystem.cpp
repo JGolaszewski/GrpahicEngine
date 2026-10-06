@@ -226,14 +226,15 @@ std::shared_ptr<Renderer::Mesh> RenderSystem::GetOrCreateMesh(const std::string 
 std::shared_ptr<Renderer::TextureResource> RenderSystem::GetOrCreateTexture(const std::string &identity,
                                                                             uint64_t generation,
                                                                             const ImportedImage &image,
-                                                                            bool srgb, std::string &error)
+                                                                            bool srgb, std::string &error,
+                                                                            const ImportedTexture *sampler)
 {
     if (m_FrameActive || !m_ResourceManager)
     {
         error = "texture upload requires an initialized renderer outside an active frame";
         return nullptr;
     }
-    return m_ResourceManager->GetOrCreateTexture(identity, generation, image, srgb, error);
+    return m_ResourceManager->GetOrCreateTexture(identity, generation, image, srgb, error, sampler);
 }
 
 std::shared_ptr<Renderer::Material> RenderSystem::CreateMaterial(
@@ -258,6 +259,20 @@ bool RenderSystem::SetMaterialTextures(const std::shared_ptr<Renderer::Material>
            m_MaterialSystem->SetTextureBindings(material, std::move(baseColor), std::move(normal),
                                                 std::move(baseColorGuid), std::move(normalGuid),
                                                 setImportedDefaults);
+}
+
+bool RenderSystem::SetPbrMaterialTextures(const std::shared_ptr<Renderer::Material> &material,
+                                          std::shared_ptr<Renderer::TextureResource> baseColor,
+                                          std::shared_ptr<Renderer::TextureResource> normal,
+                                          std::shared_ptr<Renderer::TextureResource> metallicRoughness,
+                                          std::shared_ptr<Renderer::TextureResource> occlusion,
+                                          std::shared_ptr<Renderer::TextureResource> emissive,
+                                          bool setImportedDefaults)
+{
+    return !m_FrameActive && m_MaterialSystem &&
+           m_MaterialSystem->SetPbrTextureBindings(material, std::move(baseColor), std::move(normal),
+                                                   std::move(metallicRoughness), std::move(occlusion),
+                                                   std::move(emissive), setImportedDefaults);
 }
 
 void RenderSystem::ReleaseResource(const std::string &guid)
@@ -403,6 +418,24 @@ std::shared_ptr<Renderer::Entity> RenderSystem::CreateModelEntity(
             properties.AlphaCutoff = sourceMaterial.alphaCutoff;
             properties.DoubleSided = sourceMaterial.doubleSided;
         }
+        properties.BaseColorTexCoord = sourceMaterial.baseColorTexCoord;
+        properties.MetallicRoughnessTexCoord = sourceMaterial.metallicRoughnessTexCoord;
+        properties.NormalTexCoord = sourceMaterial.normalTexCoord;
+        properties.OcclusionTexCoord = sourceMaterial.occlusionTexCoord;
+        properties.EmissiveTexCoord = sourceMaterial.emissiveTexCoord;
+        properties.NormalScale = sourceMaterial.normalScale;
+        properties.OcclusionStrength = sourceMaterial.occlusionStrength;
+        const auto setTransform = [](Renderer::MaterialTextureTransform &target,
+                                     const ImportedTextureTransform &source) {
+            target.Offset = source.offset;
+            target.Scale = source.scale;
+            target.Rotation = source.rotation;
+        };
+        setTransform(properties.TextureTransforms[0], sourceMaterial.baseColorTransform);
+        setTransform(properties.TextureTransforms[1], sourceMaterial.normalTransform);
+        setTransform(properties.TextureTransforms[2], sourceMaterial.metallicRoughnessTransform);
+        setTransform(properties.TextureTransforms[3], sourceMaterial.occlusionTransform);
+        setTransform(properties.TextureTransforms[4], sourceMaterial.emissiveTransform);
         auto material = m_MaterialSystem->CreateMaterial(properties);
         if (!material)
         {
@@ -413,6 +446,9 @@ std::shared_ptr<Renderer::Entity> RenderSystem::CreateModelEntity(
         }
         auto baseColorTexture = m_ResourceManager->GetFallbackTexture(true);
         auto normalTexture = m_ResourceManager->GetFallbackTexture(false);
+        auto metallicRoughnessTexture = m_ResourceManager->GetFallbackTexture(false);
+        auto occlusionTexture = m_ResourceManager->GetFallbackTexture(false);
+        auto emissiveTexture = m_ResourceManager->GetFallbackTexture(true);
         const auto resolveTexture = [&](int32_t textureIndex, bool srgb,
                                         std::shared_ptr<Renderer::TextureResource> &destination) -> bool {
             if (textureIndex < 0)
@@ -422,7 +458,8 @@ std::shared_ptr<Renderer::Entity> RenderSystem::CreateModelEntity(
                 error = "imported material references an invalid texture slot";
                 return false;
             }
-            const int32_t imageIndex = model.textures[static_cast<size_t>(textureIndex)].imageIndex;
+            const auto &texture = model.textures[static_cast<size_t>(textureIndex)];
+            const int32_t imageIndex = texture.imageIndex;
             if (imageIndex < 0 || static_cast<size_t>(imageIndex) >= model.images.size())
             {
                 error = "imported texture references an invalid image slot";
@@ -430,13 +467,17 @@ std::shared_ptr<Renderer::Entity> RenderSystem::CreateModelEntity(
             }
             const auto &image = model.images[static_cast<size_t>(imageIndex)];
             destination = m_ResourceManager->GetOrCreateTexture(
-                AssetManager::GetEmbeddedImageIdentity(guid, static_cast<size_t>(imageIndex)), generation,
-                image, srgb, error);
+                guid + "/texture/" + std::to_string(textureIndex), generation, image, srgb, error, &texture);
             return destination != nullptr;
         };
         if (!resolveTexture(sourceMaterial.baseColorTexture, true, baseColorTexture) ||
             !resolveTexture(sourceMaterial.normalTexture, false, normalTexture) ||
-            !m_MaterialSystem->SetTextureBindings(material, baseColorTexture, normalTexture, {}, {}, true))
+            !resolveTexture(sourceMaterial.metallicRoughnessTexture, false, metallicRoughnessTexture) ||
+            !resolveTexture(sourceMaterial.occlusionTexture, false, occlusionTexture) ||
+            !resolveTexture(sourceMaterial.emissiveTexture, true, emissiveTexture) ||
+            !m_MaterialSystem->SetPbrTextureBindings(material, baseColorTexture, normalTexture,
+                                                     metallicRoughnessTexture, occlusionTexture,
+                                                     emissiveTexture, true))
         {
             m_MaterialSystem->UnregisterMaterial(material);
             for (const auto &registered : materials)
@@ -446,13 +487,6 @@ std::shared_ptr<Renderer::Entity> RenderSystem::CreateModelEntity(
             return nullptr;
         }
         materials.push_back(std::move(material));
-        if (sourceMaterial.metallicRoughnessTexture >= 0 || sourceMaterial.occlusionTexture >= 0 ||
-            sourceMaterial.emissiveTexture >= 0)
-        {
-            warnings.push_back(
-                "model material '" + sourceMaterial.name +
-                "' uses metallic-roughness, occlusion, or emissive maps that are not bound yet");
-        }
     }
     Renderer::MaterialProperties fallbackProperties;
     fallbackProperties.Model = Renderer::BrdfModel::GGX;

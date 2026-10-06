@@ -28,7 +28,8 @@ class ENGINE_API RenderDevice
                                      const std::vector<uint32_t> &indices, std::string &error,
                                      nvrhi::PrimitiveType primitiveType = nvrhi::PrimitiveType::TriangleList) const;
     std::shared_ptr<TextureResource> CreateTexture(const Engine::ImportedImage &image, bool srgb,
-                                                   std::string &error) const;
+                                                   std::string &error,
+                                                   const Engine::ImportedTexture *sampler = nullptr) const;
 
   private:
     nvrhi::DeviceHandle m_Device;

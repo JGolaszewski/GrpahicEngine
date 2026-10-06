@@ -50,6 +50,13 @@ struct ImportedImage
     std::vector<uint8_t> rgba8;
 };
 
+struct ImportedTextureTransform
+{
+    DirectX::XMFLOAT2 offset = {0.0f, 0.0f};
+    DirectX::XMFLOAT2 scale = {1.0f, 1.0f};
+    float rotation = 0.0f;
+};
+
 struct ImportedMaterial
 {
     std::string name;
@@ -70,6 +77,11 @@ struct ImportedMaterial
     uint32_t normalTexCoord = 0;
     uint32_t occlusionTexCoord = 0;
     uint32_t emissiveTexCoord = 0;
+    ImportedTextureTransform baseColorTransform;
+    ImportedTextureTransform metallicRoughnessTransform;
+    ImportedTextureTransform normalTransform;
+    ImportedTextureTransform occlusionTransform;
+    ImportedTextureTransform emissiveTransform;
     std::string alphaMode = "OPAQUE";
     bool doubleSided = false;
 };

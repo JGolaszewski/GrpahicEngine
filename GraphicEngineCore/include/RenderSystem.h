@@ -57,7 +57,8 @@ class ENGINE_API RenderSystem
     std::shared_ptr<Renderer::TextureResource> GetOrCreateTexture(const std::string &identity,
                                                                   uint64_t generation,
                                                                   const ImportedImage &image, bool srgb,
-                                                                  std::string &error);
+                                                                  std::string &error,
+                                                                  const ImportedTexture *sampler = nullptr);
     std::shared_ptr<Renderer::Material> CreateMaterial(const Renderer::MaterialProperties &properties);
     void UnregisterMaterial(const std::shared_ptr<Renderer::Material> &material);
     bool SetMaterialTextures(const std::shared_ptr<Renderer::Material> &material,
@@ -65,6 +66,13 @@ class ENGINE_API RenderSystem
                              std::shared_ptr<Renderer::TextureResource> normal,
                              std::optional<std::string> baseColorGuid = {},
                              std::optional<std::string> normalGuid = {}, bool setImportedDefaults = false);
+    bool SetPbrMaterialTextures(const std::shared_ptr<Renderer::Material> &material,
+                                std::shared_ptr<Renderer::TextureResource> baseColor,
+                                std::shared_ptr<Renderer::TextureResource> normal,
+                                std::shared_ptr<Renderer::TextureResource> metallicRoughness,
+                                std::shared_ptr<Renderer::TextureResource> occlusion,
+                                std::shared_ptr<Renderer::TextureResource> emissive,
+                                bool setImportedDefaults = false);
     void ReleaseResource(const std::string &guid);
     bool IsFrameActive() const noexcept
     {

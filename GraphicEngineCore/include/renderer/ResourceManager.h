@@ -40,7 +40,8 @@ class ENGINE_API ResourceManager
     std::shared_ptr<Mesh> GetMesh(const std::string &guid, uint64_t generation) const;
     std::shared_ptr<TextureResource> GetOrCreateTexture(const std::string &identity, uint64_t generation,
                                                         const Engine::ImportedImage &image, bool srgb,
-                                                        std::string &error);
+                                                        std::string &error,
+                                                        const Engine::ImportedTexture *sampler = nullptr);
     std::shared_ptr<TextureResource> GetFallbackTexture(bool srgb) const;
     bool FlushUploads(std::string &error);
     UploadProgress GetUploadProgress() const
@@ -85,7 +86,7 @@ class ENGINE_API ResourceManager
     void QueueMeshUpload(const std::shared_ptr<Mesh> &mesh, std::vector<Vertex> vertices,
                          std::vector<uint32_t> indices);
     void QueueTextureUpload(const std::shared_ptr<TextureResource> &texture,
-                            const Engine::ImportedImage &image);
+                            const Engine::ImportedImage &image, bool srgb);
     void RetireCompletedUploads();
     void Retire(std::shared_ptr<Mesh> mesh);
     void Retire(std::shared_ptr<TextureResource> texture);

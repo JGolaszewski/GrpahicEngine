@@ -41,7 +41,7 @@ enum class MaterialAlphaMode : uint32_t
 };
 
 // The material buffer occupies b1; texture and sampler registers are listed in docs/material-binding-abi.md.
-inline constexpr uint32_t MaterialGpuAbiVersion = 2;
+inline constexpr uint32_t MaterialGpuAbiVersion = 3;
 inline constexpr float MaterialMinAlpha = 1.0e-3f;
 inline constexpr float MaterialMinGtrGamma = 1.0f;
 inline constexpr float MaterialMaxGtrGamma = 8.0f;
@@ -56,6 +56,11 @@ struct MaterialGpu
     DirectX::XMFLOAT4 SpecularParams;
     DirectX::XMUINT4 ModelFlags;
     DirectX::XMFLOAT4 AlphaParams;
+    DirectX::XMUINT4 TextureCoordinates0;
+    DirectX::XMUINT4 TextureCoordinates1;
+    DirectX::XMFLOAT4 TextureParams;
+    DirectX::XMFLOAT4 TextureTransformRows[5];
+    DirectX::XMFLOAT4 TextureTransformOffsets[5];
 };
 
 static_assert(sizeof(DirectX::XMFLOAT4) == 16);
@@ -66,7 +71,19 @@ static_assert(offsetof(MaterialGpu, SurfaceParams) == 32);
 static_assert(offsetof(MaterialGpu, SpecularParams) == 48);
 static_assert(offsetof(MaterialGpu, ModelFlags) == 64);
 static_assert(offsetof(MaterialGpu, AlphaParams) == 80);
-static_assert(sizeof(MaterialGpu) == 96);
+static_assert(offsetof(MaterialGpu, TextureCoordinates0) == 96);
+static_assert(offsetof(MaterialGpu, TextureCoordinates1) == 112);
+static_assert(offsetof(MaterialGpu, TextureParams) == 128);
+static_assert(offsetof(MaterialGpu, TextureTransformRows) == 144);
+static_assert(offsetof(MaterialGpu, TextureTransformOffsets) == 224);
+static_assert(sizeof(MaterialGpu) == 304);
+
+struct MaterialTextureTransform
+{
+    DirectX::XMFLOAT2 Offset = {0.0f, 0.0f};
+    DirectX::XMFLOAT2 Scale = {1.0f, 1.0f};
+    float Rotation = 0.0f;
+};
 
 struct MaterialProperties
 {
@@ -82,6 +99,14 @@ struct MaterialProperties
     MaterialAlphaMode AlphaMode = MaterialAlphaMode::Opaque;
     float AlphaCutoff = 0.5f;
     bool DoubleSided = false;
+    uint32_t BaseColorTexCoord = 0;
+    uint32_t NormalTexCoord = 0;
+    uint32_t MetallicRoughnessTexCoord = 0;
+    uint32_t OcclusionTexCoord = 0;
+    uint32_t EmissiveTexCoord = 0;
+    float NormalScale = 1.0f;
+    float OcclusionStrength = 1.0f;
+    MaterialTextureTransform TextureTransforms[5];
 };
 
 inline float ClampFinite(float value, float fallback, float minimum, float maximum) noexcept
@@ -113,7 +138,7 @@ inline MaterialGpu BuildMaterialGpu(const MaterialProperties &properties) noexce
                    : MaterialAlphaMode::Opaque;
     };
 
-    return {{ClampFinite(properties.BaseColor.x, 1.0f, 0.0f, 1.0f),
+    MaterialGpu gpu{{ClampFinite(properties.BaseColor.x, 1.0f, 0.0f, 1.0f),
              ClampFinite(properties.BaseColor.y, 1.0f, 0.0f, 1.0f),
              ClampFinite(properties.BaseColor.z, 1.0f, 0.0f, 1.0f),
              ClampFinite(properties.BaseColor.w, 1.0f, 0.0f, 1.0f)},
@@ -129,6 +154,27 @@ inline MaterialGpu BuildMaterialGpu(const MaterialProperties &properties) noexce
              static_cast<uint32_t>(validAlphaMode(properties.AlphaMode)) |
                  (properties.DoubleSided ? 0x100u : 0u)},
             {ClampFinite(properties.AlphaCutoff, 0.5f, 0.0f, 1.0f), 0.0f, 0.0f, 0.0f}};
+    gpu.TextureCoordinates0 = {properties.BaseColorTexCoord <= 1 ? properties.BaseColorTexCoord : 0,
+                               properties.NormalTexCoord <= 1 ? properties.NormalTexCoord : 0,
+                               properties.MetallicRoughnessTexCoord <= 1 ? properties.MetallicRoughnessTexCoord : 0,
+                               properties.OcclusionTexCoord <= 1 ? properties.OcclusionTexCoord : 0};
+    gpu.TextureCoordinates1 = {properties.EmissiveTexCoord <= 1 ? properties.EmissiveTexCoord : 0, 0, 0, 0};
+    gpu.TextureParams = {ClampFinite(properties.NormalScale, 1.0f, 0.0f, 1.0e6f),
+                         ClampFinite(properties.OcclusionStrength, 1.0f, 0.0f, 1.0f), 0.0f, 0.0f};
+    for (size_t i = 0; i < 5; ++i)
+    {
+        const auto &transform = properties.TextureTransforms[i];
+        const float rotation = std::isfinite(transform.Rotation) ? transform.Rotation : 0.0f;
+        const float cosine = std::cos(rotation);
+        const float sine = std::sin(rotation);
+        const float scaleX = std::isfinite(transform.Scale.x) ? transform.Scale.x : 1.0f;
+        const float scaleY = std::isfinite(transform.Scale.y) ? transform.Scale.y : 1.0f;
+        gpu.TextureTransformRows[i] = {cosine * scaleX, -sine * scaleY, sine * scaleX, cosine * scaleY};
+        gpu.TextureTransformOffsets[i] = {
+            std::isfinite(transform.Offset.x) ? transform.Offset.x : 0.0f,
+            std::isfinite(transform.Offset.y) ? transform.Offset.y : 0.0f, 0.0f, 0.0f};
+    }
+    return gpu;
 }
 
 static_assert(std::is_trivially_copyable_v<MaterialGpu>);
@@ -169,6 +215,18 @@ class ENGINE_API Material
     {
         return m_NormalTexture;
     }
+    const std::shared_ptr<TextureResource> &GetMetallicRoughnessTexture() const noexcept
+    {
+        return m_MetallicRoughnessTexture;
+    }
+    const std::shared_ptr<TextureResource> &GetOcclusionTexture() const noexcept
+    {
+        return m_OcclusionTexture;
+    }
+    const std::shared_ptr<TextureResource> &GetEmissiveTexture() const noexcept
+    {
+        return m_EmissiveTexture;
+    }
     const std::shared_ptr<TextureResource> &GetDefaultBaseColorTexture() const noexcept
     {
         return m_DefaultBaseColorTexture;
@@ -198,6 +256,9 @@ class ENGINE_API Material
     nvrhi::BindingSetHandle m_BindingSet;
     std::shared_ptr<TextureResource> m_BaseColorTexture;
     std::shared_ptr<TextureResource> m_NormalTexture;
+    std::shared_ptr<TextureResource> m_MetallicRoughnessTexture;
+    std::shared_ptr<TextureResource> m_OcclusionTexture;
+    std::shared_ptr<TextureResource> m_EmissiveTexture;
     std::shared_ptr<TextureResource> m_DefaultBaseColorTexture;
     std::shared_ptr<TextureResource> m_DefaultNormalTexture;
     bool m_HasTextureOverrides = false;

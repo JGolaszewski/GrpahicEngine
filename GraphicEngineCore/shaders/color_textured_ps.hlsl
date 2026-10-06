@@ -21,6 +21,11 @@ cbuffer MaterialCB : register(b1)
     float4 g_SpecularParams;
     uint4  g_ModelFlags;
     float4 g_AlphaParams;
+    uint4 g_TextureCoordinates0;
+    uint4 g_TextureCoordinates1;
+    float4 g_TextureParams;
+    float4 g_TextureTransformRows[5];
+    float4 g_TextureTransformOffsets[5];
 };
 
 struct LightData
@@ -52,6 +57,12 @@ Texture2D<float4> g_BaseColorMap : register(t0);
 SamplerState g_BaseColorSampler : register(s0);
 Texture2D<float4> g_NormalMap : register(t1);
 SamplerState g_NormalSampler : register(s1);
+Texture2D<float4> g_MetallicRoughnessMap : register(t2);
+SamplerState g_MetallicRoughnessSampler : register(s2);
+Texture2D<float4> g_OcclusionMap : register(t4);
+SamplerState g_OcclusionSampler : register(s4);
+Texture2D<float4> g_EmissiveMap : register(t5);
+SamplerState g_EmissiveSampler : register(s5);
 
 // Input structure
 struct VS_OUTPUT
@@ -127,7 +138,25 @@ float SampleShadowPCF(uint lightIndex, float3 worldPos, float3 normalWS, float3 
 // MAIN PIXEL SHADER FUNCTION
 float4 main_ps(VS_OUTPUT input) : SV_TARGET
 {
-    const float4 baseColorSample = g_BaseColorMap.Sample(g_BaseColorSampler, input.uv);
+    const float2 uvBase = g_TextureCoordinates0.x == 0u ? input.uv : input.uv1;
+    const float2 uvNormal = g_TextureCoordinates0.y == 0u ? input.uv : input.uv1;
+    const float2 uvMetallicRoughness = g_TextureCoordinates0.z == 0u ? input.uv : input.uv1;
+    const float2 uvOcclusion = g_TextureCoordinates0.w == 0u ? input.uv : input.uv1;
+    const float2 uvEmissive = g_TextureCoordinates1.x == 0u ? input.uv : input.uv1;
+    const float2 baseUv = float2(dot(uvBase, g_TextureTransformRows[0].xy),
+                                 dot(uvBase, g_TextureTransformRows[0].zw)) + g_TextureTransformOffsets[0].xy;
+    const float2 normalUv = float2(dot(uvNormal, g_TextureTransformRows[1].xy),
+                                   dot(uvNormal, g_TextureTransformRows[1].zw)) + g_TextureTransformOffsets[1].xy;
+    const float2 mrUv = float2(dot(uvMetallicRoughness, g_TextureTransformRows[2].xy),
+                               dot(uvMetallicRoughness, g_TextureTransformRows[2].zw)) + g_TextureTransformOffsets[2].xy;
+    const float2 occlusionUv = float2(dot(uvOcclusion, g_TextureTransformRows[3].xy),
+                                      dot(uvOcclusion, g_TextureTransformRows[3].zw)) + g_TextureTransformOffsets[3].xy;
+    const float2 emissiveUv = float2(dot(uvEmissive, g_TextureTransformRows[4].xy),
+                                     dot(uvEmissive, g_TextureTransformRows[4].zw)) + g_TextureTransformOffsets[4].xy;
+    const float4 baseColorSample = g_BaseColorMap.Sample(g_BaseColorSampler, baseUv);
+    const float4 metallicRoughnessSample = g_MetallicRoughnessMap.Sample(g_MetallicRoughnessSampler, mrUv);
+    const float occlusionSample = g_OcclusionMap.Sample(g_OcclusionSampler, occlusionUv).r;
+    const float3 emissiveSample = g_EmissiveMap.Sample(g_EmissiveSampler, emissiveUv).rgb;
     const float4 baseColorFactor = g_BaseColor * input.color;
     const float3 baseColor = baseColorFactor.rgb * baseColorSample.rgb;
     if ((g_ModelFlags.w & 0xffu) == 1u && baseColorFactor.a * baseColorSample.a < g_AlphaParams.x)
@@ -137,19 +166,22 @@ float4 main_ps(VS_OUTPUT input) : SV_TARGET
 
     if (g_ObjectParams.y > 0.5f)
     {
-        return float4(baseColor + g_EmissiveMetallic.rgb, baseColorFactor.a * baseColorSample.a);
+        return float4(baseColor + g_EmissiveMetallic.rgb * emissiveSample,
+                      baseColorFactor.a * baseColorSample.a);
     }
 
     const float3 geometricNormal = BrdfNormalizeOr(input.normalWS, float3(0.0f, 0.0f, 1.0f));
     const float3 tangent = BrdfNormalizeOr(input.tangentWS.xyz - geometricNormal * dot(geometricNormal, input.tangentWS.xyz),
         abs(geometricNormal.y) < 0.9f ? normalize(cross(float3(0.0f, 1.0f, 0.0f), geometricNormal)) : float3(1.0f, 0.0f, 0.0f));
     const float3 bitangent = cross(geometricNormal, tangent) * (input.tangentWS.w < 0.0f ? -1.0f : 1.0f);
-    const float3 tangentNormal = g_NormalMap.Sample(g_NormalSampler, input.uv).xyz * 2.0f - 1.0f;
+    float3 tangentNormal = g_NormalMap.Sample(g_NormalSampler, normalUv).xyz * 2.0f - 1.0f;
+    tangentNormal.xy *= g_TextureParams.x;
     float3 N = BrdfNormalizeOr(tangent * tangentNormal.x + bitangent * tangentNormal.y + geometricNormal * tangentNormal.z,
         geometricNormal);
-    float  metallic = saturate(g_EmissiveMetallic.w);
+    float  metallic = saturate(g_EmissiveMetallic.w * metallicRoughnessSample.b);
     const bool isLegacy = g_ModelFlags.y == 0u;
-    const float alpha = max(g_SurfaceParams.y, BRDF_MIN_ALPHA);
+    const float roughness = saturate(g_SurfaceParams.x * metallicRoughnessSample.g);
+    const float alpha = max(roughness * roughness, BRDF_MIN_ALPHA);
     const float ior = max(g_SurfaceParams.w, 1.0f);
     const float iorRatio = (ior - 1.0f) / (ior + 1.0f);
     const float3 dielectricF0 = g_ModelFlags.z == 1u
@@ -218,8 +250,9 @@ float4 main_ps(VS_OUTPUT input) : SV_TARGET
         }
     }
 
-    const float3 ambient = 0.04f * legacyDiffuseColor;
-    float3 emissive = g_EmissiveMetallic.rgb;
+    const float occlusion = lerp(1.0f, occlusionSample, saturate(g_TextureParams.y));
+    const float3 ambient = 0.04f * legacyDiffuseColor * occlusion;
+    float3 emissive = g_EmissiveMetallic.rgb * emissiveSample;
 
     const float3 directLighting = isLegacy ? diffuseAccum + specAccum : brdfAccum;
     return float4(ambient + directLighting + emissive, baseColorFactor.a * baseColorSample.a);

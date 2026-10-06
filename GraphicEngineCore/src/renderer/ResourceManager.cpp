@@ -1,10 +1,78 @@
 #include "renderer/ResourceManager.h"
 
 #include <algorithm>
+#include <cmath>
 #include <functional>
 
 namespace Renderer
 {
+namespace
+{
+struct TextureMip
+{
+    uint32_t Width = 0;
+    uint32_t Height = 0;
+    std::vector<uint8_t> Pixels;
+};
+
+float DecodeColor(uint8_t value, bool srgb)
+{
+    const float normalized = static_cast<float>(value) / 255.0f;
+    return srgb ? (normalized <= 0.04045f ? normalized / 12.92f
+                                          : std::pow((normalized + 0.055f) / 1.055f, 2.4f))
+                : normalized;
+}
+
+uint8_t EncodeColor(float value, bool srgb)
+{
+    value = (std::clamp)(value, 0.0f, 1.0f);
+    if (srgb)
+        value = value <= 0.0031308f ? value * 12.92f : 1.055f * std::pow(value, 1.0f / 2.4f) - 0.055f;
+    return static_cast<uint8_t>(std::lround(value * 255.0f));
+}
+
+std::vector<TextureMip> BuildTextureMips(const Engine::ImportedImage &image, bool srgb)
+{
+    std::vector<TextureMip> mips;
+    mips.push_back({image.width, image.height, image.rgba8});
+    while (mips.back().Width > 1 || mips.back().Height > 1)
+    {
+        const TextureMip &source = mips.back();
+        TextureMip mip;
+        mip.Width = (std::max)(1u, source.Width / 2);
+        mip.Height = (std::max)(1u, source.Height / 2);
+        mip.Pixels.resize(static_cast<size_t>(mip.Width) * mip.Height * 4);
+        for (uint32_t y = 0; y < mip.Height; ++y)
+        {
+            for (uint32_t x = 0; x < mip.Width; ++x)
+            {
+                float sum[4]{};
+                uint32_t count = 0;
+                for (uint32_t dy = 0; dy < 2; ++dy)
+                {
+                    for (uint32_t dx = 0; dx < 2; ++dx)
+                    {
+                        const uint32_t sx = (std::min)(x * 2 + dx, source.Width - 1);
+                        const uint32_t sy = (std::min)(y * 2 + dy, source.Height - 1);
+                        const size_t offset = (static_cast<size_t>(sy) * source.Width + sx) * 4;
+                        for (size_t channel = 0; channel < 3; ++channel)
+                            sum[channel] += DecodeColor(source.Pixels[offset + channel], srgb);
+                        sum[3] += static_cast<float>(source.Pixels[offset + 3]) / 255.0f;
+                        ++count;
+                    }
+                }
+                const size_t offset = (static_cast<size_t>(y) * mip.Width + x) * 4;
+                for (size_t channel = 0; channel < 3; ++channel)
+                    mip.Pixels[offset + channel] = EncodeColor(sum[channel] / count, srgb);
+                mip.Pixels[offset + 3] = EncodeColor(sum[3] / count, false);
+            }
+        }
+        mips.push_back(std::move(mip));
+    }
+    return mips;
+}
+} // namespace
+
 ResourceManager::ResourceManager(nvrhi::IDevice *device) : m_Device(device), m_RenderDevice(device)
 {
     Engine::ImportedImage color;
@@ -14,7 +82,7 @@ ResourceManager::ResourceManager(nvrhi::IDevice *device) : m_Device(device), m_R
     std::string error;
     m_FallbackColor = m_RenderDevice.CreateTexture(color, true, error);
     if (m_FallbackColor)
-        QueueTextureUpload(m_FallbackColor, color);
+        QueueTextureUpload(m_FallbackColor, color, true);
 
     Engine::ImportedImage normal;
     normal.name = "FallbackNormal";
@@ -22,7 +90,7 @@ ResourceManager::ResourceManager(nvrhi::IDevice *device) : m_Device(device), m_R
     normal.rgba8 = {128, 128, 255, 255};
     m_FallbackNormal = m_RenderDevice.CreateTexture(normal, false, error);
     if (m_FallbackNormal)
-        QueueTextureUpload(m_FallbackNormal, normal);
+        QueueTextureUpload(m_FallbackNormal, normal, false);
 }
 
 ResourceManager::~ResourceManager()
@@ -91,7 +159,8 @@ std::shared_ptr<Mesh> ResourceManager::GetMesh(const std::string &guid, uint64_t
 std::shared_ptr<TextureResource> ResourceManager::GetOrCreateTexture(const std::string &identity,
                                                                      uint64_t generation,
                                                                      const Engine::ImportedImage &image,
-                                                                     bool srgb, std::string &error)
+                                                                     bool srgb, std::string &error,
+                                                                     const Engine::ImportedTexture *sampler)
 {
     error.clear();
     if (identity.empty())
@@ -102,10 +171,10 @@ std::shared_ptr<TextureResource> ResourceManager::GetOrCreateTexture(const std::
     const Key key{identity, generation, srgb};
     if (const auto it = m_Textures.find(key); it != m_Textures.end())
         return it->second;
-    auto texture = m_RenderDevice.CreateTexture(image, srgb, error);
+    auto texture = m_RenderDevice.CreateTexture(image, srgb, error, sampler);
     if (!texture)
         return nullptr;
-    QueueTextureUpload(texture, image);
+    QueueTextureUpload(texture, image, srgb);
     for (auto it = m_Textures.begin(); it != m_Textures.end();)
     {
         if ((it->first.Guid == identity || it->first.Guid.starts_with(identity + "/")) &&
@@ -282,17 +351,19 @@ void ResourceManager::QueueMeshUpload(const std::shared_ptr<Mesh> &mesh, std::ve
 }
 
 void ResourceManager::QueueTextureUpload(const std::shared_ptr<TextureResource> &texture,
-                                         const Engine::ImportedImage &image)
+                                         const Engine::ImportedImage &image, bool srgb)
 {
     if (!texture || !texture->Texture)
         return;
-    const uint32_t width = image.width;
-    std::vector<uint8_t> pixels = image.rgba8;
-    const uint64_t bytes = pixels.size();
+    std::vector<TextureMip> mips = BuildTextureMips(image, srgb);
+    uint64_t bytes = 0;
+    for (const auto &mip : mips)
+        bytes += mip.Pixels.size();
     m_PendingUploads.push_back(
-        {[texture, width, pixels = std::move(pixels)](nvrhi::ICommandList *commandList) {
-             commandList->writeTexture(texture->Texture, 0, 0, pixels.data(), static_cast<size_t>(width) * 4,
-                                       0);
+        {[texture, mips = std::move(mips)](nvrhi::ICommandList *commandList) {
+             for (size_t i = 0; i < mips.size(); ++i)
+                 commandList->writeTexture(texture->Texture, 0, static_cast<uint32_t>(i),
+                                           mips[i].Pixels.data(), static_cast<size_t>(mips[i].Width) * 4, 0);
          },
          bytes});
     m_UploadProgress.BytesQueued += bytes;
