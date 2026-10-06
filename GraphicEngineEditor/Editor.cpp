@@ -18,111 +18,18 @@
 #include "commands/EntityMembershipCommand.h"
 #include "commands/ChangeMaterialTextureCommand.h"
 #include "commands/ReplaceEntityCommand.h"
+#include "platform/EditorFileDialogs.h"
 
 #include <DirectXMath.h>
 #include <imgui.h>
 #include <imgui_internal.h>
-#define NOMINMAX
-#include <windows.h>
-#include <commdlg.h>
-#include <shlobj.h>
 #include <filesystem>
 #include <algorithm>
-#include <fstream>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
 
 namespace {
-std::optional<std::filesystem::path> ShowSceneDialog(
-	bool save,
-	const std::filesystem::path& initialPath,
-	const std::filesystem::path& projectRoot) {
-	wchar_t filename[32768]{};
-	if (!initialPath.empty()) {
-		const auto initial = initialPath.wstring();
-		wcsncpy_s(filename, std::size(filename), initial.c_str(), _TRUNCATE);
-	}
-	OPENFILENAMEW dialog{};
-	dialog.lStructSize = sizeof(dialog);
-	dialog.lpstrFile = filename;
-	dialog.nMaxFile = static_cast<DWORD>(std::size(filename));
-	dialog.lpstrFilter = L"Scene files (*.scene.json)\0*.scene.json\0JSON files (*.json)\0*.json\0All files (*.*)\0*.*\0\0";
-	dialog.nFilterIndex = 1;
-	const auto initialDirectory = (initialPath.empty() ? projectRoot : initialPath.parent_path()).wstring();
-	dialog.lpstrInitialDir = initialDirectory.c_str();
-	dialog.Flags = OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR | (save ? OFN_OVERWRITEPROMPT : OFN_FILEMUSTEXIST);
-	dialog.lpstrDefExt = L"json";
-	const BOOL accepted = save ? GetSaveFileNameW(&dialog) : GetOpenFileNameW(&dialog);
-	return accepted ? std::optional(std::filesystem::path(filename)) : std::nullopt;
-}
-
-std::optional<std::filesystem::path> ShowModelDialog(const std::filesystem::path& projectRoot) {
-	wchar_t filename[32768]{};
-	const auto initialDirectory = projectRoot.wstring();
-	OPENFILENAMEW dialog{};
-	dialog.lStructSize = sizeof(dialog);
-	dialog.lpstrFile = filename;
-	dialog.nMaxFile = static_cast<DWORD>(std::size(filename));
-	dialog.lpstrFilter = L"glTF models (*.gltf;*.glb)\0*.gltf;*.glb\0\0";
-	dialog.nFilterIndex = 1;
-	dialog.lpstrInitialDir = initialDirectory.c_str();
-	dialog.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR;
-	return GetOpenFileNameW(&dialog) ? std::optional(std::filesystem::path(filename)) : std::nullopt;
-}
-
-std::optional<std::filesystem::path> ShowTextureDialog(const std::filesystem::path& projectRoot) {
-	wchar_t filename[32768]{};
-	const auto initialDirectory = projectRoot.wstring();
-	OPENFILENAMEW dialog{};
-	dialog.lStructSize = sizeof(dialog);
-	dialog.lpstrFile = filename;
-	dialog.nMaxFile = static_cast<DWORD>(std::size(filename));
-	dialog.lpstrFilter = L"Images (*.png;*.jpg;*.jpeg)\0*.png;*.jpg;*.jpeg\0\0";
-	dialog.nFilterIndex = 1;
-	dialog.lpstrInitialDir = initialDirectory.c_str();
-	dialog.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR;
-	return GetOpenFileNameW(&dialog) ? std::optional(std::filesystem::path(filename)) : std::nullopt;
-}
-
-std::optional<std::filesystem::path> ShowProjectFolderDialog(const std::filesystem::path& initialPath) {
-	BROWSEINFOW dialog{};
-	dialog.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE;
-	dialog.lpszTitle = L"Choose a GraphicEngine project folder";
-	PIDLIST_ABSOLUTE selection = SHBrowseForFolderW(&dialog);
-	if (!selection) return std::nullopt;
-	wchar_t path[MAX_PATH]{};
-	const bool selected = SHGetPathFromIDListW(selection, path) != FALSE;
-	CoTaskMemFree(selection);
-	(void)initialPath;
-	return selected ? std::optional(std::filesystem::path(path)) : std::nullopt;
-}
-
-std::filesystem::path ProjectPreferencePath() {
-	if (const wchar_t* appData = _wgetenv(L"LOCALAPPDATA"))
-		return std::filesystem::path(appData) / L"GraphicEngine" / L"project.txt";
-	return {};
-}
-
-std::filesystem::path LoadRememberedProjectRoot() {
-	const auto preference = ProjectPreferencePath();
-	if (preference.empty()) return std::filesystem::current_path();
-	std::wifstream input(preference);
-	std::wstring saved;
-	if (input && std::getline(input, saved) && !saved.empty()) return std::filesystem::path(saved);
-	return std::filesystem::current_path();
-}
-
-void RememberProjectRoot(const std::filesystem::path& root) {
-	const auto preference = ProjectPreferencePath();
-	if (preference.empty()) return;
-	std::error_code ec;
-	std::filesystem::create_directories(preference.parent_path(), ec);
-	if (ec) return;
-	std::wofstream output(preference, std::ios::trunc);
-	if (output) output << root.native() << L'\n';
-}
-
 std::string JoinWarnings(const std::vector<std::string>& warnings) {
 	std::string message;
 	for (const auto& warning : warnings) {
@@ -142,10 +49,10 @@ std::filesystem::path CanonicalScenePath(const std::filesystem::path& path) {
 void Editor::OnInit() {
 	ImGui::SetCurrentContext(GetImGuiContext());
 	std::string projectError;
-	if (!GetAssetManager()->SetProjectRoot(LoadRememberedProjectRoot(), projectError)) {
+	if (!GetAssetManager()->SetProjectRoot(EditorPlatform::LoadRememberedProjectRoot(), projectError)) {
 		m_FileError = std::move(projectError);
 	} else {
-		RememberProjectRoot(GetAssetManager()->GetProjectRoot());
+		EditorPlatform::RememberProjectRoot(GetAssetManager()->GetProjectRoot());
 		std::vector<std::string> registryWarnings;
 		if (!GetAssetManager()->RefreshRegistry(registryWarnings, projectError)) m_FileError = std::move(projectError);
 		else if (!registryWarnings.empty()) m_FileError = JoinWarnings(registryWarnings);
@@ -651,8 +558,8 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
 
 	dispatcher.Dispatch<AssetImportRequestedEvent>([this](const auto& request) {
 		const auto path = request.GetAssetType() == AssetImportRequestedEvent::AssetType::Texture
-			? ShowTextureDialog(GetAssetManager()->GetProjectRoot())
-			: ShowModelDialog(GetAssetManager()->GetProjectRoot());
+			? EditorPlatform::ChooseTextureFile(GetAssetManager()->GetProjectRoot())
+			: EditorPlatform::ChooseModelFile(GetAssetManager()->GetProjectRoot());
 		if (!path) return true;
 		std::string guid;
 		const bool imported = request.GetAssetType() == AssetImportRequestedEvent::AssetType::Texture
@@ -914,7 +821,8 @@ void Editor::ReassignModel(Engine::EntityId entityId, const std::string& guid) {
 			for (size_t i = 0; i < m_ActiveScene->GetEntityCount(); ++i)
 				if (m_ActiveScene->GetEntityIdAt(i) == id) { index = static_cast<int>(i); break; }
 			ProcessPanelEvent(std::make_unique<EntitySelectedEvent>(EntitySelectedEvent::ItemType::Object,
-				index, -1, -1, id, Engine::InvalidLightId, Engine::InvalidCameraId, entity, {}, {}));
+				index, -1, -1, id, Engine::InvalidLightId, Engine::InvalidCameraId, entity,
+				std::weak_ptr<Renderer::SpotLight>{}, std::weak_ptr<Renderer::Camera>{}));
 		}));
 	m_FileError = JoinWarnings(warnings);
 }
@@ -1144,7 +1052,7 @@ void Editor::RequestSceneAction(SceneFileActionRequestedEvent::Action action) {
 		return;
 	}
 	if (action == SceneFileActionRequestedEvent::Action::OpenProject) {
-		const auto folder = ShowProjectFolderDialog(GetAssetManager()->GetProjectRoot());
+		const auto folder = EditorPlatform::ChooseProjectFolder(GetAssetManager()->GetProjectRoot());
 		if (!folder) return;
 		std::string error;
 		if (!GetAssetManager()->SetProjectRoot(*folder, error)) {
@@ -1156,7 +1064,7 @@ void Editor::RequestSceneAction(SceneFileActionRequestedEvent::Action action) {
 			m_FileError = std::move(error);
 			return;
 		}
-		RememberProjectRoot(GetAssetManager()->GetProjectRoot());
+		EditorPlatform::RememberProjectRoot(GetAssetManager()->GetProjectRoot());
 		auto scene = std::make_shared<Engine::Scene>();
 		auto camera = std::make_shared<Renderer::Camera>(m_CameraFov, m_CameraNearPlane, m_CameraFarPlane);
 		camera->m_Transform.SetPosition(0.0f, 0.0f, -5.0f);
@@ -1169,7 +1077,7 @@ void Editor::RequestSceneAction(SceneFileActionRequestedEvent::Action action) {
 		if (!registryWarnings.empty()) m_FileError = JoinWarnings(registryWarnings);
 		return;
 	}
-	const auto path = ShowSceneDialog(false, m_ScenePath, GetAssetManager()->GetProjectRoot());
+	const auto path = EditorPlatform::ChooseSceneFile(false, m_ScenePath, GetAssetManager()->GetProjectRoot());
 	if (!path) return;
 	std::string error;
 	std::vector<std::string> warnings;
@@ -1188,7 +1096,7 @@ bool Editor::SaveCurrentScene(bool choosePath) {
 		return false;
 	}
 	auto path = choosePath
-		? ShowSceneDialog(true, m_ScenePath, GetAssetManager()->GetProjectRoot())
+		? EditorPlatform::ChooseSceneFile(true, m_ScenePath, GetAssetManager()->GetProjectRoot())
 		: std::optional(m_ScenePath);
 	if (!path) return false;
 	std::string error;

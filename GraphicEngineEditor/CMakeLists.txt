@@ -4,6 +4,8 @@ add_executable(Editor
     "main.cpp"
     "Editor.h"
     "Editor.cpp"
+    "platform/EditorFileDialogs.h"
+    "platform/EditorFileDialogs.cpp"
     "panels/EditorPanel.h"
     "panels/HierarchyPanel.h"
     "panels/HierarchyPanel.cpp"

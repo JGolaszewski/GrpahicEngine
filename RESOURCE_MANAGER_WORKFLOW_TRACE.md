@@ -1,6 +1,8 @@
-# Resource Manager Workflow Trace
+# Pre-Implementation Resource Manager Workflow Trace
 
-This trace records the current runtime behavior inspected before changing asset or GPU-resource ownership. It is the P1.1 baseline for the manager API and lifetime decisions. Paths below refer to the repository source tree.
+> Historical source-inspection snapshot from before the resource-manager implementation. It describes the original code and is not a guide to current runtime behavior. For current asset workflows, see [GraphicEngineCore/docs/asset-workflow.md](GraphicEngineCore/docs/asset-workflow.md).
+
+The sections below record the P1.1 baseline used for manager API and lifetime decisions. Paths refer to the repository source tree at that time.
 
 ## Startup and initialization
 
