@@ -67,6 +67,7 @@ class D3D11Backend : public IRenderBackend
     Microsoft::WRL::ComPtr<ID3D11RenderTargetView> m_RenderTargetView;
     Microsoft::WRL::ComPtr<ID3DUserDefinedAnnotation> m_Annotation;
     bool m_VSyncEnabled = true;
+    HRESULT m_LastPresentFailure = S_OK;
 
     nvrhi::DeviceHandle m_NvrhiDevice;
     nvrhi::TextureHandle m_NvrhiBackBuffer;

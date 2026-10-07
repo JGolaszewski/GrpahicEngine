@@ -1,9 +1,9 @@
 #include "RenderSystem.h"
 #include "AssetManager.h"
+#include "LogMacros.h"
 #include "renderer/render_graph/RenderPass.h"
 
 #include <algorithm>
-#include <iostream>
 #include <utility>
 
 namespace Renderer
@@ -29,9 +29,11 @@ RenderSystem::RenderSystem(IRenderBackend *backend)
     : m_RenderBackend(backend), m_CommandList(CreateImmediateCommandList(backend)),
       m_FrameContext(backend ? backend->GetDevice() : nullptr)
 {
+    ENGINE_LOG_INFO("Render", "Render system initialization started | backend_valid: {} | device_valid: {}",
+                    backend != nullptr, backend && backend->GetDevice() != nullptr);
     if (!m_CommandList)
     {
-        std::cerr << "ERROR: RenderSystem could not create its immediate command list." << std::endl;
+        ENGINE_LOG_ERROR("Render", "Render system initialization failed | command_list_valid: false");
         return;
     }
 
@@ -52,6 +54,8 @@ RenderSystem::RenderSystem(IRenderBackend *backend)
         std::unique_ptr<Engine::PrimitiveFactory>(new Engine::PrimitiveFactory(m_RenderBackend->GetDevice()));
 
     m_RenderGraph = std::make_unique<Renderer::RenderGraph>(m_RenderBackend->GetDevice(), m_FrameContext);
+    ENGINE_LOG_INFO("Render", "Render system initialized | command_list_valid: {} | resource_manager_valid: {}",
+                    m_CommandList != nullptr, m_ResourceManager != nullptr);
 }
 
 std::shared_ptr<Engine::ViewportTarget> RenderSystem::CreateViewportTarget(uint32_t width, uint32_t height)
@@ -73,6 +77,8 @@ std::shared_ptr<Renderer::Entity> RenderSystem::CreatePrimitive(Engine::Primitiv
 {
     if (m_FrameActive || !m_PrimitiveFactory)
     {
+        ENGINE_LOG_ERROR("ECS", "Primitive creation rejected | shape: {} | frame_active: {} | factory_valid: {}",
+                         static_cast<uint32_t>(shape), m_FrameActive, m_PrimitiveFactory != nullptr);
         return nullptr;
     }
 
@@ -83,15 +89,15 @@ void RenderSystem::ExecuteImmediate(std::function<void(nvrhi::ICommandList *)> f
 {
     if (m_FrameActive)
     {
-        std::cerr << "ERROR: Immediate command-list execution is not allowed during an active frame."
-                  << std::endl;
+        ENGINE_LOG_ERROR("Render", "Immediate command execution rejected | frame_active: {}", m_FrameActive);
         return;
     }
 
     nvrhi::CommandListHandle cmd = CreateImmediateCommandList(m_RenderBackend);
     if (!cmd)
     {
-        std::cerr << "ERROR: Could not create an immediate command list." << std::endl;
+        ENGINE_LOG_ERROR("Render", "Immediate command-list creation failed | backend_valid: {}",
+                         m_RenderBackend != nullptr);
         return;
     }
 
@@ -110,9 +116,12 @@ void RenderSystem::BeginFrame()
     std::string uploadError;
     if (!m_ResourceManager->FlushUploads(uploadError))
     {
-        std::cerr << "ERROR: Could not submit queued GPU uploads: " << uploadError << std::endl;
+        if (uploadError != m_LastUploadFailure)
+            ENGINE_LOG_ERROR("Render", "Queued GPU uploads failed | error: {}", uploadError);
+        m_LastUploadFailure = uploadError;
         return;
     }
+    m_LastUploadFailure.clear();
 
     m_CommandList->open();
     m_FrameActive = true;
@@ -177,7 +186,8 @@ void RenderSystem::SubmitViews(const std::vector<Engine::ViewportBinding> &views
     m_SceneRenderer->BuildViews(bb, m_CommandList, m_FrameContext, diagnostics);
     if (!m_SceneRenderer->EnsureLightBuffers(bb.GetSceneViews().size(), m_FrameContext))
     {
-        std::cerr << "ERROR: Could not allocate per-view light buffers." << std::endl;
+        ENGINE_LOG_ERROR("Render", "Per-view light buffer allocation failed | view_count: {}",
+                         bb.GetSceneViews().size());
     }
     bb.SetPerObjectBuffer(m_SceneRenderer->GetPerObjectBuffer());
     bb.SetPerObjectBindingSet(m_SceneRenderer->GetPerObjectBindingSet());
@@ -203,6 +213,8 @@ bool RenderSystem::SetShadowSettings(const ShadowSettings &settings) noexcept
     if (settings.Resolution < 128 || settings.Resolution > 8192 ||
         settings.MaxShadowCastersPerScene > SceneRenderer::MaxShadowedLights)
     {
+        ENGINE_LOG_ERROR("Render", "Shadow settings rejected | resolution: {} | max_shadow_casters: {}",
+                         settings.Resolution, settings.MaxShadowCastersPerScene);
         return false;
     }
 
@@ -218,6 +230,8 @@ std::shared_ptr<Renderer::Mesh> RenderSystem::GetOrCreateMesh(const std::string 
     if (m_FrameActive || !m_ResourceManager)
     {
         error = "GPU mesh creation is only available outside an active frame";
+        ENGINE_LOG_ERROR("Render", "Mesh creation rejected | guid: {} | generation: {} | frame_active: {}",
+                         guid, generation, m_FrameActive);
         return nullptr;
     }
     return m_ResourceManager->GetOrCreateMesh(guid, generation, vertices, indices, error);
@@ -232,6 +246,8 @@ std::shared_ptr<Renderer::TextureResource> RenderSystem::GetOrCreateTexture(cons
     if (m_FrameActive || !m_ResourceManager)
     {
         error = "texture upload requires an initialized renderer outside an active frame";
+        ENGINE_LOG_ERROR("Render", "Texture upload rejected | identity: {} | generation: {} | frame_active: {}",
+                         identity, generation, m_FrameActive);
         return nullptr;
     }
     return m_ResourceManager->GetOrCreateTexture(identity, generation, image, srgb, error, sampler);
@@ -240,7 +256,18 @@ std::shared_ptr<Renderer::TextureResource> RenderSystem::GetOrCreateTexture(cons
 std::shared_ptr<Renderer::Material> RenderSystem::CreateMaterial(
     const Renderer::MaterialProperties &properties)
 {
-    return !m_FrameActive && m_MaterialSystem ? m_MaterialSystem->CreateMaterial(properties) : nullptr;
+    if (m_FrameActive || !m_MaterialSystem)
+    {
+        ENGINE_LOG_ERROR("Render", "Material creation rejected | frame_active: {} | material_system_valid: {}",
+                         m_FrameActive, m_MaterialSystem != nullptr);
+        return nullptr;
+    }
+    auto material = m_MaterialSystem->CreateMaterial(properties);
+    if (!material)
+        ENGINE_LOG_ERROR("Render", "Material allocation failed | roughness: {} | metallic: {} | workflow: {}",
+                         properties.Roughness, properties.Metallic,
+                         static_cast<uint32_t>(properties.Workflow));
+    return material;
 }
 
 void RenderSystem::UnregisterMaterial(const std::shared_ptr<Renderer::Material> &material)
@@ -255,10 +282,14 @@ bool RenderSystem::SetMaterialTextures(const std::shared_ptr<Renderer::Material>
                                        std::optional<std::string> baseColorGuid,
                                        std::optional<std::string> normalGuid, bool setImportedDefaults)
 {
-    return !m_FrameActive && m_MaterialSystem &&
-           m_MaterialSystem->SetTextureBindings(material, std::move(baseColor), std::move(normal),
-                                                std::move(baseColorGuid), std::move(normalGuid),
-                                                setImportedDefaults);
+    if (!m_FrameActive && m_MaterialSystem &&
+        m_MaterialSystem->SetTextureBindings(material, std::move(baseColor), std::move(normal),
+                                             std::move(baseColorGuid), std::move(normalGuid),
+                                             setImportedDefaults))
+        return true;
+    ENGINE_LOG_ERROR("Render", "Material texture binding failed | material_valid: {} | frame_active: {} | material_system_valid: {}",
+                     material != nullptr, m_FrameActive, m_MaterialSystem != nullptr);
+    return false;
 }
 
 bool RenderSystem::SetPbrMaterialTextures(const std::shared_ptr<Renderer::Material> &material,
@@ -269,10 +300,14 @@ bool RenderSystem::SetPbrMaterialTextures(const std::shared_ptr<Renderer::Materi
                                           std::shared_ptr<Renderer::TextureResource> emissive,
                                           bool setImportedDefaults)
 {
-    return !m_FrameActive && m_MaterialSystem &&
-           m_MaterialSystem->SetPbrTextureBindings(material, std::move(baseColor), std::move(normal),
-                                                   std::move(metallicRoughness), std::move(occlusion),
-                                                   std::move(emissive), setImportedDefaults);
+    if (!m_FrameActive && m_MaterialSystem &&
+        m_MaterialSystem->SetPbrTextureBindings(material, std::move(baseColor), std::move(normal),
+                                                std::move(metallicRoughness), std::move(occlusion),
+                                                std::move(emissive), setImportedDefaults))
+        return true;
+    ENGINE_LOG_ERROR("Render", "PBR texture binding failed | material_valid: {} | frame_active: {} | material_system_valid: {}",
+                     material != nullptr, m_FrameActive, m_MaterialSystem != nullptr);
+    return false;
 }
 
 void RenderSystem::ReleaseResource(const std::string &guid)
@@ -288,6 +323,8 @@ bool RenderSystem::UploadModel(const std::string &guid, uint64_t generation, con
     if (m_FrameActive || !m_ResourceManager)
     {
         error = "GPU model uploads are only available outside an active frame";
+        ENGINE_LOG_ERROR("Render", "Model upload rejected | guid: {} | generation: {} | frame_active: {}",
+                         guid, generation, m_FrameActive);
         meshes.clear();
         return false;
     }
@@ -389,7 +426,11 @@ std::shared_ptr<Renderer::Entity> RenderSystem::CreateModelEntity(
 
     std::vector<std::vector<std::shared_ptr<Renderer::Mesh>>> meshes;
     if (!UploadModel(guid, generation, model, meshes, error))
+    {
+        ENGINE_LOG_ERROR("Render", "Model GPU upload failed | guid: {} | generation: {} | error: {}",
+                         guid, generation, error);
         return nullptr;
+    }
 
     std::vector<std::shared_ptr<Renderer::Material>> materials;
     materials.reserve(model.materials.size() + 1);
@@ -551,7 +592,10 @@ void RenderSystem::EndFrame()
 
     if (!m_RenderGraph->Compile())
     {
-        std::cerr << "ERROR: Render graph compilation failed: " << m_RenderGraph->GetLastError() << std::endl;
+        const std::string failure = "compile: " + m_RenderGraph->GetLastError();
+        if (failure != m_LastRenderGraphFailure)
+            ENGINE_LOG_ERROR("Render", "Render graph compilation failed | error: {}", failure);
+        m_LastRenderGraphFailure = failure;
         ClearSubmittedTargets();
         m_CommandList->close();
         m_RenderBackend->GetDevice()->executeCommandList(m_CommandList);
@@ -562,11 +606,18 @@ void RenderSystem::EndFrame()
                                                  m_FrameContext.GetCompletedFrames());
         return;
     }
+    if (m_LastRenderGraphFailure.starts_with("compile: "))
+        m_LastRenderGraphFailure.clear();
     if (!m_RenderGraph->Execute(m_CommandList))
     {
-        std::cerr << "ERROR: Render graph execution failed: " << m_RenderGraph->GetLastError() << std::endl;
+        const std::string failure = "execute: " + m_RenderGraph->GetLastError();
+        if (failure != m_LastRenderGraphFailure)
+            ENGINE_LOG_ERROR("Render", "Render graph execution failed | error: {}", failure);
+        m_LastRenderGraphFailure = failure;
         ClearSubmittedTargets();
     }
+    else
+        m_LastRenderGraphFailure.clear();
 
     m_CommandList->close();
     m_RenderBackend->GetDevice()->executeCommandList(m_CommandList);

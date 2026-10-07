@@ -1,6 +1,7 @@
 #include "Application.h"
 #include "AssetManager.h"
 #include "LogEngine.h"
+#include "LogMacros.h"
 #include "RenderBackend.h"
 #include "RenderSystem.h"
 #include "SceneDocument.h"
@@ -15,7 +16,6 @@
 
 #include <algorithm>
 #include <chrono>
-#include <iostream>
 #include <set>
 #include <thread>
 
@@ -151,27 +151,35 @@ bool Application::InitializeCore()
     if (!Log::IsInitialized())
         Log::Initialize();
 #endif
+    ENGINE_LOG_INFO("Core", "Application initialization started | window_valid: {} | backend_valid: {}",
+                    m_Window != nullptr, m_RenderBackend != nullptr);
     if (!m_Window || !m_RenderBackend)
     {
-        std::cerr << "ERROR: Application requires a window and render backend." << std::endl;
+        ENGINE_LOG_ERROR("Core", "Application initialization rejected | window_valid: {} | backend_valid: {}",
+                         m_Window != nullptr, m_RenderBackend != nullptr);
         return false;
     }
     if (!m_RenderBackend->Initialize(m_Window.get()))
     {
-        std::cerr << "ERROR: Could not initialize renderer." << std::endl;
+        ENGINE_LOG_ERROR("Render", "Renderer initialization failed | window_handle: {}",
+                         reinterpret_cast<uintptr_t>(m_Window->GetNativeHandle()));
         return false;
     }
 
     m_RenderSystem = std::make_unique<RenderSystem>(m_RenderBackend.get());
     if (!m_RenderSystem->IsValid())
     {
-        std::cerr << "ERROR: Renderer command-list initialization failed." << std::endl;
+        ENGINE_LOG_ERROR("Render", "Render system initialization failed | device_valid: {}",
+                         m_RenderBackend->GetDevice() != nullptr);
         return false;
     }
     m_DefaultViewport = std::make_shared<Viewport>(m_Window->GetWidth(), m_Window->GetHeight(),
                                                    m_RenderBackend->GetDefaultFramebuffer());
 
     m_Window->SetEventCallback([this](Events::Event &event) { OnEvent(event); });
+
+    ENGINE_LOG_INFO("Core", "Application initialized | framebuffer_width: {} | framebuffer_height: {}",
+                    m_Window->GetWidth(), m_Window->GetHeight());
 
     return true;
 }
@@ -260,6 +268,8 @@ void Application::Run(std::unique_ptr<IWindow> window, std::unique_ptr<IRenderBa
         }
     }
     OnShutdownUI();
+    ENGINE_LOG_INFO("Core", "Application run loop stopped | frame_count: {} | clamped_frame_count: {}",
+                    m_FrameTimingStats.FrameCount, m_FrameTimingStats.ClampedFrameCount);
 }
 
 void Application::UpdateScenes(float deltaTime)
@@ -301,6 +311,8 @@ void Application::RegisterDefaultView()
 void Application::AddScene(std::shared_ptr<Scene> scene)
 {
     m_ActiveScenes.push_back(scene);
+    ENGINE_LOG_DEBUG("ECS", "Scene registered | scene_valid: {} | active_scene_count: {} | entity_count: {}",
+                     scene != nullptr, m_ActiveScenes.size(), scene ? scene->GetEntities().size() : 0);
 }
 
 void Application::RemoveScene(std::shared_ptr<Scene> scene)
@@ -309,6 +321,7 @@ void Application::RemoveScene(std::shared_ptr<Scene> scene)
     if (it != m_ActiveScenes.end())
     {
         m_ActiveScenes.erase(it);
+        ENGINE_LOG_DEBUG("ECS", "Scene unregistered | active_scene_count: {}", m_ActiveScenes.size());
     }
 }
 
@@ -322,10 +335,19 @@ bool Application::LoadScene(const std::filesystem::path &path, std::string &erro
     {
         error = std::move(loaded.error);
         warnings.clear();
+        ENGINE_LOG_ERROR("Asset", "Scene load failed | path: {} | error: {}", path.generic_string(), error);
         return false;
     }
     warnings = std::move(loaded.warnings);
-    return LoadSceneDocument(loaded.document, error, warnings);
+    const bool loadedSuccessfully = LoadSceneDocument(loaded.document, error, warnings);
+    if (loadedSuccessfully)
+        ENGINE_LOG_INFO("Asset", "Scene loaded | path: {} | entities: {} | lights: {} | cameras: {}",
+                        path.generic_string(), loaded.document.entities.size(), loaded.document.lights.size(),
+                        loaded.document.cameras.size());
+    else
+        ENGINE_LOG_ERROR("Asset", "Scene instantiation failed | path: {} | error: {}",
+                         path.generic_string(), error);
+    return loadedSuccessfully;
 }
 
 bool Application::LoadSceneDocument(const SceneDocument &document, std::string &error,
@@ -357,6 +379,8 @@ bool Application::LoadSceneDocument(const SceneDocument &document, std::string &
             }
         }
         error = std::move(message);
+        ENGINE_LOG_ERROR("Core", "Scene document rejected | entities: {} | lights: {} | cameras: {} | error: {}",
+                         document.entities.size(), document.lights.size(), document.cameras.size(), error);
         return false;
     };
 
@@ -575,6 +599,8 @@ bool Application::LoadSceneDocument(const SceneDocument &document, std::string &
     m_ActiveScenes.clear();
     m_ActiveScenes.push_back(stagedScene);
     OnSceneReplaced(stagedScene);
+    ENGINE_LOG_INFO("Core", "Active scene replaced | entities: {} | lights: {} | cameras: {}",
+                    document.entities.size(), document.lights.size(), document.cameras.size());
     return true;
 }
 

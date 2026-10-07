@@ -1,6 +1,7 @@
 #include "Editor.h"
 
 #include "AssetManager.h"
+#include "LogMacros.h"
 #include "PrimitiveFactory.h"
 #include "RenderSystem.h"
 #include "Scene.h"
@@ -61,20 +62,31 @@ void Editor::OnInit()
     if (!m_UiIntegration.Initialize(GetWindow(), GetRenderer()))
     {
         m_FileError = "Editor UI initialization failed.";
+        ENGINE_LOG_ERROR("Core", "Editor UI initialization failed | window_valid: {} | renderer_valid: {}",
+                         GetWindow() != nullptr, GetRenderer() != nullptr);
     }
     std::string projectError;
     if (!GetAssetManager()->SetProjectRoot(EditorPlatform::LoadRememberedProjectRoot(), projectError))
     {
         m_FileError = std::move(projectError);
+        ENGINE_LOG_ERROR("Asset", "Editor project-root initialization failed | error: {}", m_FileError);
     }
     else
     {
         EditorPlatform::RememberProjectRoot(GetAssetManager()->GetProjectRoot());
         std::vector<std::string> registryWarnings;
         if (!GetAssetManager()->RefreshRegistry(registryWarnings, projectError))
+        {
             m_FileError = std::move(projectError);
+            ENGINE_LOG_ERROR("Asset", "Editor asset registry refresh failed | project_root: {} | error: {}",
+                             GetAssetManager()->GetProjectRoot().generic_string(), m_FileError);
+        }
         else if (!registryWarnings.empty())
+        {
             m_FileError = JoinWarnings(registryWarnings);
+            ENGINE_LOG_WARN("Asset", "Editor asset registry contains warnings | warning_count: {} | details: {}",
+                            registryWarnings.size(), m_FileError);
+        }
     }
 
     // --- Create Core Scene ---
@@ -163,6 +175,8 @@ void Editor::OnInit()
                                                                 -1, demoCubeId, Engine::InvalidLightId,
                                                                 Engine::InvalidCameraId));
     }
+    ENGINE_LOG_INFO("Core", "Editor initialized | panel_count: {} | demo_entity_id: {} | viewport_valid: {}",
+                    m_Windows.size(), demoCubeId, m_EditorViewport != nullptr);
 }
 
 void Editor::OnSceneReplaced(const std::shared_ptr<Engine::Scene> &scene)
@@ -201,12 +215,16 @@ void Editor::CreateViewport(uint32_t width, uint32_t height)
 
     if (!GetRenderSystem())
     {
+        ENGINE_LOG_ERROR("Render", "Editor viewport creation failed | reason: render_system_unavailable | width: {} | height: {}",
+                         width, height);
         return;
     }
 
     auto target = GetRenderSystem()->CreateViewportTarget(width, height);
     if (!target)
     {
+        ENGINE_LOG_ERROR("Render", "Editor viewport target creation failed | width: {} | height: {}", width,
+                         height);
         return;
     }
 
@@ -214,10 +232,12 @@ void Editor::CreateViewport(uint32_t width, uint32_t height)
     m_EditorViewportTarget = std::move(target);
     m_EditorViewport = std::make_shared<Engine::Viewport>(m_EditorViewportTarget);
     AddViewport(m_EditorViewport);
+    ENGINE_LOG_DEBUG("Render", "Editor viewport created | width: {} | height: {}", width, height);
 }
 
 void Editor::DestroyViewport()
 {
+    const bool hadViewport = m_EditorViewport != nullptr;
     if (m_EditorViewport)
     {
         RemoveViewport(m_EditorViewport);
@@ -225,6 +245,8 @@ void Editor::DestroyViewport()
     m_EditorViewport.reset();
     m_EditorViewportTarget.reset();
     m_ViewportSize = std::pair<float, float>(0.0f, 0.0f);
+    if (hadViewport)
+        ENGINE_LOG_DEBUG("Render", "Editor viewport destroyed");
 }
 
 void *Editor::GetViewportTextureID() const
@@ -1455,17 +1477,29 @@ void Editor::RequestSceneAction(SceneFileActionRequestedEvent::Action action)
     if (!loaded)
     {
         m_FileError = std::move(loaded.error);
+        ENGINE_LOG_ERROR("Asset", "Editor scene load failed | path: {} | error: {}", path->generic_string(),
+                         m_FileError);
         return;
     }
     if (!LoadSceneDocument(loaded.document, error, loaded.warnings))
     {
         m_FileError = std::move(error);
+        ENGINE_LOG_ERROR("Core", "Editor scene activation failed | path: {} | error: {}", path->generic_string(),
+                         m_FileError);
         return;
     }
     m_SceneDocument.CommitPath(*path);
     m_SceneDirty = false;
     if (!loaded.warnings.empty())
+    {
         m_FileError = JoinWarnings(loaded.warnings);
+        ENGINE_LOG_WARN("Asset", "Editor scene loaded with warnings | path: {} | warning_count: {} | details: {}",
+                        path->generic_string(), loaded.warnings.size(), m_FileError);
+    }
+    else
+        ENGINE_LOG_INFO("Core", "Editor scene activated | path: {} | entities: {} | lights: {} | cameras: {}",
+                        path->generic_string(), loaded.document.entities.size(), loaded.document.lights.size(),
+                        loaded.document.cameras.size());
 }
 
 bool Editor::SaveCurrentScene(bool choosePath)
@@ -1473,6 +1507,7 @@ bool Editor::SaveCurrentScene(bool choosePath)
     if (!m_ActiveScene)
     {
         m_FileError = "There is no active scene to save.";
+        ENGINE_LOG_ERROR("Asset", "Editor scene save rejected | active_scene_valid: false");
         return false;
     }
     auto path = choosePath ? EditorPlatform::ChooseSceneFile(true, m_SceneDocument.GetPath(),
@@ -1487,10 +1522,14 @@ bool Editor::SaveCurrentScene(bool choosePath)
     if (!saved)
     {
         m_FileError = std::move(saved.error().Message);
+        ENGINE_LOG_ERROR("Asset", "Editor scene save failed | path: {} | entity_count: {} | error: {}",
+                         path->generic_string(), m_ActiveScene->GetEntities().size(), m_FileError);
         return false;
     }
     m_SceneDirty = false;
     m_FileError.clear();
+    ENGINE_LOG_INFO("Asset", "Editor scene saved | path: {} | entity_count: {} | choose_path: {}",
+                    path->generic_string(), document.entities.size(), choosePath);
     return true;
 }
 

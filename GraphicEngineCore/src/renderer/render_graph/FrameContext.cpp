@@ -1,7 +1,7 @@
 #include "renderer/render_graph/FrameContext.h"
+#include "LogMacros.h"
 
 #include <algorithm>
-#include <iostream>
 
 namespace Renderer
 {
@@ -61,9 +61,10 @@ void FrameContext::MarkSubmitted()
     }
     if (!query)
     {
-        std::cerr
-            << "ERROR: Could not create a GPU completion query; waiting for idle to retire resources safely."
-            << std::endl;
+        if (!m_CompletionQueryFailureLogged)
+            ENGINE_LOG_ERROR("Render", "GPU completion query creation failed | submitted_frame: {} | inflight_frames: {} | fallback: wait_for_idle",
+                             m_SubmittedFrames, m_InFlightFrames.size());
+        m_CompletionQueryFailureLogged = true;
         m_Device->waitForIdle();
         m_CompletedFrames = (std::max)(m_CompletedFrames, m_SubmittedFrames + FramesInFlight);
         while (!m_InFlightFrames.empty())
@@ -75,6 +76,7 @@ void FrameContext::MarkSubmitted()
         }
         return;
     }
+    m_CompletionQueryFailureLogged = false;
 
     m_Device->setEventQuery(query, nvrhi::CommandQueue::Graphics);
     m_InFlightFrames.push_back({m_SubmittedFrames, std::move(query)});

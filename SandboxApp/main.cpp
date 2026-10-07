@@ -1,5 +1,3 @@
-#include <iostream>
-
 #include "Application.h"
 #include "backends/D3D11Backend.h"
 #include "windows/GLFWWindow.h"
@@ -32,7 +30,7 @@ protected:
 	}
 
 	void OnUpdate(float deltaTime) override {
-		std::cout << "Delta time: " << deltaTime << " seconds" << std::endl;
+		(void)deltaTime;
 	}
 
 

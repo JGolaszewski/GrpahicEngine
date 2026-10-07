@@ -96,5 +96,6 @@ class ENGINE_API FrameContext
     uint64_t m_FrameIndex = 0;
     uint64_t m_SubmittedFrames = 0;
     uint64_t m_CompletedFrames = 0;
+    bool m_CompletionQueryFailureLogged = false;
 };
 } // namespace Renderer

@@ -16,6 +16,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <string>
 #include <vector>
 
 namespace Engine
@@ -113,6 +114,8 @@ class ENGINE_API RenderSystem
     IRenderBackend *const m_RenderBackend;
     nvrhi::CommandListHandle m_CommandList;
     bool m_FrameActive = false;
+    std::string m_LastUploadFailure;
+    std::string m_LastRenderGraphFailure;
     ShadowSettings m_ShadowSettings;
 
     Renderer::FrameContext m_FrameContext;

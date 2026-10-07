@@ -1,10 +1,10 @@
 #include "SceneRenderer.h"
+#include "LogMacros.h"
 
 #include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstring>
-#include <iostream>
 #include <limits>
 
 #include "Scene.h"
@@ -761,7 +761,8 @@ void Engine::SceneRenderer::BuildViews(Renderer::FrameBlackboard &blackboard,
     m_SubmissionStats = {};
     if (!EnsurePerObjectResources(EstimateDrawCount(blackboard), frameContext, diagnostics))
     {
-        std::cerr << "ERROR: Could not allocate per-object frame data resources." << std::endl;
+        ENGINE_LOG_ERROR("Render", "Per-object frame resources unavailable | estimated_draw_count: {} | frame_index: {}",
+                         EstimateDrawCount(blackboard), frameContext.GetFrameIndex());
         return;
     }
 

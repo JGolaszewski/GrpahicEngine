@@ -1,9 +1,9 @@
 #include "PipelineCache.h"
+#include "LogMacros.h"
 
 #include <bit>
 #include <cstdint>
 #include <functional>
-#include <iostream>
 #include <iterator>
 #include <type_traits>
 #include <utility>
@@ -216,12 +216,14 @@ nvrhi::GraphicsPipelineHandle Engine::PipelineCache::GetOrCreatePipeline(const P
 
     if (!m_Device)
     {
-        std::cerr << "ERROR: Pipeline creation skipped: device is null." << std::endl;
+        ENGINE_LOG_ERROR("Render", "Pipeline creation rejected | device_valid: false | cache_size: {}",
+                         m_Cache.size());
         return nullptr;
     }
     if (!effectiveKey.VS)
     {
-        std::cerr << "ERROR: Pipeline creation skipped: vertex shader is null." << std::endl;
+        ENGINE_LOG_ERROR("Render", "Pipeline creation rejected | vertex_shader_valid: false | cache_size: {}",
+                         m_Cache.size());
         return nullptr;
     }
 
@@ -230,7 +232,8 @@ nvrhi::GraphicsPipelineHandle Engine::PipelineCache::GetOrCreatePipeline(const P
                                     static_cast<uint32_t>(effectiveKey.InputLayout.size()), effectiveKey.VS);
     if (!inputLayout)
     {
-        std::cerr << "ERROR: Pipeline creation skipped: input layout creation failed." << std::endl;
+        ENGINE_LOG_ERROR("Render", "Pipeline input-layout creation failed | attribute_count: {}",
+                         effectiveKey.InputLayout.size());
         return nullptr;
     }
 
@@ -262,12 +265,14 @@ nvrhi::GraphicsPipelineHandle Engine::PipelineCache::GetOrCreatePipeline(const P
     auto pipeline = m_Device->createGraphicsPipeline(pdesc, effectiveKey.Framebuffer);
     if (!pipeline)
     {
-        std::cerr << "ERROR: Pipeline creation failed for a new framebuffer/render-state signature."
-                  << std::endl;
+        ENGINE_LOG_ERROR("Render", "Graphics pipeline creation failed | cache_size: {} | color_target_count: {}",
+                         m_Cache.size(), effectiveKey.Framebuffer.colorFormats.size());
         return nullptr;
     }
 
+    const size_t colorTargetCount = effectiveKey.Framebuffer.colorFormats.size();
     m_Cache.emplace(std::move(effectiveKey), pipeline);
-    std::cerr << "INFO: Created pipeline after a cache signature miss." << std::endl;
+    ENGINE_LOG_DEBUG("Render", "Graphics pipeline cached | cache_size: {} | color_target_count: {}",
+                     m_Cache.size(), colorTargetCount);
     return pipeline;
 }

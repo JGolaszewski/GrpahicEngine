@@ -1,4 +1,5 @@
 #include "renderer/ResourceManager.h"
+#include "LogMacros.h"
 
 #include <algorithm>
 #include <cmath>
@@ -124,15 +125,26 @@ std::shared_ptr<Mesh> ResourceManager::GetOrCreateMesh(const std::string &guid, 
     if (guid.empty())
     {
         error = "mesh cache requires a non-empty asset GUID";
+        ENGINE_LOG_ERROR("Asset", "Mesh allocation rejected | guid_length: 0 | generation: {}", generation);
         return nullptr;
     }
     const Key key{guid, generation};
     if (const auto it = m_Meshes.find(key); it != m_Meshes.end())
+    {
+        ENGINE_LOG_TRACE("Asset", "Mesh cache hit | guid: {} | generation: {}", guid, generation);
         return it->second;
+    }
 
+    ENGINE_LOG_DEBUG("Asset", "Mesh cache miss | guid: {} | generation: {} | vertex_count: {} | index_count: {} | estimated_bytes: {}",
+                     guid, generation, vertices.size(), indices.size(),
+                     vertices.size() * sizeof(Vertex) + indices.size() * sizeof(uint32_t));
     auto mesh = m_RenderDevice.CreateMesh(vertices, indices, error);
     if (!mesh)
+    {
+        ENGINE_LOG_ERROR("Render", "GPU mesh allocation failed | guid: {} | generation: {} | vertex_count: {} | index_count: {} | error: {}",
+                         guid, generation, vertices.size(), indices.size(), error);
         return nullptr;
+    }
     QueueMeshUpload(mesh, vertices, indices);
     for (auto it = m_Meshes.begin(); it != m_Meshes.end();)
     {
@@ -166,14 +178,25 @@ std::shared_ptr<TextureResource> ResourceManager::GetOrCreateTexture(const std::
     if (identity.empty())
     {
         error = "texture cache requires a non-empty asset or subresource identity";
+        ENGINE_LOG_ERROR("Asset", "Texture allocation rejected | identity_length: 0 | generation: {}", generation);
         return nullptr;
     }
     const Key key{identity, generation, srgb};
     if (const auto it = m_Textures.find(key); it != m_Textures.end())
+    {
+        ENGINE_LOG_TRACE("Asset", "Texture cache hit | identity: {} | generation: {} | srgb: {}",
+                         identity, generation, srgb);
         return it->second;
+    }
+    ENGINE_LOG_DEBUG("Asset", "Texture cache miss | identity: {} | generation: {} | width: {} | height: {} | byte_size: {} | srgb: {}",
+                     identity, generation, image.width, image.height, image.rgba8.size(), srgb);
     auto texture = m_RenderDevice.CreateTexture(image, srgb, error, sampler);
     if (!texture)
+    {
+        ENGINE_LOG_ERROR("Render", "GPU texture allocation failed | identity: {} | generation: {} | width: {} | height: {} | error: {}",
+                         identity, generation, image.width, image.height, error);
         return nullptr;
+    }
     QueueTextureUpload(texture, image, srgb);
     for (auto it = m_Textures.begin(); it != m_Textures.end();)
     {
@@ -282,12 +305,15 @@ bool ResourceManager::GetOrCreateModelMeshes(const std::string &guid, uint64_t g
 
 void ResourceManager::Release(const std::string &guid)
 {
+    size_t retiredMeshes = 0;
+    size_t retiredTextures = 0;
     for (auto it = m_Meshes.begin(); it != m_Meshes.end();)
     {
         if (it->first.Guid == guid || it->first.Guid.starts_with(guid + "/"))
         {
             Retire(std::move(it->second));
             it = m_Meshes.erase(it);
+            ++retiredMeshes;
         }
         else
         {
@@ -300,12 +326,16 @@ void ResourceManager::Release(const std::string &guid)
         {
             Retire(std::move(it->second));
             it = m_Textures.erase(it);
+            ++retiredTextures;
         }
         else
         {
             ++it;
         }
     }
+    if (retiredMeshes != 0 || retiredTextures != 0)
+        ENGINE_LOG_DEBUG("Asset", "GPU resources evicted | guid: {} | mesh_count: {} | texture_count: {}",
+                         guid, retiredMeshes, retiredTextures);
 }
 
 void ResourceManager::Retire(std::shared_ptr<Mesh> mesh)

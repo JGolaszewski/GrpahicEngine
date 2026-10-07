@@ -1,8 +1,8 @@
 #include "renderer/Entity.h"
 #include "EntityBuilder.h"
+#include "LogMacros.h"
 #include <algorithm>
 #include <cmath>
-#include <iostream>
 
 namespace Renderer
 {
@@ -61,7 +61,8 @@ std::shared_ptr<Renderer::Entity> EntityBuilder::Build()
 {
     if (!m_Device || !m_CommandList || !m_Material)
     {
-        std::cerr << "ERROR: EntityBuilder requires a device, command list, and material." << std::endl;
+        ENGINE_LOG_ERROR("ECS", "Entity construction rejected | device_valid: {} | command_list_valid: {} | material_valid: {}",
+                         m_Device != nullptr, m_CommandList != nullptr, m_Material != nullptr);
         return nullptr;
     }
 
@@ -86,7 +87,8 @@ std::shared_ptr<Renderer::Entity> EntityBuilder::Build()
     }
     else
     {
-        std::cerr << "ERROR: EntityBuilder requires a shape before Build()." << std::endl;
+        ENGINE_LOG_ERROR("ECS", "Entity construction rejected | shape: None | material_valid: {}",
+                         m_Material != nullptr);
         return nullptr;
     }
 

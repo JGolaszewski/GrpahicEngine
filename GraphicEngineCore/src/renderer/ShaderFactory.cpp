@@ -1,8 +1,8 @@
 #include "renderer/ShaderFactory.h"
+#include "LogMacros.h"
 
 #include <cstdlib>
 #include <fstream>
-#include <iostream>
 
 namespace Renderer
 {
@@ -34,10 +34,12 @@ nvrhi::ShaderHandle ShaderFactory::GetShader(const std::string &path, nvrhi::Sha
         return m_shaderCache[cacheKey];
     }
 
+    ENGINE_LOG_DEBUG("Render", "Shader cache miss | path: {} | shader_type: {}", cacheKey,
+                     static_cast<uint32_t>(type));
     auto binary = LoadShaderBinary(cacheKey);
     if (binary.empty())
     {
-        std::cerr << "ERROR: Could not load shader: '" << cacheKey << "'." << std::endl;
+        ENGINE_LOG_ERROR("Render", "Shader binary load failed | path: {} | bytes: 0", cacheKey);
         return nullptr;
     }
 
@@ -49,6 +51,11 @@ nvrhi::ShaderHandle ShaderFactory::GetShader(const std::string &path, nvrhi::Sha
     if (handle)
     {
         m_shaderCache[cacheKey] = handle;
+    }
+    else
+    {
+        ENGINE_LOG_ERROR("Render", "GPU shader creation failed | path: {} | shader_type: {} | byte_size: {}",
+                         cacheKey, static_cast<uint32_t>(type), binary.size());
     }
     return handle;
 }

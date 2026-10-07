@@ -1,7 +1,9 @@
 #include "windows/GLFWWindow.h"
+#include "LogEngine.h"
+#include "LogMacros.h"
 
 #include <GLFW/glfw3.h>
-#include <iostream>
+#include <cstdint>
 
 #define GLFW_EXPOSE_NATIVE_WIN32
 #include <GLFW/glfw3native.h>
@@ -67,9 +69,14 @@ Events::MouseButton GLFWWindow::MapMouseButton(int button)
 
 GLFWWindow::GLFWWindow(int width, int height, const char *title)
 {
+#if ENGINE_ENABLE_LOGGING
+    Log::Initialize();
+#endif
+    ENGINE_LOG_INFO("Core", "GLFW window initialization started | width: {} | height: {} | title: {}",
+                    width, height, title ? title : "<null>");
     if (!glfwInit())
     {
-        std::cerr << "ERROR: GLFW initialization failed." << std::endl;
+        ENGINE_LOG_ERROR("Core", "GLFW initialization failed | width: {} | height: {}", width, height);
         return;
     }
 
@@ -82,13 +89,16 @@ GLFWWindow::GLFWWindow(int width, int height, const char *title)
 
     if (!m_Window)
     {
-        std::cerr << "ERROR: Window could not be created." << std::endl;
+        ENGINE_LOG_ERROR("Core", "GLFW window creation failed | width: {} | height: {} | title: {}",
+                         width, height, title ? title : "<null>");
         glfwTerminate();
         return;
     }
 
     glfwSetWindowUserPointer(m_Window, this);
     SetupEventCallbacks();
+    ENGINE_LOG_INFO("Core", "GLFW window initialized | native_handle: {} | width: {} | height: {}",
+                    reinterpret_cast<uintptr_t>(glfwGetWin32Window(m_Window)), width, height);
 }
 
 GLFWWindow::~GLFWWindow()

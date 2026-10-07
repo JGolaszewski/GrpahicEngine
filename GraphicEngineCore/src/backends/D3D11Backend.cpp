@@ -1,7 +1,6 @@
 #include "backends/D3D11Backend.h"
+#include "LogMacros.h"
 
-#include <iomanip>
-#include <iostream>
 #include <nvrhi/d3d11.h>
 #include <nvrhi/validation.h>
 
@@ -18,19 +17,19 @@ class NvrhiMessageCallback final : public nvrhi::IMessageCallback
   public:
     void message(nvrhi::MessageSeverity severity, const char *messageText) override
     {
-        const char *prefix = "INFO";
         switch (severity)
         {
         case nvrhi::MessageSeverity::Warning:
-            prefix = "WARN";
+            ENGINE_LOG_WARN("Render", "NVRHI diagnostic | severity: Warning | message: {}",
+                            messageText ? messageText : "<null>");
             break;
         case nvrhi::MessageSeverity::Error:
-            prefix = "ERROR";
+            ENGINE_LOG_ERROR("Render", "NVRHI diagnostic | severity: Error | message: {}",
+                             messageText ? messageText : "<null>");
             break;
         default:
             break;
         }
-        std::cerr << "NVRHI " << prefix << ": " << (messageText ? messageText : "<null>") << std::endl;
     }
 };
 
@@ -55,16 +54,17 @@ static const char *FeatureLevelName(D3D_FEATURE_LEVEL featureLevel)
 
 bool D3D11Backend::Initialize(IWindow *window)
 {
+    ENGINE_LOG_INFO("Render", "D3D11 backend initialization started | window_valid: {}", window != nullptr);
     if (!window)
     {
-        std::cerr << "ERROR: D3D11 initialization received a null window." << std::endl;
+        ENGINE_LOG_ERROR("Render", "D3D11 initialization rejected | reason: null_window");
         return false;
     }
 
     HWND hwnd = static_cast<HWND>(window->GetNativeHandle());
     if (!hwnd)
     {
-        std::cerr << "ERROR: Window HWND couldn't be obtained." << std::endl;
+        ENGINE_LOG_ERROR("Render", "D3D11 initialization failed | native_window_handle: 0");
         return false;
     }
 
@@ -92,7 +92,8 @@ bool D3D11Backend::Initialize(IWindow *window)
 #ifdef _DEBUG
     if (FAILED(hr) && createDeviceFlags != 0)
     {
-        std::cerr << "WARN: D3D11 debug layer unavailable; retrying without it." << std::endl;
+        ENGINE_LOG_WARN("Render", "D3D11 debug device creation failed | hresult: 0x{:X} | retry: without_debug_layer",
+                        static_cast<uint32_t>(hr));
         createDeviceFlags = 0;
         hr = D3D11CreateDeviceAndSwapChain(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, createDeviceFlags,
                                            nullptr, 0, D3D11_SDK_VERSION, &swapChainDesc, &m_SwapChain,
@@ -102,8 +103,9 @@ bool D3D11Backend::Initialize(IWindow *window)
 
     if (FAILED(hr) || !m_Device || !m_Context || !m_SwapChain)
     {
-        std::cerr << "ERROR: D3D11CreateDeviceAndSwapChain failed (HRESULT 0x" << std::hex
-                  << static_cast<unsigned long>(hr) << std::dec << ")." << std::endl;
+        ENGINE_LOG_ERROR("Render", "D3D11 device and swap-chain creation failed | hresult: 0x{:X} | device_valid: {} | context_valid: {} | swap_chain_valid: {}",
+                         static_cast<uint32_t>(hr), m_Device.Get() != nullptr, m_Context.Get() != nullptr,
+                         m_SwapChain.Get() != nullptr);
         return false;
     }
 
@@ -123,7 +125,8 @@ bool D3D11Backend::Initialize(IWindow *window)
 
     if (!m_NvrhiDevice)
     {
-        std::cerr << "ERROR: NVRHI could not wrap the D3D11 device." << std::endl;
+        ENGINE_LOG_ERROR("Render", "NVRHI D3D11 device creation failed | d3d_device_valid: {}",
+                         m_Device != nullptr);
         return false;
     }
 
@@ -131,20 +134,21 @@ bool D3D11Backend::Initialize(IWindow *window)
     const uint32_t height = window->GetHeight();
     if (!CreateSwapChainResources(width, height))
     {
+        ENGINE_LOG_ERROR("Render", "D3D11 swap-chain resource initialization failed | width: {} | height: {}",
+                         width, height);
         return false;
     }
 
-    std::cout << "INFO: DirectX 11 initialization succeeded (feature level " << FeatureLevelName(featureLevel)
-              << ", swap chain " << width << "x" << height << ")" << std::endl;
+    ENGINE_LOG_INFO("Render", "D3D11 backend initialized | feature_level: {} | width: {} | height: {}",
+                    FeatureLevelName(featureLevel), width, height);
     Microsoft::WRL::ComPtr<IDXGIDevice> dxgiDevice;
     Microsoft::WRL::ComPtr<IDXGIAdapter> adapter;
     DXGI_ADAPTER_DESC adapterDesc{};
     if (SUCCEEDED(m_Device.As(&dxgiDevice)) && SUCCEEDED(dxgiDevice->GetAdapter(&adapter)) &&
         SUCCEEDED(adapter->GetDesc(&adapterDesc)))
     {
-        std::wcout << L"INFO: Adapter: " << adapterDesc.Description << L" (vendor 0x" << std::hex
-                   << adapterDesc.VendorId << L", device 0x" << adapterDesc.DeviceId << std::dec << L")"
-                   << std::endl;
+        ENGINE_LOG_INFO("Render", "D3D11 adapter detected | vendor_id: 0x{:X} | device_id: 0x{:X}",
+                        adapterDesc.VendorId, adapterDesc.DeviceId);
     }
     return true;
 }
@@ -153,7 +157,8 @@ bool D3D11Backend::CreateSwapChainResources(uint32_t width, uint32_t height)
 {
     if (!m_Device || !m_SwapChain || !m_NvrhiDevice || width == 0 || height == 0)
     {
-        std::cerr << "ERROR: Cannot create swap-chain resources for invalid device or size." << std::endl;
+        ENGINE_LOG_ERROR("Render", "Swap-chain resource creation rejected | device_valid: {} | swap_chain_valid: {} | width: {} | height: {}",
+                         m_Device != nullptr, m_SwapChain != nullptr, width, height);
         return false;
     }
 
@@ -161,8 +166,8 @@ bool D3D11Backend::CreateSwapChainResources(uint32_t width, uint32_t height)
     HRESULT hr = m_SwapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), &backBuffer);
     if (FAILED(hr) || !backBuffer)
     {
-        std::cerr << "ERROR: GetBuffer failed (HRESULT 0x" << std::hex << static_cast<unsigned long>(hr)
-                  << std::dec << ")." << std::endl;
+        ENGINE_LOG_ERROR("Render", "Swap-chain back-buffer acquisition failed | hresult: 0x{:X} | buffer_index: 0",
+                         static_cast<uint32_t>(hr));
         return false;
     }
 
@@ -170,8 +175,8 @@ bool D3D11Backend::CreateSwapChainResources(uint32_t width, uint32_t height)
     hr = m_Device->CreateRenderTargetView(backBuffer.Get(), nullptr, &renderTargetView);
     if (FAILED(hr) || !renderTargetView)
     {
-        std::cerr << "ERROR: CreateRenderTargetView failed (HRESULT 0x" << std::hex
-                  << static_cast<unsigned long>(hr) << std::dec << ")." << std::endl;
+        ENGINE_LOG_ERROR("Render", "Render-target view creation failed | hresult: 0x{:X} | width: {} | height: {}",
+                         static_cast<uint32_t>(hr), width, height);
         return false;
     }
 
@@ -187,7 +192,7 @@ bool D3D11Backend::CreateSwapChainResources(uint32_t width, uint32_t height)
         nvrhi::ObjectTypes::D3D11_Resource, nvrhi::Object(backBuffer.Get()), colorDesc);
     if (!backBufferHandle)
     {
-        std::cerr << "ERROR: Failed to wrap the swap-chain back buffer in NVRHI." << std::endl;
+        ENGINE_LOG_ERROR("Render", "NVRHI back-buffer wrapping failed | width: {} | height: {}", width, height);
         return false;
     }
 
@@ -203,7 +208,8 @@ bool D3D11Backend::CreateSwapChainResources(uint32_t width, uint32_t height)
     nvrhi::TextureHandle depthBufferHandle = m_NvrhiDevice->createTexture(depthDesc);
     if (!depthBufferHandle)
     {
-        std::cerr << "ERROR: Failed to create the D3D11 depth buffer." << std::endl;
+        ENGINE_LOG_ERROR("Render", "D3D11 depth-buffer creation failed | width: {} | height: {} | format: D24S8",
+                         width, height);
         return false;
     }
 
@@ -213,7 +219,8 @@ bool D3D11Backend::CreateSwapChainResources(uint32_t width, uint32_t height)
     nvrhi::FramebufferHandle framebuffer = m_NvrhiDevice->createFramebuffer(framebufferDesc);
     if (!framebuffer)
     {
-        std::cerr << "ERROR: Failed to create the D3D11 framebuffer." << std::endl;
+        ENGINE_LOG_ERROR("Render", "D3D11 framebuffer creation failed | color_valid: {} | depth_valid: {}",
+                         backBufferHandle != nullptr, depthBufferHandle != nullptr);
         return false;
     }
 
@@ -231,15 +238,23 @@ void D3D11Backend::Present()
     if (!m_SwapChain)
         return;
     const HRESULT hr = m_SwapChain->Present(m_VSyncEnabled ? 1 : 0, 0);
+    if (SUCCEEDED(hr))
+    {
+        m_LastPresentFailure = S_OK;
+        return;
+    }
+    if (hr == m_LastPresentFailure)
+        return;
+    m_LastPresentFailure = hr;
     if (hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET)
     {
-        std::cerr << "ERROR: Present failed because the D3D11 device was removed or reset (HRESULT 0x"
-                  << std::hex << static_cast<unsigned long>(hr) << std::dec << ")." << std::endl;
+        ENGINE_LOG_ERROR("Render", "D3D11 device removed during present | hresult: 0x{:X} | width: {} | height: {}",
+                         static_cast<uint32_t>(hr), m_SwapChainWidth, m_SwapChainHeight);
     }
-    else if (FAILED(hr))
+    else
     {
-        std::cerr << "ERROR: Swap-chain Present failed (HRESULT 0x" << std::hex
-                  << static_cast<unsigned long>(hr) << std::dec << ")." << std::endl;
+        ENGINE_LOG_ERROR("Render", "D3D11 swap-chain present failed | hresult: 0x{:X} | vsync: {}",
+                         static_cast<uint32_t>(hr), m_VSyncEnabled);
     }
 }
 
@@ -272,24 +287,25 @@ void D3D11Backend::Resize(int width, int height)
                                             DXGI_FORMAT_UNKNOWN, 0);
     if (FAILED(hr))
     {
-        std::cerr << "ERROR: ResizeBuffers failed (HRESULT 0x" << std::hex << static_cast<unsigned long>(hr)
-                  << std::dec << "); restoring the previous framebuffer." << std::endl;
+        ENGINE_LOG_ERROR("Render", "Swap-chain resize failed | hresult: 0x{:X} | requested_width: {} | requested_height: {} | previous_width: {} | previous_height: {}",
+                         static_cast<uint32_t>(hr), width, height, previousWidth, previousHeight);
         if (previousWidth > 0 && previousHeight > 0 &&
             !CreateSwapChainResources(previousWidth, previousHeight))
         {
-            std::cerr << "ERROR: Could not restore the previous framebuffer after resize failure."
-                      << std::endl;
+            ENGINE_LOG_ERROR("Render", "Previous swap-chain framebuffer restoration failed | width: {} | height: {}",
+                             previousWidth, previousHeight);
         }
         return;
     }
 
     if (CreateSwapChainResources(static_cast<uint32_t>(width), static_cast<uint32_t>(height)))
     {
+        ENGINE_LOG_DEBUG("Render", "Swap-chain resized | width: {} | height: {}", width, height);
         return;
     }
 
-    std::cerr << "ERROR: New swap-chain resources were incomplete; attempting to restore the previous size."
-              << std::endl;
+    ENGINE_LOG_ERROR("Render", "Resized swap-chain resources incomplete | requested_width: {} | requested_height: {} | recovery: previous_size",
+                     width, height);
     m_NvrhiFramebuffer = nullptr;
     m_NvrhiBackBuffer = nullptr;
     m_NvrhiDepthBuffer = nullptr;
@@ -302,8 +318,8 @@ void D3D11Backend::Resize(int width, int height)
             return;
         }
     }
-    std::cerr << "ERROR: Swap-chain restore failed; rendering is unavailable until the device is recreated."
-              << std::endl;
+    ENGINE_LOG_ERROR("Render", "Swap-chain recovery failed | requested_width: {} | requested_height: {} | previous_width: {} | previous_height: {}",
+                     width, height, previousWidth, previousHeight);
 }
 
 } // namespace Engine
