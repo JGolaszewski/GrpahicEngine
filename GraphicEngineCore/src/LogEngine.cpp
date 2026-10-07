@@ -8,8 +8,6 @@
 #include <fstream>
 #include <format>
 #include <mutex>
-#include <sstream>
-#include <variant>
 
 #ifdef _WIN32
 #define NOMINMAX
@@ -27,7 +25,14 @@ std::string ArgumentText(const LogArgument &argument, std::string_view specifica
 {
     const std::string pattern = "{" + (specification.empty() ? std::string{} : ":" + std::string(specification)) + "}";
     const auto format = [&pattern](const auto &value) {
-        return std::vformat(pattern, std::make_format_args(value));
+        try
+        {
+            return std::vformat(pattern, std::make_format_args(value));
+        }
+        catch (const std::format_error &)
+        {
+            return std::string("<format-error>");
+        }
     };
     switch (argument.type)
     {
@@ -261,7 +266,14 @@ struct Manager
             LogEvent event;
             if (Pop(event))
             {
-                Process(event);
+                try
+                {
+                    Process(event);
+                }
+                catch (...)
+                {
+                    // A malformed event or sink failure must not terminate the consumer thread.
+                }
                 pending.fetch_sub(1, std::memory_order_release);
                 continue;
             }
