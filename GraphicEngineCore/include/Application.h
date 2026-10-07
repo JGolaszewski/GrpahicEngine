@@ -3,6 +3,7 @@
 #include "CoreExport.h"
 #include "renderer/ViewportBinding.h"
 
+#include <atomic>
 #include <cstdint>
 #include <filesystem>
 #include <functional>
@@ -78,6 +79,14 @@ class ENGINE_API Application
     void SetFrameLimiterHz(uint32_t hz) noexcept
     {
         m_FrameLimiterHz = hz;
+    }
+    void SetSimulationPaused(bool paused) noexcept
+    {
+        m_SimulationPaused.store(paused, std::memory_order_release);
+    }
+    bool IsSimulationPaused() const noexcept
+    {
+        return m_SimulationPaused.load(std::memory_order_acquire);
     }
 
     // --- Renderer helpers used by Editor and panels ---
@@ -156,6 +165,7 @@ class ENGINE_API Application
     void UpdateScenes(float deltaTime);
 
     bool m_IsRunning = false;
+    std::atomic<bool> m_SimulationPaused{false};
     float m_LastFrameDeltaTime = 0.0f;
     uint32_t m_FrameLimiterHz = 0;
     FrameTimingStats m_FrameTimingStats;

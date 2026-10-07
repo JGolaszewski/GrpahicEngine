@@ -236,7 +236,8 @@ void Application::Run(std::unique_ptr<IWindow> window, std::unique_ptr<IRenderBa
             ++m_FrameTimingStats.ClampedFrameCount;
         }
         OnUpdate(gameplayDeltaTime);
-        UpdateScenes(gameplayDeltaTime);
+        if (!IsSimulationPaused())
+            UpdateScenes(gameplayDeltaTime);
 
         ClearViews();
 

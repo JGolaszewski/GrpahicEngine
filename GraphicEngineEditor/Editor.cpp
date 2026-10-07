@@ -59,6 +59,10 @@ bool HasIgnoredExtensionWarning(const std::vector<std::string> &warnings)
 
 void Editor::OnInit()
 {
+    m_EditorConsole.SetSimulationStateCallbacks([this] { return IsSimulationPaused(); },
+                                               [this](bool paused) { SetSimulationPaused(paused); });
+    m_EditorConsole.AttachToLogger();
+
     if (!m_UiIntegration.Initialize(GetWindow(), GetRenderer()))
     {
         m_FileError = "Editor UI initialization failed.";
@@ -145,7 +149,9 @@ void Editor::OnInit()
     CreateViewport(1280, 720);
 
     // --- Initialize Panels ---
-    m_Windows.push_back(std::make_unique<MainBar>());
+    auto mainBar = std::make_unique<MainBar>();
+    mainBar->SetConsoleOpenHandler([this] { m_EngineConsoleOpen = true; });
+    m_Windows.push_back(std::move(mainBar));
     m_Windows.push_back(std::make_unique<StatWindow>());
     m_Windows.push_back(std::make_unique<ScenePanel>());
     m_Windows.push_back(std::make_unique<HierarchyPanel>());
@@ -276,6 +282,8 @@ void Editor::OnSetupViews()
 
 void Editor::OnUpdate(float deltaTime)
 {
+    if (m_EditorConsole.ConsumePauseRequest())
+        SetSimulationPaused(true);
     if (!m_UiIntegration.IsInitialized())
         return;
     const auto keyDown = [this](Engine::Events::KeyCode key) { return m_KeyDown[static_cast<size_t>(key)]; };
@@ -1385,6 +1393,7 @@ void Editor::OnUIRender()
             window->Draw();
         }
     }
+    m_EditorConsole.UpdateAndRender(&m_EngineConsoleOpen);
     DrawUnsavedChangesModal();
 }
 
@@ -1400,6 +1409,7 @@ void Editor::OnEndUIFrame()
 
 void Editor::OnShutdownUI()
 {
+    m_EditorConsole.DetachFromLogger();
     m_UiIntegration.Shutdown();
 }
 
@@ -1655,6 +1665,7 @@ void Editor::BuildDefaultDockLayout(ImGuiID dockspaceId)
     ImGui::DockBuilderDockWindow("Inspector", dockRight);
     ImGui::DockBuilderDockWindow("Statistics", dockBottom);
     ImGui::DockBuilderDockWindow("Assets", dockBottom);
+    ImGui::DockBuilderDockWindow("Engine Console", dockBottom);
     ImGui::DockBuilderDockWindow("Viewport", dockMain);
     ImGui::DockBuilderFinish(dockspaceId);
 }

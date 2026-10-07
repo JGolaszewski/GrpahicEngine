@@ -28,6 +28,12 @@ void MainBar::Draw()
                     SceneFileActionRequestedEvent::Action::SaveSceneAs));
             ImGui::EndMenu();
         }
+        if (ImGui::BeginMenu("Window"))
+        {
+            if (ImGui::MenuItem("Engine Console") && m_ConsoleOpenHandler)
+                m_ConsoleOpenHandler();
+            ImGui::EndMenu();
+        }
         ImGui::EndMainMenuBar();
     }
 }

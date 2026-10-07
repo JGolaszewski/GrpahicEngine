@@ -29,6 +29,8 @@ add_executable(Editor
     "panels/MainBar.cpp"
     "panels/StatisticsPanel.h"
     "panels/StatisticsPanel.cpp"
+    "panels/EditorConsole.h"
+    "panels/EditorConsole.cpp"
     "panels/AssetBrowserPanel.h"
     "panels/AssetBrowserPanel.cpp"
     "events/EditorEvents.h"
@@ -71,7 +73,16 @@ set_target_properties(Editor PROPERTIES
     VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )
 
-target_link_libraries(Editor PRIVATE GraphicEngineCore RenderBackendD3D11 EditorUI imgui comdlg32 shell32 ole32)
+target_link_libraries(Editor PRIVATE
+    GraphicEngineCore
+    RenderBackendD3D11
+    EditorUI
+    imgui
+    nlohmann_json::nlohmann_json
+    comdlg32
+    shell32
+    ole32
+)
 
 target_include_directories(Editor PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 

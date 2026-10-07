@@ -8,6 +8,7 @@
 #include "events/AssetImportRequestedEvent.h"
 #include "events/SceneFileActionRequestedEvent.h"
 #include "panels/EditorPanel.h"
+#include "panels/EditorConsole.h"
 #include "platform/EditorUiIntegration.h"
 #include <DirectXMath.h>
 #include <array>
@@ -149,11 +150,13 @@ class Editor : public Engine::Application
 
     bool m_ViewportHovered = false;
     bool m_DefaultLayoutBuilt = false;
+    bool m_EngineConsoleOpen = true;
     bool m_ShowDebugLightGizmos = true;
     bool m_ShowDebugWireframePlane = true;
 
     Engine::EditorCameraController m_CameraController;
     EditorUiIntegration m_UiIntegration;
+    EditorConsole m_EditorConsole;
 
     CommandHistory m_CommandHistory;
     EditorSceneDocument m_SceneDocument;
