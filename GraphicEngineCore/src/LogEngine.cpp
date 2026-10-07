@@ -296,6 +296,7 @@ struct Manager
 std::atomic<Manager *> gManager{nullptr};
 std::mutex gLifecycleMutex;
 std::atomic<uint64_t> gFrameIndex{0};
+std::atomic<size_t> gActiveProducers{0};
 } // namespace
 
 const char *ToString(Level level) noexcept
@@ -340,17 +341,16 @@ bool Initialize(const Configuration &configuration)
     {
         return false;
     }
-    gManager.store(manager, std::memory_order_release);
     try
     {
         manager->worker = std::thread([manager] { manager->Run(); });
     }
     catch (...)
     {
-        gManager.store(nullptr, std::memory_order_release);
         delete manager;
         return false;
     }
+    gManager.store(manager, std::memory_order_release);
     return true;
 }
 
@@ -360,6 +360,8 @@ void Shutdown() noexcept
     Manager *manager = gManager.exchange(nullptr, std::memory_order_acq_rel);
     if (!manager)
         return;
+    while (gActiveProducers.load(std::memory_order_acquire) != 0)
+        std::this_thread::yield();
     manager->stopping.store(true, std::memory_order_release);
     manager->wake.notify_one();
     if (manager->worker.joinable())
@@ -440,9 +442,13 @@ void DumpCrashBreadcrumbs(const std::filesystem::path &path) noexcept
 
 bool Enqueue(const LogEvent &source) noexcept
 {
+    gActiveProducers.fetch_add(1, std::memory_order_acq_rel);
     Manager *manager = gManager.load(std::memory_order_acquire);
     if (!manager || manager->stopping.load(std::memory_order_relaxed))
+    {
+        gActiveProducers.fetch_sub(1, std::memory_order_release);
         return false;
+    }
     LogEvent event = source;
     event.timestampNs = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count());
@@ -452,9 +458,11 @@ bool Enqueue(const LogEvent &source) noexcept
     if (!manager->Push(event))
     {
         manager->pending.fetch_sub(1, std::memory_order_release);
+        gActiveProducers.fetch_sub(1, std::memory_order_release);
         return false;
     }
     manager->wake.notify_one();
+    gActiveProducers.fetch_sub(1, std::memory_order_release);
     return true;
 }
 
