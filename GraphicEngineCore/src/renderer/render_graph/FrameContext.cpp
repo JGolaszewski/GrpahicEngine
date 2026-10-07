@@ -67,13 +67,10 @@ void FrameContext::MarkSubmitted()
         m_CompletionQueryFailureLogged = true;
         m_Device->waitForIdle();
         m_CompletedFrames = (std::max)(m_CompletedFrames, m_SubmittedFrames + FramesInFlight);
-        while (!m_InFlightFrames.empty())
-        {
-            auto &inFlight = m_InFlightFrames.front();
-            m_Device->resetEventQuery(inFlight.CompletionQuery);
-            m_FreeCompletionQueries.push_back(std::move(inFlight.CompletionQuery));
-            m_InFlightFrames.pop_front();
-        }
+        // waitForIdle guarantees completion, but does not retrieve the query results.
+        // Discard these queries instead of pooling them: the next End on a reused D3D11
+        // query would abandon the previous, unread result.
+        m_InFlightFrames.clear();
         return;
     }
     m_CompletionQueryFailureLogged = false;
