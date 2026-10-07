@@ -1,8 +1,8 @@
-#include "AssetManager.h"
-#include "Scene.h"
-#include "renderer/Camera.h"
-#include "renderer/Entity.h"
-#include "renderer/Light.h"
+#include "assets/include/AssetManager.h"
+#include "scene/include/Scene.h"
+#include "rendering/include/renderer/Camera.h"
+#include "rendering/include/renderer/Entity.h"
+#include "rendering/include/renderer/Light.h"
 
 #include <array>
 #include <chrono>
@@ -211,33 +211,33 @@ namespace {
 
 	void TestStableSceneIds() {
 		Engine::Scene scene;
-		auto entity = std::make_shared<Renderer::Entity>(nullptr, nullptr);
+		auto entity = std::make_shared<::Engine::Renderer::Entity>(nullptr, nullptr);
 		Require(scene.AddEntity(entity, 17) == 17, "scene did not accept a persisted entity ID");
-		Require(scene.AddEntity(std::make_shared<Renderer::Entity>(nullptr, nullptr)) == 18,
+		Require(scene.AddEntity(std::make_shared<::Engine::Renderer::Entity>(nullptr, nullptr)) == 18,
 			"runtime entity ID did not advance past a restored ID");
-		Require(scene.AddEntity(std::make_shared<Renderer::Entity>(nullptr, nullptr), 17) == Engine::InvalidEntityId,
+		Require(scene.AddEntity(std::make_shared<::Engine::Renderer::Entity>(nullptr, nullptr), 17) == Engine::InvalidEntityId,
 			"scene accepted a duplicate entity ID");
 
-		auto replacement = std::make_shared<Renderer::Entity>(nullptr, nullptr);
+		auto replacement = std::make_shared<::Engine::Renderer::Entity>(nullptr, nullptr);
 		Require(scene.ReplaceEntity(17, replacement), "scene did not replace an entity by stable ID");
 		Require(scene.FindEntity(17) == replacement && scene.GetEntityId(replacement.get()) == 17,
 			"entity replacement did not preserve stable scene identity");
-		Require(!scene.ReplaceEntity(999, std::make_shared<Renderer::Entity>(nullptr, nullptr)),
+		Require(!scene.ReplaceEntity(999, std::make_shared<::Engine::Renderer::Entity>(nullptr, nullptr)),
 			"scene replaced a missing entity ID");
 		Require(!scene.ReplaceEntity(18, nullptr), "scene accepted a null replacement entity");
 
-		Require(scene.AddLight(std::make_shared<Renderer::SpotLight>(), 27) == 27,
+		Require(scene.AddLight(std::make_shared<::Engine::Renderer::SpotLight>(), 27) == 27,
 			"scene did not accept a persisted light ID");
-		Require(scene.AddLight(std::make_shared<Renderer::SpotLight>()) == 28,
+		Require(scene.AddLight(std::make_shared<::Engine::Renderer::SpotLight>()) == 28,
 			"runtime light ID did not advance past a restored ID");
-		Require(scene.AddLight(std::make_shared<Renderer::SpotLight>(), 27) == Engine::InvalidLightId,
+		Require(scene.AddLight(std::make_shared<::Engine::Renderer::SpotLight>(), 27) == Engine::InvalidLightId,
 			"scene accepted a duplicate light ID");
 
-		Require(scene.AddCamera(std::make_shared<Renderer::Camera>(DirectX::XM_PIDIV4, 0.1f, 100.0f), 37) == 37,
+		Require(scene.AddCamera(std::make_shared<::Engine::Renderer::Camera>(DirectX::XM_PIDIV4, 0.1f, 100.0f), 37) == 37,
 			"scene did not accept a persisted camera ID");
-		Require(scene.AddCamera(std::make_shared<Renderer::Camera>(DirectX::XM_PIDIV4, 0.1f, 100.0f)) == 38,
+		Require(scene.AddCamera(std::make_shared<::Engine::Renderer::Camera>(DirectX::XM_PIDIV4, 0.1f, 100.0f)) == 38,
 			"runtime camera ID did not advance past a restored ID");
-		Require(scene.AddCamera(std::make_shared<Renderer::Camera>(DirectX::XM_PIDIV4, 0.1f, 100.0f), 37) == Engine::InvalidCameraId,
+		Require(scene.AddCamera(std::make_shared<::Engine::Renderer::Camera>(DirectX::XM_PIDIV4, 0.1f, 100.0f), 37) == Engine::InvalidCameraId,
 			"scene accepted a duplicate camera ID");
 	}
 

@@ -122,7 +122,7 @@ target_link_libraries(imgui PUBLIC
 add_subdirectory(vendor/nvrhi)
 
 add_subdirectory ("GraphicEngineCore")
-add_subdirectory ("GraphicEnginePlatformD3D11")
+add_subdirectory ("GraphicEngineBackends")
 add_subdirectory ("GraphicEngineEditor")
 
 add_subdirectory ("SandboxApp")
