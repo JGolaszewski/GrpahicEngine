@@ -25,7 +25,7 @@ constexpr size_t BreadcrumbCount = 1000;
 
 std::string ArgumentText(const LogArgument &argument, std::string_view specification)
 {
-    const std::string pattern = "{" + std::string(specification) + "}";
+    const std::string pattern = "{" + (specification.empty() ? std::string{} : ":" + std::string(specification)) + "}";
     const auto format = [&pattern](const auto &value) {
         return std::vformat(pattern, std::make_format_args(value));
     };
@@ -253,6 +253,7 @@ struct Manager
             std::error_code error;
             if (configuration.jsonlPath.has_parent_path())
                 std::filesystem::create_directories(configuration.jsonlPath.parent_path(), error);
+            std::lock_guard lock(ioMutex);
             jsonl.open(configuration.jsonlPath, std::ios::out | std::ios::app);
         }
         for (;;)
@@ -272,8 +273,11 @@ struct Manager
                        pending.load(std::memory_order_relaxed) != 0;
             });
         }
-        if (jsonl.is_open())
-            jsonl.flush();
+        {
+            std::lock_guard lock(ioMutex);
+            if (jsonl.is_open())
+                jsonl.flush();
+        }
     }
 };
 
@@ -315,7 +319,15 @@ bool Initialize(const Configuration &configuration)
     std::lock_guard lock(gLifecycleMutex);
     if (gManager.load(std::memory_order_acquire))
         return true;
-    auto *manager = new Manager(configuration);
+    Manager *manager = nullptr;
+    try
+    {
+        manager = new Manager(configuration);
+    }
+    catch (...)
+    {
+        return false;
+    }
     gManager.store(manager, std::memory_order_release);
     try
     {
@@ -447,8 +459,11 @@ bool SubmitStructured(Level level, Category category, const char *format,
     event.line = location.line();
     Detail::CopyText(event.errorCode, sizeof(event.errorCode), errorCode);
     event.payloadCount = static_cast<uint8_t>((std::min)(payloadCount, MaxLogPayloadEntries));
-    for (size_t i = 0; i < event.payloadCount; ++i)
-        event.payload[i] = payload[i];
+    if (payload)
+        for (size_t i = 0; i < event.payloadCount; ++i)
+            event.payload[i] = payload[i];
+    else
+        event.payloadCount = 0;
     return Enqueue(event);
 }
 } // namespace Engine::Log
