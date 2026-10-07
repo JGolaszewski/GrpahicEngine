@@ -1,5 +1,9 @@
-.vs
-out
+# =========================
+# User Exclusions
+# =========================
+.vs/
+out/
+vendor/
 
 # SourceTrail
 *.srctrlbm
@@ -13,3 +17,51 @@ out
 !GLTF_IMPLEMENTATION_GAP_REPORT.md
 !LOGGING_DEBUGGING_IMPROVEMENT_PLAN.md
 !docs/logging.md
+
+# =========================
+# Build & CMake Artifacts
+# =========================
+build/
+bin/
+CMakeCache.txt
+CMakeFiles/
+CMakeUserPresets.json
+compile_commands.json
+
+# =========================
+# Compiled Binaries & C++ Intermediates
+# =========================
+*.obj
+*.o
+*.pdb
+*.ilk
+*.lib
+*.dll
+*.exe
+*.exp
+
+# =========================
+# Visual Studio & IDEs
+# =========================
+*.user
+*.suo
+*.db
+*.opendb
+*.sln.docstates
+.vscode/
+.cursor/
+
+# =========================
+# Graphics Engine & Shaders
+# =========================
+*.cso            # Compiled Direct3D Shaders (HLSL)
+*.spv            # Compiled Vulkan Shaders (SPIR-V)
+*.rdc            # RenderDoc capture files
+*.crash
+*.dmp            # Crash dumps
+
+# =========================
+# OpenAI Codex / AI Agents
+# =========================
+.codex/auth.json  # Codex auth tokens
+.codex/worktrees/ # Local Codex background worktrees

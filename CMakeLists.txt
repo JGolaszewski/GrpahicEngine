@@ -35,6 +35,19 @@ project ("GraphicEngine")
 
 include(CTest)
 
+find_program(ENGINE_CLANG_TIDY_EXECUTABLE NAMES clang-tidy)
+if(NOT ENGINE_CLANG_TIDY_EXECUTABLE AND DEFINED ENV{VSINSTALLDIR})
+    find_program(ENGINE_CLANG_TIDY_EXECUTABLE NAMES clang-tidy
+        HINTS "$ENV{VSINSTALLDIR}/VC/Tools/Llvm/x64/bin")
+endif()
+if(NOT ENGINE_CLANG_TIDY_EXECUTABLE)
+    message(FATAL_ERROR "clang-tidy is required to configure this project; install it with the LLVM toolchain.")
+endif()
+set(ENGINE_CLANG_TIDY_COMMAND "${ENGINE_CLANG_TIDY_EXECUTABLE}")
+if(MSVC)
+    list(APPEND ENGINE_CLANG_TIDY_COMMAND "--extra-arg-before=--driver-mode=cl")
+endif()
+
 set(NVRHI_WITH_DX11 ON)
 set(ENGINE_MAX_LIGHTS 8 CACHE STRING "Maximum number of lights supported by CPU and GPU lighting buffers")
 option(ENGINE_ENABLE_LOGGING "Compile engine logging calls" ON)
@@ -109,7 +122,7 @@ add_library(imgui STATIC
     "${IMGUI_DIR}/backends/imgui_impl_dx11.cpp"
 )
 
-target_include_directories(imgui PUBLIC
+target_include_directories(imgui SYSTEM PUBLIC
     "${IMGUI_DIR}"
     "${IMGUI_DIR}/backends"
 )
@@ -120,6 +133,13 @@ target_link_libraries(imgui PUBLIC
 )
 
 add_subdirectory(vendor/nvrhi)
+
+# NVRHI is vendored, so suppress diagnostics from its public headers in consumers.
+get_target_property(NVRHI_PUBLIC_INCLUDE_DIRS nvrhi INTERFACE_INCLUDE_DIRECTORIES)
+if(NVRHI_PUBLIC_INCLUDE_DIRS)
+    set_property(TARGET nvrhi APPEND PROPERTY
+        INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${NVRHI_PUBLIC_INCLUDE_DIRS}")
+endif()
 
 add_subdirectory ("GraphicEngineCore")
 add_subdirectory ("GraphicEngineBackends")

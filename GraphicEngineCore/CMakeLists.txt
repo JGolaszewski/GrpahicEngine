@@ -22,6 +22,9 @@ function(configure_engine_module TARGET MODULE_NAME)
     target_compile_options(${TARGET} PRIVATE
         "$<$<CXX_COMPILER_ID:MSVC>:/Zc:preprocessor>"
     )
+    if(NOT CMAKE_GENERATOR MATCHES "Ninja|Makefiles")
+        set_property(TARGET ${TARGET} PROPERTY CXX_CLANG_TIDY "${ENGINE_CLANG_TIDY_COMMAND}")
+    endif()
 endfunction()
 
 add_subdirectory(modules/runtime)
@@ -65,6 +68,9 @@ target_compile_definitions(GraphicEngineCore PUBLIC
     ENGINE_LOG_LEVEL_MIN=$<IF:$<CONFIG:Debug>,${ENGINE_LOG_LEVEL_MIN_DEBUG_EFFECTIVE},${ENGINE_LOG_LEVEL_MIN_RELEASE_EFFECTIVE}>
 )
 set_property(TARGET GraphicEngineCore PROPERTY CXX_STANDARD 23)
+if(NOT CMAKE_GENERATOR MATCHES "Ninja|Makefiles")
+    set_property(TARGET GraphicEngineCore PROPERTY CXX_CLANG_TIDY "${ENGINE_CLANG_TIDY_COMMAND}")
+endif()
 
 set(CORE_HEADER_CHECK_SOURCES)
 set(CORE_HEADER_CHECK_DIR "${CMAKE_CURRENT_BINARY_DIR}/public_header_checks")
@@ -101,25 +107,25 @@ else()
     )
 endif()
 
-find_program(CLANG_TIDY_EXECUTABLE NAMES clang-tidy)
-if(NOT CLANG_TIDY_EXECUTABLE AND DEFINED ENV{VSINSTALLDIR})
-    find_program(CLANG_TIDY_EXECUTABLE NAMES clang-tidy
-        HINTS "$ENV{VSINSTALLDIR}/VC/Tools/Llvm/x64/bin")
-endif()
-if(CLANG_TIDY_EXECUTABLE AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-    add_custom_target(lint
-        COMMAND "${CLANG_TIDY_EXECUTABLE}" -p="${CMAKE_BINARY_DIR}" ${CORE_SOURCES} ${EDITOR_STYLE_FILES}
-        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
-        COMMENT "Running clang-tidy on core and editor C++ sources"
+file(GLOB_RECURSE ENGINE_TIDY_SOURCES CONFIGURE_DEPENDS
+    "${PROJECT_SOURCE_DIR}/GraphicEngineCore/modules/*/src/*.cpp"
+    "${PROJECT_SOURCE_DIR}/GraphicEngineCore/tests/*.cpp"
+    "${PROJECT_SOURCE_DIR}/GraphicEngineEditor/modules/*/src/*.cpp"
+    "${PROJECT_SOURCE_DIR}/GraphicEngineBackends/D3D11/src/*.cpp"
+    "${PROJECT_SOURCE_DIR}/SandboxApp/*.cpp"
+)
+if(CMAKE_GENERATOR MATCHES "Ninja|Makefiles")
+    add_custom_target(lint ALL
+        COMMAND "${ENGINE_CLANG_TIDY_EXECUTABLE}" --quiet -p "${CMAKE_BINARY_DIR}" ${ENGINE_TIDY_SOURCES}
+        WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
+        COMMENT "Running clang-tidy on project C++ sources"
+        VERBATIM
     )
-elseif(MSVC)
-    add_custom_target(lint
-        COMMAND ${CMAKE_COMMAND} -E echo "clang-tidy naming checks require a Clang CMake toolchain; format checks support Visual Studio"
-    )
-else()
-    add_custom_target(lint
-        COMMAND ${CMAKE_COMMAND} -E echo "clang-tidy not found; lint target is unavailable"
-    )
+    add_dependencies(EngineRuntime lint)
+    add_dependencies(EngineAssets lint)
+    add_dependencies(EngineScene lint)
+    add_dependencies(EngineRendering lint)
+    add_dependencies(GraphicEngineCore lint)
 endif()
 
 add_custom_target(tests
@@ -130,10 +136,16 @@ add_custom_target(tests
 
 if(BUILD_TESTING)
     add_executable(BrdfReferenceTests tests/BrdfReferenceTests.cpp)
+    if(NOT CMAKE_GENERATOR MATCHES "Ninja|Makefiles")
+        set_property(TARGET BrdfReferenceTests PROPERTY CXX_CLANG_TIDY "${ENGINE_CLANG_TIDY_COMMAND}")
+    endif()
     target_link_libraries(BrdfReferenceTests PRIVATE GraphicEngineCore Microsoft::DirectXMath nvrhi)
     add_test(NAME BrdfReferenceTests COMMAND BrdfReferenceTests)
 
     add_executable(AssetManagerTests tests/AssetManagerTests.cpp)
+    if(NOT CMAKE_GENERATOR MATCHES "Ninja|Makefiles")
+        set_property(TARGET AssetManagerTests PROPERTY CXX_CLANG_TIDY "${ENGINE_CLANG_TIDY_COMMAND}")
+    endif()
     target_link_libraries(AssetManagerTests PRIVATE GraphicEngineCore)
     add_test(NAME AssetManagerTests COMMAND AssetManagerTests)
 endif()

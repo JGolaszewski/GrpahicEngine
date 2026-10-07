@@ -63,4 +63,7 @@ target_link_libraries(RenderBackendD3D11 PUBLIC
 )
 
 target_compile_features(RenderBackendD3D11 PUBLIC cxx_std_23)
+if(NOT CMAKE_GENERATOR MATCHES "Ninja|Makefiles")
+    set_property(TARGET RenderBackendD3D11 PROPERTY CXX_CLANG_TIDY "${ENGINE_CLANG_TIDY_COMMAND}")
+endif()
 add_library(GraphicEnginePlatformD3D11 ALIAS RenderBackendD3D11)

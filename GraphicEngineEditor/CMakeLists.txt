@@ -11,6 +11,9 @@ function(configure_editor_module TARGET MODULE_NAME)
             "${CMAKE_CURRENT_SOURCE_DIR}/modules/${MODULE_NAME}/include"
     )
     target_compile_features(${TARGET} PUBLIC cxx_std_23)
+    if(NOT CMAKE_GENERATOR MATCHES "Ninja|Makefiles")
+        set_property(TARGET ${TARGET} PROPERTY CXX_CLANG_TIDY "${ENGINE_CLANG_TIDY_COMMAND}")
+    endif()
 endfunction()
 
 add_subdirectory(modules/events)
