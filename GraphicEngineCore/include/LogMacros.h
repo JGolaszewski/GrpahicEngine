@@ -11,7 +11,8 @@
 #include "LogEngine.h"
 
 #define ENGINE_DETAIL_LOG(level, category, format, ...) \
-    ::Engine::Log::Submit(level, category, format, std::source_location::current() __VA_OPT__(, ) __VA_ARGS__)
+    ::Engine::Log::Submit(level, ::Engine::Log::CategoryFromName(category), format, \
+                          std::source_location::current() __VA_OPT__(, ) __VA_ARGS__)
 
 #if ENGINE_LOG_LEVEL_MIN <= 0
 #define ENGINE_LOG_TRACE(category, format, ...) \

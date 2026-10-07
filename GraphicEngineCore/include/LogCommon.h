@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <source_location>
+#include <string_view>
 
 namespace Engine::Log
 {
@@ -22,17 +23,17 @@ enum class Level : uint8_t
 
 enum class Category : uint8_t
 {
-    General,
+    Core,
     Physics,
     Render,
-    AI,
     Audio,
-    Asset,
-    Editor
+    ECS,
+    Net,
+    Asset
 };
 
 inline constexpr size_t MaxLogArguments = 8;
-inline constexpr size_t MaxLogArgumentText = 64;
+inline constexpr size_t MaxLogArgumentText = 192;
 inline constexpr size_t MaxLogFormatLength = 384;
 inline constexpr size_t MaxLogErrorCodeLength = 32;
 inline constexpr size_t MaxLogPayloadEntries = 8;
@@ -74,7 +75,7 @@ struct LogEvent
     uint64_t threadId = 0;
     uint32_t line = 0;
     Level level = Level::Info;
-    Category category = Category::General;
+    Category category = Category::Core;
     uint8_t argumentCount = 0;
     uint8_t payloadCount = 0;
     const char *format = nullptr; // Must have static lifetime (normally a string literal).
@@ -87,4 +88,5 @@ struct LogEvent
 
 ENGINE_API const char *ToString(Level level) noexcept;
 ENGINE_API const char *ToString(Category category) noexcept;
+ENGINE_API Category CategoryFromName(std::string_view name) noexcept;
 } // namespace Engine::Log

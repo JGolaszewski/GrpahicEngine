@@ -317,14 +317,26 @@ const char *ToString(Category category) noexcept
 {
     switch (category)
     {
+    case Category::Core: return "Core";
     case Category::Physics: return "Physics";
     case Category::Render: return "Render";
-    case Category::AI: return "AI";
     case Category::Audio: return "Audio";
+    case Category::ECS: return "ECS";
+    case Category::Net: return "Net";
     case Category::Asset: return "Asset";
-    case Category::Editor: return "Editor";
-    default: return "General";
+    default: return "Core";
     }
+}
+
+Category CategoryFromName(std::string_view name) noexcept
+{
+    if (name == "Render") return Category::Render;
+    if (name == "Physics") return Category::Physics;
+    if (name == "Audio") return Category::Audio;
+    if (name == "ECS") return Category::ECS;
+    if (name == "Net") return Category::Net;
+    if (name == "Asset") return Category::Asset;
+    return Category::Core;
 }
 
 bool Initialize(const Configuration &configuration)
