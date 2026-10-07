@@ -1,0 +1,15 @@
+```cmake
+option(ENGINE_ENABLE_LOGGING "Compile engine logging calls" ON)
+set(ENGINE_LOG_LEVEL_MIN 0 CACHE STRING "Global cutoff: 0=Trace through 6=None")
+set(ENGINE_LOG_LEVEL_MIN_DEBUG "${ENGINE_LOG_LEVEL_MIN}" CACHE STRING "Debug cutoff")
+set(ENGINE_LOG_LEVEL_MIN_RELEASE 2 CACHE STRING "Release/Shipping cutoff")
+
+target_compile_definitions(EngineRuntime PRIVATE
+    ENGINE_ENABLE_LOGGING=$<BOOL:${ENGINE_ENABLE_LOGGING}>
+    ENGINE_LOG_LEVEL_MIN=$<IF:$<CONFIG:Debug>,${ENGINE_LOG_LEVEL_MIN_DEBUG},${ENGINE_LOG_LEVEL_MIN_RELEASE}>
+)
+target_compile_definitions(GraphicEngineCore PUBLIC
+    ENGINE_ENABLE_LOGGING=$<BOOL:${ENGINE_ENABLE_LOGGING}>
+    ENGINE_LOG_LEVEL_MIN=$<IF:$<CONFIG:Debug>,${ENGINE_LOG_LEVEL_MIN_DEBUG},${ENGINE_LOG_LEVEL_MIN_RELEASE}>
+)
+```

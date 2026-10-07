@@ -1,5 +1,6 @@
 #include "Application.h"
 #include "AssetManager.h"
+#include "LogEngine.h"
 #include "RenderBackend.h"
 #include "RenderSystem.h"
 #include "SceneDocument.h"
@@ -137,10 +138,19 @@ Application::~Application()
     m_RenderSystem.reset();
     m_RenderBackend.reset();
     m_Window.reset();
+    m_AssetManager.reset();
+#if ENGINE_ENABLE_LOGGING
+    Log::Flush();
+    Log::Shutdown();
+#endif
 }
 
 bool Application::InitializeCore()
 {
+#if ENGINE_ENABLE_LOGGING
+    if (!Log::IsInitialized())
+        Log::Initialize();
+#endif
     if (!m_Window || !m_RenderBackend)
     {
         std::cerr << "ERROR: Application requires a window and render backend." << std::endl;
@@ -184,6 +194,9 @@ void Application::Run(std::unique_ptr<IWindow> window, std::unique_ptr<IRenderBa
 
     while (m_IsRunning && !m_Window->ShouldClose())
     {
+#if ENGINE_ENABLE_LOGGING
+        Log::SetFrameIndex(m_FrameTimingStats.FrameCount);
+#endif
         const auto frameStart = std::chrono::steady_clock::now();
 
         auto currentTime = std::chrono::high_resolution_clock::now();

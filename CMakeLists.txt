@@ -37,6 +37,13 @@ include(CTest)
 
 set(NVRHI_WITH_DX11 ON)
 set(ENGINE_MAX_LIGHTS 8 CACHE STRING "Maximum number of lights supported by CPU and GPU lighting buffers")
+option(ENGINE_ENABLE_LOGGING "Compile engine logging calls" ON)
+set(ENGINE_LOG_LEVEL_MIN 0 CACHE STRING "Global minimum log level (0=Trace, 1=Debug, 2=Info, 3=Warn, 4=Error, 5=Fatal, 6=None)")
+set_property(CACHE ENGINE_LOG_LEVEL_MIN PROPERTY STRINGS 0 1 2 3 4 5 6)
+set(ENGINE_LOG_LEVEL_MIN_DEBUG "${ENGINE_LOG_LEVEL_MIN}" CACHE STRING "Debug configuration log cutoff")
+set(ENGINE_LOG_LEVEL_MIN_RELEASE 2 CACHE STRING "Release/Shipping configuration log cutoff")
+set_property(CACHE ENGINE_LOG_LEVEL_MIN_DEBUG PROPERTY STRINGS 0 1 2 3 4 5 6)
+set_property(CACHE ENGINE_LOG_LEVEL_MIN_RELEASE PROPERTY STRINGS 0 1 2 3 4 5 6)
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")

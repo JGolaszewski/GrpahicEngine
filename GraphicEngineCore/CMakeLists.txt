@@ -55,6 +55,9 @@ set(CORE_HEADERS
     include/EditorCameraController.h
     include/events/Event.h
     include/Logging.h
+    include/LogCommon.h
+    include/LogMacros.h
+    include/LogEngine.h
     include/PipelineCache.h
     include/PrimitiveFactory.h
     include/RenderBackend.h
@@ -93,6 +96,7 @@ set(CORE_HEADERS
 )
 
 set(ENGINE_RUNTIME_SOURCES
+    src/LogEngine.cpp
     src/AssetManager.cpp
     src/AssetImporter.cpp
     src/Application.cpp
@@ -141,6 +145,10 @@ foreach(MODULE_TARGET EngineRuntime RenderCore)
         ENGINE_DEFAULT_ASSET_ROOT="${ENGINE_ASSET_ROOT}"
     )
     target_compile_features(${MODULE_TARGET} PRIVATE cxx_std_23)
+    target_compile_definitions(${MODULE_TARGET} PRIVATE
+        ENGINE_ENABLE_LOGGING=$<BOOL:${ENGINE_ENABLE_LOGGING}>
+        ENGINE_LOG_LEVEL_MIN=$<IF:$<CONFIG:Debug>,${ENGINE_LOG_LEVEL_MIN_DEBUG},${ENGINE_LOG_LEVEL_MIN_RELEASE}>
+    )
 endforeach()
 
 target_link_libraries(EngineRuntime PRIVATE
@@ -176,6 +184,10 @@ target_include_directories(GraphicEngineCore PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/
 target_compile_definitions(GraphicEngineCore PRIVATE
     ENGINE_MAX_LIGHTS=${ENGINE_MAX_LIGHTS}
     ENGINE_DEFAULT_ASSET_ROOT="${ENGINE_ASSET_ROOT}"
+)
+target_compile_definitions(GraphicEngineCore PUBLIC
+    ENGINE_ENABLE_LOGGING=$<BOOL:${ENGINE_ENABLE_LOGGING}>
+    ENGINE_LOG_LEVEL_MIN=$<IF:$<CONFIG:Debug>,${ENGINE_LOG_LEVEL_MIN_DEBUG},${ENGINE_LOG_LEVEL_MIN_RELEASE}>
 )
 
 if(CMAKE_VERSION VERSION_GREATER 3.12)
