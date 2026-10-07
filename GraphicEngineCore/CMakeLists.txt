@@ -145,6 +145,9 @@ foreach(MODULE_TARGET EngineRuntime RenderCore)
         ENGINE_DEFAULT_ASSET_ROOT="${ENGINE_ASSET_ROOT}"
     )
     target_compile_features(${MODULE_TARGET} PRIVATE cxx_std_23)
+    target_compile_options(${MODULE_TARGET} PRIVATE
+        "$<$<CXX_COMPILER_ID:MSVC>:/Zc:preprocessor>"
+    )
     target_compile_definitions(${MODULE_TARGET} PRIVATE
         ENGINE_ENABLE_LOGGING=$<BOOL:${ENGINE_ENABLE_LOGGING}>
         ENGINE_LOG_LEVEL_MIN=$<IF:$<CONFIG:Debug>,${ENGINE_LOG_LEVEL_MIN_DEBUG_EFFECTIVE},${ENGINE_LOG_LEVEL_MIN_RELEASE_EFFECTIVE}>
@@ -180,6 +183,9 @@ target_include_directories(GraphicEngineCore SYSTEM PRIVATE
 )
 
 target_include_directories(GraphicEngineCore PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_compile_options(GraphicEngineCore PUBLIC
+    "$<$<CXX_COMPILER_ID:MSVC>:/Zc:preprocessor>"
+)
 
 target_compile_definitions(GraphicEngineCore PRIVATE
     ENGINE_MAX_LIGHTS=${ENGINE_MAX_LIGHTS}
