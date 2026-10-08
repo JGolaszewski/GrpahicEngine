@@ -4,6 +4,11 @@
 #include <DirectXMath.h>
 #include <cstdint>
 
+#ifdef _MSC_VER
+#  pragma warning(push)
+#  pragma warning(disable : 4251) // These engine DLL types intentionally expose same-toolchain member types.
+#endif
+
 namespace Engine::Scene::Components
 {
 class ENGINE_API Transform
@@ -51,3 +56,7 @@ class ENGINE_API Transform
     mutable DirectX::XMMATRIX m_CachedLocalMatrix = DirectX::XMMatrixIdentity();
 };
 } // namespace Engine::Scene::Components
+
+#ifdef _MSC_VER
+#  pragma warning(pop)
+#endif

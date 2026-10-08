@@ -11,6 +11,11 @@
 #include <unordered_map>
 #include <vector>
 
+#ifdef _MSC_VER
+#  pragma warning(push)
+#  pragma warning(disable : 4251) // These engine DLL types intentionally expose same-toolchain member types.
+#endif
+
 namespace Engine::Renderer
 {
 struct UploadProgress
@@ -106,3 +111,7 @@ class ENGINE_API ResourceManager
     uint64_t m_CompletedFrames = 0;
 };
 } // namespace Engine::Renderer
+
+#ifdef _MSC_VER
+#  pragma warning(pop)
+#endif

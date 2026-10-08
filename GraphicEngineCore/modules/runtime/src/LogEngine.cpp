@@ -1,4 +1,5 @@
 #include "runtime/include/LogEngine.h"
+#include "runtime/include/EnvironmentVariable.h"
 
 #include <nlohmann/json.hpp>
 
@@ -65,13 +66,13 @@ std::optional<Level> ParseLevel(const char *value) noexcept
 std::filesystem::path DefaultLogPath()
 {
 #ifdef _WIN32
-    if (const char *root = std::getenv("LOCALAPPDATA"))
-        return std::filesystem::path(root) / "GraphicEngine" / "logs" / "engine.jsonl";
+    if (const auto root = GetEnvironmentVariable("LOCALAPPDATA"))
+        return std::filesystem::path(*root) / "GraphicEngine" / "logs" / "engine.jsonl";
 #else
-    if (const char *root = std::getenv("XDG_STATE_HOME"))
-        return std::filesystem::path(root) / "graphic-engine" / "engine.jsonl";
-    if (const char *root = std::getenv("HOME"))
-        return std::filesystem::path(root) / ".local" / "state" / "graphic-engine" / "engine.jsonl";
+    if (const auto root = GetEnvironmentVariable("XDG_STATE_HOME"))
+        return std::filesystem::path(*root) / "graphic-engine" / "engine.jsonl";
+    if (const auto root = GetEnvironmentVariable("HOME"))
+        return std::filesystem::path(*root) / ".local" / "state" / "graphic-engine" / "engine.jsonl";
 #endif
     return std::filesystem::current_path() / "engine.jsonl";
 }
@@ -87,31 +88,34 @@ std::string CreateSessionId()
 
 Configuration ResolveConfiguration(Configuration configuration)
 {
-    if (const char *path = std::getenv("ENGINE_LOG_PATH"))
-        configuration.jsonlPath = path;
+    if (const auto path = GetEnvironmentVariable("ENGINE_LOG_PATH"))
+        configuration.jsonlPath = *path;
     else if (configuration.jsonlPath.empty())
         configuration.jsonlPath = DefaultLogPath();
 
     if (configuration.breadcrumbPath.empty() && !configuration.jsonlPath.empty())
         configuration.breadcrumbPath = configuration.jsonlPath.parent_path() / "engine-crash-breadcrumbs.log";
-    if (const char *path = std::getenv("ENGINE_LOG_BREADCRUMB_PATH"))
-        configuration.breadcrumbPath = path;
-    if (const char *limit = std::getenv("ENGINE_LOG_MAX_FILE_SIZE_BYTES"))
+    if (const auto path = GetEnvironmentVariable("ENGINE_LOG_BREADCRUMB_PATH"))
+        configuration.breadcrumbPath = *path;
+    if (const auto limit = GetEnvironmentVariable("ENGINE_LOG_MAX_FILE_SIZE_BYTES"))
     {
         char *end = nullptr;
-        const unsigned long long parsed = std::strtoull(limit, &end, 10);
-        if (end != limit && *end == '\0')
+        const unsigned long long parsed = std::strtoull(limit->c_str(), &end, 10);
+        if (end != limit->c_str() && *end == '\0')
             configuration.maxFileSizeBytes = static_cast<uint64_t>(parsed);
     }
-    if (const char *count = std::getenv("ENGINE_LOG_RETAINED_FILE_COUNT"))
+    if (const auto count = GetEnvironmentVariable("ENGINE_LOG_RETAINED_FILE_COUNT"))
     {
         char *end = nullptr;
-        const unsigned long long parsed = std::strtoull(count, &end, 10);
-        if (end != count && *end == '\0')
+        const unsigned long long parsed = std::strtoull(count->c_str(), &end, 10);
+        if (end != count->c_str() && *end == '\0')
             configuration.retainedFileCount = static_cast<size_t>((std::min)(parsed, 32ULL));
     }
-    if (const auto level = ParseLevel(std::getenv("ENGINE_LOG_LEVEL")))
-        configuration.minimumLevel = *level;
+    if (const auto value = GetEnvironmentVariable("ENGINE_LOG_LEVEL"); value)
+    {
+        if (const auto level = ParseLevel(value->c_str()))
+            configuration.minimumLevel = *level;
+    }
     constexpr std::array<std::pair<Category, const char *>, 12> categoryVariables{{
         {Category::Core, "ENGINE_LOG_CORE_LEVEL"}, {Category::Editor, "ENGINE_LOG_EDITOR_LEVEL"},
         {Category::Physics, "ENGINE_LOG_PHYSICS_LEVEL"}, {Category::Render, "ENGINE_LOG_RENDER_LEVEL"},
@@ -124,8 +128,11 @@ Configuration ResolveConfiguration(Configuration configuration)
     {
         if (!variable)
             continue;
-        if (const auto level = ParseLevel(std::getenv(variable)))
-            configuration.categoryMinimumLevels[static_cast<size_t>(category)] = *level;
+        if (const auto value = GetEnvironmentVariable(variable); value)
+        {
+            if (const auto level = ParseLevel(value->c_str()))
+                configuration.categoryMinimumLevels[static_cast<size_t>(category)] = *level;
+        }
     }
     return configuration;
 }

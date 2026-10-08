@@ -12,6 +12,11 @@
 #include <string>
 #include <type_traits>
 
+#ifdef _MSC_VER
+#  pragma warning(push)
+#  pragma warning(disable : 4251) // These engine DLL types intentionally expose same-toolchain member types.
+#endif
+
 namespace Engine::Renderer
 {
 struct TextureResource;
@@ -282,3 +287,7 @@ class ENGINE_API Material
     MaterialGpu m_Constants;
 };
 } // namespace Engine::Renderer
+
+#ifdef _MSC_VER
+#  pragma warning(pop)
+#endif

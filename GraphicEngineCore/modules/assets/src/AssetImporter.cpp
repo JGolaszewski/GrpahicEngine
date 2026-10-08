@@ -946,10 +946,10 @@ AssetImportResult AssetImporter::ImportGltf(const std::filesystem::path &sourceP
             result.error = Context(sourcePath, error);
             return result;
         }
-        if (const auto extension = input.extensions.find("KHR_materials_pbrSpecularGlossiness");
-            extension != input.extensions.end())
+        if (const auto extensionEntry = input.extensions.find("KHR_materials_pbrSpecularGlossiness");
+            extensionEntry != input.extensions.end())
         {
-            const auto &value = extension->second;
+            const auto &value = extensionEntry->second;
             material.specularGlossiness = true;
             material.metallic = 0.0f;
             material.glossiness = 1.0f;
@@ -1038,7 +1038,6 @@ AssetImportResult AssetImporter::ImportGltf(const std::filesystem::path &sourceP
             }
             if (texture < 0)
                 continue;
-            const ImportedTexture &imported = result.model.textures[static_cast<size_t>(texture)];
         }
     }
 

@@ -71,7 +71,7 @@ DirectX::XMMATRIX ComputeSpotLightViewProj(const ::Engine::Renderer::Directional
 
 // --- Initialization ---
 
-Engine::Scene::Engine::Renderer::SceneRenderer(nvrhi::IDevice *device)
+Engine::SceneRenderer::SceneRenderer(nvrhi::IDevice*)
 {
 }
 

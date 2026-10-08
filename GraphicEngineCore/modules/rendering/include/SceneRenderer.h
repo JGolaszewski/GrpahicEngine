@@ -21,6 +21,11 @@
 #include "rendering/include/renderer/render_graph/FrameContext.h"
 #include "rendering/include/renderer/render_graph/RenderView.h"
 
+#ifdef _MSC_VER
+#  pragma warning(push)
+#  pragma warning(disable : 4251) // These engine DLL types intentionally expose same-toolchain member types.
+#endif
+
 namespace Engine
 {
 
@@ -151,3 +156,7 @@ class ENGINE_API SceneRenderer
 };
 
 } // namespace Engine
+
+#ifdef _MSC_VER
+#  pragma warning(pop)
+#endif

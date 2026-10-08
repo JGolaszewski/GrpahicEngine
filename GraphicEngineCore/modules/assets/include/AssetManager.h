@@ -13,6 +13,11 @@
 #include <unordered_map>
 #include <vector>
 
+#ifdef _MSC_VER
+#  pragma warning(push)
+#  pragma warning(disable : 4251) // These engine DLL types intentionally expose same-toolchain member types.
+#endif
+
 namespace Engine
 {
 class ENGINE_API AssetManager
@@ -79,3 +84,7 @@ class ENGINE_API AssetManager
     SceneSerializer m_SceneSerializer;
 };
 } // namespace Engine
+
+#ifdef _MSC_VER
+#  pragma warning(pop)
+#endif

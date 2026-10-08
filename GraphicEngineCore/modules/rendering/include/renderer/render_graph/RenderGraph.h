@@ -14,6 +14,11 @@
 #include "rendering/include/renderer/render_graph/RenderContext.h"
 #include "rendering/include/renderer/render_graph/RenderPass.h"
 
+#ifdef _MSC_VER
+#  pragma warning(push)
+#  pragma warning(disable : 4251) // These engine DLL types intentionally expose same-toolchain member types.
+#endif
+
 namespace Engine::Renderer
 {
 
@@ -69,3 +74,7 @@ class ENGINE_API RenderGraph
 };
 
 } // namespace Engine::Renderer
+
+#ifdef _MSC_VER
+#  pragma warning(pop)
+#endif

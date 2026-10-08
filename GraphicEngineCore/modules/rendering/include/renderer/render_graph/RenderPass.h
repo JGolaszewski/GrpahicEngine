@@ -8,6 +8,11 @@
 #include <string>
 #include <vector>
 
+#ifdef _MSC_VER
+#  pragma warning(push)
+#  pragma warning(disable : 4251) // These engine DLL types intentionally expose same-toolchain member types.
+#endif
+
 namespace Engine
 {
 class SceneRenderer;
@@ -103,3 +108,7 @@ class ENGINE_API DebugPass : public ::Engine::Renderer::IRenderPass
     Engine::SceneRenderer *m_SceneRenderer = nullptr;
 };
 } // namespace Engine::Renderer
+
+#ifdef _MSC_VER
+#  pragma warning(pop)
+#endif

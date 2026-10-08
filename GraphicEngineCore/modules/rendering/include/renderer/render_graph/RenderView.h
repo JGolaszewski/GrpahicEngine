@@ -7,6 +7,11 @@
 #include <vector>
 
 // Forward declarations
+#ifdef _MSC_VER
+#  pragma warning(push)
+#  pragma warning(disable : 4251) // These engine DLL types intentionally expose same-toolchain member types.
+#endif
+
 namespace Engine
 {
 class Scene;
@@ -65,6 +70,10 @@ struct RenderQueues
     }
 };
 
+#ifdef _MSC_VER
+#  pragma warning(suppress : 4324) // DirectX SIMD members require this alignment; RenderView is not a GPU buffer type.
+#endif
+
 class ENGINE_API RenderView
 {
   public:
@@ -112,3 +121,7 @@ class ENGINE_API RenderView
     }
 };
 } // namespace Engine::Renderer
+
+#ifdef _MSC_VER
+#  pragma warning(pop)
+#endif

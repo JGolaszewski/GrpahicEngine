@@ -274,20 +274,20 @@ bool ReadMaterial(const Json &value, SceneMaterialDocument &material, std::vecto
         error = "material contains out-of-range BRDF settings";
         return false;
     }
-    for (float value : material.baseColor)
-        if (value < 0.0f || value > 1.0f)
+    for (float component : material.baseColor)
+        if (component < 0.0f || component > 1.0f)
         {
             error = "baseColor values must be within [0, 1]";
             return false;
         }
-    for (float value : material.emissive)
-        if (value < 0.0f)
+    for (float component : material.emissive)
+        if (component < 0.0f)
         {
             error = "emissive values must be non-negative";
             return false;
         }
-    for (float value : material.specularF0)
-        if (value < 0.0f || value > 1.0f)
+    for (float component : material.specularF0)
+        if (component < 0.0f || component > 1.0f)
         {
             error = "specularF0 values must be within [0, 1]";
             return false;

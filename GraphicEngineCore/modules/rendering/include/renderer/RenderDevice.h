@@ -9,6 +9,11 @@
 #include <string>
 #include <vector>
 
+#ifdef _MSC_VER
+#  pragma warning(push)
+#  pragma warning(disable : 4251) // These engine DLL types intentionally expose same-toolchain member types.
+#endif
+
 namespace Engine::Renderer
 {
 struct TextureResource
@@ -35,3 +40,7 @@ class ENGINE_API RenderDevice
     nvrhi::DeviceHandle m_Device;
 };
 } // namespace Engine::Renderer
+
+#ifdef _MSC_VER
+#  pragma warning(pop)
+#endif

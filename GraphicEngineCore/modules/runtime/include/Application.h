@@ -12,6 +12,11 @@
 #include <string>
 #include <vector>
 
+#ifdef _MSC_VER
+#  pragma warning(push)
+#  pragma warning(disable : 4251) // These engine DLL types intentionally expose same-toolchain member types.
+#endif
+
 namespace nvrhi
 {
 class ICommandList;
@@ -232,3 +237,7 @@ class ENGINE_API Application
     std::vector<ViewportBinding> m_ActiveViews;
 };
 } // namespace Engine
+
+#ifdef _MSC_VER
+#  pragma warning(pop)
+#endif

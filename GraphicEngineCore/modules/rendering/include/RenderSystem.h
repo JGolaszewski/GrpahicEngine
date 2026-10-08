@@ -19,6 +19,11 @@
 #include <string>
 #include <vector>
 
+#ifdef _MSC_VER
+#  pragma warning(push)
+#  pragma warning(disable : 4251) // These engine DLL types intentionally expose same-toolchain member types.
+#endif
+
 namespace Engine
 {
 struct ShadowSettings
@@ -141,3 +146,7 @@ class ENGINE_API RenderSystem
     std::unique_ptr<Engine::PrimitiveFactory> m_PrimitiveFactory;
 };
 } // namespace Engine
+
+#ifdef _MSC_VER
+#  pragma warning(pop)
+#endif

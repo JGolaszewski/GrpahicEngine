@@ -335,7 +335,7 @@ bool RenderSystem::UploadModel(const std::string &guid, uint64_t generation, con
 std::shared_ptr<::Engine::Renderer::Entity> RenderSystem::CreateModelEntity(
     const std::string &guid, uint64_t generation, const ImportedModel &model,
     const std::vector<std::optional<::Engine::Renderer::MaterialProperties>> &materialOverrides, std::string &error,
-    std::vector<std::string> &warnings)
+    std::vector<std::string>&)
 {
     using namespace DirectX;
     struct PendingSubmesh

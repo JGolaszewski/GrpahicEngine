@@ -1,7 +1,7 @@
 #include "rendering/include/renderer/ShaderFactory.h"
+#include "runtime/include/EnvironmentVariable.h"
 #include "runtime/include/LogMacros.h"
 
-#include <cstdlib>
 #include <fstream>
 
 namespace Engine::Renderer
@@ -9,9 +9,9 @@ namespace Engine::Renderer
 
 ShaderFactory::ShaderFactory(nvrhi::IDevice *device) : m_Device(device)
 {
-    if (const char *configuredRoot = std::getenv("GRAPHIC_ENGINE_ASSET_ROOT"))
+    if (const auto configuredRoot = GetEnvironmentVariable("GRAPHIC_ENGINE_ASSET_ROOT"))
     {
-        m_AssetRoot = configuredRoot;
+        m_AssetRoot = *configuredRoot;
     }
     else
     {

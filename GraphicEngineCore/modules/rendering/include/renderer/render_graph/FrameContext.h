@@ -13,6 +13,11 @@
 #include <unordered_map>
 #include <vector>
 
+#ifdef _MSC_VER
+#  pragma warning(push)
+#  pragma warning(disable : 4251) // These engine DLL types intentionally expose same-toolchain member types.
+#endif
+
 namespace Engine::Renderer
 {
 struct FrameDiagnostics
@@ -134,3 +139,7 @@ class ENGINE_API FrameContext
     bool m_CompletionQueryFailureLogged = false;
 };
 } // namespace Engine::Renderer
+
+#ifdef _MSC_VER
+#  pragma warning(pop)
+#endif

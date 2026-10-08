@@ -10,6 +10,11 @@
 #include <unordered_map>
 #include <vector>
 
+#ifdef _MSC_VER
+#  pragma warning(push)
+#  pragma warning(disable : 4251) // These engine DLL types intentionally expose same-toolchain member types.
+#endif
+
 namespace Engine::Renderer
 {
 class SpotLight;
@@ -97,3 +102,7 @@ class ENGINE_API Scene
     float m_UnitsPerMeter = 1.0f;
 };
 } // namespace Engine
+
+#ifdef _MSC_VER
+#  pragma warning(pop)
+#endif
