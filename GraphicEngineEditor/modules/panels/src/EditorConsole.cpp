@@ -101,7 +101,7 @@ void RedactJsonStrings(Json &value)
         profile = Engine::ReadEnvironmentVariable("HOME");
     if (profile && !profile->empty())
     {
-        const std::string prefix(*profile);
+        const std::string &prefix = *profile;
         std::string foldedText = text;
         std::string foldedPrefix = prefix;
         std::transform(foldedText.begin(), foldedText.end(), foldedText.begin(),
