@@ -12,7 +12,7 @@
 
 namespace
 {
-float Percentile(const std::array<float, Engine::Application::FrameMetricsHistoryCapacity> &sortedValues,
+float Percentile(const std::vector<float> &sortedValues,
                  size_t valueCount, float percentile)
 {
     if (valueCount == 0)
@@ -101,10 +101,10 @@ void StatWindow::Draw()
     const size_t availableSamples = m_HistoryPaused ? m_PausedHistoryCount : applicationHistoryCount;
     const size_t firstIndex = (timing.FrameCount - availableSamples) %
                               Engine::Application::FrameMetricsHistoryCapacity;
-    std::array<float, Engine::Application::FrameMetricsHistoryCapacity> frameTimes{};
-    std::array<float, Engine::Application::FrameMetricsHistoryCapacity> frameTimePlot{};
-    std::array<float, Engine::Application::FrameMetricsHistoryCapacity> fpsPlot{};
-    std::array<float, Engine::Application::FrameMetricsHistoryCapacity> gpuTimePlot{};
+    std::vector<float> frameTimes(Engine::Application::FrameMetricsHistoryCapacity);
+    std::vector<float> frameTimePlot(Engine::Application::FrameMetricsHistoryCapacity);
+    std::vector<float> fpsPlot(Engine::Application::FrameMetricsHistoryCapacity);
+    std::vector<float> gpuTimePlot(Engine::Application::FrameMetricsHistoryCapacity);
     uint32_t overBudgetCount = 0;
     size_t gpuSampleCount = 0;
 

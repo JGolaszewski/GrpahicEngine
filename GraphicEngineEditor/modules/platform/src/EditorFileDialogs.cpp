@@ -8,6 +8,8 @@
 
 #include <fstream>
 #include <system_error>
+#include <string>
+#include <vector>
 
 namespace EditorPlatform
 {
@@ -22,25 +24,33 @@ int CALLBACK InitializeFolderDialog(HWND window, UINT message, LPARAM, LPARAM in
 
 std::filesystem::path ProjectPreferencePath()
 {
-    if (const wchar_t *appData = _wgetenv(L"LOCALAPPDATA"))
-        return std::filesystem::path(appData) / L"GraphicEngine" / L"project.txt";
-    return {};
+    const DWORD bufferSize = GetEnvironmentVariableW(L"LOCALAPPDATA", nullptr, 0);
+    if (bufferSize == 0)
+        return {};
+
+    std::wstring appData(bufferSize, L'\0');
+    const DWORD length = GetEnvironmentVariableW(L"LOCALAPPDATA", appData.data(), bufferSize);
+    if (length == 0 || length >= bufferSize)
+        return {};
+
+    appData.resize(length);
+    return std::filesystem::path(appData) / L"GraphicEngine" / L"project.txt";
 }
 } // namespace
 
 std::optional<std::filesystem::path> ChooseSceneFile(bool save, const std::filesystem::path &initialPath,
                                                      const std::filesystem::path &projectRoot)
 {
-    wchar_t filename[32768]{};
+    std::vector<wchar_t> filename(32768);
     if (!initialPath.empty())
     {
         const auto initial = initialPath.wstring();
-        wcsncpy_s(filename, std::size(filename), initial.c_str(), _TRUNCATE);
+        wcsncpy_s(filename.data(), filename.size(), initial.c_str(), _TRUNCATE);
     }
     OPENFILENAMEW dialog{};
     dialog.lStructSize = sizeof(dialog);
-    dialog.lpstrFile = filename;
-    dialog.nMaxFile = static_cast<DWORD>(std::size(filename));
+    dialog.lpstrFile = filename.data();
+    dialog.nMaxFile = static_cast<DWORD>(filename.size());
     dialog.lpstrFilter =
         L"Scene files (*.scene.json)\0*.scene.json\0JSON files (*.json)\0*.json\0All files (*.*)\0*.*\0\0";
     dialog.nFilterIndex = 1;
@@ -49,51 +59,51 @@ std::optional<std::filesystem::path> ChooseSceneFile(bool save, const std::files
     dialog.Flags = OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR | (save ? OFN_OVERWRITEPROMPT : OFN_FILEMUSTEXIST);
     dialog.lpstrDefExt = L"json";
     const BOOL accepted = save ? GetSaveFileNameW(&dialog) : GetOpenFileNameW(&dialog);
-    return accepted ? std::optional(std::filesystem::path(filename)) : std::nullopt;
+    return accepted ? std::optional(std::filesystem::path(filename.data())) : std::nullopt;
 }
 
 std::optional<std::filesystem::path> ChooseModelFile(const std::filesystem::path &projectRoot)
 {
-    wchar_t filename[32768]{};
+    std::vector<wchar_t> filename(32768);
     const auto initialDirectory = projectRoot.wstring();
     OPENFILENAMEW dialog{};
     dialog.lStructSize = sizeof(dialog);
-    dialog.lpstrFile = filename;
-    dialog.nMaxFile = static_cast<DWORD>(std::size(filename));
+    dialog.lpstrFile = filename.data();
+    dialog.nMaxFile = static_cast<DWORD>(filename.size());
     dialog.lpstrFilter = L"glTF models (*.gltf;*.glb)\0*.gltf;*.glb\0\0";
     dialog.nFilterIndex = 1;
     dialog.lpstrInitialDir = initialDirectory.c_str();
     dialog.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR;
-    return GetOpenFileNameW(&dialog) ? std::optional(std::filesystem::path(filename)) : std::nullopt;
+    return GetOpenFileNameW(&dialog) ? std::optional(std::filesystem::path(filename.data())) : std::nullopt;
 }
 
 std::optional<std::filesystem::path> ChooseTextureFile(const std::filesystem::path &projectRoot)
 {
-    wchar_t filename[32768]{};
+    std::vector<wchar_t> filename(32768);
     const auto initialDirectory = projectRoot.wstring();
     OPENFILENAMEW dialog{};
     dialog.lStructSize = sizeof(dialog);
-    dialog.lpstrFile = filename;
-    dialog.nMaxFile = static_cast<DWORD>(std::size(filename));
+    dialog.lpstrFile = filename.data();
+    dialog.nMaxFile = static_cast<DWORD>(filename.size());
     dialog.lpstrFilter = L"Images (*.png;*.jpg;*.jpeg)\0*.png;*.jpg;*.jpeg\0\0";
     dialog.nFilterIndex = 1;
     dialog.lpstrInitialDir = initialDirectory.c_str();
     dialog.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR;
-    return GetOpenFileNameW(&dialog) ? std::optional(std::filesystem::path(filename)) : std::nullopt;
+    return GetOpenFileNameW(&dialog) ? std::optional(std::filesystem::path(filename.data())) : std::nullopt;
 }
 
 std::optional<std::filesystem::path> ChooseLogExportFile(const std::filesystem::path &initialPath)
 {
-    wchar_t filename[32768]{};
+    std::vector<wchar_t> filename(32768);
     if (!initialPath.empty())
     {
         const auto initial = initialPath.wstring();
-        wcsncpy_s(filename, std::size(filename), initial.c_str(), _TRUNCATE);
+        wcsncpy_s(filename.data(), filename.size(), initial.c_str(), _TRUNCATE);
     }
     OPENFILENAMEW dialog{};
     dialog.lStructSize = sizeof(dialog);
-    dialog.lpstrFile = filename;
-    dialog.nMaxFile = static_cast<DWORD>(std::size(filename));
+    dialog.lpstrFile = filename.data();
+    dialog.nMaxFile = static_cast<DWORD>(filename.size());
     dialog.lpstrFilter = L"JSONL logs (*.jsonl)\0*.jsonl\0All files (*.*)\0*.*\0\0";
     dialog.nFilterIndex = 1;
     const auto initialDirectory = initialPath.empty() ? std::filesystem::current_path().wstring()
@@ -101,7 +111,7 @@ std::optional<std::filesystem::path> ChooseLogExportFile(const std::filesystem::
     dialog.lpstrInitialDir = initialDirectory.c_str();
     dialog.Flags = OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR | OFN_OVERWRITEPROMPT;
     dialog.lpstrDefExt = L"jsonl";
-    return GetSaveFileNameW(&dialog) ? std::optional(std::filesystem::path(filename)) : std::nullopt;
+    return GetSaveFileNameW(&dialog) ? std::optional(std::filesystem::path(filename.data())) : std::nullopt;
 }
 
 bool OpenSourceFile(const std::filesystem::path &path)

@@ -30,7 +30,7 @@ class EditorPanel
 
     // Called during the top-down event propagation phase.
     // If a panel consumes an input event, it must set event.Handled = true.
-    virtual void OnEvent(Engine::Events::Event &event)
+    virtual void OnEvent(Engine::Events::Event &)
     {
     }
 

@@ -13,6 +13,7 @@
 #include <unordered_map>
 
 #include "platform/include/EditorFileDialogs.h"
+#include "runtime/include/EnvironmentVariable.h"
 
 namespace
 {
@@ -95,12 +96,12 @@ void RedactJsonStrings(Json &value)
         return;
 
     std::string text = value.get<std::string>();
-    const char *profile = std::getenv("USERPROFILE");
-    if (!profile || !*profile)
-        profile = std::getenv("HOME");
-    if (profile && *profile)
+    auto profile = Engine::ReadEnvironmentVariable("USERPROFILE");
+    if (!profile || profile->empty())
+        profile = Engine::ReadEnvironmentVariable("HOME");
+    if (profile && !profile->empty())
     {
-        const std::string prefix(profile);
+        const std::string prefix(*profile);
         std::string foldedText = text;
         std::string foldedPrefix = prefix;
         std::transform(foldedText.begin(), foldedText.end(), foldedText.begin(),
@@ -192,10 +193,12 @@ uint64_t EditorConsoleSink::Generation() const noexcept
 
 void EditorConsoleSink::Clear()
 {
-    std::array<std::shared_ptr<const EditorConsoleEntry>, Capacity> retired;
+    std::vector<std::shared_ptr<const EditorConsoleEntry>> retired;
+    retired.reserve(Capacity);
     {
         std::lock_guard lock(m_Mutex);
-        retired.swap(m_Entries);
+        for (auto &entry : m_Entries)
+            retired.push_back(std::move(entry));
         m_WriteIndex = 0;
         m_Size = 0;
     }
