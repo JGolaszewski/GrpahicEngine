@@ -195,7 +195,7 @@ inline void Submit(Level level, Category category, const char *format,
     event.line = location.line();
     event.argumentCount = static_cast<uint8_t>(sizeof...(Args));
     const std::array<LogArgument, sizeof...(Args)> arguments{Detail::MakeArgument(std::forward<Args>(args))...};
-    std::copy(arguments.begin(), arguments.end(), event.arguments);
+    std::copy(arguments.begin(), arguments.end(), event.arguments.begin());
     (void)Enqueue(event);
 }
 
@@ -216,12 +216,12 @@ inline bool SubmitStructured(Level level, Category category, const char *format,
     if (payload != nullptr)
     {
         const size_t safePayloadCount = (std::min)(payloadCount, MaxLogPayloadEntries);
-        std::copy_n(payload, safePayloadCount, event.payload);
+        std::copy_n(payload, safePayloadCount, event.payload.begin());
         event.payloadCount = static_cast<uint8_t>(safePayloadCount);
     }
     event.argumentCount = static_cast<uint8_t>(sizeof...(Args));
     const std::array<LogArgument, sizeof...(Args)> arguments{Detail::MakeArgument(std::forward<Args>(args))...};
-    std::copy(arguments.begin(), arguments.end(), event.arguments);
+    std::copy(arguments.begin(), arguments.end(), event.arguments.begin());
     return SubmitStructuredEvent(event);
 }
 } // namespace Engine::Log
