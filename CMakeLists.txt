@@ -48,6 +48,10 @@ if(MSVC)
     list(APPEND ENGINE_CLANG_TIDY_COMMAND "--extra-arg-before=--driver-mode=cl")
 endif()
 
+if(WIN32)
+    set(ENGINE_CLANG_TIDY_WRAPPER "${PROJECT_SOURCE_DIR}/cmake/RunClangTidy.ps1")
+endif()
+
 set(NVRHI_WITH_DX11 ON)
 set(ENGINE_MAX_LIGHTS 8 CACHE STRING "Maximum number of lights supported by CPU and GPU lighting buffers")
 option(ENGINE_ENABLE_LOGGING "Compile engine logging calls" ON)

@@ -115,12 +115,31 @@ file(GLOB_RECURSE ENGINE_TIDY_SOURCES CONFIGURE_DEPENDS
     "${PROJECT_SOURCE_DIR}/SandboxApp/*.cpp"
 )
 if(CMAKE_GENERATOR MATCHES "Ninja|Makefiles")
-    add_custom_target(lint ALL
-        COMMAND "${ENGINE_CLANG_TIDY_EXECUTABLE}" --quiet -p "${CMAKE_BINARY_DIR}" ${ENGINE_TIDY_SOURCES}
-        WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
-        COMMENT "Running clang-tidy on project C++ sources"
-        VERBATIM
-    )
+    if(WIN32)
+        set(ENGINE_CLANG_TIDY_WRAPPER_ARGS)
+        string(JOIN ";" ENGINE_CLANG_TIDY_SOURCE_ARGUMENT ${ENGINE_TIDY_SOURCES})
+        if(MSVC)
+            list(APPEND ENGINE_CLANG_TIDY_WRAPPER_ARGS -UseClDriver)
+        endif()
+        add_custom_target(lint ALL
+            COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -File
+                "${ENGINE_CLANG_TIDY_WRAPPER}"
+                -CompilationDatabase "${CMAKE_BINARY_DIR}/compile_commands.json"
+                -ClangTidy "${ENGINE_CLANG_TIDY_EXECUTABLE}"
+                ${ENGINE_CLANG_TIDY_WRAPPER_ARGS}
+                -Sources "${ENGINE_CLANG_TIDY_SOURCE_ARGUMENT}"
+            WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
+            COMMENT "Running clang-tidy on project C++ sources"
+            VERBATIM
+        )
+    else()
+        add_custom_target(lint ALL
+            COMMAND ${ENGINE_CLANG_TIDY_COMMAND} --quiet -p "${CMAKE_BINARY_DIR}" ${ENGINE_TIDY_SOURCES}
+            WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
+            COMMENT "Running clang-tidy on project C++ sources"
+            VERBATIM
+        )
+    endif()
     add_dependencies(EngineRuntime lint)
     add_dependencies(EngineAssets lint)
     add_dependencies(EngineScene lint)
