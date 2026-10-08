@@ -193,7 +193,7 @@ std::string FormatMessage(const LogEvent &event)
                 const size_t colon = format.find(':', i + 1);
                 if (colon != std::string_view::npos && colon < close)
                     specification = format.substr(colon + 1, close - colon - 1);
-                result += ArgumentText(event.arguments[argumentIndex++], specification);
+                result += ArgumentText(event.arguments.at(argumentIndex++), specification);
                 i = close;
             }
             else
