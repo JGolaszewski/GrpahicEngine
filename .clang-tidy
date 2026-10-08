@@ -1,6 +1,9 @@
+# Same-typed coordinate/callback parameters and signed legacy flag bitmasks are intentional.
 Checks: >
   -*,
   bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-signed-bitwise,
   modernize-*,
   performance-*,
   cppcoreguidelines-*,
