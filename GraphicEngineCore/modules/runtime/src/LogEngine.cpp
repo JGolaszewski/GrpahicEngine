@@ -172,6 +172,7 @@ std::string FormatMessage(const LogEvent &event)
     const std::string_view format = event.format ? event.format : "";
     result.reserve(format.size() + static_cast<size_t>(event.argumentCount) * 16);
     size_t argumentIndex = 0;
+    const size_t argumentCount = (std::min)(static_cast<size_t>(event.argumentCount), MaxLogArguments);
     for (size_t i = 0; i < format.size(); ++i)
     {
         if (format[i] == '{' && i + 1 < format.size() && format[i + 1] == '{')
@@ -184,7 +185,7 @@ std::string FormatMessage(const LogEvent &event)
             result.push_back('}');
             ++i;
         }
-        else if (format[i] == '{' && argumentIndex < event.argumentCount)
+        else if (format[i] == '{' && argumentIndex < argumentCount)
         {
             const size_t close = format.find('}', i + 1);
             if (close != std::string_view::npos)

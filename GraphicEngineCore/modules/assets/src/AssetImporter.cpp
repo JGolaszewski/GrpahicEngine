@@ -1,7 +1,14 @@
 #define TINYGLTF_IMPLEMENTATION
 #define STB_IMAGE_IMPLEMENTATION
 #define TINYGLTF_NO_STB_IMAGE_WRITE
+#ifdef _MSC_VER
+#  pragma warning(push)
+#  pragma warning(disable : 6262) // stb_image decoder uses a large fixed stack frame.
+#endif
 #include <tiny_gltf.h>
+#ifdef _MSC_VER
+#  pragma warning(pop)
+#endif
 
 #include "assets/include/AssetImporter.h"
 

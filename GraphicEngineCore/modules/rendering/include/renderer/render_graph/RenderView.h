@@ -71,7 +71,8 @@ struct RenderQueues
 };
 
 #ifdef _MSC_VER
-#  pragma warning(suppress : 4324) // DirectX SIMD members require this alignment; RenderView is not a GPU buffer type.
+#  pragma warning(push)
+#  pragma warning(disable : 4324) // DirectX SIMD members require this alignment; RenderView is not a GPU buffer type.
 #endif
 
 class ENGINE_API RenderView
@@ -120,6 +121,9 @@ class ENGINE_API RenderView
         DebugGeometryData.Clear();
     }
 };
+#ifdef _MSC_VER
+#  pragma warning(pop)
+#endif
 } // namespace Engine::Renderer
 
 #ifdef _MSC_VER

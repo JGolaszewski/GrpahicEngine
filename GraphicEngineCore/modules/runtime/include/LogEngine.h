@@ -3,6 +3,7 @@
 #include "runtime/include/LogCommon.h"
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <concepts>
@@ -193,8 +194,8 @@ inline void Submit(Level level, Category category, const char *format,
     event.function = location.function_name();
     event.line = location.line();
     event.argumentCount = static_cast<uint8_t>(sizeof...(Args));
-    size_t index = 0;
-    ((event.arguments[index++] = Detail::MakeArgument(std::forward<Args>(args))), ...);
+    const std::array<LogArgument, sizeof...(Args)> arguments{Detail::MakeArgument(std::forward<Args>(args))...};
+    std::copy(arguments.begin(), arguments.end(), event.arguments);
     (void)Enqueue(event);
 }
 
@@ -212,12 +213,15 @@ inline bool SubmitStructured(Level level, Category category, const char *format,
     event.function = location.function_name();
     event.line = location.line();
     Detail::CopyText(event.errorCode, sizeof(event.errorCode), errorCode);
-    event.payloadCount = static_cast<uint8_t>((std::min)(payload ? payloadCount : size_t{0}, MaxLogPayloadEntries));
-    for (size_t i = 0; i < event.payloadCount; ++i)
-        event.payload[i] = payload[i];
+    if (payload != nullptr)
+    {
+        const size_t safePayloadCount = (std::min)(payloadCount, MaxLogPayloadEntries);
+        std::copy_n(payload, safePayloadCount, event.payload);
+        event.payloadCount = static_cast<uint8_t>(safePayloadCount);
+    }
     event.argumentCount = static_cast<uint8_t>(sizeof...(Args));
-    size_t index = 0;
-    ((event.arguments[index++] = Detail::MakeArgument(std::forward<Args>(args))), ...);
+    const std::array<LogArgument, sizeof...(Args)> arguments{Detail::MakeArgument(std::forward<Args>(args))...};
+    std::copy(arguments.begin(), arguments.end(), event.arguments);
     return SubmitStructuredEvent(event);
 }
 } // namespace Engine::Log
