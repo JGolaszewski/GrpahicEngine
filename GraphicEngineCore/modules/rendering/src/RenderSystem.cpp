@@ -31,6 +31,11 @@ RenderSystem::RenderSystem(IRenderBackend *backend)
 {
     ENGINE_LOG_INFO("Render", "Render system initialization started | backend_valid: {} | device_valid: {}",
                     backend != nullptr, backend && backend->GetDevice() != nullptr);
+    if (!m_RenderBackend || !m_RenderBackend->GetDevice())
+    {
+        ENGINE_LOG_ERROR("Render", "Render system initialization failed | backend or device is null");
+        return;
+    }
     if (!m_CommandList)
     {
         ENGINE_LOG_ERROR("Render", "Render system initialization failed | command_list_valid: false");
