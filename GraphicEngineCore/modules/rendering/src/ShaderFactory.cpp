@@ -9,7 +9,7 @@ namespace Engine::Renderer
 
 ShaderFactory::ShaderFactory(nvrhi::IDevice *device) : m_Device(device)
 {
-    if (const auto configuredRoot = GetEnvironmentVariable("GRAPHIC_ENGINE_ASSET_ROOT"))
+    if (const auto configuredRoot = ReadEnvironmentVariable("GRAPHIC_ENGINE_ASSET_ROOT"))
     {
         m_AssetRoot = *configuredRoot;
     }

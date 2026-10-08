@@ -9,7 +9,7 @@
 
 namespace Engine {
 
-inline std::optional<std::string> GetEnvironmentVariable(std::string_view name) {
+inline std::optional<std::string> ReadEnvironmentVariable(std::string_view name) {
   const std::string terminatedName(name);
 #ifdef _WIN32
   char* buffer = nullptr;
