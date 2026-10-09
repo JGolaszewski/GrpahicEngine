@@ -1,0 +1,24 @@
+# Same-typed coordinate/callback parameters and signed legacy flag bitmasks are intentional.
+Checks: >
+  -*,
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-signed-bitwise,
+  modernize-*,
+  performance-*,
+  cppcoreguidelines-*,
+  readability-*,
+  -cppcoreguidelines-avoid-magic-numbers,
+  -readability-magic-numbers,
+  -cppcoreguidelines-pro-bounds-pointer-arithmetic,
+  -cppcoreguidelines-pro-bounds-constant-array-index,
+  -modernize-use-auto
+
+WarningsAsErrors: 'bugprone-*,performance-*'
+HeaderFilterRegex: '.*(GraphicEngineCore|GraphicEngineEditor|GraphicEngineBackends|SandboxApp)/.*'
+ExcludeHeaderFilterRegex: '.*(vendor|out|build)/.*'
+FormatStyle: file
+SystemHeaders: false
+CheckOptions:
+  - key: modernize-use-default-member-init.UseAssignment
+    value: '1'

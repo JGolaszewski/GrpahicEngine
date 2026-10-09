@@ -12,7 +12,11 @@
         "CMAKE_CXX_COMPILER": "cl.exe",
         "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
         "VCPKG_TARGET_TRIPLET": "x64-windows",
-        "VCPKG_MANIFEST_MODE": "ON"
+        "VCPKG_MANIFEST_MODE": "ON",
+        "ENGINE_ENABLE_LOGGING": "ON",
+        "ENGINE_LOG_LEVEL_MIN": "0",
+        "ENGINE_LOG_LEVEL_MIN_DEBUG": "0",
+        "ENGINE_LOG_LEVEL_MIN_RELEASE": "0"
       },
       "condition": {
         "type": "equals",
@@ -29,7 +33,8 @@
         "strategy": "external"
       },
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug"
+        "CMAKE_BUILD_TYPE": "Debug",
+        "ENGINE_ASSET_ROOT": "${sourceDir}/out/build/${presetName}/bin"
       }
     },
     {
@@ -37,7 +42,8 @@
       "displayName": "x64 Release",
       "inherits": "x64-debug",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release"
+        "CMAKE_BUILD_TYPE": "Release",
+        "ENGINE_ASSET_ROOT": "${sourceDir}/out/build/${presetName}/bin"
       }
     },
     {
@@ -49,7 +55,8 @@
         "strategy": "external"
       },
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug"
+        "CMAKE_BUILD_TYPE": "Debug",
+        "ENGINE_ASSET_ROOT": "${sourceDir}/out/build/${presetName}/bin"
       }
     },
     {
@@ -57,7 +64,8 @@
       "displayName": "x86 Release",
       "inherits": "x86-debug",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release"
+        "CMAKE_BUILD_TYPE": "Release",
+        "ENGINE_ASSET_ROOT": "${sourceDir}/out/build/${presetName}/bin"
       }
     }
   ]

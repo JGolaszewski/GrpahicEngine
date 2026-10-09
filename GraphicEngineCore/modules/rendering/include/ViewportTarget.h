@@ -1,0 +1,52 @@
+#pragma once
+
+#include "runtime/include/CoreExport.h"
+
+#include <cstdint>
+#include <memory>
+
+#ifdef _MSC_VER
+#  pragma warning(push)
+#  pragma warning(disable : 4251) // These engine DLL types intentionally expose same-toolchain member types.
+#endif
+
+namespace Engine
+{
+
+class RenderSystem;
+class Viewport;
+
+// High-level render target for an editor or runtime viewport.
+// The graphics API resources are deliberately hidden from callers.
+class ENGINE_API ViewportTarget
+{
+  public:
+    ~ViewportTarget();
+
+    ViewportTarget(const ViewportTarget &) = delete;
+    ViewportTarget &operator=(const ViewportTarget &) = delete;
+    ViewportTarget(ViewportTarget &&) noexcept;
+    ViewportTarget &operator=(ViewportTarget &&) noexcept;
+
+    bool IsValid() const noexcept;
+    uint32_t GetWidth() const noexcept;
+    uint32_t GetHeight() const noexcept;
+
+    void *GetColorTextureHandle() const noexcept;
+
+  private:
+    struct Impl;
+
+    ViewportTarget(void *device, uint32_t width, uint32_t height);
+    void *GetFramebufferHandle() const noexcept;
+
+    std::unique_ptr<Impl> m_Impl;
+
+    friend class RenderSystem;
+    friend class Viewport;
+};
+} // namespace Engine
+
+#ifdef _MSC_VER
+#  pragma warning(pop)
+#endif
