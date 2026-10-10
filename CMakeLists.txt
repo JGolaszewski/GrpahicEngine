@@ -146,6 +146,7 @@ if(NVRHI_PUBLIC_INCLUDE_DIRS)
 endif()
 
 add_subdirectory ("GraphicEngineCore")
+add_subdirectory ("GraphicEngineCore/tests")
 add_subdirectory ("GraphicEngineBackends")
 add_subdirectory ("GraphicEngineEditor")
 
