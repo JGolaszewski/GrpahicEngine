@@ -13,7 +13,7 @@ TEST(ObjectHierarchyTests, RejectsDuplicateParentingAndCycles) {
   ASSERT_TRUE(child->AddChild(grandchild));
   EXPECT_FALSE(root.AddChild(child));
   EXPECT_FALSE(child->AddChild(nullptr));
-  EXPECT_FALSE(grandchild->SetParent(&root));
+  EXPECT_FALSE(child->SetParent(grandchild.get()));
   EXPECT_EQ(child->GetParent(), &root);
   EXPECT_EQ(grandchild->GetParent(), child.get());
 }
