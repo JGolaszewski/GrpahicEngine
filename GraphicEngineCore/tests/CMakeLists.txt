@@ -7,7 +7,7 @@ if(BUILD_TESTING)
         "${CMAKE_CURRENT_SOURCE_DIR}/unit/*.cpp"
     )
     add_executable(GraphicEngineUnitTests ${ENGINE_UNIT_TEST_SOURCES})
-    target_link_libraries(GraphicEngineUnitTests PRIVATE GraphicEngineCore GTest::gtest_main)
+    target_link_libraries(GraphicEngineUnitTests PRIVATE GraphicEngineCore EditorCommands GTest::gtest_main)
     target_compile_features(GraphicEngineUnitTests PRIVATE cxx_std_23)
     engine_enable_strict_msvc_checks(GraphicEngineUnitTests)
     if(NOT CMAKE_GENERATOR MATCHES "Ninja|Makefiles")
