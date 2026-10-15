@@ -273,7 +273,7 @@ void ForwardPass::Setup(::Engine::Renderer::RGBuilder& builder, FrameBlackboard&
     uint32_t colorIndex = 0;
     for (const nvrhi::FramebufferAttachment& attachment : framebuffer.colorAttachments) {
       importAttachment(attachment, false);
-      if (view->FinalRender && !view->OutputAttachments.empty()) {
+      if (view->RenderMode == Engine::ViewportBinding::Mode::Final && !view->OutputAttachments.empty()) {
         auto& output = view->OutputAttachments.back();
         output.ClearColor =
             colorIndex == 1 ? nvrhi::Color(1.0F, 1.0F, 1.0F, 1.0F) : nvrhi::Color(0.0F, 0.0F, 0.0F, 0.0F);
@@ -361,7 +361,7 @@ DebugPass::DebugPass(Engine::SceneRenderer* sceneRenderer) : m_SceneRenderer(sce
 
 void DebugPass::Setup(::Engine::Renderer::RGBuilder& builder, FrameBlackboard& blackboard) {
   for (::Engine::Renderer::RenderView* view : blackboard.GetSceneViews()) {
-    if (view == nullptr) {
+    if (view == nullptr || view->RenderMode != Engine::ViewportBinding::Mode::Editor) {
       continue;
     }
     for (const ::Engine::Renderer::RGViewportAttachment& output : view->OutputAttachments) {
@@ -378,7 +378,7 @@ auto DebugPass::Execute(nvrhi::ICommandList* cmd, const ::Engine::Renderer::Rend
   }
 
   for (const ::Engine::Renderer::RenderView* view : ctx.GetBlackboard().GetSceneViews()) {
-    if ((view != nullptr) && !view->FinalRender) {
+    if ((view != nullptr) && view->RenderMode == Engine::ViewportBinding::Mode::Editor) {
       m_SceneRenderer->RenderDebugGeometry(cmd, *view);
     }
   }

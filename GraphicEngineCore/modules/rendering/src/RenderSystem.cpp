@@ -192,8 +192,8 @@ void RenderSystem::SubmitViews(const std::vector<Engine::ViewportBinding>& views
     view->ViewType = ::Engine::Renderer::RenderView::Type::Main;
     view->Initialize(binding.TargetScene, binding.Camera, binding.TargetViewport);
     view->TargetScene = binding.TargetScene;
-    view->FinalRender = binding.RenderMode == Engine::ViewportBinding::Mode::Final;
-    if (!view->FinalRender) {
+    view->RenderMode = binding.RenderMode;
+    if (view->RenderMode == Engine::ViewportBinding::Mode::Editor) {
       view->DebugSettings = binding.DebugSettings;
     }
 
@@ -247,7 +247,7 @@ void RenderSystem::SubmitViews(const std::vector<Engine::ViewportBinding>& views
   m_RenderGraph->AddPass(std::make_unique<::Engine::Renderer::ShadowPass>());
   m_RenderGraph->AddPass(std::make_unique<::Engine::Renderer::ForwardPass>(m_SceneRenderer.get()));
   const bool hasEditorView = std::ranges::any_of(bb.GetSceneViews(), [](const ::Engine::Renderer::RenderView* view) {
-    return view != nullptr && !view->FinalRender;
+    return view != nullptr && view->RenderMode == Engine::ViewportBinding::Mode::Editor;
   });
   if (hasEditorView) {
     m_RenderGraph->AddPass(std::make_unique<::Engine::Renderer::DebugPass>(m_SceneRenderer.get()));
