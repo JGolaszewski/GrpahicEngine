@@ -123,7 +123,7 @@ if(CMAKE_GENERATOR MATCHES "Ninja|Makefiles")
         if(MSVC)
             list(APPEND ENGINE_CLANG_TIDY_WRAPPER_ARGS -UseClDriver)
         endif()
-        add_custom_target(lint ALL
+        add_custom_target(lint
             COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -File
                 "${ENGINE_CLANG_TIDY_WRAPPER}"
                 -CompilationDatabase "${CMAKE_BINARY_DIR}/compile_commands.json"
@@ -135,18 +135,13 @@ if(CMAKE_GENERATOR MATCHES "Ninja|Makefiles")
             VERBATIM
         )
     else()
-        add_custom_target(lint ALL
+        add_custom_target(lint
             COMMAND ${ENGINE_CLANG_TIDY_COMMAND} --quiet -p "${CMAKE_BINARY_DIR}" ${ENGINE_TIDY_SOURCES}
             WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
             COMMENT "Running clang-tidy on project C++ sources"
             VERBATIM
         )
     endif()
-    add_dependencies(EngineRuntime lint)
-    add_dependencies(EngineAssets lint)
-    add_dependencies(EngineScene lint)
-    add_dependencies(EngineRendering lint)
-    add_dependencies(GraphicEngineCore lint)
 endif()
 
 add_custom_target(tests
