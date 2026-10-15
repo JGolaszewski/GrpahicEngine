@@ -7,7 +7,7 @@ RECURSIVE              = YES
 EXCLUDE_PATTERNS       = */src/* */tests/*
 EXCLUDE                = vendor out build
 
-GENERATE_HTML          = YES
+GENERATE_HTML          = NO
 HTML_OUTPUT            = html
 GENERATE_XML           = YES
 XML_OUTPUT             = xml
