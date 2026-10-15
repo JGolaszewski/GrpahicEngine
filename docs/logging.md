@@ -34,6 +34,14 @@ ENGINE_LOG_ERROR_CODE("Backend", "backend.d3d11.present.failed",
 
 For structured fields, construct bounded entries with `Engine::Log::MakePayloadEntry` and pass them to `Engine::Log::SubmitStructured` with `std::source_location::current()`. The convenience `ENGINE_LOG_*_CODE` macros attach a stable error code and source location.
 
+## Build configuration example
+
+These options select compile-time logging cutoffs for the Core targets:
+
+```cmake
+--8<-- "LOGGING_CMAKE_SNIPPET.cmake"
+```
+
 ## Health and retention
 
 `Engine::Log::GetHealthSnapshot()` reports file-sink state/path, session ID, accepted and written events, queue depth/capacity/high-water mark, queue and callback-queue drops, callback failures, file failures, and breadcrumb overwrites. A file-open failure returns `false` from `Initialize` while leaving the in-memory logger active; the failure is also sent to the platform debug output and stderr. Check this result and surface the health snapshot instead of silently treating it as healthy.
