@@ -196,7 +196,8 @@ PS_OUTPUT main_ps(VS_OUTPUT input)
     const float3 emissiveSample = g_EmissiveMap.Sample(g_EmissiveSampler, emissiveUv).rgb;
     const float4 baseColorFactor = g_BaseColor * input.color;
     const float3 baseColor = baseColorFactor.rgb * baseColorSample.rgb;
-    if ((g_ModelFlags.w & 0xffu) == 1u && baseColorFactor.a * baseColorSample.a < g_AlphaParams.x)
+    const float baseAlpha = baseColorFactor.a * baseColorSample.a;
+    if ((g_ModelFlags.w & 0xffu) == 1u && baseAlpha < g_AlphaParams.x)
     {
         discard;
     }
@@ -204,11 +205,11 @@ PS_OUTPUT main_ps(VS_OUTPUT input)
     if (g_ObjectParams.y > 0.5f)
     {
         const float3 unlit = baseColor + g_EmissiveMetallic.rgb * emissiveSample;
-        output.FinalColor = float4(unlit, baseColorFactor.a * baseColorSample.a);
+        output.FinalColor = float4(unlit, baseAlpha);
         output.Depth = input.pos.z;
         output.WorldNormal = float4(BrdfNormalizeOr(input.normalWS, float3(0.0f, 0.0f, 1.0f)), 1.0f);
-        output.SpecularLighting = 0.0f;
-        output.DiffuseLighting = float4(unlit, 1.0f);
+        output.SpecularLighting = float4(0.0f, 0.0f, 0.0f, baseAlpha);
+        output.DiffuseLighting = float4(unlit, baseAlpha);
         return output;
     }
 
@@ -356,10 +357,10 @@ PS_OUTPUT main_ps(VS_OUTPUT input)
 
     const float3 diffuseLighting = ambientDiffuse + diffuseAccum + emissive;
     const float3 specularLighting = ambientSpecular + specAccum;
-    output.FinalColor = float4(diffuseLighting + specularLighting, baseColorFactor.a * baseColorSample.a);
+    output.FinalColor = float4(diffuseLighting + specularLighting, baseAlpha);
     output.Depth = input.pos.z;
     output.WorldNormal = float4(N, 1.0f);
-    output.SpecularLighting = float4(specularLighting, 1.0f);
-    output.DiffuseLighting = float4(diffuseLighting, 1.0f);
+    output.SpecularLighting = float4(specularLighting, baseAlpha);
+    output.DiffuseLighting = float4(diffuseLighting, baseAlpha);
     return output;
 }

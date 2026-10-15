@@ -1,8 +1,10 @@
 #pragma once
 
 #include "runtime/include/CoreExport.h"
+#include "scene/include/components/EcsComponents.h"
 
 #include <array>
+#include <optional>
 
 namespace Engine::Renderer {
 
@@ -18,5 +20,13 @@ struct ENGINE_API CameraView {
   float NearPlane = 0.1F;
   float FarPlane = 1000.0F;
 };
+
+/// Resolves an authored scene camera and its world transform into renderer parameters.
+/// @param camera Scene-camera projection settings.
+/// @param transform Current world-space camera transform.
+/// @return Camera parameters, or no value when the transform cannot be decomposed.
+ENGINE_API auto ResolveSceneCameraView(const Engine::Ecs::Camera& camera,
+                                       const Engine::Ecs::WorldTransform& transform) noexcept
+    -> std::optional<CameraView>;
 
 } // namespace Engine::Renderer

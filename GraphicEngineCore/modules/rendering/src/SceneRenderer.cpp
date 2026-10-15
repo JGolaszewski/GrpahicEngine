@@ -620,6 +620,9 @@ auto Engine::SceneRenderer::ConfigureAndQueuePacket(::Engine::Renderer::RenderVi
           .setSrcBlendAlpha(nvrhi::BlendFactor::One)
           .setDestBlendAlpha(nvrhi::BlendFactor::InvSrcAlpha);
       key.BlendState.setRenderTarget(0, blendTarget);
+      // Keep the direct and diffuse lighting contributions composited with FinalColor.
+      key.BlendState.setRenderTarget(3, blendTarget);
+      key.BlendState.setRenderTarget(4, blendTarget);
     }
   }
   packet.Pipeline = packet.ShadowAlphaTest && (m_ShadowMaskPS == nullptr)

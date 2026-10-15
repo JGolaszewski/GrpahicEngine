@@ -4,7 +4,6 @@
 #include "rendering/include/RenderOutputExporter.h"
 #include "scene/include/components/EcsComponents.h"
 
-#include <DirectXMath.h>
 #include <algorithm>
 #include <cmath>
 #include <imgui.h>
@@ -39,28 +38,17 @@ auto RenderPanel::GetCameras() const -> std::vector<CameraChoice> {
               if (!visibility[index].IsVisible) {
                 continue;
               }
-              DirectX::XMVECTOR scale{};
-              DirectX::XMVECTOR rotation{};
-              DirectX::XMVECTOR position{};
-              const DirectX::XMMATRIX matrix = DirectX::XMLoadFloat4x4(&transforms[index].Matrix);
-              if (!DirectX::XMMatrixDecompose(&scale, &rotation, &position, matrix)) {
+              const auto cameraView =
+                  Engine::Renderer::ResolveSceneCameraView(cameraSettings[index], transforms[index]);
+              if (!cameraView) {
                 continue;
               }
-              DirectX::XMFLOAT4 quaternion{};
-              DirectX::XMFLOAT3 translation{};
-              DirectX::XMStoreFloat4(&quaternion, rotation);
-              DirectX::XMStoreFloat3(&translation, position);
-              const Engine::Ecs::Camera& camera = cameraSettings[index];
               CameraChoice choice;
               choice.Entity = entities[index];
               choice.Label = names[index].Value + " (" + std::to_string(choice.Entity.Index) + ")";
-              choice.View.Position = {translation.x, translation.y, translation.z};
-              choice.View.Rotation = {quaternion.x, quaternion.y, quaternion.z, quaternion.w};
-              choice.View.FieldOfViewDegrees = camera.FieldOfViewDegrees;
-              choice.View.NearPlane = camera.NearPlane;
-              choice.View.FarPlane = camera.FarPlane;
-              choice.Width = camera.OutputWidth;
-              choice.Height = camera.OutputHeight;
+              choice.View = *cameraView;
+              choice.Width = cameraSettings[index].OutputWidth;
+              choice.Height = cameraSettings[index].OutputHeight;
               cameras.push_back(std::move(choice));
             }
           });

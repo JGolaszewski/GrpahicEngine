@@ -276,25 +276,33 @@ void Application::RegisterDefaultView() {
     }
 
     std::optional<EntityHandle> cameraEntity;
-    scene->World().ForEachChunkReadOnly<Ecs::Camera, Ecs::GlobalVisibility>(
-        [&cameraEntity](std::span<const EntityHandle> entities, std::span<const Ecs::Camera> cameras,
-                        std::span<const Ecs::GlobalVisibility> visibility) -> void {
-          if (cameraEntity) {
+    std::optional<Renderer::CameraView> cameraView;
+    scene->World().ForEachChunkReadOnly<Ecs::Camera, Ecs::WorldTransform, Ecs::GlobalVisibility>(
+        [&cameraEntity, &cameraView](std::span<const EntityHandle> entities, std::span<const Ecs::Camera> cameras,
+                                     std::span<const Ecs::WorldTransform> transforms,
+                                     std::span<const Ecs::GlobalVisibility> visibility) -> void {
+          if (cameraView) {
             return;
           }
           for (size_t row = 0; row < entities.size(); ++row) {
             if (cameras[row].Active && visibility[row].IsVisible) {
+              cameraView = Renderer::ResolveSceneCameraView(cameras[row], transforms[row]);
+              if (!cameraView) {
+                continue;
+              }
               cameraEntity = entities[row];
               return;
             }
           }
         });
-    if (!cameraEntity) {
+    if (!cameraEntity || !cameraView) {
       continue;
     }
 
-    RegisterView(
-        {.CameraEntity = *cameraEntity, .TargetViewport = m_DefaultViewport.get(), .TargetScene = scene.get()});
+    RegisterView({.Camera = *cameraView,
+                  .CameraEntity = *cameraEntity,
+                  .TargetViewport = m_DefaultViewport.get(),
+                  .TargetScene = scene.get()});
     return;
   }
 }

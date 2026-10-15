@@ -12,6 +12,8 @@
 
 Lighting and geometric AOVs are captured before the final-color hook. The final-color plane reflects the hook's changes. Failed renders return an error instead of partial or placeholder output.
 
+Transparent materials are composited source-over in `FinalColor`, `SpecularLighting`, and `DiffuseLighting` using the same material opacity, so the two lighting planes sum to the un-postprocessed final RGB. `Depth` and `WorldNormal` identify the nearest visible contributing surface; these geometric values are not blended.
+
 ## PNG
 
 `RenderOutputExporter::WritePng` writes the `final_color` plane as 8-bit RGBA PNG. It applies a fixed Reinhard mapping `x / (1 + x)` to each finite RGB sample, then the sRGB transfer function and 8-bit quantization. Negative RGB values map to zero. Alpha is clamped to `[0, 1]` and quantized without a transfer function. PNG therefore stores a display-oriented result; it does not preserve the source float values.

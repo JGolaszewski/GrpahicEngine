@@ -155,8 +155,8 @@ PS_OUTPUT main_ps(VS_OUTPUT input)
         output.FinalColor = float4(unlit, baseColor.a);
         output.Depth = input.pos.z;
         output.WorldNormal = float4(BrdfNormalizeOr(input.normalWS, float3(0.0f, 0.0f, 1.0f)), 1.0f);
-        output.SpecularLighting = 0.0f;
-        output.DiffuseLighting = float4(unlit, 1.0f);
+        output.SpecularLighting = float4(0.0f, 0.0f, 0.0f, baseColor.a);
+        output.DiffuseLighting = float4(unlit, baseColor.a);
         return output;
     }
 
@@ -295,7 +295,7 @@ PS_OUTPUT main_ps(VS_OUTPUT input)
     output.FinalColor = float4(diffuseLighting + specularLighting, baseColor.a);
     output.Depth = input.pos.z;
     output.WorldNormal = float4(N, 1.0f);
-    output.SpecularLighting = float4(specularLighting, 1.0f);
-    output.DiffuseLighting = float4(diffuseLighting, 1.0f);
+    output.SpecularLighting = float4(specularLighting, baseColor.a);
+    output.DiffuseLighting = float4(diffuseLighting, baseColor.a);
     return output;
 }
