@@ -57,6 +57,7 @@ auto QuaternionToPitchYawRoll(const std::array<float, 4>& quaternion) -> std::ar
 
 void Editor::OnInit() {
   m_EditorConsole.AttachToLogger();
+  m_RenderOutputExportService = std::make_unique<Engine::RenderOutputExportService>();
   if (!m_UiIntegration.Initialize(GetWindow(), GetRenderer())) {
     ENGINE_LOG_ERROR("Core", "Editor UI initialization failed");
   }
@@ -169,7 +170,33 @@ void Editor::OnInit() {
         return m_UiIntegration.SetCameraPreview(width, height, pixels);
       },
       [this]() -> void* { return m_UiIntegration.GetCameraPreviewTextureId(); },
-      [this]() -> void { m_UiIntegration.ClearCameraPreview(); });
+      [this]() -> void { m_UiIntegration.ClearCameraPreview(); },
+      [](bool exr, const std::filesystem::path& initialPath) {
+        return EditorPlatform::ChooseRenderOutputFile(exr, initialPath);
+      },
+      [this](Engine::EntityHandle entity, bool exr, std::vector<Engine::RenderAov> selectedAovs,
+             std::filesystem::path destination) -> Engine::Result<Engine::RenderOutputExportService::RequestId> {
+        Engine::RenderSystem* renderer = GetRenderSystem();
+        if (!m_ActiveScene || renderer == nullptr || m_RenderOutputExportService == nullptr) {
+          return std::unexpected(Engine::MakeError("No active scene or render system is available"));
+        }
+        const auto request = ResolveCameraPreviewRequest(m_ActiveScene->World(), entity);
+        if (!request) {
+          return std::unexpected(request.error());
+        }
+        if (exr) {
+          return m_RenderOutputExportService->StartMultilayerExr(*renderer, *m_ActiveScene, request->View,
+                                                                 request->Width, request->Height,
+                                                                 std::move(selectedAovs), std::move(destination));
+        }
+        return m_RenderOutputExportService->StartPng(*renderer, *m_ActiveScene, request->View, request->Width,
+                                                     request->Height, std::move(destination));
+      },
+      [this](
+          Engine::RenderOutputExportService::RequestId requestId) -> std::optional<Engine::RenderOutputExportStatus> {
+        return m_RenderOutputExportService != nullptr ? m_RenderOutputExportService->GetStatus(requestId)
+                                                      : std::nullopt;
+      });
   m_CameraPreviewPanel = cameraPreviewPanel.get();
   m_Panels.push_back(std::move(cameraPreviewPanel));
 
@@ -197,6 +224,9 @@ void Editor::OnSceneReplaced(const std::shared_ptr<Engine::Scene>& scene) {
 }
 
 void Editor::OnUpdate(float deltaTime) {
+  if (m_RenderOutputExportService != nullptr) {
+    m_RenderOutputExportService->Update();
+  }
   if (!m_ActiveScene) {
     return;
   }
@@ -383,6 +413,10 @@ void Editor::OnBeginUIFrame() { m_UiIntegration.BeginFrame(); }
 void Editor::OnEndUIFrame() { m_UiIntegration.EndFrame(); }
 
 void Editor::OnShutdownUI() {
+  if (m_RenderOutputExportService != nullptr) {
+    m_RenderOutputExportService->Shutdown();
+    m_RenderOutputExportService.reset();
+  }
   DestroyCameraPreview();
   if (m_CameraPreviewPanel != nullptr) {
     m_CameraPreviewPanel->Close();

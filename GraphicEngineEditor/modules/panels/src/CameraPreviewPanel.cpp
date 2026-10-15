@@ -37,9 +37,12 @@ auto ConvertFinalColorToRgba8(const Engine::RenderOutput& output) -> std::vector
 } // namespace
 
 CameraPreviewPanel::CameraPreviewPanel(RenderFunction render, PreviewUploadFunction uploadPreview,
-                                       TextureFunction getTexture, ClearPreviewFunction clearPreview)
+                                       TextureFunction getTexture, ClearPreviewFunction clearPreview,
+                                       ChooseExportPathFunction chooseExportPath, StartExportFunction startExport,
+                                       ExportStatusFunction getExportStatus)
     : m_Render(std::move(render)), m_UploadPreview(std::move(uploadPreview)), m_GetTexture(std::move(getTexture)),
-      m_ClearPreview(std::move(clearPreview)) {}
+      m_ClearPreview(std::move(clearPreview)), m_ChooseExportPath(std::move(chooseExportPath)),
+      m_StartExport(std::move(startExport)), m_GetExportStatus(std::move(getExportStatus)) {}
 
 void CameraPreviewPanel::OnEvent(Engine::Events::Event& event) {
   Engine::Events::EventDispatcher dispatcher(event);
@@ -108,10 +111,77 @@ bool CameraPreviewPanel::RenderSelectedCamera() {
   return true;
 }
 
+void CameraPreviewPanel::StartExport(bool exr) {
+  m_ExportRequest.reset();
+  const std::filesystem::path defaultPath =
+      std::filesystem::current_path() / (exr ? "camera-preview.exr" : "camera-preview.png");
+  if (!m_ChooseExportPath || !m_StartExport) {
+    m_ExportMessage = "Camera export is unavailable.";
+    return;
+  }
+  std::vector<Engine::RenderAov> selectedAovs;
+  constexpr std::array<Engine::RenderAov, 5> aovs = {
+      Engine::RenderAov::FinalColor, Engine::RenderAov::Depth, Engine::RenderAov::WorldNormal,
+      Engine::RenderAov::SpecularLighting, Engine::RenderAov::DiffuseLighting};
+  if (exr) {
+    for (size_t index = 0; index < aovs.size(); ++index) {
+      if (m_SelectedAovs[index]) {
+        selectedAovs.push_back(aovs[index]);
+      }
+    }
+    if (selectedAovs.empty()) {
+      m_ExportMessage = "Select at least one AOV before saving EXR.";
+      return;
+    }
+  }
+
+  auto path = m_ChooseExportPath(exr, defaultPath);
+  if (!path) {
+    m_ExportMessage = exr ? "EXR export cancelled." : "PNG export cancelled.";
+    return;
+  }
+
+  auto request = m_StartExport(m_Camera, exr, std::move(selectedAovs), std::move(*path));
+  if (!request) {
+    m_ExportRequest.reset();
+    m_ExportMessage = std::string(exr ? "EXR" : "PNG") + " export failed to start: " + request.error().Message;
+    return;
+  }
+  m_ExportRequest = *request;
+  m_ExportFormat = exr ? "EXR" : "PNG";
+  m_ExportMessage = m_ExportFormat + " export started; rendering camera...";
+}
+
+void CameraPreviewPanel::UpdateExportStatus() {
+  if (!m_ExportRequest || !m_GetExportStatus) {
+    return;
+  }
+  const auto status = m_GetExportStatus(*m_ExportRequest);
+  if (!status) {
+    m_ExportMessage = "Export status is unavailable.";
+    m_ExportRequest.reset();
+    return;
+  }
+  switch (status->Phase) {
+  case Engine::RenderOutputExportPhase::WaitingForReadback:
+    m_ExportMessage = m_ExportFormat + " export: waiting for camera render and GPU readback...";
+    break;
+  case Engine::RenderOutputExportPhase::Writing:
+    m_ExportMessage = m_ExportFormat + " export: writing image file...";
+    break;
+  case Engine::RenderOutputExportPhase::Completed:
+  case Engine::RenderOutputExportPhase::Failed:
+    m_ExportMessage = status->Message;
+    m_ExportRequest.reset();
+    break;
+  }
+}
+
 void CameraPreviewPanel::Draw() {
   if (!m_Open) {
     return;
   }
+  UpdateExportStatus();
   if (m_RefreshRequested) {
     m_RefreshRequested = false;
     (void)RenderSelectedCamera();
@@ -141,6 +211,49 @@ void CameraPreviewPanel::Draw() {
     ImGui::SameLine();
     ImGui::Text("%u x %u | %.0f%%", m_ImageWidth, m_ImageHeight, m_Zoom * 100.0F);
     ImGui::TextWrapped("%s", m_Status.c_str());
+    ImGui::Separator();
+
+    const bool exportBusy =
+        m_ExportRequest.has_value() && m_GetExportStatus && ([this] {
+          const auto current = m_GetExportStatus(*m_ExportRequest);
+          return current && (current->Phase == Engine::RenderOutputExportPhase::WaitingForReadback ||
+                             current->Phase == Engine::RenderOutputExportPhase::Writing);
+        })();
+    if (exportBusy) {
+      ImGui::BeginDisabled();
+    }
+    if (ImGui::Button("Save PNG...")) {
+      StartExport(false);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Save EXR...")) {
+      StartExport(true);
+    }
+    if (exportBusy) {
+      ImGui::EndDisabled();
+    }
+    ImGui::SeparatorText("EXR AOVs");
+    constexpr std::array<Engine::RenderAov, 5> aovs = {
+        Engine::RenderAov::FinalColor, Engine::RenderAov::Depth, Engine::RenderAov::WorldNormal,
+        Engine::RenderAov::SpecularLighting, Engine::RenderAov::DiffuseLighting};
+    for (size_t index = 0; index < aovs.size(); ++index) {
+      ImGui::Checkbox(Engine::RenderOutput::GetDescriptor(aovs[index]).Name, &m_SelectedAovs[index]);
+      if (index == 1U) {
+        ImGui::NewLine();
+      } else if (index + 1U < aovs.size()) {
+        ImGui::SameLine();
+      }
+    }
+    if (!m_ExportMessage.empty()) {
+      ImGui::TextWrapped("%s", m_ExportMessage.c_str());
+    }
+    if (m_ExportRequest && m_GetExportStatus) {
+      const auto current = m_GetExportStatus(*m_ExportRequest);
+      if (current && (current->Phase == Engine::RenderOutputExportPhase::WaitingForReadback ||
+                      current->Phase == Engine::RenderOutputExportPhase::Writing)) {
+        ImGui::ProgressBar(current->Progress, ImVec2(-1.0F, 0.0F));
+      }
+    }
     ImGui::Separator();
 
     const ImVec2 available = ImGui::GetContentRegionAvail();

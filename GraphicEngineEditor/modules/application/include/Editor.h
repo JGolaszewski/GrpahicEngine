@@ -4,6 +4,7 @@
 #include "panels/include/EditorConsole.h"
 #include "panels/include/EditorPanel.h"
 #include "platform/include/EditorUiIntegration.h"
+#include "rendering/include/RenderOutputExportService.h"
 #include "rendering/include/renderer/CameraView.h"
 #include "runtime/include/Application.h"
 #include "scene/include/Scene.h"
@@ -64,6 +65,7 @@ private:
   std::vector<EditorEventRouter::Connection> m_PanelConnections;
   EditorUiIntegration m_UiIntegration;
   EditorConsole m_EditorConsole;
+  std::unique_ptr<Engine::RenderOutputExportService> m_RenderOutputExportService;
   Engine::EntityHandle m_SelectedEntity = Engine::InvalidEntityHandle;
   Engine::EntityHandle m_CameraPreviewEntity = Engine::InvalidEntityHandle;
   Engine::Renderer::CameraView m_CameraPreviewCamera;
