@@ -6,6 +6,14 @@ returns a CPU-owned `RenderOutput`. Final rendering does not include editor
 gizmos, camera frusta, or other debug geometry. Editor viewport rendering keeps
 its viewport dimensions and debug overlays.
 
+Interactive frame submission accepts multiple `ViewportBinding` values. Each
+view keeps its own camera and framebuffer dimensions. `Mode::Editor` draws
+editor debug geometry, `Mode::Preview` renders a single-color camera preview
+without editor debug geometry, and `Mode::Final` uses the final-render AOV
+attachments. Invalid bindings, including targets with no framebuffer or zero
+dimensions, are skipped. Preview resolution is controlled by its target size;
+the renderer derives the camera aspect ratio from those target dimensions.
+
 ## Output contract
 
 The output contains five Float32 planes in this canonical order. Pixel rows are
