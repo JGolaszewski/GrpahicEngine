@@ -35,7 +35,7 @@ namespace
 ::Engine::Renderer::MaterialWorkflow ParseMaterialWorkflow(const std::string &value)
 {
     return value == "specularGlossiness" ? ::Engine::Renderer::MaterialWorkflow::SpecularGlossiness
-                                          : ::Engine::Renderer::MaterialWorkflow::MetallicRoughness;
+                                         : ::Engine::Renderer::MaterialWorkflow::MetallicRoughness;
 }
 
 const char *BrdfModelName(::Engine::Renderer::BrdfModel value)
@@ -90,11 +90,12 @@ SceneMaterialDocument ToMaterialDocument(const ::Engine::Renderer::MaterialPrope
     document.workflow = properties.Workflow == ::Engine::Renderer::MaterialWorkflow::SpecularGlossiness
                             ? "specularGlossiness"
                             : "metallicRoughness";
-    document.specularMode =
-        properties.SpecularMode == ::Engine::Renderer::DielectricSpecularMode::ExplicitF0 ? "explicitF0" : "ior";
+    document.specularMode = properties.SpecularMode == ::Engine::Renderer::DielectricSpecularMode::ExplicitF0
+                                ? "explicitF0"
+                                : "ior";
     document.alphaMode = properties.AlphaMode == ::Engine::Renderer::MaterialAlphaMode::Mask    ? "mask"
                          : properties.AlphaMode == ::Engine::Renderer::MaterialAlphaMode::Blend ? "blend"
-                                                                                      : "opaque";
+                                                                                                : "opaque";
     document.alphaCutoff = properties.AlphaCutoff;
     document.doubleSided = properties.DoubleSided;
     return document;
@@ -157,9 +158,9 @@ bool Application::InitializeCore()
 {
 #if ENGINE_ENABLE_LOGGING
     const bool loggerWasInitialized = Log::IsInitialized();
-    const bool loggerReady = loggerWasInitialized ?
-                                 Log::GetHealthSnapshot().fileStatus != Log::FileSinkStatus::Failed :
-                                 Log::Initialize();
+    const bool loggerReady = loggerWasInitialized
+                                 ? Log::GetHealthSnapshot().fileStatus != Log::FileSinkStatus::Failed
+                                 : Log::Initialize();
     if (!loggerReady && !loggerWasInitialized)
     {
         const Log::HealthSnapshot health = Log::GetHealthSnapshot();
@@ -272,16 +273,16 @@ void Application::Run(std::unique_ptr<IWindow> window, std::unique_ptr<IRenderBa
         OnUpdate(gameplayDeltaTime);
         if (!IsSimulationPaused())
             UpdateScenes(gameplayDeltaTime);
-        frameTimingStats.UpdateTimeMs = std::chrono::duration<float, std::milli>(
-            std::chrono::steady_clock::now() - phaseStart).count();
+        frameTimingStats.UpdateTimeMs =
+            std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - phaseStart).count();
 
         ClearViews();
 
         phaseStart = std::chrono::steady_clock::now();
         OnSetupViews();
         RegisterDefaultView();
-        frameTimingStats.ViewSetupTimeMs = std::chrono::duration<float, std::milli>(
-            std::chrono::steady_clock::now() - phaseStart).count();
+        frameTimingStats.ViewSetupTimeMs =
+            std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - phaseStart).count();
 
         phaseStart = std::chrono::steady_clock::now();
         m_RenderSystem->BeginFrame();
@@ -291,20 +292,20 @@ void Application::Run(std::unique_ptr<IWindow> window, std::unique_ptr<IRenderBa
         OnRender();
 
         m_RenderSystem->EndFrame();
-        frameTimingStats.RenderTimeMs = std::chrono::duration<float, std::milli>(
-            std::chrono::steady_clock::now() - phaseStart).count();
+        frameTimingStats.RenderTimeMs =
+            std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - phaseStart).count();
 
         phaseStart = std::chrono::steady_clock::now();
         OnBeginUIFrame();
         OnUIRender();
         OnEndUIFrame();
-        frameTimingStats.UiTimeMs = std::chrono::duration<float, std::milli>(
-            std::chrono::steady_clock::now() - phaseStart).count();
+        frameTimingStats.UiTimeMs =
+            std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - phaseStart).count();
 
         phaseStart = std::chrono::steady_clock::now();
         m_RenderBackend->Present();
-        frameTimingStats.PresentTimeMs = std::chrono::duration<float, std::milli>(
-            std::chrono::steady_clock::now() - phaseStart).count();
+        frameTimingStats.PresentTimeMs =
+            std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - phaseStart).count();
 
         frameTimingStats.CpuFrameTimeMs =
             std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - frameStart).count();
@@ -312,7 +313,8 @@ void Application::Run(std::unique_ptr<IWindow> window, std::unique_ptr<IRenderBa
         {
             if (const SceneRenderer *sceneRenderer = m_RenderSystem->GetSceneRenderer())
             {
-                const Scene::Engine::Renderer::SubmissionStats &submission = sceneRenderer->GetSubmissionStats();
+                const SceneRenderer::SubmissionStats &submission =
+                    sceneRenderer->GetSubmissionStats();
                 frameTimingStats.ObjectsSubmitted = submission.ObjectsSubmitted;
                 frameTimingStats.ObjectsCulled = submission.ObjectsCulled;
                 frameTimingStats.PacketsBuilt = submission.PacketsBuilt;
@@ -325,7 +327,8 @@ void Application::Run(std::unique_ptr<IWindow> window, std::unique_ptr<IRenderBa
                 frameTimingStats.CullingTimeMs = static_cast<float>(submission.CullingTimeMs);
                 frameTimingStats.PacketBuildTimeMs = static_cast<float>(submission.PacketBuildTimeMs);
             }
-            const ::Engine::Renderer::FrameDiagnostics &renderDiagnostics = m_RenderSystem->GetFrameDiagnostics();
+            const ::Engine::Renderer::FrameDiagnostics &renderDiagnostics =
+                m_RenderSystem->GetFrameDiagnostics();
             frameTimingStats.ViewsSubmitted = m_RenderSystem->GetSubmittedViewCount();
             frameTimingStats.DrawCalls = renderDiagnostics.DrawCalls;
             frameTimingStats.BufferAllocations = renderDiagnostics.BufferAllocations;
@@ -344,8 +347,9 @@ void Application::Run(std::unique_ptr<IWindow> window, std::unique_ptr<IRenderBa
             const auto limiterStart = std::chrono::steady_clock::now();
             std::this_thread::sleep_until(
                 frameStart + std::chrono::duration_cast<std::chrono::steady_clock::duration>(frameDuration));
-            frameTimingStats.LimiterWaitMs = std::chrono::duration<float, std::milli>(
-                std::chrono::steady_clock::now() - limiterStart).count();
+            frameTimingStats.LimiterWaitMs =
+                std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - limiterStart)
+                    .count();
         }
         else
         {
@@ -353,12 +357,12 @@ void Application::Run(std::unique_ptr<IWindow> window, std::unique_ptr<IRenderBa
         }
         frameTimingStats.FrameTimeMs = frameTimingStats.CpuFrameTimeMs + frameTimingStats.LimiterWaitMs;
         m_FrameTimingStats = frameTimingStats;
-        (*m_FrameMetricsHistory)[(frameTimingStats.FrameCount - 1) % FrameMetricsHistoryCapacity] =
-            {frameTimingStats.FrameCount - 1,
-             static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
-                                       std::chrono::steady_clock::now().time_since_epoch())
-                                       .count()),
-             frameTimingStats};
+        (*m_FrameMetricsHistory)[(frameTimingStats.FrameCount - 1) % FrameMetricsHistoryCapacity] = {
+            frameTimingStats.FrameCount - 1,
+            static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                      std::chrono::steady_clock::now().time_since_epoch())
+                                      .count()),
+            frameTimingStats};
         m_FrameMetricsCount = (std::min)(m_FrameMetricsCount + 1, FrameMetricsHistoryCapacity);
     }
     OnShutdownUI();
@@ -430,8 +434,8 @@ bool Application::LoadScene(const std::filesystem::path &path, std::string &erro
     {
         error = std::move(loaded.error);
         warnings.clear();
-        ENGINE_LOG_ERROR_CODE("Asset", "asset.scene.load_failed",
-                              "Scene load failed | path: {} | error: {}", path.generic_string(), error);
+        ENGINE_LOG_ERROR_CODE("Asset", "asset.scene.load_failed", "Scene load failed | path: {} | error: {}",
+                              path.generic_string(), error);
         return false;
     }
     warnings = std::move(loaded.warnings);
@@ -442,8 +446,8 @@ bool Application::LoadScene(const std::filesystem::path &path, std::string &erro
                         loaded.document.cameras.size());
     else
         ENGINE_LOG_ERROR_CODE("Asset", "asset.scene.instantiate_failed",
-                              "Scene instantiation failed | path: {} | error: {}",
-                         path.generic_string(), error);
+                              "Scene instantiation failed | path: {} | error: {}", path.generic_string(),
+                              error);
     return loadedSuccessfully;
 }
 
@@ -476,7 +480,8 @@ bool Application::LoadSceneDocument(const SceneDocument &document, std::string &
             }
         }
         error = std::move(message);
-        ENGINE_LOG_ERROR("Core", "Scene document rejected | entities: {} | lights: {} | cameras: {} | error: {}",
+        ENGINE_LOG_ERROR("Core",
+                         "Scene document rejected | entities: {} | lights: {} | cameras: {} | error: {}",
                          document.entities.size(), document.lights.size(), document.cameras.size(), error);
         return false;
     };
@@ -530,36 +535,37 @@ bool Application::LoadSceneDocument(const SceneDocument &document, std::string &
                     *source.materialOverrides[static_cast<size_t>(submesh.MaterialSlot)];
                 auto baseColor = submesh.material->GetBaseColorTexture();
                 auto normal = submesh.material->GetNormalTexture();
-                const auto resolveOverride = [&](const std::optional<std::string> &textureGuid, bool srgb,
-                                                 std::shared_ptr<::Engine::Renderer::TextureResource> &destination) {
-                    if (!textureGuid)
-                        return;
-                    std::string textureError;
-                    if (!m_AssetManager->LoadTexture(*textureGuid, textureError))
-                    {
-                        warnings.push_back("entity '" + source.name + "' material slot " +
-                                           std::to_string(submesh.MaterialSlot) + " texture " + *textureGuid +
-                                           " is unavailable: " + textureError);
-                        return;
-                    }
-                    const auto image = m_AssetManager->GetTexture(*textureGuid);
-                    const auto generation = m_AssetManager->GetGeneration(*textureGuid);
-                    if (!image || !generation)
-                    {
-                        warnings.push_back("texture " + *textureGuid +
-                                           " has no decoded image data; using the material default");
-                        return;
-                    }
-                    auto uploaded = m_RenderSystem->GetOrCreateTexture(*textureGuid, *generation, *image,
-                                                                       srgb, textureError);
-                    if (!uploaded)
-                    {
-                        warnings.push_back("texture " + *textureGuid +
-                                           " could not be uploaded: " + textureError);
-                        return;
-                    }
-                    destination = std::move(uploaded);
-                };
+                const auto resolveOverride =
+                    [&](const std::optional<std::string> &textureGuid, bool srgb,
+                        std::shared_ptr<::Engine::Renderer::TextureResource> &destination) {
+                        if (!textureGuid)
+                            return;
+                        std::string textureError;
+                        if (!m_AssetManager->LoadTexture(*textureGuid, textureError))
+                        {
+                            warnings.push_back("entity '" + source.name + "' material slot " +
+                                               std::to_string(submesh.MaterialSlot) + " texture " +
+                                               *textureGuid + " is unavailable: " + textureError);
+                            return;
+                        }
+                        const auto image = m_AssetManager->GetTexture(*textureGuid);
+                        const auto generation = m_AssetManager->GetGeneration(*textureGuid);
+                        if (!image || !generation)
+                        {
+                            warnings.push_back("texture " + *textureGuid +
+                                               " has no decoded image data; using the material default");
+                            return;
+                        }
+                        auto uploaded = m_RenderSystem->GetOrCreateTexture(*textureGuid, *generation, *image,
+                                                                           srgb, textureError);
+                        if (!uploaded)
+                        {
+                            warnings.push_back("texture " + *textureGuid +
+                                               " could not be uploaded: " + textureError);
+                            return;
+                        }
+                        destination = std::move(uploaded);
+                    };
                 resolveOverride(materialDocument.baseColorTextureGuid, true, baseColor);
                 resolveOverride(materialDocument.normalTextureGuid, false, normal);
                 std::string bindingError;
@@ -599,28 +605,30 @@ bool Application::LoadSceneDocument(const SceneDocument &document, std::string &
             {
                 auto baseColor = entity->material->GetBaseColorTexture();
                 auto normal = entity->material->GetNormalTexture();
-                const auto resolveOverride = [&](const std::optional<std::string> &textureGuid, bool srgb,
-                                                 std::shared_ptr<::Engine::Renderer::TextureResource> &destination) {
-                    if (!textureGuid)
-                        return;
-                    std::string textureError;
-                    if (!m_AssetManager->LoadTexture(*textureGuid, textureError))
-                    {
-                        warnings.push_back("texture " + *textureGuid + " is unavailable: " + textureError);
-                        return;
-                    }
-                    const auto image = m_AssetManager->GetTexture(*textureGuid);
-                    const auto generation = m_AssetManager->GetGeneration(*textureGuid);
-                    if (!image || !generation)
-                        return;
-                    auto uploaded = m_RenderSystem->GetOrCreateTexture(*textureGuid, *generation, *image,
-                                                                       srgb, textureError);
-                    if (uploaded)
-                        destination = std::move(uploaded);
-                    else
-                        warnings.push_back("texture " + *textureGuid +
-                                           " could not be uploaded: " + textureError);
-                };
+                const auto resolveOverride =
+                    [&](const std::optional<std::string> &textureGuid, bool srgb,
+                        std::shared_ptr<::Engine::Renderer::TextureResource> &destination) {
+                        if (!textureGuid)
+                            return;
+                        std::string textureError;
+                        if (!m_AssetManager->LoadTexture(*textureGuid, textureError))
+                        {
+                            warnings.push_back("texture " + *textureGuid +
+                                               " is unavailable: " + textureError);
+                            return;
+                        }
+                        const auto image = m_AssetManager->GetTexture(*textureGuid);
+                        const auto generation = m_AssetManager->GetGeneration(*textureGuid);
+                        if (!image || !generation)
+                            return;
+                        auto uploaded = m_RenderSystem->GetOrCreateTexture(*textureGuid, *generation, *image,
+                                                                           srgb, textureError);
+                        if (uploaded)
+                            destination = std::move(uploaded);
+                        else
+                            warnings.push_back("texture " + *textureGuid +
+                                               " could not be uploaded: " + textureError);
+                    };
                 resolveOverride(source.material->baseColorTextureGuid, true, baseColor);
                 resolveOverride(source.material->normalTextureGuid, false, normal);
                 if (!m_RenderSystem->SetMaterialTextures(entity->material, baseColor, normal,
@@ -661,6 +669,17 @@ bool Application::LoadSceneDocument(const SceneDocument &document, std::string &
         }
     }
 
+    for (const auto &source : document.entities)
+    {
+        if (!source.parentId)
+            continue;
+        const auto child = stagedScene->FindEntity(source.id);
+        const auto parent = stagedScene->FindEntity(*source.parentId);
+        if (!child || !parent || !child->SetParent(parent.get()))
+            warnings.push_back("entity " + std::to_string(source.id) +
+                               " could not be attached to its saved parent and remains at the scene root");
+    }
+
     for (const auto &source : document.lights)
     {
         auto light = std::make_shared<::Engine::Renderer::SpotLight>(
@@ -681,8 +700,8 @@ bool Application::LoadSceneDocument(const SceneDocument &document, std::string &
 
     for (const auto &source : document.cameras)
     {
-        auto camera =
-            std::make_shared<::Engine::Renderer::Camera>(source.fovRadians, source.nearPlane, source.farPlane);
+        auto camera = std::make_shared<::Engine::Renderer::Camera>(source.fovRadians, source.nearPlane,
+                                                                   source.farPlane);
         camera->m_Transform.SetPosition(source.position[0], source.position[1], source.position[2]);
         camera->m_Transform.Rotation = {source.rotation[0], source.rotation[1], source.rotation[2],
                                         source.rotation[3]};
@@ -706,8 +725,8 @@ bool Application::SaveScene(const std::filesystem::path &path, const Scene &scen
     Log::ScopedOperation operation;
     if (m_AssetManager->SaveScene(path, CreateSceneDocument(scene), error))
         return true;
-    ENGINE_LOG_ERROR_CODE("Asset", "asset.scene.save_failed",
-                          "Scene save failed | path: {} | error: {}", path.generic_string(), error);
+    ENGINE_LOG_ERROR_CODE("Asset", "asset.scene.save_failed", "Scene save failed | path: {} | error: {}",
+                          path.generic_string(), error);
     return false;
 }
 
@@ -721,6 +740,8 @@ SceneDocument Application::CreateSceneDocument(const Scene &scene) const
             continue;
         SceneEntityDocument item;
         item.id = scene.GetEntityId(entity.get());
+        if (const auto *parentEntity = dynamic_cast<const ::Engine::Renderer::Entity *>(entity->GetParent()))
+            item.parentId = scene.GetEntityId(parentEntity);
         item.name = entity->Name;
         item.modelGuid = entity->ModelGuid;
         item.materialGuid = entity->MaterialGuid;

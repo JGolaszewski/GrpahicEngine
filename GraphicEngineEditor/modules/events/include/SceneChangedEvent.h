@@ -16,9 +16,9 @@ class SceneChangedEvent : public Engine::Events::Event
 {
   public:
     SceneChangedEvent(std::vector<Engine::EntityId> objectIds, std::vector<Engine::LightId> lightIds,
-                      std::vector<Engine::CameraId> cameraIds)
+                      std::vector<Engine::CameraId> cameraIds, std::shared_ptr<Engine::Scene> scene = {})
         : m_ObjectIds(std::move(objectIds)), m_LightIds(std::move(lightIds)),
-          m_CameraIds(std::move(cameraIds))
+          m_CameraIds(std::move(cameraIds)), m_Scene(std::move(scene))
     {
     }
 
@@ -44,9 +44,14 @@ class SceneChangedEvent : public Engine::Events::Event
     {
         return m_CameraIds;
     }
+    [[nodiscard]] const std::shared_ptr<Engine::Scene> &GetScene() const noexcept
+    {
+        return m_Scene;
+    }
 
   private:
     std::vector<Engine::EntityId> m_ObjectIds;
     std::vector<Engine::LightId> m_LightIds;
     std::vector<Engine::CameraId> m_CameraIds;
+    std::shared_ptr<Engine::Scene> m_Scene;
 };

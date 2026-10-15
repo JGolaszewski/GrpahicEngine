@@ -165,7 +165,7 @@ namespace {
 	}
 
 	void TestNormalTransformPreservesPerpendicularity() {
-		::Engine::Scene::Components::Transform transform;
+		::Engine::Components::Transform transform;
 		transform.SetScale(2.0f, 1.0f, 0.5f);
 		transform.SetRotation(0.3f, -0.7f, 0.2f);
 		const DirectX::XMVECTOR tangent = DirectX::XMVectorSet(1.0f, 0.0f, -1.0f, 0.0f);

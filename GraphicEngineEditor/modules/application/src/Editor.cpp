@@ -62,7 +62,7 @@ bool HasIgnoredExtensionWarning(const std::vector<std::string> &warnings)
 void Editor::OnInit()
 {
     m_EditorConsole.SetSimulationStateCallbacks([this] { return IsSimulationPaused(); },
-                                               [this](bool paused) { SetSimulationPaused(paused); });
+                                                [this](bool paused) { SetSimulationPaused(paused); });
     m_EditorConsole.SetDiagnosticContextProvider(
         [this] {
             using Json = nlohmann::json;
@@ -75,23 +75,24 @@ void Editor::OnInit()
                           "debug"
 #endif
                          },
-                         {"frame", {{"index", timing.FrameCount == 0 ? 0 : timing.FrameCount - 1},
-                                     {"frame_ms", timing.FrameTimeMs},
-                                     {"cpu_ms", timing.CpuFrameTimeMs},
-                                     {"update_ms", timing.UpdateTimeMs},
-                                     {"view_setup_ms", timing.ViewSetupTimeMs},
-                                     {"render_ms", timing.RenderTimeMs},
-                                     {"ui_ms", timing.UiTimeMs},
-                                     {"present_ms", timing.PresentTimeMs},
-                                     {"limiter_wait_ms", timing.LimiterWaitMs},
-                                     {"gpu_available", timing.GpuTimingAvailable},
-                                     {"gpu_ms", timing.GpuFrameTimeMs},
-                                     {"gpu_frame_index", timing.GpuTimingFrameIndex},
-                                     {"objects_submitted", timing.ObjectsSubmitted},
-                                     {"objects_culled", timing.ObjectsCulled},
-                                     {"packets_built", timing.PacketsBuilt},
-                                     {"draw_calls", timing.DrawCalls},
-                                     {"upload_bytes", timing.UploadBytes}}}};
+                         {"frame",
+                          {{"index", timing.FrameCount == 0 ? 0 : timing.FrameCount - 1},
+                           {"frame_ms", timing.FrameTimeMs},
+                           {"cpu_ms", timing.CpuFrameTimeMs},
+                           {"update_ms", timing.UpdateTimeMs},
+                           {"view_setup_ms", timing.ViewSetupTimeMs},
+                           {"render_ms", timing.RenderTimeMs},
+                           {"ui_ms", timing.UiTimeMs},
+                           {"present_ms", timing.PresentTimeMs},
+                           {"limiter_wait_ms", timing.LimiterWaitMs},
+                           {"gpu_available", timing.GpuTimingAvailable},
+                           {"gpu_ms", timing.GpuFrameTimeMs},
+                           {"gpu_frame_index", timing.GpuTimingFrameIndex},
+                           {"objects_submitted", timing.ObjectsSubmitted},
+                           {"objects_culled", timing.ObjectsCulled},
+                           {"packets_built", timing.PacketsBuilt},
+                           {"draw_calls", timing.DrawCalls},
+                           {"upload_bytes", timing.UploadBytes}}}};
             if (const Engine::IRenderBackend *backend = GetRenderer())
             {
                 const Engine::BackendDiagnostics diagnostics = backend->GetDiagnostics();
@@ -111,9 +112,7 @@ void Editor::OnInit()
             }
             return context.dump();
         },
-        [this] {
-            return GetFrameTimingStats().FrameCount;
-        });
+        [this] { return GetFrameTimingStats().FrameCount; });
     m_EditorConsole.AttachToLogger();
 
     if (!m_UiIntegration.Initialize(GetWindow(), GetRenderer()))
@@ -141,7 +140,8 @@ void Editor::OnInit()
         else if (!registryWarnings.empty())
         {
             m_FileError = JoinWarnings(registryWarnings);
-            ENGINE_LOG_WARN("Asset", "Editor asset registry contains warnings | warning_count: {} | details: {}",
+            ENGINE_LOG_WARN("Asset",
+                            "Editor asset registry contains warnings | warning_count: {} | details: {}",
                             registryWarnings.size(), m_FileError);
         }
     }
@@ -151,7 +151,8 @@ void Editor::OnInit()
     AddScene(m_ActiveScene);
 
     // --- Create and Bind Camera ---
-    auto mainCamera = std::make_shared<::Engine::Renderer::Camera>(m_CameraFov, m_CameraNearPlane, m_CameraFarPlane);
+    auto mainCamera =
+        std::make_shared<::Engine::Renderer::Camera>(m_CameraFov, m_CameraNearPlane, m_CameraFarPlane);
     mainCamera->m_Transform.SetPosition(0.0f, 0.0f, -5.0f);
 
     m_ActiveCameraId = m_ActiveScene->AddCamera(mainCamera);
@@ -184,8 +185,8 @@ void Editor::OnInit()
 
     for (int i = 0; i < 2; ++i)
     {
-        auto light = std::make_shared<::Engine::Renderer::SpotLight>(DirectX::XMFLOAT3(0.0f, -1.0f, 0.0f),
-                                                           DirectX::XMFLOAT3(1.0f, 0.96f, 0.9f), 8.5f);
+        auto light = std::make_shared<::Engine::Renderer::SpotLight>(
+            DirectX::XMFLOAT3(0.0f, -1.0f, 0.0f), DirectX::XMFLOAT3(1.0f, 0.96f, 0.9f), 8.5f);
         light->SetUsePosition(true);
         light->SetPosition(lightPositions[i]);
         light->LookAt(objectPositions[i]);
@@ -278,8 +279,10 @@ void Editor::CreateViewport(uint32_t width, uint32_t height)
 
     if (!GetRenderSystem())
     {
-        ENGINE_LOG_ERROR("Render", "Editor viewport creation failed | reason: render_system_unavailable | width: {} | height: {}",
-                         width, height);
+        ENGINE_LOG_ERROR(
+            "Render",
+            "Editor viewport creation failed | reason: render_system_unavailable | width: {} | height: {}",
+            width, height);
         return;
     }
 
@@ -639,6 +642,24 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event)
         return false;
     });
 
+    dispatcher.Dispatch<EntityReparentRequestedEvent>([this](const auto &request) {
+        if (!m_ActiveScene)
+            return false;
+        const auto entity = m_ActiveScene->FindEntity(request.GetEntityId());
+        const auto parent = request.GetParentId() == Engine::InvalidEntityId
+                                ? std::shared_ptr<::Engine::Renderer::Entity>{}
+                                : m_ActiveScene->FindEntity(request.GetParentId());
+        if (!entity || (request.GetParentId() != Engine::InvalidEntityId && !parent))
+            return false;
+        Engine::Object *parentObject =
+            parent ? static_cast<Engine::Object *>(parent.get()) : &m_ActiveScene->GetRoot();
+        if (!entity->SetParent(parentObject))
+            return false;
+        m_SceneDirty = true;
+        BroadcastSceneChanged();
+        return true;
+    });
+
     dispatcher.Dispatch<CameraSettingsChangedEvent>([this](const auto &e) {
         m_CameraFov = e.GetFov();
         m_CameraNearPlane = e.GetNearPlane();
@@ -846,7 +867,8 @@ void Editor::AddModelToScene(const std::string &guid, const DirectX::XMFLOAT3 &r
         m_FileError = JoinWarnings(warnings);
 }
 
-void Editor::OnEntityMembershipChanged(Engine::EntityId id, const std::shared_ptr<::Engine::Renderer::Entity> &entity,
+void Editor::OnEntityMembershipChanged(Engine::EntityId id,
+                                       const std::shared_ptr<::Engine::Renderer::Entity> &entity,
                                        bool present)
 {
     m_SceneDirty = true;
@@ -1048,7 +1070,8 @@ void Editor::ReassignModel(Engine::EntityId entityId, const std::string &guid)
         if (submesh.MaterialSlot >= 0 && submesh.material)
             oldSlots.try_emplace(submesh.MaterialSlot, submesh.material);
     }
-    std::shared_ptr<::Engine::Renderer::Material> primitiveMaterial = before->ModelGuid ? nullptr : before->material;
+    std::shared_ptr<::Engine::Renderer::Material> primitiveMaterial =
+        before->ModelGuid ? nullptr : before->material;
     for (size_t slot = 0; slot < overrides.size(); ++slot)
     {
         const auto found = oldSlots.find(static_cast<int32_t>(slot));
@@ -1376,7 +1399,7 @@ void Editor::BroadcastSceneChanged()
             cameraIds.push_back(m_ActiveScene->GetCameraIdAt(i));
         }
     }
-    SceneChangedEvent event(std::move(entityIds), std::move(lightIds), std::move(cameraIds));
+    SceneChangedEvent event(std::move(entityIds), std::move(lightIds), std::move(cameraIds), m_ActiveScene);
     BroadcastEvent(event);
 }
 
@@ -1482,7 +1505,8 @@ void Editor::RequestSceneAction(SceneFileActionRequestedEvent::Action action)
     if (action == SceneFileActionRequestedEvent::Action::NewScene)
     {
         auto scene = std::make_shared<Engine::Scene>();
-        auto camera = std::make_shared<::Engine::Renderer::Camera>(m_CameraFov, m_CameraNearPlane, m_CameraFarPlane);
+        auto camera =
+            std::make_shared<::Engine::Renderer::Camera>(m_CameraFov, m_CameraNearPlane, m_CameraFarPlane);
         camera->m_Transform.SetPosition(0.0f, 0.0f, -5.0f);
         scene->AddCamera(camera);
         if (m_ActiveScene)
@@ -1522,7 +1546,8 @@ void Editor::RequestSceneAction(SceneFileActionRequestedEvent::Action action)
         }
         EditorPlatform::RememberProjectRoot(GetAssetManager()->GetProjectRoot());
         auto scene = std::make_shared<Engine::Scene>();
-        auto camera = std::make_shared<::Engine::Renderer::Camera>(m_CameraFov, m_CameraNearPlane, m_CameraFarPlane);
+        auto camera =
+            std::make_shared<::Engine::Renderer::Camera>(m_CameraFov, m_CameraNearPlane, m_CameraFarPlane);
         camera->m_Transform.SetPosition(0.0f, 0.0f, -5.0f);
         scene->AddCamera(camera);
         if (m_ActiveScene)
@@ -1551,8 +1576,8 @@ void Editor::RequestSceneAction(SceneFileActionRequestedEvent::Action action)
     if (!LoadSceneDocument(loaded.document, error, loaded.warnings))
     {
         m_FileError = std::move(error);
-        ENGINE_LOG_ERROR("Core", "Editor scene activation failed | path: {} | error: {}", path->generic_string(),
-                         m_FileError);
+        ENGINE_LOG_ERROR("Core", "Editor scene activation failed | path: {} | error: {}",
+                         path->generic_string(), m_FileError);
         return;
     }
     m_SceneDocument.CommitPath(*path);
@@ -1560,13 +1585,14 @@ void Editor::RequestSceneAction(SceneFileActionRequestedEvent::Action action)
     if (!loaded.warnings.empty())
     {
         m_FileError = JoinWarnings(loaded.warnings);
-        ENGINE_LOG_WARN("Asset", "Editor scene loaded with warnings | path: {} | warning_count: {} | details: {}",
+        ENGINE_LOG_WARN("Asset",
+                        "Editor scene loaded with warnings | path: {} | warning_count: {} | details: {}",
                         path->generic_string(), loaded.warnings.size(), m_FileError);
     }
     else
         ENGINE_LOG_INFO("Core", "Editor scene activated | path: {} | entities: {} | lights: {} | cameras: {}",
-                        path->generic_string(), loaded.document.entities.size(), loaded.document.lights.size(),
-                        loaded.document.cameras.size());
+                        path->generic_string(), loaded.document.entities.size(),
+                        loaded.document.lights.size(), loaded.document.cameras.size());
 }
 
 bool Editor::SaveCurrentScene(bool choosePath)

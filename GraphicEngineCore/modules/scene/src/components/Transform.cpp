@@ -2,13 +2,13 @@
 
 #include <cmath>
 
-void ::Engine::Scene::Components::Transform::SetPosition(float x, float y, float z)
+void ::Engine::Components::Transform::SetPosition(float positionX, float positionY, float positionZ)
 {
-    Position = {x, y, z};
+    Position = {positionX, positionY, positionZ};
     MarkDirty();
 }
 
-void ::Engine::Scene::Components::Transform::SetRotation(float pitch, float yaw, float roll)
+void ::Engine::Components::Transform::SetRotation(float pitch, float yaw, float roll)
 {
     DirectX::XMVECTOR quat = DirectX::XMQuaternionRotationRollPitchYaw(pitch, yaw, roll);
     quat = DirectX::XMQuaternionNormalize(quat);
@@ -16,29 +16,29 @@ void ::Engine::Scene::Components::Transform::SetRotation(float pitch, float yaw,
     MarkDirty();
 }
 
-void ::Engine::Scene::Components::Transform::SetScale(float x, float y, float z)
+void ::Engine::Components::Transform::SetScale(float scaleX, float scaleY, float scaleZ)
 {
-    Scale = {x, y, z};
+    Scale = {scaleX, scaleY, scaleZ};
     MarkDirty();
 }
 
-void ::Engine::Scene::Components::Transform::Translate(float x, float y, float z)
+void ::Engine::Components::Transform::Translate(float offsetX, float offsetY, float offsetZ)
 {
-    Position.x += x;
-    Position.y += y;
-    Position.z += z;
+    Position.x += offsetX;
+    Position.y += offsetY;
+    Position.z += offsetZ;
     MarkDirty();
 }
 
-void ::Engine::Scene::Components::Transform::ScaleBy(float x, float y, float z)
+void ::Engine::Components::Transform::ScaleBy(float factorX, float factorY, float factorZ)
 {
-    Scale.x *= x;
-    Scale.y *= y;
-    Scale.z *= z;
+    Scale.x *= factorX;
+    Scale.y *= factorY;
+    Scale.z *= factorZ;
     MarkDirty();
 }
 
-void ::Engine::Scene::Components::Transform::Rotate(float pitch, float yaw, float roll)
+void ::Engine::Components::Transform::Rotate(float pitch, float yaw, float roll)
 {
     using namespace DirectX;
 
@@ -51,24 +51,26 @@ void ::Engine::Scene::Components::Transform::Rotate(float pitch, float yaw, floa
     MarkDirty();
 }
 
-void ::Engine::Scene::Components::Transform::LookAt(float targetX, float targetY, float targetZ)
+void ::Engine::Components::Transform::LookAt(float targetX, float targetY, float targetZ)
 {
     using namespace DirectX;
 
     XMVECTOR pos = XMLoadFloat3(&Position);
-    XMVECTOR target = XMVectorSet(targetX, targetY, targetZ, 0.0f);
+    XMVECTOR target = XMVectorSet(targetX, targetY, targetZ, 0.0F);
     XMVECTOR forward = XMVector3Normalize(XMVectorSubtract(target, pos));
 
     if (XMVector3Equal(forward, XMVectorZero()))
+    {
         return;
+    }
 
-    XMVECTOR worldUp = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
+    XMVECTOR worldUp = XMVectorSet(0.0F, 1.0F, 0.0F, 0.0F);
     XMVECTOR right = XMVector3Normalize(XMVector3Cross(worldUp, forward));
-    XMVECTOR up = XMVector3Cross(forward, right);
+    XMVECTOR correctedUp = XMVector3Cross(forward, right);
 
     XMMATRIX rotMat = XMMatrixIdentity();
     rotMat.r[0] = right;
-    rotMat.r[1] = up;
+    rotMat.r[1] = correctedUp;
     rotMat.r[2] = forward;
 
     XMVECTOR quat = XMQuaternionRotationMatrix(rotMat);
@@ -76,22 +78,31 @@ void ::Engine::Scene::Components::Transform::LookAt(float targetX, float targetY
     MarkDirty();
 }
 
-void ::Engine::Scene::Components::Transform::SetParent(Transform *parent)
+auto Engine::Components::Transform::SetParent(Transform *parent) -> bool
 {
     if (parent == this)
-        return;
+    {
+        return false;
+    }
 
     for (Transform *ancestor = parent; ancestor != nullptr; ancestor = ancestor->m_Parent)
     {
         if (ancestor == this)
-            return;
+        {
+            return false;
+        }
     }
 
+    if (parent == m_Parent)
+    {
+        return true;
+    }
     m_Parent = parent;
     MarkDirty();
+    return true;
 }
 
-DirectX::XMMATRIX ::Engine::Scene::Components::Transform::GetLocalMat() const
+auto Engine::Components::Transform::GetLocalMat() const -> DirectX::XMMATRIX
 {
     using namespace DirectX;
     const bool inputsChanged = Position.x != m_CachedPosition.x || Position.y != m_CachedPosition.y ||
@@ -111,25 +122,42 @@ DirectX::XMMATRIX ::Engine::Scene::Components::Transform::GetLocalMat() const
         m_CachedRotation = Rotation;
         m_CachedScale = Scale;
         m_LocalMatrixDirty = false;
+        m_WorldMatrixDirty = true;
     }
 
     return m_CachedLocalMatrix;
 }
 
-DirectX::XMMATRIX ::Engine::Scene::Components::Transform::GetWorldMat() const
+auto Engine::Components::Transform::GetWorldMat() const -> DirectX::XMMATRIX
 {
     const DirectX::XMMATRIX local = GetLocalMat();
-    return m_Parent ? local * m_Parent->GetWorldMat() : local;
+    const DirectX::XMMATRIX parentWorld =
+        m_Parent != nullptr ? m_Parent->GetWorldMat() : DirectX::XMMatrixIdentity();
+    const uint64_t parentRevision = m_Parent != nullptr ? m_Parent->m_WorldRevision : 0;
+    if (m_WorldMatrixDirty || parentRevision != m_CachedParentWorldRevision)
+    {
+        m_CachedWorldMatrix = m_Parent != nullptr ? local * parentWorld : local;
+        m_CachedParentWorldRevision = parentRevision;
+        m_WorldMatrixDirty = false;
+        ++m_WorldRevision;
+    }
+    return m_CachedWorldMatrix;
 }
 
-DirectX::XMMATRIX ::Engine::Scene::Components::Transform::GetNormalMat() const
+auto Engine::Components::Transform::GetWorldRevision() const -> uint64_t
+{
+    (void)GetWorldMat();
+    return m_WorldRevision;
+}
+
+auto Engine::Components::Transform::GetNormalMat() const -> DirectX::XMMATRIX
 {
     using namespace DirectX;
     const XMMATRIX world = GetWorldMat();
     XMVECTOR determinant;
     const XMMATRIX inverse = XMMatrixInverse(&determinant, world);
     const float determinantValue = XMVectorGetX(determinant);
-    if (!std::isfinite(determinantValue) || std::abs(determinantValue) < 1.0e-8f)
+    if (!std::isfinite(determinantValue) || std::abs(determinantValue) < 1.0e-8F)
     {
         return XMMatrixIdentity();
     }

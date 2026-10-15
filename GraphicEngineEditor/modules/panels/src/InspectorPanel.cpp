@@ -177,7 +177,7 @@ void InspectorPanel::DrawObjectInspector()
     DirectX::XMFLOAT3 currentPos = selectedEntity->transform.Position;
     float position[3] = {currentPos.x, currentPos.y, currentPos.z};
 
-    if (ImGui::DragFloat3("Position", position, 0.05f))
+    if (ImGui::DragFloat3("Local Position", position, 0.05f))
     {
         selectedEntity->transform.SetPosition(position[0], position[1], position[2]);
     }
@@ -200,7 +200,7 @@ void InspectorPanel::DrawObjectInspector()
 
     float scale[3] = {selectedEntity->transform.Scale.x, selectedEntity->transform.Scale.y,
                       selectedEntity->transform.Scale.z};
-    if (ImGui::DragFloat3("Scale", scale, 0.05f, 0.01f, 100.0f))
+    if (ImGui::DragFloat3("Local Scale", scale, 0.05f, 0.01f, 100.0f))
     {
         selectedEntity->transform.SetScale(scale[0], scale[1], scale[2]);
         sceneChanged = true;
@@ -215,6 +215,18 @@ void InspectorPanel::DrawObjectInspector()
         const float yawRad = DirectX::XMConvertToRadians(rotationDegrees[2]);
         selectedEntity->transform.SetRotation(pitchRad, yawRad, rollRad);
         sceneChanged = true;
+    }
+
+    if (ImGui::TreeNode("World Transform (read only)"))
+    {
+        DirectX::XMFLOAT4X4 world{};
+        DirectX::XMStoreFloat4x4(&world, selectedEntity->transform.GetWorldMat());
+        for (size_t row = 0; row < 4; ++row)
+        {
+            ImGui::Text("%.3f  %.3f  %.3f  %.3f", world.m[row][0], world.m[row][1], world.m[row][2],
+                        world.m[row][3]);
+        }
+        ImGui::TreePop();
     }
 
     sceneChanged |= ImGui::Checkbox("Wireframe", &selectedEntity->ForceWireframe);
@@ -294,7 +306,8 @@ void InspectorPanel::DrawObjectInspector()
 
     bool materialChanged = false;
     materialChanged |= ImGui::ColorEdit4(
-        properties.Workflow == ::Engine::Renderer::MaterialWorkflow::SpecularGlossiness ? "Diffuse factor" : "Base color",
+        properties.Workflow == ::Engine::Renderer::MaterialWorkflow::SpecularGlossiness ? "Diffuse factor"
+                                                                                        : "Base color",
         baseColor);
     trackMaterialWidget();
     materialChanged |= ImGui::ColorEdit3("Emission", emissive);

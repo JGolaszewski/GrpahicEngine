@@ -2,6 +2,7 @@
 
 #include "runtime/include/CoreExport.h"
 #include "scene/include/SceneIds.h"
+#include "scene/include/Object.h"
 
 #include <DirectXMath.h>
 #include <cstdint>
@@ -11,8 +12,8 @@
 #include <vector>
 
 #ifdef _MSC_VER
-#  pragma warning(push)
-#  pragma warning(disable : 4251) // These engine DLL types intentionally expose same-toolchain member types.
+#pragma warning(push)
+#pragma warning(disable : 4251) // These engine DLL types intentionally expose same-toolchain member types.
 #endif
 
 namespace Engine::Renderer
@@ -28,6 +29,14 @@ class ENGINE_API Scene
 {
   public:
     Scene() = default;
+    Object &GetRoot() noexcept
+    {
+        return m_Root;
+    }
+    const Object &GetRoot() const noexcept
+    {
+        return m_Root;
+    }
     float GetUnitsPerMeter() const noexcept
     {
         return m_UnitsPerMeter;
@@ -38,7 +47,8 @@ class ENGINE_API Scene
     }
 
     // Entities
-    EntityId AddEntity(std::shared_ptr<::Engine::Renderer::Entity> entity, EntityId persistentId = InvalidEntityId);
+    EntityId AddEntity(std::shared_ptr<::Engine::Renderer::Entity> entity,
+                       EntityId persistentId = InvalidEntityId);
     void RemoveEntity(::Engine::Renderer::Entity *entity);
     void RemoveEntity(EntityId id);
     bool ReplaceEntity(EntityId id, std::shared_ptr<::Engine::Renderer::Entity> entity);
@@ -58,7 +68,8 @@ class ENGINE_API Scene
                                             uint32_t maxAttempts = 32) const;
 
     // Lights
-    LightId AddLight(std::shared_ptr<::Engine::Renderer::SpotLight> light, LightId persistentId = InvalidLightId);
+    LightId AddLight(std::shared_ptr<::Engine::Renderer::SpotLight> light,
+                     LightId persistentId = InvalidLightId);
     void RemoveLight(::Engine::Renderer::SpotLight *light);
     void RemoveLight(LightId id);
     inline std::span<const std::shared_ptr<::Engine::Renderer::SpotLight>> GetLights() const
@@ -70,7 +81,8 @@ class ENGINE_API Scene
     std::shared_ptr<::Engine::Renderer::SpotLight> FindLight(LightId id) const;
 
     // Cameras
-    CameraId AddCamera(std::shared_ptr<::Engine::Renderer::Camera> camera, CameraId persistentId = InvalidCameraId);
+    CameraId AddCamera(std::shared_ptr<::Engine::Renderer::Camera> camera,
+                       CameraId persistentId = InvalidCameraId);
     void RemoveCamera(::Engine::Renderer::Camera *camera);
     void RemoveCamera(CameraId id);
     inline std::span<const std::shared_ptr<::Engine::Renderer::Camera>> GetCameras() const
@@ -86,6 +98,7 @@ class ENGINE_API Scene
     ::Engine::Renderer::Camera *GetCamera(uint32_t index) const;
 
   private:
+    Object m_Root;
     std::vector<std::shared_ptr<::Engine::Renderer::Entity>> m_Entities;
     std::vector<EntityId> m_EntityIds;
     std::unordered_map<EntityId, size_t> m_EntityIndices;
@@ -104,5 +117,5 @@ class ENGINE_API Scene
 } // namespace Engine
 
 #ifdef _MSC_VER
-#  pragma warning(pop)
+#pragma warning(pop)
 #endif

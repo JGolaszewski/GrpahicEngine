@@ -35,6 +35,7 @@ struct SceneMaterialDocument
 struct SceneEntityDocument
 {
     uint64_t id = 0;
+    std::optional<uint64_t> parentId;
     std::string name;
     std::optional<std::string> modelGuid;
     std::optional<std::string> materialGuid;

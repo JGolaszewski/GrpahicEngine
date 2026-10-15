@@ -40,6 +40,8 @@ EntityId Scene::AddEntity(std::shared_ptr<::Engine::Renderer::Entity> entity, En
             return InvalidEntityId;
         ++m_NextEntityId;
     }
+    if (entity->GetParent() != nullptr || !m_Root.AddChild(entity))
+        return InvalidEntityId;
     m_Entities.push_back(std::move(entity));
     m_EntityIds.push_back(id);
     m_EntityIndices.emplace(id, m_EntityIds.size() - 1);
@@ -48,13 +50,22 @@ EntityId Scene::AddEntity(std::shared_ptr<::Engine::Renderer::Entity> entity, En
 
 void Scene::RemoveEntity(::Engine::Renderer::Entity *entity)
 {
-    auto it =
-        std::find_if(m_Entities.begin(), m_Entities.end(),
-                     [entity](const std::shared_ptr<::Engine::Renderer::Entity> &ptr) { return ptr.get() == entity; });
+    auto it = std::find_if(
+        m_Entities.begin(), m_Entities.end(),
+        [entity](const std::shared_ptr<::Engine::Renderer::Entity> &ptr) { return ptr.get() == entity; });
 
     if (it != m_Entities.end())
     {
         const auto index = static_cast<size_t>(std::distance(m_Entities.begin(), it));
+        const auto entityChildren = (*it)->GetChildren();
+        std::vector<std::shared_ptr<Object>> children(entityChildren.begin(), entityChildren.end());
+        Object *parent = (*it)->GetParent();
+        if (parent == nullptr) {
+            parent = &m_Root;
+        }
+        for (const auto &child : children)
+            child->SetParent(parent);
+        (*it)->SetParent(nullptr);
         m_Entities.erase(it);
         EraseIdAt(m_EntityIds, m_EntityIndices, index);
     }
@@ -66,6 +77,15 @@ void Scene::RemoveEntity(EntityId id)
     if (it != m_EntityIndices.end())
     {
         const size_t index = it->second;
+        const auto entityChildren = m_Entities[index]->GetChildren();
+        std::vector<std::shared_ptr<Object>> children(entityChildren.begin(), entityChildren.end());
+        Object *parent = m_Entities[index]->GetParent();
+        if (parent == nullptr) {
+            parent = &m_Root;
+        }
+        for (const auto &child : children)
+            child->SetParent(parent);
+        m_Entities[index]->SetParent(nullptr);
         EraseIdAt(m_EntityIds, m_EntityIndices, index);
         m_Entities.erase(m_Entities.begin() + index);
     }
@@ -78,6 +98,20 @@ bool Scene::ReplaceEntity(EntityId id, std::shared_ptr<::Engine::Renderer::Entit
     const auto it = m_EntityIndices.find(id);
     if (it == m_EntityIndices.end())
         return false;
+    const auto &current = m_Entities[it->second];
+    if (entity.get() == current.get())
+        return true;
+    Object *parent = current->GetParent();
+    if (parent == nullptr) {
+        parent = &m_Root;
+    }
+    if (parent == nullptr || entity->GetParent() != nullptr || !entity->SetParent(parent))
+        return false;
+    const auto currentChildren = current->GetChildren();
+    std::vector<std::shared_ptr<Object>> children(currentChildren.begin(), currentChildren.end());
+    for (const auto &child : children)
+        child->SetParent(entity.get());
+    current->SetParent(nullptr);
     m_Entities[it->second] = std::move(entity);
     return true;
 }
@@ -167,9 +201,9 @@ LightId Scene::AddLight(std::shared_ptr<::Engine::Renderer::SpotLight> light, Li
 
 void Scene::RemoveLight(::Engine::Renderer::SpotLight *light)
 {
-    auto it =
-        std::find_if(m_Lights.begin(), m_Lights.end(),
-                     [light](const std::shared_ptr<::Engine::Renderer::SpotLight> &ptr) { return ptr.get() == light; });
+    auto it = std::find_if(
+        m_Lights.begin(), m_Lights.end(),
+        [light](const std::shared_ptr<::Engine::Renderer::SpotLight> &ptr) { return ptr.get() == light; });
 
     if (it != m_Lights.end())
     {
@@ -237,9 +271,9 @@ CameraId Scene::AddCamera(std::shared_ptr<::Engine::Renderer::Camera> camera, Ca
 
 void Scene::RemoveCamera(::Engine::Renderer::Camera *camera)
 {
-    auto it =
-        std::find_if(m_Cameras.begin(), m_Cameras.end(),
-                     [camera](const std::shared_ptr<::Engine::Renderer::Camera> &ptr) { return ptr.get() == camera; });
+    auto it = std::find_if(
+        m_Cameras.begin(), m_Cameras.end(),
+        [camera](const std::shared_ptr<::Engine::Renderer::Camera> &ptr) { return ptr.get() == camera; });
 
     if (it != m_Cameras.end())
     {
@@ -283,8 +317,7 @@ std::shared_ptr<::Engine::Renderer::Camera> Scene::FindCamera(CameraId id) const
 
 void Scene::Update(float deltaTime)
 {
-    // Scene systems will be updated here once gameplay components are present.
-    (void)deltaTime;
+    m_Root.Update(deltaTime);
 }
 
 ::Engine::Renderer::Camera *Scene::GetCamera(uint32_t index) const

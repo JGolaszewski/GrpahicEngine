@@ -1,6 +1,6 @@
 #pragma once
 #include "runtime/include/CoreExport.h"
-#include "scene/include/components/Transform.h"
+#include "scene/include/Object.h"
 #include "rendering/include/renderer/Material.h"
 #include "rendering/include/renderer/Mesh.h"
 #include <DirectXMath.h>
@@ -11,8 +11,8 @@
 #include <vector>
 
 #ifdef _MSC_VER
-#  pragma warning(push)
-#  pragma warning(disable : 4251) // These engine DLL types intentionally expose same-toolchain member types.
+#pragma warning(push)
+#pragma warning(disable : 4251) // These engine DLL types intentionally expose same-toolchain member types.
 #endif
 
 namespace Engine::Renderer
@@ -34,7 +34,7 @@ struct Submesh
     mutable float CachedWorldBoundsRadius = 0.0f;
 };
 
-class ENGINE_API Entity
+class ENGINE_API Entity : public ::Engine::Object
 {
   public:
     Entity(std::shared_ptr<Mesh> m, std::shared_ptr<Material> mat)
@@ -42,7 +42,6 @@ class ENGINE_API Entity
     {
     }
 
-    ::Engine::Scene::Components::Transform transform;
     std::shared_ptr<Mesh> mesh;
     std::shared_ptr<Material> material;
     std::vector<Submesh> Submeshes;
@@ -62,5 +61,5 @@ class ENGINE_API Entity
 } // namespace Engine::Renderer
 
 #ifdef _MSC_VER
-#  pragma warning(pop)
+#pragma warning(pop)
 #endif

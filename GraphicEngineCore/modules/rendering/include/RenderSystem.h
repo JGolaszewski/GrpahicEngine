@@ -28,8 +28,8 @@ namespace Engine
 {
 struct ShadowSettings
 {
-    uint32_t Resolution = Scene::Engine::Renderer::ShadowMapSize;
-    uint32_t MaxShadowCastersPerScene = Scene::Engine::Renderer::MaxShadowedLights;
+    uint32_t Resolution = SceneRenderer::ShadowMapSize;
+    uint32_t MaxShadowCastersPerScene = SceneRenderer::MaxShadowedLights;
 };
 
 class ENGINE_API RenderSystem

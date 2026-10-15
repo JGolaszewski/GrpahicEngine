@@ -38,11 +38,17 @@ class HierarchyPanel : public EditorPanel
     std::vector<Engine::EntityId> m_ObjectIds;
     std::vector<Engine::LightId> m_LightIds;
     std::vector<Engine::CameraId> m_CameraIds;
+    std::shared_ptr<Engine::Scene> m_Scene;
 
     EntitySelectedEvent::ItemType m_SelectedItemType = EntitySelectedEvent::ItemType::None;
     int m_SelectedObjectIndex = -1;
+    Engine::EntityId m_SelectedObjectId = Engine::InvalidEntityId;
     int m_SelectedLightIndex = -1;
     int m_SelectedCameraIndex = -1;
+
+    void DrawEntityTree(const Engine::Object &parent);
+    void DrawEntityNode(const std::shared_ptr<Engine::Object> &object);
+    void DrawRootDropTarget();
 
     // Spawn modal state
     enum class SpawnShapeType

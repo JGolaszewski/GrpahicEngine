@@ -217,7 +217,7 @@ void RenderSystem::SubmitViews(const std::vector<Engine::ViewportBinding> &views
 bool RenderSystem::SetShadowSettings(const ShadowSettings &settings) noexcept
 {
     if (settings.Resolution < 128 || settings.Resolution > 8192 ||
-        settings.MaxShadowCastersPerScene > Scene::Engine::Renderer::MaxShadowedLights)
+        settings.MaxShadowCastersPerScene > SceneRenderer::MaxShadowedLights)
     {
         ENGINE_LOG_ERROR("Render", "Shadow settings rejected | resolution: {} | max_shadow_casters: {}",
                          settings.Resolution, settings.MaxShadowCastersPerScene);

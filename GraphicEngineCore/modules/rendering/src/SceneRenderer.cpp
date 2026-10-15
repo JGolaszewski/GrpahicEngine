@@ -31,7 +31,7 @@ DirectX::XMVECTOR NormalizeOrDefault(const DirectX::XMFLOAT3 &value)
     return DirectX::XMVector3Normalize(vector);
 }
 
-static_assert(sizeof(::Engine::Renderer::PerObjectGpuData) == Engine::Scene::Engine::Renderer::PerObjectDataStride);
+static_assert(sizeof(::Engine::Renderer::PerObjectGpuData) == Engine::SceneRenderer::PerObjectDataStride);
 
 DirectX::XMMATRIX ComputeSpotLightViewProj(const ::Engine::Renderer::DirectionalLightData &lightData)
 {
@@ -75,7 +75,7 @@ Engine::SceneRenderer::SceneRenderer(nvrhi::IDevice*)
 {
 }
 
-void Engine::Scene::Engine::Renderer::Init(nvrhi::IDevice *device, ::Engine::Renderer::MaterialSystem *materialSystem,
+void Engine::SceneRenderer::Init(nvrhi::IDevice *device, ::Engine::Renderer::MaterialSystem *materialSystem,
                                  ::Engine::Renderer::ShaderFactory *shaderFactory)
 {
     m_MaterialSystem = materialSystem;
@@ -127,7 +127,7 @@ void Engine::Scene::Engine::Renderer::Init(nvrhi::IDevice *device, ::Engine::Ren
     m_ShadowSampler = device->createSampler(shadowSamplerDesc);
 }
 
-void Engine::Scene::Engine::Renderer::EnsureDebugBuffer(nvrhi::BufferHandle &buffer, uint64_t &capacity,
+void Engine::SceneRenderer::EnsureDebugBuffer(nvrhi::BufferHandle &buffer, uint64_t &capacity,
                                               size_t vertexCount, const char *debugName)
 {
     if (vertexCount == 0)
@@ -162,7 +162,7 @@ void Engine::Scene::Engine::Renderer::EnsureDebugBuffer(nvrhi::BufferHandle &buf
     }
 }
 
-nvrhi::GraphicsPipelineHandle Engine::Scene::Engine::Renderer::GetDebugPipeline(
+nvrhi::GraphicsPipelineHandle Engine::SceneRenderer::GetDebugPipeline(
     const nvrhi::FramebufferInfo &framebuffer, nvrhi::PrimitiveType primitiveType,
     ::Engine::Renderer::DebugDepthMode depthMode)
 {
@@ -203,7 +203,7 @@ nvrhi::GraphicsPipelineHandle Engine::Scene::Engine::Renderer::GetDebugPipeline(
     return m_PipelineCache.GetOrCreatePipeline(key, framebuffer);
 }
 
-void Engine::Scene::Engine::Renderer::RenderDebugGeometry(nvrhi::ICommandList *commandList,
+void Engine::SceneRenderer::RenderDebugGeometry(nvrhi::ICommandList *commandList,
                                                 const ::Engine::Renderer::RenderView &view)
 {
     if (!commandList || !view.TargetFramebuffer || view.DebugGeometryData.Empty() || !m_DebugViewBuffer ||
@@ -276,7 +276,7 @@ void Engine::Scene::Engine::Renderer::RenderDebugGeometry(nvrhi::ICommandList *c
     drawVertices(geometry.GetLineVertices(), m_DebugLineBuffer, nvrhi::PrimitiveType::LineList);
 }
 
-std::optional<Engine::LightId> Engine::Scene::Engine::Renderer::PickLight(const ::Engine::Renderer::RenderView &view,
+std::optional<Engine::LightId> Engine::SceneRenderer::PickLight(const ::Engine::Renderer::RenderView &view,
                                                                 float viewportX, float viewportY) const
 {
     if (view.ViewportWidth == 0 || view.ViewportHeight == 0 || viewportX < 0.0f || viewportY < 0.0f ||
@@ -392,7 +392,7 @@ std::optional<Engine::LightId> Engine::Scene::Engine::Renderer::PickLight(const 
 
 // --- Uploads ---
 
-size_t Engine::Scene::Engine::Renderer::EstimateDrawCount(const ::Engine::Renderer::FrameBlackboard &blackboard) const
+size_t Engine::SceneRenderer::EstimateDrawCount(const ::Engine::Renderer::FrameBlackboard &blackboard) const
 {
     size_t count = 0;
     const auto accumulate = [&count](const std::vector<::Engine::Renderer::RenderView *> &views) {
@@ -419,7 +419,7 @@ size_t Engine::Scene::Engine::Renderer::EstimateDrawCount(const ::Engine::Render
     return count;
 }
 
-bool Engine::Scene::Engine::Renderer::EnsureLightBuffers(size_t viewCount, ::Engine::Renderer::FrameContext &frameContext)
+bool Engine::SceneRenderer::EnsureLightBuffers(size_t viewCount, ::Engine::Renderer::FrameContext &frameContext)
 {
     for (size_t viewIndex = 0; viewIndex < viewCount; ++viewIndex)
     {
@@ -431,7 +431,7 @@ bool Engine::Scene::Engine::Renderer::EnsureLightBuffers(size_t viewCount, ::Eng
     return true;
 }
 
-nvrhi::BufferHandle Engine::Scene::Engine::Renderer::GetLightBuffer(size_t viewIndex,
+nvrhi::BufferHandle Engine::SceneRenderer::GetLightBuffer(size_t viewIndex,
                                                           ::Engine::Renderer::FrameContext &frameContext) const
 {
     return frameContext.GetOrCreateUploadBuffer(
@@ -439,7 +439,7 @@ nvrhi::BufferHandle Engine::Scene::Engine::Renderer::GetLightBuffer(size_t viewI
         static_cast<uint32_t>(::Engine::Renderer::FrameContext::FramesInFlight + 1));
 }
 
-nvrhi::BindingSetHandle Engine::Scene::Engine::Renderer::GetSceneBindingSet(size_t viewIndex,
+nvrhi::BindingSetHandle Engine::SceneRenderer::GetSceneBindingSet(size_t viewIndex,
                                                                   nvrhi::BufferHandle lightBuffer,
                                                                   nvrhi::TextureHandle shadowMap,
                                                                   nvrhi::SamplerHandle shadowSampler,
@@ -476,7 +476,7 @@ nvrhi::BindingSetHandle Engine::Scene::Engine::Renderer::GetSceneBindingSet(size
     return cache.Bindings;
 }
 
-bool Engine::Scene::Engine::Renderer::EnsurePerObjectResources(size_t maxDrawCount,
+bool Engine::SceneRenderer::EnsurePerObjectResources(size_t maxDrawCount,
                                                      ::Engine::Renderer::FrameContext &frameContext,
                                                      ::Engine::Renderer::FrameDiagnostics &diagnostics)
 {
@@ -504,7 +504,7 @@ bool Engine::Scene::Engine::Renderer::EnsurePerObjectResources(size_t maxDrawCou
     return true;
 }
 
-void Engine::Scene::Engine::Renderer::CullAndFillView(::Engine::Renderer::RenderView *view)
+void Engine::SceneRenderer::CullAndFillView(::Engine::Renderer::RenderView *view)
 {
     if (!view || !view->TargetScene)
         return;
@@ -712,7 +712,7 @@ void Engine::Scene::Engine::Renderer::CullAndFillView(::Engine::Renderer::Render
 
 // --- RenderPacket creation ---
 
-::Engine::Renderer::RenderPacket Engine::Scene::Engine::Renderer::CreateRenderPacket(const ::Engine::Renderer::Mesh *mesh,
+::Engine::Renderer::RenderPacket Engine::SceneRenderer::CreateRenderPacket(const ::Engine::Renderer::Mesh *mesh,
                                                                  const ::Engine::Renderer::Material *material)
 {
     ::Engine::Renderer::RenderPacket packet;
@@ -727,7 +727,7 @@ void Engine::Scene::Engine::Renderer::CullAndFillView(::Engine::Renderer::Render
     return packet;
 }
 
-void Engine::Scene::Engine::Renderer::SortViewQueues(::Engine::Renderer::RenderView *view)
+void Engine::SceneRenderer::SortViewQueues(::Engine::Renderer::RenderView *view)
 {
     if (!view)
         return;
@@ -753,7 +753,7 @@ void Engine::Scene::Engine::Renderer::SortViewQueues(::Engine::Renderer::RenderV
 
 // --- View Building ---
 
-void Engine::Scene::Engine::Renderer::BuildViews(::Engine::Renderer::FrameBlackboard &blackboard,
+void Engine::SceneRenderer::BuildViews(::Engine::Renderer::FrameBlackboard &blackboard,
                                        nvrhi::ICommandList *commandList, ::Engine::Renderer::FrameContext &frameContext,
                                        ::Engine::Renderer::FrameDiagnostics &diagnostics)
 {
@@ -811,7 +811,7 @@ void Engine::Scene::Engine::Renderer::BuildViews(::Engine::Renderer::FrameBlackb
     m_SubmissionStats.PipelineCreations = pipelineStats.Creations;
 }
 
-void Engine::Scene::Engine::Renderer::BuildDebugGeometry(::Engine::Renderer::RenderView *view)
+void Engine::SceneRenderer::BuildDebugGeometry(::Engine::Renderer::RenderView *view)
 {
     if (!view || view->ViewType != ::Engine::Renderer::RenderView::Type::Main || !view->TargetScene)
     {
@@ -822,7 +822,7 @@ void Engine::Scene::Engine::Renderer::BuildDebugGeometry(::Engine::Renderer::Ren
                                                view->DebugGeometryData);
 }
 
-void Engine::Scene::Engine::Renderer::BuildShadowData(Engine::Scene *scene,
+void Engine::SceneRenderer::BuildShadowData(Engine::Scene *scene,
                                             const std::vector<::Engine::Renderer::RenderView *> &shadowViews,
                                             uint32_t firstShadowSlot, uint32_t maxShadowedLights)
 {
@@ -853,7 +853,7 @@ void Engine::Scene::Engine::Renderer::BuildShadowData(Engine::Scene *scene,
     }
 }
 
-uint32_t Engine::Scene::Engine::Renderer::CountShadowCasters(const Engine::Scene *scene, uint32_t limit) const
+uint32_t Engine::SceneRenderer::CountShadowCasters(const Engine::Scene *scene, uint32_t limit) const
 {
     if (!scene || limit == 0)
         return 0;
@@ -872,7 +872,7 @@ uint32_t Engine::Scene::Engine::Renderer::CountShadowCasters(const Engine::Scene
     return count;
 }
 
-void Engine::Scene::Engine::Renderer::BuildLighting(Engine::Scene *scene,
+void Engine::SceneRenderer::BuildLighting(Engine::Scene *scene,
                                           const std::vector<::Engine::Renderer::RenderView *> &shadowViews,
                                           std::vector<::Engine::Renderer::DirectionalLightData> &lights)
 {

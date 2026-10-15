@@ -1,4 +1,5 @@
 #include "panels/include/HierarchyPanel.h"
+#include "rendering/include/renderer/Entity.h"
 
 #include <algorithm>
 #include <imgui.h>
@@ -19,12 +20,14 @@ void HierarchyPanel::OnEvent(Engine::Events::Event &event)
         m_ObjectIds = e.GetObjectIds();
         m_LightIds = e.GetLightIds();
         m_CameraIds = e.GetCameraIds();
+        m_Scene = e.GetScene();
         return false;
     });
 
     dispatcher.Dispatch<EntitySelectedEvent>([this](const auto &e) {
         m_SelectedItemType = e.GetItemType();
         m_SelectedObjectIndex = e.GetObjectIndex();
+        m_SelectedObjectId = e.GetEntityId();
         m_SelectedLightIndex = e.GetLightIndex();
         m_SelectedCameraIndex = e.GetCameraIndex();
         return false;
@@ -33,6 +36,7 @@ void HierarchyPanel::OnEvent(Engine::Events::Event &event)
     dispatcher.Dispatch<EntityDeselectedEvent>([this](const auto &) {
         m_SelectedItemType = EntitySelectedEvent::ItemType::None;
         m_SelectedObjectIndex = -1;
+        m_SelectedObjectId = Engine::InvalidEntityId;
         m_SelectedLightIndex = -1;
         m_SelectedCameraIndex = -1;
         return false;
@@ -55,17 +59,10 @@ void HierarchyPanel::Draw()
 
     if (ImGui::CollapsingHeader("Objects", ImGuiTreeNodeFlags_DefaultOpen))
     {
-        for (size_t i = 0; i < m_ObjectIds.size(); ++i)
+        if (m_Scene)
         {
-            const std::string label = "Object " + std::to_string(i);
-            const bool selected = m_SelectedItemType == EntitySelectedEvent::ItemType::Object &&
-                                  m_SelectedObjectIndex == static_cast<int>(i);
-            if (ImGui::Selectable(label.c_str(), selected))
-            {
-                EmitEvent(std::make_unique<EntitySelectedEvent>(
-                    EntitySelectedEvent::ItemType::Object, static_cast<int>(i), -1, -1, m_ObjectIds[i],
-                    Engine::InvalidLightId, Engine::InvalidCameraId));
-            }
+            DrawEntityTree(m_Scene->GetRoot());
+            DrawRootDropTarget();
         }
 
         if (m_ObjectIds.empty())
@@ -120,6 +117,78 @@ void HierarchyPanel::Draw()
     DrawAddObjectModal();
 
     ImGui::End();
+}
+
+void HierarchyPanel::DrawEntityTree(const Engine::Object &parent)
+{
+    for (const auto &child : parent.GetChildren())
+        DrawEntityNode(child);
+}
+
+void HierarchyPanel::DrawEntityNode(const std::shared_ptr<Engine::Object> &object)
+{
+    const auto entity = std::dynamic_pointer_cast<::Engine::Renderer::Entity>(object);
+    if (!entity || !m_Scene)
+        return;
+    const Engine::EntityId entityId = m_Scene->GetEntityId(entity.get());
+    const std::string label = entity->Name.empty() ? "Entity " + std::to_string(entityId) : entity->Name;
+    ImGui::PushID(static_cast<int>(entityId >> 32U));
+    ImGui::PushID(static_cast<int>(entityId & 0xffffffffU));
+    const bool hasChildren = !entity->GetChildren().empty();
+    const ImGuiTreeNodeFlags flags =
+        (hasChildren ? 0 : ImGuiTreeNodeFlags_Leaf) | ImGuiTreeNodeFlags_OpenOnArrow |
+        ImGuiTreeNodeFlags_SpanAvailWidth |
+        (m_SelectedItemType == EntitySelectedEvent::ItemType::Object && m_SelectedObjectId == entityId
+             ? ImGuiTreeNodeFlags_Selected
+             : 0);
+    const bool expanded = ImGui::TreeNodeEx(label.c_str(), flags);
+    if (ImGui::IsItemClicked())
+    {
+        const auto found = std::ranges::find(m_ObjectIds, entityId);
+        const int index =
+            found == m_ObjectIds.end() ? -1 : static_cast<int>(std::distance(m_ObjectIds.begin(), found));
+        EmitEvent(std::make_unique<EntitySelectedEvent>(EntitySelectedEvent::ItemType::Object, index, -1, -1,
+                                                        entityId, Engine::InvalidLightId,
+                                                        Engine::InvalidCameraId));
+    }
+    if (ImGui::BeginDragDropSource())
+    {
+        ImGui::SetDragDropPayload("SCENE_ENTITY_ID", &entityId, sizeof(entityId));
+        ImGui::TextUnformatted(label.c_str());
+        ImGui::EndDragDropSource();
+    }
+    if (ImGui::BeginDragDropTarget())
+    {
+        if (const auto *payload = ImGui::AcceptDragDropPayload("SCENE_ENTITY_ID"))
+        {
+            const auto draggedId = *static_cast<const Engine::EntityId *>(payload->Data);
+            if (draggedId != entityId)
+                EmitEvent(std::make_unique<EntityReparentRequestedEvent>(draggedId, entityId));
+        }
+        ImGui::EndDragDropTarget();
+    }
+    if (expanded)
+    {
+        DrawEntityTree(*entity);
+        ImGui::TreePop();
+    }
+    ImGui::PopID();
+    ImGui::PopID();
+}
+
+void HierarchyPanel::DrawRootDropTarget()
+{
+    ImGui::Separator();
+    ImGui::Button("Scene Root", ImVec2(-1.0F, 0.0F));
+    if (ImGui::BeginDragDropTarget())
+    {
+        if (const auto *payload = ImGui::AcceptDragDropPayload("SCENE_ENTITY_ID"))
+        {
+            const auto draggedId = *static_cast<const Engine::EntityId *>(payload->Data);
+            EmitEvent(std::make_unique<EntityReparentRequestedEvent>(draggedId, Engine::InvalidEntityId));
+        }
+        ImGui::EndDragDropTarget();
+    }
 }
 
 void HierarchyPanel::DrawAddObjectModal()

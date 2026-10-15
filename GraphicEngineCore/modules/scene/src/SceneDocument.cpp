@@ -9,6 +9,7 @@
 #include <fstream>
 #include <iterator>
 #include <limits>
+#include <map>
 #include <set>
 #include <type_traits>
 
@@ -238,10 +239,11 @@ bool ReadMaterial(const Json &value, SceneMaterialDocument &material, std::vecto
         }
         material.brdfModel = "ggx";
         material.workflow = "specularGlossiness";
-        warnings.push_back(context + " migrated specularGlossiness from brdfModel to workflow with GGX shading");
+        warnings.push_back(context +
+                           " migrated specularGlossiness from brdfModel to workflow with GGX shading");
     }
-    const auto validBrdf = material.brdfModel == "legacy" || material.brdfModel == "ggx" ||
-                           material.brdfModel == "gtr";
+    const auto validBrdf =
+        material.brdfModel == "legacy" || material.brdfModel == "ggx" || material.brdfModel == "gtr";
     if (!validBrdf)
     {
         error = "brdfModel has an unsupported value";
@@ -302,11 +304,12 @@ bool IsValidPrimitiveType(const std::string &type)
 
 bool IsValidMaterial(const SceneMaterialDocument &material)
 {
-    const auto validBrdf = material.brdfModel == "legacy" || material.brdfModel == "ggx" ||
-                           material.brdfModel == "gtr";
-    const bool validWorkflow = material.workflow == "metallicRoughness" ||
-                               material.workflow == "specularGlossiness";
-    if (!validBrdf || !validWorkflow || (material.specularMode != "ior" && material.specularMode != "explicitF0") ||
+    const auto validBrdf =
+        material.brdfModel == "legacy" || material.brdfModel == "ggx" || material.brdfModel == "gtr";
+    const bool validWorkflow =
+        material.workflow == "metallicRoughness" || material.workflow == "specularGlossiness";
+    if (!validBrdf || !validWorkflow ||
+        (material.specularMode != "ior" && material.specularMode != "explicitF0") ||
         (material.alphaMode != "opaque" && material.alphaMode != "mask" && material.alphaMode != "blend") ||
         !std::isfinite(material.metallic) || !std::isfinite(material.roughness) ||
         !std::isfinite(material.gtrGamma) || !std::isfinite(material.ior) ||
@@ -355,6 +358,7 @@ Json ToJson(const SceneDocument &document)
     for (const auto &entity : document.entities)
     {
         Json item = {{"id", entity.id},
+                     {"parentId", entity.parentId ? Json(*entity.parentId) : Json(nullptr)},
                      {"name", entity.name},
                      {"modelGuid", entity.modelGuid ? Json(*entity.modelGuid) : Json(nullptr)},
                      {"materialGuid", entity.materialGuid ? Json(*entity.materialGuid) : Json(nullptr)},
@@ -528,7 +532,7 @@ SceneDocumentResult SceneSerializer::Load(const std::filesystem::path &path) con
                 return result;
             }
             KnownKeys(item,
-                      {"id", "name", "modelGuid", "materialGuid", "primitiveType", "material",
+                      {"id", "parentId", "name", "modelGuid", "materialGuid", "primitiveType", "material",
                        "materialOverrides", "position", "rotation", "scale", "render"},
                       result.warnings, context);
             SceneEntityDocument entity;
@@ -536,6 +540,16 @@ SceneDocumentResult SceneSerializer::Load(const std::filesystem::path &path) con
             {
                 result.error = FileContext(path, context + ".id must be a unique positive integer");
                 return result;
+            }
+            if (item.contains("parentId") && !item["parentId"].is_null())
+            {
+                if (!item["parentId"].is_number_unsigned() || item["parentId"].get<uint64_t>() == 0)
+                {
+                    result.error =
+                        FileContext(path, context + ".parentId must be a positive integer or null");
+                    return result;
+                }
+                entity.parentId = item["parentId"].get<uint64_t>();
             }
             if (item.contains("name"))
             {
@@ -658,6 +672,46 @@ SceneDocumentResult SceneSerializer::Load(const std::filesystem::path &path) con
                 }
             }
             result.document.entities.push_back(std::move(entity));
+        }
+        std::map<uint64_t, size_t> entityIndices;
+        for (size_t index = 0; index < result.document.entities.size(); ++index)
+            entityIndices.emplace(result.document.entities[index].id, index);
+        for (auto &entity : result.document.entities)
+        {
+            if (entity.parentId && !entityIndices.contains(*entity.parentId))
+            {
+                result.warnings.push_back("entity " + std::to_string(entity.id) +
+                                          " references a missing parent and was attached to the scene root");
+                entity.parentId.reset();
+            }
+            if (entity.parentId && *entity.parentId == entity.id)
+            {
+                result.warnings.push_back("entity " + std::to_string(entity.id) +
+                                          " cannot parent itself and was attached to the scene root");
+                entity.parentId.reset();
+            }
+        }
+        for (auto &entity : result.document.entities)
+        {
+            std::set<uint64_t> ancestry;
+            uint64_t currentId = entity.id;
+            while (true)
+            {
+                if (!ancestry.insert(currentId).second)
+                {
+                    entity.parentId.reset();
+                    result.warnings.push_back("cyclic hierarchy near entity " + std::to_string(currentId) +
+                                              " was broken at the scene root");
+                    break;
+                }
+                const auto current = entityIndices.find(currentId);
+                if (current == entityIndices.end())
+                    break;
+                const auto parentId = result.document.entities[current->second].parentId;
+                if (!parentId)
+                    break;
+                currentId = *parentId;
+            }
         }
     }
     std::set<uint64_t> lightIds;
@@ -807,6 +861,30 @@ bool SceneSerializer::SaveAtomic(const std::filesystem::path &path, const SceneD
         {
             error = FileContext(path, "document contains an invalid entity transform");
             return false;
+        }
+    }
+    for (const auto &entity : document.entities)
+    {
+        if (entity.parentId && (!entityIds.contains(*entity.parentId) || *entity.parentId == entity.id))
+        {
+            error = FileContext(path, "document contains a missing or self-referencing parent ID");
+            return false;
+        }
+        std::set<uint64_t> ancestry;
+        uint64_t currentId = entity.id;
+        while (true)
+        {
+            if (!ancestry.insert(currentId).second)
+            {
+                error = FileContext(path, "document contains a cyclic entity hierarchy");
+                return false;
+            }
+            const auto current =
+                std::find_if(document.entities.begin(), document.entities.end(),
+                             [currentId](const auto &candidate) { return candidate.id == currentId; });
+            if (current == document.entities.end() || !current->parentId)
+                break;
+            currentId = *current->parentId;
         }
     }
     std::set<uint64_t> lightIds;

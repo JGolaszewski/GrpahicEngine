@@ -5,11 +5,13 @@ file(GLOB_RECURSE CORE_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/modules/*/src/*.cpp"
 )
 
+set(CORE_MODULES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/modules")
+
 function(configure_engine_module TARGET MODULE_NAME)
     target_include_directories(${TARGET}
         PUBLIC
-            "${CMAKE_CURRENT_SOURCE_DIR}/modules"
-            "${CMAKE_CURRENT_SOURCE_DIR}/modules/${MODULE_NAME}/include"
+            "${CORE_MODULES_DIR}"
+            "${CORE_MODULES_DIR}/${MODULE_NAME}/include"
     )
     target_compile_definitions(${TARGET} PRIVATE
         EXPORTING_ENGINE_CORE
@@ -32,7 +34,7 @@ add_subdirectory(modules/assets)
 add_subdirectory(modules/scene)
 add_subdirectory(modules/rendering)
 
-set(CORE_MODULE_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/modules")
+set(CORE_MODULE_INCLUDE_DIRS "${CORE_MODULES_DIR}")
 
 add_library(GraphicEngineCore SHARED ${CORE_HEADERS}
     $<TARGET_OBJECTS:EngineRuntime>
@@ -167,4 +169,11 @@ if(BUILD_TESTING)
     endif()
     target_link_libraries(AssetManagerTests PRIVATE GraphicEngineCore)
     add_test(NAME AssetManagerTests COMMAND AssetManagerTests)
+
+    add_executable(SceneGraphTests tests/SceneGraphTests.cpp)
+    if(NOT CMAKE_GENERATOR MATCHES "Ninja|Makefiles")
+        set_property(TARGET SceneGraphTests PROPERTY CXX_CLANG_TIDY "${ENGINE_CLANG_TIDY_COMMAND}")
+    endif()
+    target_link_libraries(SceneGraphTests PRIVATE GraphicEngineCore Microsoft::DirectXMath)
+    add_test(NAME SceneGraphTests COMMAND SceneGraphTests)
 endif()

@@ -5,7 +5,7 @@
 #include <DirectXMath.h>
 #include <cstdint>
 
-#include <scene/components/Transform.h>
+#include "scene/include/components/Transform.h"
 
 #ifdef _MSC_VER
 #  pragma warning(push)
@@ -17,7 +17,7 @@ namespace Engine::Renderer
 class ENGINE_API Camera
 {
   public:
-    ::Engine::Scene::Components::Transform m_Transform;
+    ::Engine::Components::Transform m_Transform;
 
     // Projection values use radians for FOV and positive distances for planes.
     Camera(float fovRadians, float znear, float zfar);
@@ -36,7 +36,7 @@ class ENGINE_API Camera
         return m_Far;
     }
 
-    void SetPosition(::Engine::Scene::Components::Transform transform);
+    void SetPosition(::Engine::Components::Transform transform);
 
     DirectX::XMMATRIX GetView() const;
     DirectX::XMMATRIX GetProjection(float aspect) const;

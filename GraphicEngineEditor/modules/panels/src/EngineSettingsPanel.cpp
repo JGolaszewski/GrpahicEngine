@@ -50,13 +50,13 @@ void EngineSettingsPanel::Draw()
 
         int shadowCasters = static_cast<int>(shadowSettings.MaxShadowCastersPerScene);
         if (ImGui::SliderInt("Shadow-casting lights", &shadowCasters, 0,
-                             static_cast<int>(Engine::Scene::Engine::Renderer::MaxShadowedLights)))
+                             static_cast<int>(Engine::SceneRenderer::MaxShadowedLights)))
         {
             shadowSettings.MaxShadowCastersPerScene = static_cast<uint32_t>(shadowCasters);
             renderSystem->SetShadowSettings(shadowSettings);
         }
         ImGui::SetItemTooltip("Maximum shadow maps rendered per scene. The current renderer supports up to %u.",
-                              Engine::Scene::Engine::Renderer::MaxShadowedLights);
+                              Engine::SceneRenderer::MaxShadowedLights);
     }
     else
     {
