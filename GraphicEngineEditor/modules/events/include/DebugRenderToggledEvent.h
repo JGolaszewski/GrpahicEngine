@@ -10,39 +10,20 @@
 // updates its internal flags so that OnRender can show/hide the debug geometry.
 // ================================================================================
 
-class DebugRenderToggledEvent : public Engine::Events::Event
-{
-  public:
-    enum class Toggle
-    {
-        LightGizmos,
-        WireframePlane
-    };
+class DebugRenderToggledEvent : public Engine::Events::Event {
+public:
+  enum class Toggle { LightGizmos, WireframePlane };
 
-    DebugRenderToggledEvent(Toggle toggle, bool value) : m_Toggle(toggle), m_Value(value)
-    {
-    }
+  DebugRenderToggledEvent(Toggle toggle, bool value) : m_Toggle(toggle), m_Value(value) {}
 
-    static Engine::Events::EventType GetStaticType()
-    {
-        return Engine::Events::EventType::DebugRenderToggled;
-    }
+  static Engine::Events::EventType GetStaticType() { return Engine::Events::EventType::DebugRenderToggled; }
 
-    Engine::Events::EventType GetType() const override
-    {
-        return GetStaticType();
-    }
+  Engine::Events::EventType GetType() const override { return GetStaticType(); }
 
-    [[nodiscard]] Toggle GetToggle() const noexcept
-    {
-        return m_Toggle;
-    }
-    [[nodiscard]] bool GetValue() const noexcept
-    {
-        return m_Value;
-    }
+  [[nodiscard]] Toggle GetToggle() const noexcept { return m_Toggle; }
+  [[nodiscard]] bool GetValue() const noexcept { return m_Value; }
 
-  private:
-    Toggle m_Toggle;
-    bool m_Value;
+private:
+  Toggle m_Toggle;
+  bool m_Value;
 };

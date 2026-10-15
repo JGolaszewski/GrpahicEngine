@@ -1,4 +1,3 @@
-```cmake
 option(ENGINE_ENABLE_LOGGING "Compile engine logging calls" ON)
 set(ENGINE_LOG_LEVEL_MIN 0 CACHE STRING "Global cutoff: 0=Trace through 6=None")
 set(ENGINE_LOG_LEVEL_MIN_DEBUG "" CACHE STRING "Optional Debug override; empty uses global cutoff")
@@ -22,4 +21,3 @@ target_compile_definitions(GraphicEngineCore PUBLIC
     ENGINE_ENABLE_LOGGING=$<BOOL:${ENGINE_ENABLE_LOGGING}>
     ENGINE_LOG_LEVEL_MIN=$<IF:$<CONFIG:Debug>,${ENGINE_LOG_LEVEL_MIN_DEBUG_EFFECTIVE},${ENGINE_LOG_LEVEL_MIN_RELEASE_EFFECTIVE}>
 )
-```

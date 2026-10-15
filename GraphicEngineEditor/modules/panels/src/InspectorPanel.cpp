@@ -1,577 +1,279 @@
-#include "panels/include/InspectorPanel.h"
-#include "commands/include/ChangeMaterialPropertiesCommand.h"
-#include "commands/include/TransformEntityCommand.h"
-#include "events/include/AssetRegistryChangedEvent.h"
-#include "events/include/MaterialTextureAssignmentRequestedEvent.h"
-#include "rendering/include/renderer/Camera.h"
-#include "rendering/include/renderer/Entity.h"
-#include "rendering/include/renderer/Light.h"
-#include "rendering/include/renderer/Material.h"
+﻿#include "panels/include/InspectorPanel.h"
 
-#include <imgui.h>
-
+#include <DirectXMath.h>
 #include <algorithm>
+#include <array>
+#include <cctype>
 #include <cmath>
+#include <functional>
+#include <imgui.h>
+#include <string>
 
-// ================================================================================
-// InspectorPanel::OnEvent
-// ================================================================================
-// Receives EntitySelectedEvent / EntityDeselectedEvent to update the inspected
-// item. Also intercepts input events (e.g. Delete key) to clear selection.
-// ================================================================================
+namespace {
+using Mutation = EcsComponentMutationRequestedEvent;
 
-void InspectorPanel::OnEvent(Engine::Events::Event &event)
-{
-    Engine::Events::EventDispatcher dispatcher(event);
-
-    // Input event: Delete key clears the current selection.
-    dispatcher.Dispatch<Engine::Events::KeyPressedEvent>([this](const auto &keyEvent) {
-        if (keyEvent.Key == Engine::Events::KeyCode::Delete &&
-            m_SelectedItemType != EntitySelectedEvent::ItemType::None)
-        {
-            if (m_SelectedItemType == EntitySelectedEvent::ItemType::Object)
-            {
-                EmitEvent(std::make_unique<RemoveEntityRequestedEvent>(m_SelectedEntityId));
-            }
-            else
-            {
-                EmitEvent(std::make_unique<EntityDeselectedEvent>());
-            }
-            return true; // Consumed — stop propagation
-        }
-        return false;
-    });
-
-    // State event: new item selected.
-    dispatcher.Dispatch<EntitySelectedEvent>([this](const auto &e) {
-        m_SelectedItemType = e.GetItemType();
-        m_SelectedObjectIndex = e.GetObjectIndex();
-        m_SelectedLightIndex = e.GetLightIndex();
-        m_SelectedCameraIndex = e.GetCameraIndex();
-        m_SelectedEntityId = e.GetEntityId();
-        m_SelectedLightId = e.GetLightId();
-        m_SelectedCameraId = e.GetCameraId();
-
-        m_SelectedEntity = e.GetEntity();
-        m_SelectedLight = e.GetLight();
-        m_SelectedCamera = e.GetCamera();
-        m_MaterialEditActive = false;
-        m_SelectedMaterialSlot = -1;
-        if (const auto entity = m_SelectedEntity.lock(); entity && entity->ModelGuid)
-        {
-            for (const auto &submesh : entity->Submeshes)
-            {
-                if (submesh.MaterialSlot >= 0)
-                {
-                    m_SelectedMaterialSlot = submesh.MaterialSlot;
-                    break;
-                }
-            }
-        }
-
-        m_SelectedEulerDegrees = {0.0f, 0.0f, 0.0f};
-        return false;
-    });
-
-    // State event: selection cleared.
-    dispatcher.Dispatch<EntityDeselectedEvent>([this](const auto &) {
-        m_SelectedItemType = EntitySelectedEvent::ItemType::None;
-        m_SelectedObjectIndex = -1;
-        m_SelectedLightIndex = -1;
-        m_SelectedCameraIndex = -1;
-        m_SelectedEntityId = Engine::InvalidEntityId;
-        m_SelectedLightId = Engine::InvalidLightId;
-        m_SelectedCameraId = Engine::InvalidCameraId;
-        m_SelectedEntity.reset();
-        m_SelectedLight.reset();
-        m_SelectedCamera.reset();
-        m_SelectedMaterialSlot = -1;
-        m_MaterialEditActive = false;
-        return false;
-    });
-
-    // State event: camera settings updated (e.g. from Editor init).
-    dispatcher.Dispatch<CameraSettingsChangedEvent>([this](const auto &e) {
-        m_CameraFov = e.GetFov();
-        m_CameraNearPlane = e.GetNearPlane();
-        m_CameraFarPlane = e.GetFarPlane();
-        return false;
-    });
-    dispatcher.Dispatch<AssetRegistryChangedEvent>([this](const auto &e) {
-        m_Textures = e.GetTextures();
-        return false;
-    });
+auto Matches(const char* name, const char* filter) -> bool {
+  if (filter[0] == '\0') {
+    return true;
+  }
+  std::string haystack(name);
+  std::string needle(filter);
+  std::ranges::transform(haystack, haystack.begin(),
+                         [](unsigned char value) -> char { return static_cast<char>(std::tolower(value)); });
+  std::ranges::transform(needle, needle.begin(),
+                         [](unsigned char value) -> char { return static_cast<char>(std::tolower(value)); });
+  return haystack.contains(needle);
 }
 
-void InspectorPanel::Draw()
-{
-    ImGui::Begin("Inspector", nullptr, ImGuiWindowFlags_NoCollapse);
+auto QuaternionToPitchYawRoll(const std::array<float, 4>& quaternion) -> std::array<float, 3> {
+  using namespace DirectX;
+  const XMVECTOR rotation =
+      XMQuaternionNormalize(XMVectorSet(quaternion[0], quaternion[1], quaternion[2], quaternion[3]));
+  const XMVECTOR forward = XMVector3Rotate(XMVectorSet(0.0F, 0.0F, 1.0F, 0.0F), rotation);
+  const float pitch = std::asin(std::clamp(-XMVectorGetY(forward), -1.0F, 1.0F));
+  const float yaw = std::atan2(XMVectorGetX(forward), XMVectorGetZ(forward));
+  const XMVECTOR noRollRotation = XMQuaternionRotationRollPitchYaw(pitch, yaw, 0.0F);
+  const XMVECTOR baseUp = XMVector3Rotate(XMVectorSet(0.0F, 1.0F, 0.0F, 0.0F), noRollRotation);
+  const XMVECTOR baseRight = XMVector3Rotate(XMVectorSet(1.0F, 0.0F, 0.0F, 0.0F), noRollRotation);
+  const XMVECTOR actualUp = XMVector3Rotate(XMVectorSet(0.0F, 1.0F, 0.0F, 0.0F), rotation);
+  const float roll =
+      std::atan2(XMVectorGetX(XMVector3Dot(actualUp, baseRight)), XMVectorGetX(XMVector3Dot(actualUp, baseUp)));
+  return {pitch, yaw, roll};
+}
 
-    switch (m_SelectedItemType)
-    {
-    case EntitySelectedEvent::ItemType::Object:
-        if (!m_SelectedEntity.expired())
-        {
-            DrawObjectInspector();
-        }
-        break;
+void SetQuaternionFromPitchYawRoll(std::array<float, 4>& quaternion, const std::array<float, 3>& angles) {
+  DirectX::XMFLOAT4 result{};
+  DirectX::XMStoreFloat4(&result, DirectX::XMQuaternionRotationRollPitchYaw(angles[0], angles[1], angles[2]));
+  quaternion = {result.x, result.y, result.z, result.w};
+}
 
-    case EntitySelectedEvent::ItemType::Light:
-        if (!m_SelectedLight.expired())
-        {
-            DrawLightInspector();
-        }
-        break;
+void DrawRemoveButton(const char* id, Mutation::Component component,
+                      const std::function<void(Mutation::Component)>& emitRemove) {
+  if (ImGui::Button(id, ImVec2(-1.0F, 0.0F))) {
+    emitRemove(component);
+  }
+  if (ImGui::IsItemHovered()) {
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg)
+    ImGui::SetTooltip("Remove component");
+  }
+}
+} // namespace
 
-    case EntitySelectedEvent::ItemType::Camera:
-        if (!m_SelectedCamera.expired())
-        {
-            DrawCameraInspector();
-        }
-        break;
+void InspectorPanel::OnEvent(Engine::Events::Event& event) {
+  Engine::Events::EventDispatcher dispatcher(event);
+  dispatcher.Dispatch<EcsEntitySelectedEvent>([this](const auto& selection) -> bool {
+    m_SelectedEntity = selection.GetEntity();
+    return false;
+  });
+  dispatcher.Dispatch<EntityDeselectedEvent>([this](const auto&) -> bool {
+    m_SelectedEntity = Engine::InvalidEntityHandle;
+    return false;
+  });
+  dispatcher.Dispatch<SceneChangedEvent>([this](const auto& sceneEvent) -> bool {
+    m_Scene = sceneEvent.GetScene();
+    return false;
+  });
+}
 
-    default:
-        ImGui::TextDisabled("Select an item from the scene list.");
-        break;
+void InspectorPanel::Draw() {
+  ImGui::Begin("Inspector", nullptr, ImGuiWindowFlags_NoCollapse);
+  if (m_Scene && m_SelectedEntity != Engine::InvalidEntityHandle && m_Scene->World().IsAlive(m_SelectedEntity)) {
+    DrawEntityInspector();
+  } else {
+    ImGui::TextUnformatted("Select an entity from the scene hierarchy.");
+  }
+
+#ifdef _DEBUG
+  ImGui::Spacing();
+  if (ImGui::CollapsingHeader("Debug Render")) {
+    if (ImGui::Checkbox("Show light gizmos", &m_ShowDebugLightGizmos)) {
+      EmitEvent(std::make_unique<DebugRenderToggledEvent>(DebugRenderToggledEvent::Toggle::LightGizmos,
+                                                          m_ShowDebugLightGizmos));
     }
-
-#if defined(_DEBUG)
-    ImGui::Spacing();
-    if (ImGui::CollapsingHeader("Debug Render"))
-    {
-        bool showGizmos = m_ShowDebugLightGizmos;
-        if (ImGui::Checkbox("Show wireframe spotlight", &showGizmos))
-        {
-            m_ShowDebugLightGizmos = showGizmos;
-            EmitEvent(std::make_unique<DebugRenderToggledEvent>(DebugRenderToggledEvent::Toggle::LightGizmos,
-                                                                showGizmos));
-        }
-        bool showPlane = m_ShowDebugWireframePlane;
-        if (ImGui::Checkbox("Show wireframe plane", &showPlane))
-        {
-            m_ShowDebugWireframePlane = showPlane;
-            EmitEvent(std::make_unique<DebugRenderToggledEvent>(
-                DebugRenderToggledEvent::Toggle::WireframePlane, showPlane));
-        }
+    if (ImGui::Checkbox("Show wireframe plane", &m_ShowDebugWireframePlane)) {
+      EmitEvent(std::make_unique<DebugRenderToggledEvent>(DebugRenderToggledEvent::Toggle::WireframePlane,
+                                                          m_ShowDebugWireframePlane));
     }
+  }
 #endif
-
-    ImGui::End();
+  ImGui::End();
 }
 
-void InspectorPanel::DrawObjectInspector()
-{
-    const auto selectedEntity = m_SelectedEntity.lock();
-    if (!selectedEntity)
-    {
-        return;
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+void InspectorPanel::DrawEntityInspector() {
+  const Engine::ArchetypeWorld& world = m_Scene->World();
+  const Engine::EntityHandle entity = m_SelectedEntity;
+  const auto emitSet = [this, entity](Mutation::Component type, auto value) -> void {
+    EmitEvent(std::make_unique<Mutation>(entity, Mutation::Operation::Set, type, Mutation::Payload{std::move(value)}));
+  };
+  const auto emitAdd = [this, entity](Mutation::Component type) -> void {
+    EmitEvent(std::make_unique<Mutation>(entity, Mutation::Operation::Add, type));
+  };
+  const auto emitRemove = [this, entity](Mutation::Component type) -> void {
+    EmitEvent(std::make_unique<Mutation>(entity, Mutation::Operation::Remove, type));
+  };
+
+  const std::string entityId = "ID: " + std::to_string(entity.Index) + ":" + std::to_string(entity.Generation);
+  ImGui::TextUnformatted(entityId.c_str());
+  ImGui::Separator();
+  if (const auto* storedName = world.Get<Engine::Ecs::Name>(entity);
+      storedName != nullptr && ImGui::CollapsingHeader("Name / Tag", ImGuiTreeNodeFlags_DefaultOpen)) {
+    Engine::Ecs::Name name = *storedName;
+    std::array<char, 256> buffer{};
+    const size_t length = (std::min)(name.Value.size(), buffer.size() - 1);
+    std::copy_n(name.Value.data(), length, buffer.data());
+    if (ImGui::InputText("Name", buffer.data(), buffer.size())) {
+      name.Value = buffer.data();
+      emitSet(Mutation::Component::Name, std::move(name));
     }
+  }
 
-    ImGui::Text("Object %d", m_SelectedObjectIndex);
-    ImGui::Separator();
-    bool sceneChanged = false;
-
-    // ------------------------------------------------------------------------
-    // Position — with Undo/Redo integration via CommandExecuteRequestedEvent
-    // ------------------------------------------------------------------------
-    DirectX::XMFLOAT3 currentPos = selectedEntity->transform.Position;
-    float position[3] = {currentPos.x, currentPos.y, currentPos.z};
-
-    if (ImGui::DragFloat3("Local Position", position, 0.05f))
-    {
-        selectedEntity->transform.SetPosition(position[0], position[1], position[2]);
-    }
-
-    if (ImGui::IsItemActivated())
-    {
-        m_PositionBeforeEdit = currentPos;
-    }
-
-    if (ImGui::IsItemDeactivatedAfterEdit())
-    {
-        DirectX::XMFLOAT3 newPos = selectedEntity->transform.Position;
-        if (newPos.x != m_PositionBeforeEdit.x || newPos.y != m_PositionBeforeEdit.y ||
-            newPos.z != m_PositionBeforeEdit.z)
-        {
-            EmitEvent(std::make_unique<CommandExecuteRequestedEvent>(
-                std::make_unique<TransformEntityCommand>(selectedEntity, m_PositionBeforeEdit, newPos)));
-        }
-    }
-
-    float scale[3] = {selectedEntity->transform.Scale.x, selectedEntity->transform.Scale.y,
-                      selectedEntity->transform.Scale.z};
-    if (ImGui::DragFloat3("Local Scale", scale, 0.05f, 0.01f, 100.0f))
-    {
-        selectedEntity->transform.SetScale(scale[0], scale[1], scale[2]);
-        sceneChanged = true;
-    }
-
-    float rotationDegrees[3] = {m_SelectedEulerDegrees.x, m_SelectedEulerDegrees.y, m_SelectedEulerDegrees.z};
-    if (ImGui::DragFloat3("Rotation (Roll/Pitch/Yaw) [deg]", rotationDegrees, 0.25f, -360.0f, 360.0f))
-    {
-        m_SelectedEulerDegrees = {rotationDegrees[0], rotationDegrees[1], rotationDegrees[2]};
-        const float rollRad = DirectX::XMConvertToRadians(rotationDegrees[0]);
-        const float pitchRad = DirectX::XMConvertToRadians(rotationDegrees[1]);
-        const float yawRad = DirectX::XMConvertToRadians(rotationDegrees[2]);
-        selectedEntity->transform.SetRotation(pitchRad, yawRad, rollRad);
-        sceneChanged = true;
-    }
-
-    sceneChanged |= ImGui::Checkbox("Wireframe", &selectedEntity->ForceWireframe);
-    sceneChanged |= ImGui::Checkbox("Disable depth test", &selectedEntity->DisableDepthTest);
-    sceneChanged |= ImGui::Checkbox("Cast shadows", &selectedEntity->CastShadows);
-    sceneChanged |= ImGui::Checkbox("Receive shadows", &selectedEntity->ReceiveShadows);
-
-    if (selectedEntity->ModelGuid)
-    {
-        ImGui::Text("Model GUID: %s", selectedEntity->ModelGuid->c_str());
-        std::vector<int32_t> slots;
-        for (const auto &submesh : selectedEntity->Submeshes)
-        {
-            if (submesh.MaterialSlot >= 0 &&
-                std::find(slots.begin(), slots.end(), submesh.MaterialSlot) == slots.end())
-                slots.push_back(submesh.MaterialSlot);
-        }
-        std::sort(slots.begin(), slots.end());
-        if (!slots.empty())
-        {
-            const std::string slotLabel = "Material slot " + std::to_string(m_SelectedMaterialSlot);
-            if (ImGui::BeginCombo("Material Slot", slotLabel.c_str()))
-            {
-                for (int32_t slot : slots)
-                {
-                    const std::string label = "Material slot " + std::to_string(slot);
-                    if (ImGui::Selectable(label.c_str(), slot == m_SelectedMaterialSlot))
-                    {
-                        m_SelectedMaterialSlot = slot;
-                        m_MaterialEditActive = false;
-                    }
-                }
-                ImGui::EndCombo();
-            }
-        }
-    }
-    auto selectedMaterial = selectedEntity->material;
-    if (selectedEntity->ModelGuid && m_SelectedMaterialSlot >= 0)
-    {
-        const auto found = std::find_if(
-            selectedEntity->Submeshes.begin(), selectedEntity->Submeshes.end(),
-            [this](const auto &submesh) { return submesh.MaterialSlot == m_SelectedMaterialSlot; });
-        selectedMaterial = found == selectedEntity->Submeshes.end() ? nullptr : found->material;
-    }
-
-    if (!selectedMaterial)
-    {
-        if (sceneChanged)
-            EmitEvent(std::make_unique<SceneModifiedEvent>());
-        return;
-    }
-
-    ImGui::Separator();
-    ImGui::TextUnformatted("Material");
-
-    DrawTextureAssignment("Base color map", selectedMaterial,
-                          AssetImportRequestedEvent::TextureSemantic::BaseColor);
-    DrawTextureAssignment("Normal map", selectedMaterial, AssetImportRequestedEvent::TextureSemantic::Normal);
-
-    ::Engine::Renderer::MaterialProperties properties = selectedMaterial->GetProperties();
-    const ::Engine::Renderer::MaterialProperties materialPropertiesBeforeFrame = properties;
-    bool materialEditFinished = false;
-    const auto trackMaterialWidget = [this, &materialPropertiesBeforeFrame, &materialEditFinished]() {
-        if (ImGui::IsItemActivated())
-        {
-            m_MaterialBeforeEdit = materialPropertiesBeforeFrame;
-            m_MaterialEditActive = true;
-        }
-        materialEditFinished |= ImGui::IsItemDeactivatedAfterEdit();
+  if (const auto* storedTransform = world.Get<Engine::Ecs::LocalTransform>(entity);
+      storedTransform != nullptr && ImGui::CollapsingHeader("Transform", ImGuiTreeNodeFlags_DefaultOpen)) {
+    Engine::Ecs::LocalTransform transform = *storedTransform;
+    bool changed = ImGui::DragFloat3("Local position", transform.Position.data(), 0.05F);
+    std::array<float, 3> pitchYawRoll = QuaternionToPitchYawRoll(transform.Rotation);
+    std::array<float, 3> anglesDegrees = {
+        DirectX::XMConvertToDegrees(pitchYawRoll[0]),
+        DirectX::XMConvertToDegrees(pitchYawRoll[1]),
+        DirectX::XMConvertToDegrees(pitchYawRoll[2]),
     };
-
-    float baseColor[4] = {properties.BaseColor.x, properties.BaseColor.y, properties.BaseColor.z,
-                          properties.BaseColor.w};
-    float emissive[3] = {properties.Emissive.x, properties.Emissive.y, properties.Emissive.z};
-    float metallic = properties.Metallic;
-    float roughness = properties.Roughness;
-
-    bool materialChanged = false;
-    materialChanged |= ImGui::ColorEdit4(
-        properties.Workflow == ::Engine::Renderer::MaterialWorkflow::SpecularGlossiness ? "Diffuse factor"
-                                                                                        : "Base color",
-        baseColor);
-    trackMaterialWidget();
-    materialChanged |= ImGui::ColorEdit3("Emission", emissive);
-    trackMaterialWidget();
-    if (properties.Workflow == ::Engine::Renderer::MaterialWorkflow::MetallicRoughness)
-    {
-        materialChanged |= ImGui::SliderFloat("Metallic", &metallic, 0.0f, 1.0f);
-        trackMaterialWidget();
-        materialChanged |= ImGui::SliderFloat("Roughness", &roughness, 0.0f, 1.0f);
+    if (ImGui::DragFloat3("Pitch / Yaw / Roll", anglesDegrees.data(), 0.25F, -360.0F, 360.0F, "%.1f deg")) {
+      pitchYawRoll = {
+          DirectX::XMConvertToRadians(anglesDegrees[0]),
+          DirectX::XMConvertToRadians(anglesDegrees[1]),
+          DirectX::XMConvertToRadians(anglesDegrees[2]),
+      };
+      SetQuaternionFromPitchYawRoll(transform.Rotation, pitchYawRoll);
+      changed = true;
     }
-    else
-    {
-        float glossiness = 1.0f - properties.Roughness;
-        if (ImGui::SliderFloat("Glossiness", &glossiness, 0.0f, 1.0f))
-        {
-            roughness = 1.0f - glossiness;
-            materialChanged = true;
-        }
+    if (ImGui::TreeNode("Quaternion (advanced)")) {
+      changed |= ImGui::DragFloat4("Raw quaternion", transform.Rotation.data(), 0.01F);
+      ImGui::TreePop();
     }
-    trackMaterialWidget();
-
-    static constexpr const char *brdfModelNames[] = {"Legacy", "GGX", "GTR"};
-    int selectedBrdfModel =
-        static_cast<uint32_t>(properties.Model) <= static_cast<uint32_t>(::Engine::Renderer::BrdfModel::GTR)
-            ? static_cast<int>(properties.Model)
-            : static_cast<int>(::Engine::Renderer::BrdfModel::Legacy);
-    if (ImGui::Combo("Light model", &selectedBrdfModel, brdfModelNames, IM_ARRAYSIZE(brdfModelNames)))
-    {
-        properties.Model = static_cast<::Engine::Renderer::BrdfModel>(selectedBrdfModel);
-        materialChanged = true;
+    changed |= ImGui::DragFloat3("Local scale", transform.Scale.data(), 0.05F, 0.01F, 1000.0F);
+    if (changed) {
+      emitSet(Mutation::Component::Transform, transform);
     }
-    trackMaterialWidget();
+  }
 
-    static constexpr const char *workflowNames[] = {"Metallic Roughness", "Specular Glossiness"};
-    int selectedWorkflow = static_cast<int>(properties.Workflow);
-    if (ImGui::Combo("Material workflow", &selectedWorkflow, workflowNames, IM_ARRAYSIZE(workflowNames)))
-    {
-        properties.Workflow = static_cast<::Engine::Renderer::MaterialWorkflow>(selectedWorkflow);
-        materialChanged = true;
+  if (const auto* storedVisibility = world.Get<Engine::Ecs::LocalVisibility>(entity);
+      storedVisibility != nullptr && ImGui::CollapsingHeader("Visibility")) {
+    Engine::Ecs::LocalVisibility visibility = *storedVisibility;
+    if (ImGui::Checkbox("Visible in scene", &visibility.IsVisible)) {
+      emitSet(Mutation::Component::LocalVisibility, visibility);
     }
-    trackMaterialWidget();
+  }
 
-    if (properties.Model == ::Engine::Renderer::BrdfModel::GTR)
-    {
-        materialChanged |= ImGui::SliderFloat("GTR gamma", &properties.GtrGamma, 1.0f, 8.0f, "%.2f");
-        trackMaterialWidget();
+  if (const auto* storedMesh = world.Get<Engine::Ecs::MeshRenderer>(entity);
+      storedMesh != nullptr && ImGui::CollapsingHeader("Mesh Renderer")) {
+    DrawRemoveButton("Remove Mesh Renderer", Mutation::Component::MeshRenderer, emitRemove);
+    Engine::Ecs::MeshRenderer mesh = *storedMesh;
+    std::array<char, 256> modelGuid{};
+    const size_t length = (std::min)(mesh.ModelGuid.size(), modelGuid.size() - 1);
+    std::copy_n(mesh.ModelGuid.data(), length, modelGuid.data());
+    bool changed = ImGui::InputText("Model asset GUID", modelGuid.data(), modelGuid.size());
+    mesh.ModelGuid = modelGuid.data();
+    std::array<char, 128> primitiveType{};
+    const size_t primitiveLength = (std::min)(mesh.PrimitiveType.size(), primitiveType.size() - 1);
+    std::copy_n(mesh.PrimitiveType.data(), primitiveLength, primitiveType.data());
+    changed |= ImGui::InputText("Primitive type", primitiveType.data(), primitiveType.size());
+    mesh.PrimitiveType = primitiveType.data();
+    changed |= ImGui::Checkbox("Visible", &mesh.Visible);
+    changed |= ImGui::Checkbox("Cast shadows", &mesh.CastShadows);
+    changed |= ImGui::Checkbox("Receive shadows", &mesh.ReceiveShadows);
+    changed |= ImGui::Checkbox("Wireframe", &mesh.Wireframe);
+    changed |= ImGui::Checkbox("Disable depth test", &mesh.DisableDepthTest);
+    if (changed) {
+      emitSet(Mutation::Component::MeshRenderer, std::move(mesh));
     }
+  }
 
-    if (properties.Workflow == ::Engine::Renderer::MaterialWorkflow::SpecularGlossiness)
-    {
-        float specularFactor[3] = {properties.SpecularF0.x, properties.SpecularF0.y, properties.SpecularF0.z};
-        if (ImGui::ColorEdit3("Specular factor", specularFactor))
-        {
-            properties.SpecularF0 = {specularFactor[0], specularFactor[1], specularFactor[2]};
-            materialChanged = true;
-        }
-        trackMaterialWidget();
+  if (const auto* storedLight = world.Get<Engine::Ecs::SpotLight>(entity);
+      storedLight != nullptr && ImGui::CollapsingHeader("Spot Light")) {
+    DrawRemoveButton("Remove Spot Light Component", Mutation::Component::SpotLight, emitRemove);
+    Engine::Ecs::SpotLight light = *storedLight;
+    bool changed = ImGui::DragFloat3("Direction", light.Direction.data(), 0.01F, -1.0F, 1.0F);
+    changed |= ImGui::ColorEdit3("Light color", light.Color.data());
+    changed |= ImGui::DragFloat("Intensity", &light.Intensity, 0.05F, 0.0F, 100000.0F);
+    changed |= ImGui::DragFloat("Range", &light.Range, 0.05F, 0.01F, 100000.0F);
+    changed |= ImGui::DragFloat("Inner cone", &light.InnerAngleDegrees, 0.1F, 0.0F, 89.0F);
+    changed |= ImGui::DragFloat("Outer cone", &light.OuterAngleDegrees, 0.1F, 0.1F, 89.9F);
+    changed |= ImGui::DragFloat("Shadow bias", &light.ShadowBias, 0.0001F, 0.0F, 0.1F);
+    changed |= ImGui::DragFloat("Shadow normal bias", &light.ShadowNormalBias, 0.0001F, 0.0F, 0.1F);
+    changed |= ImGui::Checkbox("Use position", &light.UsePosition);
+    changed |= ImGui::Checkbox("Cast shadows", &light.CastShadows);
+    if (changed) {
+      emitSet(Mutation::Component::SpotLight, light);
     }
-    else if (properties.Model != ::Engine::Renderer::BrdfModel::Legacy)
-    {
-        int specularMode = static_cast<int>(properties.SpecularMode);
-        static constexpr const char *specularModeNames[] = {"Index of refraction", "Explicit F0"};
-        if (ImGui::Combo("Dielectric specular", &specularMode, specularModeNames,
-                         IM_ARRAYSIZE(specularModeNames)))
-        {
-            properties.SpecularMode = static_cast<::Engine::Renderer::DielectricSpecularMode>(specularMode);
-            materialChanged = true;
-        }
-        trackMaterialWidget();
+  }
 
-        if (properties.SpecularMode == ::Engine::Renderer::DielectricSpecularMode::IndexOfRefraction)
-        {
-            materialChanged |= ImGui::SliderFloat("Index of refraction", &properties.Ior, 1.0f, 3.0f, "%.2f");
-            trackMaterialWidget();
-        }
-        else
-        {
-            float specularF0[3] = {properties.SpecularF0.x, properties.SpecularF0.y, properties.SpecularF0.z};
-            if (ImGui::ColorEdit3("Dielectric F0", specularF0))
-            {
-                properties.SpecularF0 = {specularF0[0], specularF0[1], specularF0[2]};
-                materialChanged = true;
-            }
-            trackMaterialWidget();
-        }
+  if (const auto* storedCamera = world.Get<Engine::Ecs::Camera>(entity);
+      storedCamera != nullptr && ImGui::CollapsingHeader("Camera")) {
+    DrawRemoveButton("Remove Camera", Mutation::Component::Camera, emitRemove);
+    Engine::Ecs::Camera camera = *storedCamera;
+    bool changed = ImGui::SliderFloat("Field of view", &camera.FieldOfViewDegrees, 10.0F, 150.0F, "%.1f deg");
+    changed |= ImGui::DragFloat("Near plane", &camera.NearPlane, 0.01F, 0.001F, 100.0F);
+    changed |= ImGui::DragFloat("Far plane", &camera.FarPlane, 0.1F, camera.NearPlane + 0.01F, 100000.0F);
+    changed |= ImGui::InputInt("Priority", &camera.Priority);
+    changed |= ImGui::Checkbox("Active camera", &camera.Active);
+    if (changed) {
+      emitSet(Mutation::Component::Camera, camera);
     }
+  }
 
-    if (materialChanged)
-    {
-        properties.BaseColor = {baseColor[0], baseColor[1], baseColor[2], baseColor[3]};
-        properties.Emissive = {emissive[0], emissive[1], emissive[2]};
-        properties.Metallic = metallic;
-        properties.Roughness = roughness;
-
-        EmitEvent(
-            std::make_unique<MaterialChangedEvent>(m_SelectedEntityId, properties, m_SelectedMaterialSlot));
+  if (ImGui::Button("Add Component")) {
+    m_AddComponentFilter.fill('\0');
+    ImGui::OpenPopup("Add component popup");
+  }
+  if (ImGui::BeginPopup("Add component popup")) {
+    (void)ImGui::InputTextWithHint("##add-filter", "Search components...", m_AddComponentFilter.data(),
+                                   m_AddComponentFilter.size());
+    if (!world.Has<Engine::Ecs::MeshRenderer>(entity) && Matches("Mesh Renderer", m_AddComponentFilter.data()) &&
+        ImGui::Selectable("Mesh Renderer")) {
+      emitAdd(Mutation::Component::MeshRenderer);
     }
-    if (materialEditFinished && m_MaterialEditActive)
-    {
-        if (materialChanged)
-        {
-            EmitEvent(std::make_unique<CommandExecuteRequestedEvent>(
-                std::make_unique<ChangeMaterialPropertiesCommand>(selectedMaterial, m_MaterialBeforeEdit,
-                                                                  properties)));
-        }
-        m_MaterialEditActive = false;
+    if (!world.Has<Engine::Ecs::SpotLight>(entity) && Matches("Spot Light", m_AddComponentFilter.data()) &&
+        ImGui::Selectable("Spot Light")) {
+      emitAdd(Mutation::Component::SpotLight);
     }
-    if (sceneChanged)
-        EmitEvent(std::make_unique<SceneModifiedEvent>());
-}
-
-void InspectorPanel::DrawTextureAssignment(const char *label,
-                                           const std::shared_ptr<::Engine::Renderer::Material> &material,
-                                           AssetImportRequestedEvent::TextureSemantic semantic)
-{
-    const auto &reference = semantic == AssetImportRequestedEvent::TextureSemantic::BaseColor
-                                ? material->GetBaseColorTextureGuid()
-                                : material->GetNormalTextureGuid();
-    std::string preview = "Imported/default";
-    if (reference)
-    {
-        const auto asset = std::find_if(m_Textures.begin(), m_Textures.end(),
-                                        [&](const auto &item) { return item.guid == *reference; });
-        preview = asset == m_Textures.end() ? "Missing texture: " + *reference : asset->name;
+    if (!world.Has<Engine::Ecs::Camera>(entity) && Matches("Camera", m_AddComponentFilter.data()) &&
+        ImGui::Selectable("Camera")) {
+      emitAdd(Mutation::Component::Camera);
     }
-    if (ImGui::BeginCombo(label, preview.c_str()))
-    {
-        const bool defaultSelected = !reference;
-        if (ImGui::Selectable("Imported/default", defaultSelected))
-        {
-            EmitEvent(std::make_unique<MaterialTextureAssignmentRequestedEvent>(
-                m_SelectedEntityId, m_SelectedMaterialSlot, semantic, std::nullopt));
-        }
-        for (const auto &texture : m_Textures)
-        {
-            const bool selected = reference && *reference == texture.guid;
-            if (ImGui::Selectable(texture.name.c_str(), selected))
-            {
-                EmitEvent(std::make_unique<MaterialTextureAssignmentRequestedEvent>(
-                    m_SelectedEntityId, m_SelectedMaterialSlot, semantic, texture.guid));
-            }
-            if (ImGui::IsItemHovered())
-                ImGui::SetTooltip("%s\n%s", texture.guid.c_str(),
-                                  texture.sourcePath.generic_string().c_str());
-        }
-        ImGui::EndCombo();
+    ImGui::EndPopup();
+  }
+
+  std::string signature = "{";
+  const auto append = [&signature](const char* component) -> void {
+    if (signature.size() > 1) {
+      signature += ", ";
     }
-    if (reference && std::none_of(m_Textures.begin(), m_Textures.end(),
-                                  [&](const auto &item) { return item.guid == *reference; }))
-    {
-        ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.25f, 1.0f), "Missing texture reference: %s",
-                           reference->c_str());
-    }
-    ImGui::SameLine();
-    if (ImGui::SmallButton((std::string("Import##") + label).c_str()))
-    {
-        EmitEvent(std::make_unique<AssetImportRequestedEvent>(AssetImportRequestedEvent::AssetType::Texture,
-                                                              m_SelectedEntityId, m_SelectedMaterialSlot,
-                                                              semantic));
-    }
-}
-
-void InspectorPanel::DrawLightInspector()
-{
-    const auto selectedLight = m_SelectedLight.lock();
-    if (!selectedLight)
-    {
-        return;
-    }
-
-    ImGui::Text("Light %d", m_SelectedLightIndex);
-    ImGui::Separator();
-    bool sceneChanged = false;
-
-    int lightType = static_cast<int>(selectedLight->GetType());
-    constexpr const char *lightTypeNames[] = {"Directional", "Point", "Spot"};
-    if (ImGui::Combo("Type", &lightType, lightTypeNames, 3))
-    {
-        selectedLight->SetType(static_cast<::Engine::Renderer::LightType>(lightType));
-        sceneChanged = true;
-    }
-
-    DirectX::XMFLOAT3 pos = selectedLight->GetPosition();
-    float position[3] = {pos.x, pos.y, pos.z};
-    if (ImGui::DragFloat3("Position", position, 0.05f))
-    {
-        selectedLight->SetPosition(DirectX::XMFLOAT3(position[0], position[1], position[2]));
-        sceneChanged = true;
-    }
-
-    DirectX::XMFLOAT3 dir = selectedLight->GetDirection();
-    float direction[3] = {dir.x, dir.y, dir.z};
-    if (ImGui::DragFloat3("Direction", direction, 0.05f))
-    {
-        selectedLight->SetDirection(DirectX::XMFLOAT3(direction[0], direction[1], direction[2]));
-        sceneChanged = true;
-    }
-
-    float innerAngle = selectedLight->GetInnerAngleDegrees();
-    float outerAngle = selectedLight->GetOuterAngleDegrees();
-    float coneAngles[2] = {innerAngle, outerAngle};
-    if (selectedLight->GetType() == ::Engine::Renderer::LightType::Spot &&
-        ImGui::DragFloat2("Angles", coneAngles, 0.05f))
-    {
-        selectedLight->SetConeAngles(coneAngles[0], coneAngles[1]);
-        sceneChanged = true;
-    }
-
-    DirectX::XMFLOAT3 color = selectedLight->GetColor();
-    float lightColor[3] = {color.x, color.y, color.z};
-    if (ImGui::ColorEdit3("Color", lightColor))
-    {
-        selectedLight->SetColor(DirectX::XMFLOAT3(lightColor[0], lightColor[1], lightColor[2]));
-        sceneChanged = true;
-    }
-
-    float intensity = selectedLight->GetIntensity();
-    if (ImGui::DragFloat("Intensity", &intensity, 0.05f, 0.0f, 100.0f))
-    {
-        selectedLight->SetIntensity(intensity);
-        sceneChanged = true;
-    }
-
-    float range = selectedLight->GetRange();
-    if (ImGui::DragFloat("Range", &range, 0.05f, 0.1f, 100.0f))
-    {
-        selectedLight->SetRange(range);
-        sceneChanged = true;
-    }
-
-    bool castShadows = selectedLight->GetCastShadows();
-    if (ImGui::Checkbox("Cast shadows", &castShadows))
-    {
-        selectedLight->SetCastShadows(castShadows);
-        sceneChanged = true;
-    }
-    if (sceneChanged)
-        EmitEvent(std::make_unique<SceneModifiedEvent>());
-}
-
-void InspectorPanel::DrawCameraInspector()
-{
-    const auto selectedCamera = m_SelectedCamera.lock();
-    if (!selectedCamera)
-    {
-        return;
-    }
-
-    ImGui::Text("Camera %d", m_SelectedCameraIndex);
-    ImGui::Separator();
-
-    float position[3] = {selectedCamera->transform.Position.x, selectedCamera->transform.Position.y,
-                         selectedCamera->transform.Position.z};
-    if (ImGui::DragFloat3("Position", position, 0.05f))
-    {
-        selectedCamera->transform.SetPosition(position[0], position[1], position[2]);
-        EmitEvent(std::make_unique<SceneModifiedEvent>());
-    }
-
-    float fovDeg = DirectX::XMConvertToDegrees(m_CameraFov);
-    const bool fovChanged = ImGui::SliderFloat("FOV", &fovDeg, 20.0f, 90.0f, "%.1f deg");
-    if (fovChanged)
-    {
-        m_CameraFov = DirectX::XMConvertToRadians(fovDeg);
-    }
-
-    bool projectionChanged = fovChanged;
-    projectionChanged |= ImGui::DragFloat("Near", &m_CameraNearPlane, 0.01f, 0.01f, m_CameraFarPlane - 0.01f);
-    projectionChanged |= ImGui::DragFloat("Far", &m_CameraFarPlane, 0.1f, m_CameraNearPlane + 0.01f, 1000.0f);
-
-    if (projectionChanged)
-    {
-        m_CameraNearPlane = (std::max)(0.01f, m_CameraNearPlane);
-        m_CameraFarPlane = (std::max)(m_CameraNearPlane + 0.01f, m_CameraFarPlane);
-
-        EmitEvent(
-            std::make_unique<CameraSettingsChangedEvent>(m_CameraFov, m_CameraNearPlane, m_CameraFarPlane));
-    }
+    signature += component;
+  };
+  append("PersistentIdentity");
+  if (world.Has<Engine::Ecs::Name>(entity)) {
+    append("Name");
+  }
+  if (world.Has<Engine::Ecs::LocalTransform>(entity)) {
+    append("Transform");
+  }
+  if (world.Has<Engine::Ecs::Parent>(entity) && world.Has<Engine::Ecs::ChildList>(entity)) {
+    append("Parent / ChildList");
+  }
+  if (world.Has<Engine::Ecs::MeshRenderer>(entity)) {
+    append("MeshRenderer");
+  }
+  if (world.Has<Engine::Ecs::SpotLight>(entity)) {
+    append("SpotLight");
+  }
+  if (world.Has<Engine::Ecs::Camera>(entity)) {
+    append("Camera");
+  }
+  signature += '}';
+  ImGui::Separator();
+  ImGui::BeginDisabled();
+  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg)
+  ImGui::TextWrapped("Archetype: %s", signature.c_str());
+  ImGui::EndDisabled();
 }

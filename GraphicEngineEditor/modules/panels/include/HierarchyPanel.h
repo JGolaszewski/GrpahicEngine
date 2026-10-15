@@ -1,74 +1,34 @@
 #pragma once
 
-#include "assets/include/AssetManager.h"
+#include "events/include/EcsEntityCreateRequestedEvent.h"
+#include "events/include/EcsEntityDeleteRequestedEvent.h"
+#include "events/include/EcsEntityReparentRequestedEvent.h"
+#include "events/include/EcsEntitySelectedEvent.h"
+#include "events/include/EntityDeselectedEvent.h"
+#include "events/include/SceneChangedEvent.h"
 #include "panels/include/EditorPanel.h"
 #include "scene/include/Scene.h"
-#include "events/include/EditorEvents.h"
-#include <DirectXMath.h>
+
+#include <array>
 #include <memory>
 #include <vector>
 
-namespace Engine::Renderer
-{
-class Entity;
-class SpotLight;
-class Camera;
-} // namespace Engine::Renderer
+class HierarchyPanel final : public EditorPanel {
+public:
+  void Draw() override;
+  void OnEvent(Engine::Events::Event& event) override;
 
-// ================================================================================
-// HierarchyPanel.h
-// ================================================================================
-// Decoupled from the Editor. Maintains its own copy of scene counts and
-// selection state, received via events. Emits EntitySelectedEvent when the
-// user clicks an item, and AddObjectRequestedEvent from the spawn modal.
-// ================================================================================
+private:
+  void DrawEntityNode(const Engine::Scene::EntitySnapshot& entity,
+                      const std::vector<Engine::Scene::EntitySnapshot>& entities);
+  void DrawRootDropTarget();
+  [[nodiscard]] auto SubtreeMatches(const Engine::Scene::EntitySnapshot& entity,
+                                    const std::vector<Engine::Scene::EntitySnapshot>& entities) const -> bool;
+  [[nodiscard]] auto MatchesFilter(const Engine::Scene::EntitySnapshot& entity) const -> bool;
+  void DrawCreateMenu(Engine::EntityHandle parent);
 
-class HierarchyPanel : public EditorPanel
-{
-  public:
-    HierarchyPanel() = default;
-
-    void Draw() override;
-    void OnEvent(Engine::Events::Event &event) override;
-
-  private:
-    void DrawAddObjectModal();
-
-    // Internal state — synchronised via events
-    std::vector<Engine::EntityId> m_ObjectIds;
-    std::vector<Engine::LightId> m_LightIds;
-    std::vector<Engine::CameraId> m_CameraIds;
-    std::shared_ptr<Engine::Scene> m_Scene;
-
-    EntitySelectedEvent::ItemType m_SelectedItemType = EntitySelectedEvent::ItemType::None;
-    int m_SelectedObjectIndex = -1;
-    Engine::EntityId m_SelectedObjectId = Engine::InvalidEntityId;
-    int m_SelectedLightIndex = -1;
-    int m_SelectedCameraIndex = -1;
-
-    void DrawEntityTree(const Engine::Object &parent);
-    void DrawEntityNode(const std::shared_ptr<Engine::Object> &object);
-    void DrawRootDropTarget();
-
-    // Spawn modal state
-    enum class SpawnShapeType
-    {
-        Cube,
-        Sphere,
-        Plane,
-        Cone
-    };
-
-    SpawnShapeType m_SpawnShape = SpawnShapeType::Cube;
-    DirectX::XMFLOAT3 m_SpawnPosition = {0.0f, 0.0f, 8.0f};
-    DirectX::XMFLOAT3 m_SpawnScale = {1.0f, 1.0f, 1.0f};
-    DirectX::XMFLOAT4 m_SpawnColor = {0.95f, 0.95f, 0.95f, 1.0f};
-    DirectX::XMFLOAT3 m_SpawnEmissive = {0.0f, 0.0f, 0.0f};
-    float m_SpawnMetallic = 0.0f;
-    float m_SpawnRoughness = 0.8f;
-    char m_SpawnName[128]{};
-    std::shared_ptr<SceneCreationResult> m_PendingCreation;
-    std::string m_CreationError;
-    std::vector<Engine::AssetManager::ModelAssetInfo> m_Models;
-    int m_SelectedModelIndex = 0;
+  std::shared_ptr<Engine::Scene> m_Scene;
+  Engine::EntityHandle m_SelectedEntity = Engine::InvalidEntityHandle;
+  std::array<char, 128> m_NewEntityName{'E', 'n', 't', 'i', 't', 'y', '\0'};
+  std::array<char, 128> m_Filter{};
 };

@@ -2,8 +2,7 @@
 
 #include <cstdint>
 
-namespace Engine
-{
+namespace Engine {
 inline constexpr uint32_t ShadowMapSize = 2048;
 inline constexpr uint32_t MaxShadowedLights = 4;
 inline constexpr uint32_t PerObjectDataStride = 256;

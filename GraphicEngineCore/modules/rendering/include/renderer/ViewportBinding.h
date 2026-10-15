@@ -1,35 +1,25 @@
 #pragma once
 
-#include "runtime/include/CoreExport.h"
 #include "rendering/include/renderer/DebugRenderSettings.h"
+#include "runtime/include/CoreExport.h"
+#include "scene/include/ArchetypeWorld.h"
 
-namespace Engine::Renderer
-{
-class Camera;
-}
-namespace Engine
-{
+namespace Engine {
 class Viewport;
 class Scene;
 } // namespace Engine
 
-namespace Engine
-{
+namespace Engine {
 
-/// Associates a scene and camera with a viewport for rendering.
-struct ENGINE_API ViewportBinding
-{
-    ::Engine::Renderer::Camera *SourceCamera = nullptr; ///< Camera used to render the scene.
-    Engine::Viewport *TargetViewport = nullptr;         ///< Viewport that receives the rendered image.
-    Engine::Scene *TargetScene = nullptr;               ///< Scene whose objects are submitted.
+struct ENGINE_API ViewportBinding {
+  Engine::EntityHandle CameraEntity = Engine::InvalidEntityHandle;
+  Engine::Viewport* TargetViewport = nullptr;
+  Engine::Scene* TargetScene = nullptr;
 
-    ::Engine::Renderer::DebugRenderSettings DebugSettings; ///< Optional debug visualizations for this view.
+  ::Engine::Renderer::DebugRenderSettings DebugSettings;
 
-    /// Checks that the required camera, viewport, and scene are present.
-    /// @return True when the binding can be submitted.
-    bool IsValid() const
-    {
-        return SourceCamera != nullptr && TargetViewport != nullptr && TargetScene != nullptr;
-    }
+  bool IsValid() const {
+    return CameraEntity != Engine::InvalidEntityHandle && TargetViewport != nullptr && TargetScene != nullptr;
+  }
 };
 } // namespace Engine

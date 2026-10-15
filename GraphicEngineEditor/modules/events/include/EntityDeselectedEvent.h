@@ -9,16 +9,9 @@
 // is cleared.
 // ================================================================================
 
-class EntityDeselectedEvent : public Engine::Events::Event
-{
-  public:
-    static Engine::Events::EventType GetStaticType()
-    {
-        return Engine::Events::EventType::EntityDeselected;
-    }
+class EntityDeselectedEvent : public Engine::Events::Event {
+public:
+  static Engine::Events::EventType GetStaticType() { return Engine::Events::EventType::EntityDeselected; }
 
-    Engine::Events::EventType GetType() const override
-    {
-        return GetStaticType();
-    }
+  Engine::Events::EventType GetType() const override { return GetStaticType(); }
 };

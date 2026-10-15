@@ -173,20 +173,3 @@ add_custom_target(tests
     COMMENT "Running engine tests"
 )
 
-if(BUILD_TESTING)
-    add_executable(BrdfReferenceTests tests/BrdfReferenceTests.cpp)
-    engine_enable_strict_msvc_checks(BrdfReferenceTests)
-    if(NOT CMAKE_GENERATOR MATCHES "Ninja|Makefiles")
-        set_property(TARGET BrdfReferenceTests PROPERTY CXX_CLANG_TIDY "${ENGINE_CLANG_TIDY_COMMAND}")
-    endif()
-    target_link_libraries(BrdfReferenceTests PRIVATE GraphicEngineCore Microsoft::DirectXMath nvrhi)
-    add_test(NAME BrdfReferenceTests COMMAND BrdfReferenceTests)
-
-    add_executable(AssetManagerTests tests/AssetManagerTests.cpp)
-    engine_enable_strict_msvc_checks(AssetManagerTests)
-    if(NOT CMAKE_GENERATOR MATCHES "Ninja|Makefiles")
-        set_property(TARGET AssetManagerTests PROPERTY CXX_CLANG_TIDY "${ENGINE_CLANG_TIDY_COMMAND}")
-    endif()
-    target_link_libraries(AssetManagerTests PRIVATE GraphicEngineCore)
-    add_test(NAME AssetManagerTests COMMAND AssetManagerTests)
-endif()

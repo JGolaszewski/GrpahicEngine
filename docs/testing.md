@@ -2,11 +2,9 @@
 
 ## Correctness tests
 
-The default x64 Debug preset builds the existing asset and BRDF executables and the
-GoogleTest CPU unit suite. Unit tests do not create a window or graphics device.
-Asset tests use temporary project roots and clean them up when the test exits. The
-registered correctness suite includes CPU tests and a D3D11 WARP software-device
-integration path for renderer lifecycle and application scene load/save behavior.
+The default x64 Debug preset builds the asset and BRDF executables and the GoogleTest
+CPU unit suite. Tests use temporary project roots where they write scene or asset
+files; the suite does not create a window or graphics device.
 
 ```powershell
 cmake --preset x64-debug
@@ -18,17 +16,14 @@ Run all correctness tests or select a GoogleTest case with:
 
 ```powershell
 ctest --test-dir out/build/x64-debug --output-on-failure -C Debug
-out/build/x64-debug/bin/GraphicEngineUnitTests.exe --gtest_filter="TransformTests.*"
+out/build/x64-debug/bin/GraphicEngineUnitTests.exe --gtest_filter="ArchetypeWorldTests.*"
 ctest --test-dir out/build/x64-debug --output-on-failure -R "AssetManagerTests|BrdfReferenceTests"
 ```
 
 CTest discovers the individual GoogleTest cases at test time, so `-R` and
-`--gtest_filter` can narrow runs. `AssetManagerTests` remains an integration-style
-legacy executable while it is incrementally migrated; `BrdfReferenceTests` remains
-a standalone numerical reference suite. New tests belong under `tests/unit/<domain>`.
-Slow numerical integration should use a `slow` label and stay outside the default
-PR run. The WARP tests explicitly create and own a software D3D11 device, so they
-do not require a physical GPU.
+`--gtest_filter` can narrow runs. `AssetManagerTests` is the integration executable;
+`BrdfReferenceTests` is a standalone numerical reference suite. New tests belong
+under `tests/unit/<domain>`.
 
 ## Benchmarks
 
@@ -49,10 +44,10 @@ out/build/x64-release/bin/GraphicEngineBenchmarks.exe `
   --benchmark_out_format=json
 ```
 
-The benchmark target measures transform world-matrix cache hits and parent-chain
-depth, scene traversal at several entity counts, scene-document saving, and
-render-graph build and compile work. Google Benchmark handles warmup, repeated
-samples, statistics, and JSON output. Compare only Release runs from controlled
+The current benchmark target measures ECS archetype column iteration at several
+entity counts. Google Benchmark handles warmup, repeated samples, statistics, and
+JSON output. Transform/hierarchy, scene or asset processing, and render-graph
+benchmarks remain open work. Compare only Release runs from controlled
 hardware; record the commit, compiler, OS, CPU, benchmark version, power mode,
 and background load. Clock scaling, thermal throttling, and fixture setup affect
 results. There are no timing gates in CTest. To include the registered smoke run in CTest, use

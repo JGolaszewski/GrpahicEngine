@@ -40,6 +40,7 @@ function(engine_enable_strict_msvc_checks TARGET)
         target_compile_options(${TARGET} PRIVATE
             /W4
             /WX
+            /EHsc
             /permissive-
             /Zc:preprocessor
         )

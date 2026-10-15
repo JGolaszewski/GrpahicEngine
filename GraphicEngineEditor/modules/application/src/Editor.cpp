@@ -1,16 +1,11 @@
-#include "application/include/Editor.h"
+﻿#include "application/include/Editor.h"
 
-#include "assets/include/AssetManager.h"
-#include "runtime/include/LogMacros.h"
-#include "rendering/include/RenderBackend.h"
-#include "rendering/include/PrimitiveFactory.h"
-#include "rendering/include/RenderSystem.h"
-#include "scene/include/Scene.h"
-#include "rendering/include/ViewportTarget.h"
-#include "runtime/include/Window.h"
-#include "commands/include/ChangeMaterialTextureCommand.h"
-#include "commands/include/EntityMembershipCommand.h"
-#include "commands/include/ReplaceEntityCommand.h"
+#include "events/include/AssetRegistryChangedEvent.h"
+#include "events/include/EcsComponentMutationRequestedEvent.h"
+#include "events/include/EcsEntityCreateRequestedEvent.h"
+#include "events/include/EcsEntityDeleteRequestedEvent.h"
+#include "events/include/EcsEntityReparentRequestedEvent.h"
+#include "events/include/EcsEntitySelectedEvent.h"
 #include "events/include/EditorEvents.h"
 #include "panels/include/AssetBrowserPanel.h"
 #include "panels/include/EngineSettingsPanel.h"
@@ -20,1839 +15,556 @@
 #include "panels/include/ScenePanel.h"
 #include "panels/include/StatisticsPanel.h"
 #include "platform/include/EditorFileDialogs.h"
-#include "rendering/include/renderer/Camera.h"
-#include "rendering/include/renderer/Entity.h"
-#include "rendering/include/renderer/Light.h"
-#include "rendering/include/renderer/Material.h"
+#include "rendering/include/RenderSystem.h"
+#include "rendering/include/ViewportTarget.h"
 #include "rendering/include/renderer/Viewport.h"
+#include "runtime/include/LogMacros.h"
+#include "runtime/include/Window.h"
+#include "scene/include/Scene.h"
 
 #include <DirectXMath.h>
 #include <algorithm>
 #include <cmath>
-#include <filesystem>
 #include <imgui.h>
 #include <imgui_internal.h>
-#include <nlohmann/json.hpp>
+#include <optional>
+#include <span>
 #include <string>
-#include <unordered_map>
-#include <unordered_set>
+#include <utility>
 
-namespace
-{
-std::string JoinWarnings(const std::vector<std::string> &warnings)
-{
-    std::string message;
-    for (const auto &warning : warnings)
-    {
-        if (!message.empty())
-            message += '\n';
-        message += warning;
-    }
-    return message;
+namespace {
+auto QuaternionToPitchYawRoll(const std::array<float, 4>& quaternion) -> std::array<float, 3> {
+  const DirectX::XMVECTOR rotation =
+      DirectX::XMQuaternionNormalize(DirectX::XMVectorSet(quaternion[0], quaternion[1], quaternion[2], quaternion[3]));
+  const DirectX::XMVECTOR forward = DirectX::XMVector3Rotate(DirectX::XMVectorSet(0.0F, 0.0F, 1.0F, 0.0F), rotation);
+  const float pitch = std::asin(std::clamp(-DirectX::XMVectorGetY(forward), -1.0F, 1.0F));
+  const float yaw = std::atan2(DirectX::XMVectorGetX(forward), DirectX::XMVectorGetZ(forward));
+  const DirectX::XMVECTOR noRollRotation = DirectX::XMQuaternionRotationRollPitchYaw(pitch, yaw, 0.0F);
+  const DirectX::XMVECTOR baseUp =
+      DirectX::XMVector3Rotate(DirectX::XMVectorSet(0.0F, 1.0F, 0.0F, 0.0F), noRollRotation);
+  const DirectX::XMVECTOR baseRight =
+      DirectX::XMVector3Rotate(DirectX::XMVectorSet(1.0F, 0.0F, 0.0F, 0.0F), noRollRotation);
+  const DirectX::XMVECTOR actualUp = DirectX::XMVector3Rotate(DirectX::XMVectorSet(0.0F, 1.0F, 0.0F, 0.0F), rotation);
+  const float roll = std::atan2(DirectX::XMVectorGetX(DirectX::XMVector3Dot(actualUp, baseRight)),
+                                DirectX::XMVectorGetX(DirectX::XMVector3Dot(actualUp, baseUp)));
+  return {pitch, yaw, roll};
 }
-
-bool HasIgnoredExtensionWarning(const std::vector<std::string> &warnings)
-{
-    return std::any_of(warnings.begin(), warnings.end(), [](const std::string &warning) {
-        return warning.find("extension will be ignored:") != std::string::npos;
-    });
-}
-
 } // namespace
 
-void Editor::OnInit()
-{
-    m_EditorConsole.SetSimulationStateCallbacks([this] { return IsSimulationPaused(); },
-                                                [this](bool paused) { SetSimulationPaused(paused); });
-    m_EditorConsole.SetDiagnosticContextProvider(
-        [this] {
-            using Json = nlohmann::json;
-            const FrameTimingStats &timing = GetFrameTimingStats();
-            Json context{{"application", "GraphicEngineEditor"},
-                         {"build_configuration",
-#ifdef NDEBUG
-                          "release"
-#else
-                          "debug"
-#endif
-                         },
-                         {"frame",
-                          {{"index", timing.FrameCount == 0 ? 0 : timing.FrameCount - 1},
-                           {"frame_ms", timing.FrameTimeMs},
-                           {"cpu_ms", timing.CpuFrameTimeMs},
-                           {"update_ms", timing.UpdateTimeMs},
-                           {"view_setup_ms", timing.ViewSetupTimeMs},
-                           {"render_ms", timing.RenderTimeMs},
-                           {"ui_ms", timing.UiTimeMs},
-                           {"present_ms", timing.PresentTimeMs},
-                           {"limiter_wait_ms", timing.LimiterWaitMs},
-                           {"gpu_available", timing.GpuTimingAvailable},
-                           {"gpu_ms", timing.GpuFrameTimeMs},
-                           {"gpu_frame_index", timing.GpuTimingFrameIndex},
-                           {"objects_submitted", timing.ObjectsSubmitted},
-                           {"objects_culled", timing.ObjectsCulled},
-                           {"packets_built", timing.PacketsBuilt},
-                           {"draw_calls", timing.DrawCalls},
-                           {"upload_bytes", timing.UploadBytes}}}};
-            if (const Engine::IRenderBackend *backend = GetRenderer())
-            {
-                const Engine::BackendDiagnostics diagnostics = backend->GetDiagnostics();
-                context["backend"] = {{"name", diagnostics.BackendName},
-                                      {"device_ready", diagnostics.DeviceReady},
-                                      {"device_generation", diagnostics.DeviceGeneration},
-                                      {"adapter_vendor_id", diagnostics.AdapterVendorId},
-                                      {"adapter_device_id", diagnostics.AdapterDeviceId},
-                                      {"width", diagnostics.Width},
-                                      {"height", diagnostics.Height},
-                                      {"vsync", diagnostics.VSyncEnabled},
-                                      {"last_present_result", diagnostics.LastPresentResult},
-                                      {"last_backend_error", diagnostics.LastBackendError},
-                                      {"device_removed_reason", diagnostics.DeviceRemovalReason},
-                                      {"validation_warnings", diagnostics.ValidationWarningCount},
-                                      {"validation_errors", diagnostics.ValidationErrorCount}};
-            }
-            return context.dump();
-        },
-        [this] { return GetFrameTimingStats().FrameCount; });
-    m_EditorConsole.AttachToLogger();
-
-    if (!m_UiIntegration.Initialize(GetWindow(), GetRenderer()))
-    {
-        m_FileError = "Editor UI initialization failed.";
-        ENGINE_LOG_ERROR("Core", "Editor UI initialization failed | window_valid: {} | renderer_valid: {}",
-                         GetWindow() != nullptr, GetRenderer() != nullptr);
-    }
-    std::string projectError;
-    if (!GetAssetManager()->SetProjectRoot(EditorPlatform::LoadRememberedProjectRoot(), projectError))
-    {
-        m_FileError = std::move(projectError);
-        ENGINE_LOG_ERROR("Asset", "Editor project-root initialization failed | error: {}", m_FileError);
-    }
-    else
-    {
-        EditorPlatform::RememberProjectRoot(GetAssetManager()->GetProjectRoot());
-        std::vector<std::string> registryWarnings;
-        if (!GetAssetManager()->RefreshRegistry(registryWarnings, projectError))
-        {
-            m_FileError = std::move(projectError);
-            ENGINE_LOG_ERROR("Asset", "Editor asset registry refresh failed | project_root: {} | error: {}",
-                             GetAssetManager()->GetProjectRoot().generic_string(), m_FileError);
-        }
-        else if (!registryWarnings.empty())
-        {
-            m_FileError = JoinWarnings(registryWarnings);
-            ENGINE_LOG_WARN("Asset",
-                            "Editor asset registry contains warnings | warning_count: {} | details: {}",
-                            registryWarnings.size(), m_FileError);
-        }
-    }
-
-    // --- Create Core Scene ---
-    m_ActiveScene = std::make_shared<Engine::Scene>();
-    AddScene(m_ActiveScene);
-
-    // --- Create and Bind Camera ---
-    auto mainCamera =
-        std::make_shared<::Engine::Renderer::Camera>(m_CameraFov, m_CameraNearPlane, m_CameraFarPlane);
-    mainCamera->transform.SetPosition(0.0f, 0.0f, -5.0f);
-
-    m_ActiveCameraId = m_ActiveScene->AddCamera(mainCamera);
-
-    // --- Dummy Data Setup ---
-    const DirectX::XMFLOAT3 objectPositions[2] = {DirectX::XMFLOAT3(-3.2f, 0.6f, 2.0f),
-                                                  DirectX::XMFLOAT3(3.2f, 0.3f, 2.3f)};
-
-    const DirectX::XMFLOAT3 lightPositions[2] = {DirectX::XMFLOAT3(-3.2f, 1.8f, -0.4f),
-                                                 DirectX::XMFLOAT3(3.2f, 4.8f, -5.2f)};
-
-    ::Engine::Renderer::MaterialProperties demoMaterialProperties;
-    demoMaterialProperties.BaseColor = {0.25f, 0.55f, 0.95f, 1.0f};
-    demoMaterialProperties.Roughness = 0.45f;
-    demoMaterialProperties.Model = ::Engine::Renderer::BrdfModel::GGX;
-    auto demoMaterial = GetRenderSystem()->CreateMaterial(demoMaterialProperties);
-    auto demoCube = GetRenderSystem()->CreatePrimitive(Engine::PrimitiveShape::Cube, demoMaterial,
-                                                       DirectX::XMFLOAT3(0.0f, 0.0f, 0.0f));
-    Engine::EntityId demoCubeId = Engine::InvalidEntityId;
-    if (demoCube)
-    {
-        demoCube->Name = "Demo cube";
-        demoCube->PrimitiveType = "cube";
-        demoCubeId = m_ActiveScene->AddEntity(demoCube);
-    }
-
-    const float lightRanges[2] = {8.0f, 20.0f};
-    const DirectX::XMFLOAT2 coneAngles[2] = {DirectX::XMFLOAT2(20.0f, 32.0f),
-                                             DirectX::XMFLOAT2(30.0f, 46.0f)};
-
-    for (int i = 0; i < 2; ++i)
-    {
-        auto light = std::make_shared<::Engine::Renderer::SpotLight>(
-            DirectX::XMFLOAT3(0.0f, -1.0f, 0.0f), DirectX::XMFLOAT3(1.0f, 0.96f, 0.9f), 8.5f);
-        light->SetUsePosition(true);
-        light->SetPosition(lightPositions[i]);
-        light->LookAt(objectPositions[i]);
-        light->SetRange(lightRanges[i]);
-        light->SetConeAngles(coneAngles[i].x, coneAngles[i].y);
-        light->SetCastShadows(true);
-        light->SetShadowBias(0.0015f);
-        light->SetShadowNormalBias(0.0025f);
-        m_ActiveScene->AddLight(std::move(light));
-    }
-
-    // --- Create Viewport ---
-    // Start with a default size (updated on resize/panel dock)
-    CreateViewport(1280, 720);
-
-    // --- Initialize Panels ---
-    auto mainBar = std::make_unique<MainBar>();
-    mainBar->SetConsoleOpenHandler([this] { m_EngineConsoleOpen = true; });
-    auto engineSettings = std::make_unique<EngineSettingsPanel>(this);
-    EngineSettingsPanel *engineSettingsPanel = engineSettings.get();
-    mainBar->SetSettingsOpenHandler([engineSettingsPanel] { engineSettingsPanel->Open(); });
-    m_Windows.push_back(std::move(mainBar));
-    m_Windows.push_back(std::move(engineSettings));
-    m_Windows.push_back(std::make_unique<StatWindow>(this));
-    m_Windows.push_back(std::make_unique<ScenePanel>());
-    m_Windows.push_back(std::make_unique<HierarchyPanel>());
-    m_Windows.push_back(std::make_unique<InspectorPanel>());
-    m_Windows.push_back(std::make_unique<AssetBrowserPanel>());
-
-    m_PanelConnections.reserve(m_Windows.size());
-    for (auto &window : m_Windows)
-    {
-        if (window)
-        {
-            m_PanelConnections.push_back(m_EventRouter.Subscribe(
-                *window, [this](auto event) { ProcessPanelEvent(std::move(event)); }));
-        }
-    }
-
-    // Broadcast initial state
-    BroadcastSceneChanged();
-    AssetRegistryChangedEvent initialAssets(GetAssetManager()->GetKnownModels(),
-                                            GetAssetManager()->GetKnownTextures());
-    BroadcastEvent(initialAssets);
-    BroadcastCameraSettings();
-    BroadcastViewportChanged();
-    if (demoCubeId != Engine::InvalidEntityId)
-    {
-        ProcessPanelEvent(std::make_unique<EntitySelectedEvent>(EntitySelectedEvent::ItemType::Object, 0, -1,
-                                                                -1, demoCubeId, Engine::InvalidLightId,
-                                                                Engine::InvalidCameraId));
-    }
-    ENGINE_LOG_INFO("Core", "Editor initialized | panel_count: {} | demo_entity_id: {} | viewport_valid: {}",
-                    m_Windows.size(), demoCubeId, m_EditorViewport != nullptr);
-}
-
-void Editor::OnSceneReplaced(const std::shared_ptr<Engine::Scene> &scene)
-{
-    m_ActiveScene = scene;
-    m_ActiveCameraId =
-        scene && !scene->GetCameras().empty() ? scene->GetCameraIdAt(0) : Engine::InvalidCameraId;
-    m_SelectedItemType = SelectedItemType::None;
-    m_SelectedEntityId = Engine::InvalidEntityId;
-    m_SelectedLightId = Engine::InvalidLightId;
-    m_SelectedCameraId = Engine::InvalidCameraId;
-    m_CommandHistory.Clear();
-    m_SceneDirty = false;
-    if (const auto camera = GetActiveCamera())
-    {
-        m_CameraFov = camera->GetFovRadians();
-        m_CameraNearPlane = camera->GetNearPlane();
-        m_CameraFarPlane = camera->GetFarPlane();
-    }
-    BroadcastSceneChanged();
-    AssetRegistryChangedEvent assetUpdate(GetAssetManager()->GetKnownModels(),
-                                          GetAssetManager()->GetKnownTextures());
-    BroadcastEvent(assetUpdate);
-    BroadcastCameraSettings();
-    BroadcastViewportChanged();
-}
-
-void Editor::CreateViewport(uint32_t width, uint32_t height)
-{
-    if (width == 0 || height == 0)
-    {
-        return;
-    }
-
-    DestroyViewport();
-
-    if (!GetRenderSystem())
-    {
-        ENGINE_LOG_ERROR(
-            "Render",
-            "Editor viewport creation failed | reason: render_system_unavailable | width: {} | height: {}",
-            width, height);
-        return;
-    }
-
-    auto target = GetRenderSystem()->CreateViewportTarget(width, height);
-    if (!target)
-    {
-        ENGINE_LOG_ERROR("Render", "Editor viewport target creation failed | width: {} | height: {}", width,
-                         height);
-        return;
-    }
-
-    m_ViewportSize = std::pair<float, float>(static_cast<float>(width), static_cast<float>(height));
-    m_EditorViewportTarget = std::move(target);
-    m_EditorViewport = std::make_shared<Engine::Viewport>(m_EditorViewportTarget);
-    AddViewport(m_EditorViewport);
-    ENGINE_LOG_DEBUG("Render", "Editor viewport created | width: {} | height: {}", width, height);
-}
-
-void Editor::DestroyViewport()
-{
-    const bool hadViewport = m_EditorViewport != nullptr;
-    if (m_EditorViewport)
-    {
-        RemoveViewport(m_EditorViewport);
-    }
-    m_EditorViewport.reset();
-    m_EditorViewportTarget.reset();
-    m_ViewportSize = std::pair<float, float>(0.0f, 0.0f);
-    if (hadViewport)
-        ENGINE_LOG_DEBUG("Render", "Editor viewport destroyed");
-}
-
-void *Editor::GetViewportTextureID() const
-{
-    return m_UiIntegration.GetTextureId(m_EditorViewportTarget.get());
-}
-
-void Editor::OnSetupViews()
-{
-    // Rejestracja okienka Edytora w nowym potoku (Application -> RenderSystem)
-    const auto activeCamera = GetActiveCamera();
-    if (m_EditorViewport && activeCamera && m_ActiveScene)
-    {
-        Engine::ViewportBinding binding;
-        binding.TargetViewport = m_EditorViewport.get();
-        binding.SourceCamera = activeCamera.get();
-        binding.TargetScene = m_ActiveScene.get();
-        binding.DebugSettings.ShowLightGizmos = m_ShowDebugLightGizmos;
-        binding.DebugSettings.ShowWireframePlane = m_ShowDebugWireframePlane;
-        binding.DebugSettings.DepthMode = ::Engine::Renderer::DebugDepthMode::AlwaysOnTop;
-        binding.DebugSettings.SelectedLightId =
-            m_SelectedItemType == SelectedItemType::Light ? m_SelectedLightId : Engine::InvalidLightId;
-
-        RegisterView(binding);
-    }
-}
-
-void Editor::OnUpdate(float deltaTime)
-{
-    if (m_EditorConsole.ConsumePauseRequest())
-        SetSimulationPaused(true);
-    if (!m_UiIntegration.IsInitialized())
-        return;
-    const auto keyDown = [this](Engine::Events::KeyCode key) { return m_KeyDown[static_cast<size_t>(key)]; };
-
-    const auto mouseDown = [this](Engine::Events::MouseButton button) {
-        return m_MouseButtonDown[static_cast<size_t>(button)];
-    };
-
-    const auto activeCamera = GetActiveCamera();
-    const bool rightMouseDown = mouseDown(Engine::Events::MouseButton::Right);
-    const ImGuiIO &io = ImGui::GetIO();
-
-    Engine::EditorCameraController::InputState input;
-    input.MoveForward = keyDown(Engine::Events::KeyCode::W);
-    input.MoveBackward = keyDown(Engine::Events::KeyCode::S);
-    input.MoveRight = keyDown(Engine::Events::KeyCode::D);
-    input.MoveLeft = keyDown(Engine::Events::KeyCode::A);
-    input.MoveUp = keyDown(Engine::Events::KeyCode::E);
-    input.MoveDown = keyDown(Engine::Events::KeyCode::Q);
-    input.RightMouseDown = rightMouseDown;
-    input.ViewportHovered = m_ViewportHovered;
-    input.TextInputActive = io.WantTextInput;
-
-    m_CameraController.SetCamera(activeCamera.get());
-    m_CameraController.SetInput(input);
-    m_CameraController.Update(deltaTime);
-
-    const bool shouldHideCursor = activeCamera && m_CameraController.ShouldCaptureCursor();
-    if (GetWindow() && shouldHideCursor != m_CursorHidden)
-    {
-        GetWindow()->SetCursorVisible(!shouldHideCursor);
-        m_CursorHidden = shouldHideCursor;
-    }
-}
-
-void Editor::OnEvent(Engine::Events::Event &event)
-{
-    m_EventRouter.DispatchInput(event);
-    if (event.Handled)
-        return;
-
-    Engine::Events::EventDispatcher dispatcher(event);
-
-    dispatcher.Dispatch<Engine::Events::KeyPressedEvent>([this](const auto &keyEvent) {
-        constexpr int GLFW_MOD_CONTROL = 0x0002;
-        if ((keyEvent.Mods & GLFW_MOD_CONTROL) == 0)
-        {
-            return false;
-        }
-        if (keyEvent.Key == Engine::Events::KeyCode::Z)
-        {
-            Undo();
-            return true;
-        }
-        if (keyEvent.Key == Engine::Events::KeyCode::Y)
-        {
-            Redo();
-            return true;
-        }
-        if (keyEvent.Key == Engine::Events::KeyCode::N)
-        {
-            RequestSceneAction(SceneFileActionRequestedEvent::Action::NewScene);
-            return true;
-        }
-        if (keyEvent.Key == Engine::Events::KeyCode::O)
-        {
-            RequestSceneAction(SceneFileActionRequestedEvent::Action::OpenScene);
-            return true;
-        }
-        if (keyEvent.Key == Engine::Events::KeyCode::S)
-        {
-            RequestSceneAction((keyEvent.Mods & 0x0001) != 0
-                                   ? SceneFileActionRequestedEvent::Action::SaveSceneAs
-                                   : SceneFileActionRequestedEvent::Action::SaveScene);
-            return true;
-        }
-        return false;
-    });
-
-    if (event.Handled)
-        return;
-
-    dispatcher.Dispatch<Engine::Events::KeyPressedEvent>([this](const auto &keyEvent) {
-        m_KeyDown[static_cast<size_t>(keyEvent.Key)] = true;
-        return false;
-    });
-
-    dispatcher.Dispatch<Engine::Events::KeyReleasedEvent>([this](const auto &keyEvent) {
-        m_KeyDown[static_cast<size_t>(keyEvent.Key)] = false;
-        return false;
-    });
-
-    dispatcher.Dispatch<Engine::Events::MouseButtonPressedEvent>([this](const auto &mouseButtonEvent) {
-        m_MouseButtonDown[static_cast<size_t>(mouseButtonEvent.Button)] = true;
-        return false;
-    });
-
-    dispatcher.Dispatch<Engine::Events::MouseButtonReleasedEvent>([this](const auto &mouseButtonEvent) {
-        m_MouseButtonDown[static_cast<size_t>(mouseButtonEvent.Button)] = false;
-        return false;
-    });
-
-    dispatcher.Dispatch<Engine::Events::MouseMovedEvent>([this](const auto &mouseMovedEvent) {
-        m_CameraController.AddMouseDelta(static_cast<float>(mouseMovedEvent.DeltaX),
-                                         static_cast<float>(mouseMovedEvent.DeltaY));
-        return false;
-    });
-
-    dispatcher.Dispatch<Engine::Events::MouseScrolledEvent>([this](const auto &mouseScrolledEvent) {
-        if (ImGui::GetIO().WantCaptureMouse || !m_ViewportHovered)
-        {
-            return false;
-        }
-
-        const auto activeCamera = GetActiveCamera();
-        m_CameraController.SetCamera(activeCamera.get());
-        if (!m_CameraController.Zoom(static_cast<float>(mouseScrolledEvent.YOffset)))
-        {
-            return false;
-        }
-
-        m_CameraFov = activeCamera->GetFovRadians();
-        UpdateProjection();
-        return true;
-    });
-}
-
-void Editor::OnRender()
-{
-    // Puste - RenderSystem automatycznie zajmie się rysowaniem na podstawie OnSetupViews
-}
-
-void Editor::OnResize(uint32_t width, uint32_t height)
-{
-    if (width == 0 || height == 0)
-        return;
-
-    CreateViewport(width, height);
-    UpdateProjection();
-    BroadcastViewportChanged();
-}
-
-void Editor::UpdateProjection()
-{
-    const uint32_t width = static_cast<uint32_t>(m_ViewportSize.first);
-    const uint32_t height = static_cast<uint32_t>(m_ViewportSize.second);
-    UpdateProjection(width, height);
-}
-
-void Editor::UpdateProjection(uint32_t width, uint32_t height)
-{
-    (void)width;
-    (void)height;
-    const auto activeCamera = GetActiveCamera();
-    if (activeCamera)
-    {
-        activeCamera->SetProjection(m_CameraFov, m_CameraNearPlane, m_CameraFarPlane);
-    }
-}
-
-std::shared_ptr<::Engine::Renderer::Camera> Editor::GetActiveCamera() const
-{
-    return m_ActiveScene ? m_ActiveScene->FindCamera(m_ActiveCameraId) : nullptr;
-}
-
-void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event)
-{
-    if (!event)
-        return;
-
-    Engine::Events::EventDispatcher dispatcher(*event);
-
-    dispatcher.Dispatch<EntitySelectedEvent>([this, &event](const auto &e) {
-        m_SelectedItemType = static_cast<SelectedItemType>(e.GetItemType());
-        m_SelectedEntityId = e.GetEntityId();
-        m_SelectedLightId = e.GetLightId();
-        m_SelectedCameraId = e.GetCameraId();
-
-        const auto entity = m_ActiveScene ? m_ActiveScene->FindEntity(m_SelectedEntityId) : nullptr;
-        const auto light = m_ActiveScene ? m_ActiveScene->FindLight(m_SelectedLightId) : nullptr;
-        const auto camera = m_ActiveScene ? m_ActiveScene->FindCamera(m_SelectedCameraId) : nullptr;
-        if (camera)
-        {
-            m_ActiveCameraId = m_SelectedCameraId;
-        }
-
-        EntitySelectedEvent enrichedEvent(static_cast<EntitySelectedEvent::ItemType>(m_SelectedItemType),
-                                          e.GetObjectIndex(), e.GetLightIndex(), e.GetCameraIndex(),
-                                          m_SelectedEntityId, m_SelectedLightId, m_SelectedCameraId, entity,
-                                          light, camera);
-        BroadcastEvent(enrichedEvent);
-        return false;
-    });
-
-    dispatcher.Dispatch<EntityDeselectedEvent>([this, &event](const auto &) {
-        m_SelectedItemType = SelectedItemType::None;
-        m_SelectedEntityId = Engine::InvalidEntityId;
-        m_SelectedLightId = Engine::InvalidLightId;
-        m_SelectedCameraId = Engine::InvalidCameraId;
-        BroadcastEvent(*event);
-        return false;
-    });
-
-    dispatcher.Dispatch<AddObjectRequestedEvent>([this](const auto &e) {
-        const auto &result = e.GetCreationResult();
-        const auto fail = [&result](std::string message) {
-            if (result)
-                result->Complete(false, std::move(message));
-            return true;
-        };
-        if (!m_ActiveScene || !GetRenderSystem())
-        {
-            return fail("The active scene or renderer is unavailable.");
-        }
-
-        const auto finite3 = [](const DirectX::XMFLOAT3 &value) {
-            return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
-        };
-        if (!finite3(e.GetPosition()) || !finite3(e.GetScale()) || !finite3(e.GetEmissive()) ||
-            !std::isfinite(e.GetColor().x) || !std::isfinite(e.GetColor().y) ||
-            !std::isfinite(e.GetColor().z) || !std::isfinite(e.GetColor().w) || e.GetScale().x <= 0.0f ||
-            e.GetScale().y <= 0.0f || e.GetScale().z <= 0.0f)
-            return fail(
-                "Position, scale, color, and emission must be finite; scale components must be positive.");
-        if (!std::isfinite(e.GetMetallic()) || e.GetMetallic() < 0.0f || e.GetMetallic() > 1.0f ||
-            !std::isfinite(e.GetRoughness()) || e.GetRoughness() < 0.0f || e.GetRoughness() > 1.0f)
-            return fail("Metallic and roughness values must be between 0 and 1.");
-
-        ::Engine::Renderer::MaterialProperties materialProperties;
-        materialProperties.BaseColor = e.GetColor();
-        materialProperties.Emissive = e.GetEmissive();
-        materialProperties.Metallic = e.GetMetallic();
-        materialProperties.Roughness = e.GetRoughness();
-        auto material = GetRenderSystem()->CreateMaterial(materialProperties);
-        if (!material)
-            return fail("The renderer could not create a material for this primitive.");
-
-        const DirectX::XMFLOAT3 spawnPosition = m_ActiveScene->FindFreeSpawnPosition(e.GetPosition());
-        Engine::PrimitiveShape shape;
-        const char *primitiveType = nullptr;
-        const char *displayName = nullptr;
-        switch (e.GetShape())
-        {
-        case AddObjectRequestedEvent::Shape::Cube:
-            shape = Engine::PrimitiveShape::Cube;
-            primitiveType = "cube";
-            displayName = "Cube";
-            break;
-        case AddObjectRequestedEvent::Shape::Sphere:
-            shape = Engine::PrimitiveShape::Sphere;
-            primitiveType = "sphere";
-            displayName = "Sphere";
-            break;
-        case AddObjectRequestedEvent::Shape::Plane:
-            shape = Engine::PrimitiveShape::Plane;
-            primitiveType = "plane";
-            displayName = "Plane";
-            break;
-        case AddObjectRequestedEvent::Shape::Cone:
-            shape = Engine::PrimitiveShape::Cone;
-            primitiveType = "cone";
-            displayName = "Cone";
-            break;
-        default:
-            return fail("The selected primitive type is unsupported.");
-        }
-
-        auto createdEntity =
-            GetRenderSystem()->CreatePrimitive(shape, std::move(material), spawnPosition, e.GetScale());
-
-        if (!createdEntity)
-        {
-            return fail("The renderer could not construct the requested primitive.");
-        }
-
-        createdEntity->PrimitiveType = primitiveType;
-        createdEntity->Name = e.GetName().empty() ? displayName : e.GetName();
-        std::string error;
-        if (!CommitCreatedEntity(createdEntity, error))
-            return fail(std::move(error));
-        if (result)
-            result->Complete(true);
-        return true;
-    });
-
-    dispatcher.Dispatch<MaterialChangedEvent>([this](const auto &e) {
-        auto entity = m_ActiveScene ? m_ActiveScene->FindEntity(e.GetEntityId()) : nullptr;
-        if (!entity)
-            return false;
-        auto material = entity->material;
-        if (entity->ModelGuid && e.GetMaterialSlot() >= 0)
-        {
-            const auto found =
-                std::find_if(entity->Submeshes.begin(), entity->Submeshes.end(), [&](const auto &submesh) {
-                    return submesh.MaterialSlot == e.GetMaterialSlot();
-                });
-            material = found == entity->Submeshes.end() ? nullptr : found->material;
-        }
-        if (!material)
-            return false;
-        material->SetProperties(e.GetProperties());
-        m_SceneDirty = true;
-        return false;
-    });
-
-    dispatcher.Dispatch<MaterialTextureAssignmentRequestedEvent>([this](const auto &e) {
-        AssignTexture(e.GetEntityId(), e.GetMaterialSlot(), e.GetSemantic(), e.GetTextureGuid());
-        return true;
-    });
-
-    dispatcher.Dispatch<SceneModifiedEvent>([this](const auto &) {
-        m_SceneDirty = true;
-        return false;
-    });
-
-    dispatcher.Dispatch<EntityReparentRequestedEvent>([this](const auto &request) -> bool {
-        if (!m_ActiveScene)
-        {
-            return false;
-        }
-        const auto entity = m_ActiveScene->FindEntity(request.GetEntityId());
-        const auto parent = request.GetParentId() == Engine::InvalidEntityId
-                                ? std::shared_ptr<::Engine::Renderer::Entity>{}
-                                : m_ActiveScene->FindEntity(request.GetParentId());
-        if (!entity || (request.GetParentId() != Engine::InvalidEntityId && !parent))
-        {
-            return false;
-        }
-        Engine::Object *parentObject =
-            parent ? static_cast<Engine::Object *>(parent.get()) : &m_ActiveScene->GetRoot();
-        if (!entity->SetParent(parentObject))
-        {
-            return false;
-        }
-        m_SceneDirty = true;
-        BroadcastSceneChanged();
-        return true;
-    });
-
-    dispatcher.Dispatch<CameraSettingsChangedEvent>([this](const auto &e) {
-        m_CameraFov = e.GetFov();
-        m_CameraNearPlane = e.GetNearPlane();
-        m_CameraFarPlane = e.GetFarPlane();
-        UpdateProjection();
-        m_SceneDirty = true;
-        return false;
-    });
-
-    dispatcher.Dispatch<ViewportResizeRequestedEvent>([this](const auto &e) {
-        CreateViewport(e.GetWidth(), e.GetHeight());
-        UpdateProjection();
-        BroadcastViewportChanged();
-        return false;
-    });
-
-    dispatcher.Dispatch<ViewportHoveredEvent>([this](const auto &e) {
-        m_ViewportHovered = e.IsHovered();
-        return false;
-    });
-
-    dispatcher.Dispatch<ViewportClickedEvent>([this](const auto &e) {
-        if (!GetRenderSystem() || !m_ActiveScene)
-        {
-            return false;
-        }
-
-        const auto lightId = GetRenderSystem()->PickLight(e.GetX(), e.GetY());
-        if (!lightId)
-        {
-            return false;
-        }
-
-        ProcessPanelEvent(std::make_unique<EntitySelectedEvent>(EntitySelectedEvent::ItemType::Light, -1, -1,
-                                                                -1, Engine::InvalidEntityId, *lightId,
-                                                                Engine::InvalidCameraId));
-        return true;
-    });
-
-    dispatcher.Dispatch<DebugRenderToggledEvent>([this](const auto &e) {
-        switch (e.GetToggle())
-        {
-        case DebugRenderToggledEvent::Toggle::LightGizmos:
-            m_ShowDebugLightGizmos = e.GetValue();
-            break;
-        case DebugRenderToggledEvent::Toggle::WireframePlane:
-            m_ShowDebugWireframePlane = e.GetValue();
-            break;
-        }
-        return false;
-    });
-
-    dispatcher.Dispatch<CommandExecuteRequestedEvent>([this](auto &e) {
-        auto cmd = e.TakeCommand();
-        if (cmd)
-        {
-            m_CommandHistory.Execute(std::move(cmd));
-            m_SceneDirty = true;
-        }
-        return false;
-    });
-
-    dispatcher.Dispatch<SceneFileActionRequestedEvent>([this](const auto &e) {
-        RequestSceneAction(e.GetAction());
-        return true;
-    });
-
-    dispatcher.Dispatch<AssetImportRequestedEvent>([this](const auto &request) {
-        const auto path = request.GetAssetType() == AssetImportRequestedEvent::AssetType::Texture
-                              ? EditorPlatform::ChooseTextureFile(GetAssetManager()->GetProjectRoot())
-                              : EditorPlatform::ChooseModelFile(GetAssetManager()->GetProjectRoot());
-        if (!path)
-            return true;
-        auto imported = request.GetAssetType() == AssetImportRequestedEvent::AssetType::Texture
-                            ? GetAssetManager()->ImportTexture(*path)
-                            : GetAssetManager()->ImportModel(*path);
-        if (!imported)
-        {
-            m_FileError = std::move(imported.error().Message);
-            return true;
-        }
-        const std::string guid = std::move(*imported);
-        AssetRegistryChangedEvent assetUpdate(GetAssetManager()->GetKnownModels(),
-                                              GetAssetManager()->GetKnownTextures());
-        BroadcastEvent(assetUpdate);
-        if (request.GetTargetEntity() != Engine::InvalidEntityId)
-        {
-            const auto textureGuid = request.GetAssetType() == AssetImportRequestedEvent::AssetType::Texture
-                                         ? std::optional<std::string>(guid)
-                                         : std::nullopt;
-            if (!textureGuid || !AssignTexture(request.GetTargetEntity(), request.GetMaterialSlot(),
-                                               request.GetSemantic(), textureGuid))
-                return true;
-        }
-        return true;
-    });
-
-    dispatcher.Dispatch<AssetReimportRequestedEvent>([this](const auto &request) {
-        ReimportAsset(request.GetGuid());
-        return true;
-    });
-
-    dispatcher.Dispatch<ModelReassignmentRequestedEvent>([this](const auto &request) {
-        ReassignModel(m_SelectedEntityId, request.GetGuid());
-        return true;
-    });
-
-    dispatcher.Dispatch<AddModelRequestedEvent>([this](const auto &request) {
-        const auto &result = request.GetCreationResult();
-        if (!m_ActiveScene || !GetRenderSystem())
-        {
-            result->Complete(false, "The active scene or renderer is unavailable.");
-            return true;
-        }
-        m_FileError.clear();
-        std::string error;
-        if (!GetAssetManager()->LoadModel(request.GetGuid(), error))
-        {
-            m_FileError = std::move(error);
-            result->Complete(false, m_FileError);
-            return true;
-        }
-        const auto model = GetAssetManager()->GetModel(request.GetGuid());
-        const auto generation = GetAssetManager()->GetGeneration(request.GetGuid());
-        if (!model || !generation)
-        {
-            m_FileError = "The imported model is not available in the asset registry.";
-            result->Complete(false, m_FileError);
-            return true;
-        }
-        if (HasIgnoredExtensionWarning(model->importWarnings))
-        {
-            std::vector<std::string> extensionWarnings;
-            std::copy_if(model->importWarnings.begin(), model->importWarnings.end(),
-                         std::back_inserter(extensionWarnings), [](const std::string &warning) {
-                             return warning.find("extension will be ignored:") != std::string::npos;
-                         });
-            m_PendingUnsupportedModelLoad = PendingUnsupportedModelLoad{
-                request.GetGuid(), request.GetPosition(), request.GetScale(), request.GetName(), result};
-            m_UnsupportedModelWarnings = JoinWarnings(extensionWarnings);
-            return true;
-        }
-        if (!AddModelToScene(request.GetGuid(), request.GetPosition(), request.GetScale(), error,
-                             request.GetName()))
-        {
-            m_FileError = error;
-            result->Complete(false, std::move(error));
-        }
-        else
-        {
-            result->Complete(true);
-        }
-        return true;
-    });
-
-    dispatcher.Dispatch<RemoveEntityRequestedEvent>([this](const auto &request) {
-        if (!m_ActiveScene)
-            return true;
-        const auto entity = m_ActiveScene->FindEntity(request.GetId());
-        if (!entity)
-            return true;
-        const auto selectionBefore = CaptureSelection();
-        m_CommandHistory.Execute(std::make_unique<EntityMembershipCommand>(
-            m_ActiveScene, entity, request.GetId(), false,
-            [this, selectionBefore](auto id, const auto &removedEntity, bool present, bool undo) {
-                if (undo)
-                {
-                    m_SceneDirty = true;
-                    RestoreSelection(selectionBefore);
-                }
-                else
-                    OnEntityMembershipChanged(id, removedEntity, present);
-            }));
-        return true;
-    });
-}
-
-bool Editor::AddModelToScene(const std::string &guid, const DirectX::XMFLOAT3 &requestedPosition,
-                             const DirectX::XMFLOAT3 &scale, std::string &error, const std::string &name)
-{
-    if (!m_ActiveScene || !GetRenderSystem())
-    {
-        error = "The active scene or renderer is unavailable.";
-        return false;
-    }
-    if (!GetAssetManager()->LoadModel(guid, error))
-        return false;
-    const auto model = GetAssetManager()->GetModel(guid);
-    const auto generation = GetAssetManager()->GetGeneration(guid);
-    if (!model || !generation)
-    {
-        error = "The imported model is not available in the asset registry.";
-        return false;
-    }
-    if (!std::isfinite(requestedPosition.x) || !std::isfinite(requestedPosition.y) ||
-        !std::isfinite(requestedPosition.z) || !std::isfinite(scale.x) || !std::isfinite(scale.y) ||
-        !std::isfinite(scale.z) || scale.x <= 0.0f || scale.y <= 0.0f || scale.z <= 0.0f)
-    {
-        error = "Model position must be finite and scale components must be finite and positive.";
-        return false;
-    }
+void Editor::OnInit() {
+  m_EditorConsole.AttachToLogger();
+  if (!m_UiIntegration.Initialize(GetWindow(), GetRenderer())) {
+    ENGINE_LOG_ERROR("Core", "Editor UI initialization failed");
+  }
+
+  std::string projectError;
+  if (!GetAssetManager()->SetProjectRoot(EditorPlatform::LoadRememberedProjectRoot(), projectError)) {
+    ENGINE_LOG_WARN("Asset", "Project root initialization failed | reason: {}", projectError);
+  } else {
+    EditorPlatform::RememberProjectRoot(GetAssetManager()->GetProjectRoot());
     std::vector<std::string> warnings;
-    auto entity = GetRenderSystem()->CreateModelEntity(guid, *generation, *model, {}, error, warnings);
-    if (!entity)
-        return false;
-    entity->Name = name.empty() ? model->sourcePath.stem().string() : name;
-    const auto position = m_ActiveScene->FindFreeSpawnPosition(requestedPosition);
-    entity->transform.SetPosition(position.x, position.y, position.z);
-    entity->transform.SetScale(scale.x, scale.y, scale.z);
-    if (!CommitCreatedEntity(entity, error))
-        return false;
-    if (!warnings.empty())
-        m_FileError = JoinWarnings(warnings);
-    return true;
+    if (!GetAssetManager()->RefreshRegistry(warnings, projectError)) {
+      ENGINE_LOG_WARN("Asset", "Asset registry refresh failed | reason: {}", projectError);
+    }
+  }
+
+  m_ActiveScene = std::make_shared<Engine::Scene>();
+  const uint64_t cameraCreate = m_ActiveScene->QueueCreate("Editor Camera");
+  const uint64_t meshCreate = m_ActiveScene->QueueCreate("Cube");
+  const uint64_t lightCreate = m_ActiveScene->QueueCreate("Spot Light");
+  Engine::EntityHandle cameraEntity = Engine::InvalidEntityHandle;
+  Engine::EntityHandle meshEntity = Engine::InvalidEntityHandle;
+  Engine::EntityHandle lightEntity = Engine::InvalidEntityHandle;
+  for (const auto& result : m_ActiveScene->sync()) {
+    if (!result.Outcome) {
+      ENGINE_LOG_ERROR("Scene", "Default scene entity creation failed | reason: {}", result.Outcome.error().Message);
+      continue;
+    }
+    if (result.Sequence == cameraCreate) {
+      cameraEntity = result.Entity;
+    } else if (result.Sequence == meshCreate) {
+      meshEntity = result.Entity;
+    } else if (result.Sequence == lightCreate) {
+      lightEntity = result.Entity;
+    }
+  }
+
+  if (cameraEntity != Engine::InvalidEntityHandle) {
+    Engine::Ecs::LocalTransform cameraTransform;
+    cameraTransform.Position = {0.0F, 0.0F, -5.0F};
+    (void)m_ActiveScene->QueueSet(cameraEntity, cameraTransform);
+    (void)m_ActiveScene->QueueAdd(cameraEntity, Engine::Ecs::Camera{});
+  }
+  if (meshEntity != Engine::InvalidEntityHandle) {
+    Engine::Ecs::MeshRenderer meshRenderer;
+    meshRenderer.PrimitiveType = "cube";
+    (void)m_ActiveScene->QueueAdd(meshEntity, std::move(meshRenderer));
+  }
+  if (lightEntity != Engine::InvalidEntityHandle) {
+    Engine::Ecs::LocalTransform lightTransform;
+    lightTransform.Position = {2.0F, 3.0F, -1.0F};
+    Engine::Ecs::SpotLight light;
+    light.Direction = {-0.4F, -0.7F, 0.2F};
+    light.Intensity = 8.0F;
+    light.UsePosition = true;
+    (void)m_ActiveScene->QueueSet(lightEntity, lightTransform);
+    (void)m_ActiveScene->QueueAdd(lightEntity, light);
+  }
+  for (const auto& result : m_ActiveScene->sync()) {
+    if (!result.Outcome) {
+      ENGINE_LOG_ERROR("Scene", "Default scene component setup failed | reason: {}", result.Outcome.error().Message);
+    }
+  }
+  m_SelectedEntity = meshEntity;
+  AddScene(m_ActiveScene);
+
+  if (Engine::RenderSystem* renderSystem = GetRenderSystem()) {
+    auto material = renderSystem->CreateMaterial({});
+    if (material) {
+      (void)renderSystem->CreatePrimitive(Engine::PrimitiveShape::Cube, std::move(material));
+    }
+  }
+
+  CreateViewport(1280, 720);
+  auto mainBar = std::make_unique<MainBar>();
+  mainBar->SetConsoleOpenHandler([this] -> void { m_EngineConsoleOpen = true; });
+  auto engineSettings = std::make_unique<EngineSettingsPanel>(this);
+  auto* engineSettingsPanel = engineSettings.get();
+  mainBar->SetSettingsOpenHandler([engineSettingsPanel] -> void { engineSettingsPanel->Open(); });
+  m_Panels.push_back(std::move(mainBar));
+  m_Panels.push_back(std::move(engineSettings));
+  m_Panels.push_back(std::make_unique<StatWindow>(this));
+  m_Panels.push_back(std::make_unique<ScenePanel>());
+  m_Panels.push_back(std::make_unique<HierarchyPanel>());
+  m_Panels.push_back(std::make_unique<InspectorPanel>());
+  m_Panels.push_back(std::make_unique<AssetBrowserPanel>());
+
+  m_PanelConnections.reserve(m_Panels.size());
+  for (auto& panel : m_Panels) {
+    m_PanelConnections.push_back(m_EventRouter.Subscribe(
+        *panel, [this](std::unique_ptr<Engine::Events::Event> event) -> void { ProcessPanelEvent(std::move(event)); }));
+  }
+  BroadcastSceneChanged();
+  AssetRegistryChangedEvent assets(GetAssetManager()->GetKnownModels(), GetAssetManager()->GetKnownTextures());
+  BroadcastEvent(assets);
 }
 
-bool Editor::CommitCreatedEntity(const std::shared_ptr<::Engine::Renderer::Entity> &entity,
-                                 std::string &error)
-{
-    const auto scene = m_ActiveScene;
-    if (!scene || !entity)
-    {
-        error = "The active scene or constructed entity is unavailable.";
-        return false;
-    }
+void Editor::OnSceneReplaced(const std::shared_ptr<Engine::Scene>& scene) {
+  m_ActiveScene = scene;
+  m_SelectedEntity = Engine::InvalidEntityHandle;
+  BroadcastSceneChanged();
+}
 
-    const std::string baseName = entity->Name.empty() ? "Object" : entity->Name;
-    std::unordered_set<std::string> existingNames;
-    for (const auto &existing : scene->GetEntities())
-    {
-        if (existing)
-            existingNames.insert(existing->Name);
+void Editor::OnUpdate(float deltaTime) {
+  if (!m_ActiveScene) {
+    return;
+  }
+  for (const auto& result : m_ActiveScene->sync()) {
+    if (!result.Outcome) {
+      ENGINE_LOG_WARN("Scene", "Staged editor command rejected | sequence: {} | reason: {}", result.Sequence,
+                      result.Outcome.error().Message);
+      continue;
     }
-    if (existingNames.contains(entity->Name))
-    {
-        for (size_t suffix = 2;; ++suffix)
-        {
-            std::string candidate = baseName + " (" + std::to_string(suffix) + ")";
-            if (!existingNames.contains(candidate))
-            {
-                entity->Name = std::move(candidate);
-                break;
-            }
+    if (result.EntityCreated) {
+      m_SelectedEntity = result.Entity;
+      EcsEntitySelectedEvent selected(result.Entity);
+      BroadcastEvent(selected);
+    }
+    BroadcastSceneChanged();
+  }
+  if (m_SelectedEntity != Engine::InvalidEntityHandle && !m_ActiveScene->World().IsAlive(m_SelectedEntity)) {
+    m_SelectedEntity = Engine::InvalidEntityHandle;
+    EntityDeselectedEvent deselected;
+    BroadcastEvent(deselected);
+  }
+  UpdateEditorCamera(deltaTime);
+}
+
+auto Editor::FindActiveCamera() const -> Engine::EntityHandle {
+  if (!m_ActiveScene) {
+    return Engine::InvalidEntityHandle;
+  }
+  Engine::EntityHandle cameraEntity = Engine::InvalidEntityHandle;
+  m_ActiveScene->World().ForEachChunkReadOnly<Engine::Ecs::Camera, Engine::Ecs::GlobalVisibility>(
+      [&cameraEntity](std::span<const Engine::EntityHandle> entities, std::span<const Engine::Ecs::Camera> cameras,
+                      std::span<const Engine::Ecs::GlobalVisibility> visibility) -> void {
+        for (size_t row = 0; row < entities.size(); ++row) {
+          if (cameras[row].Active && visibility[row].IsVisible) {
+            cameraEntity = entities[row];
+            return;
+          }
         }
-    }
-
-    const Engine::EntityId id = scene->AddEntity(entity);
-    if (id == Engine::InvalidEntityId)
-    {
-        error = "The scene rejected the new object; no scene changes were made.";
-        return false;
-    }
-    const auto selectionBefore = CaptureSelection();
-    m_CommandHistory.Execute(std::make_unique<EntityMembershipCommand>(
-        scene, entity, id, true,
-        [this, selectionBefore](auto changedId, const auto &addedEntity, bool present, bool undo) {
-            if (undo)
-            {
-                m_SceneDirty = true;
-                RestoreSelection(selectionBefore);
-            }
-            else
-            {
-                OnEntityMembershipChanged(changedId, addedEntity, present);
-            }
-        },
-        true));
-    return true;
+      });
+  return cameraEntity;
 }
 
-void Editor::OnEntityMembershipChanged(Engine::EntityId id,
-                                       const std::shared_ptr<::Engine::Renderer::Entity> &entity,
-                                       bool present)
-{
-    m_SceneDirty = true;
-    if (present)
-    {
-        m_SelectedItemType = SelectedItemType::Object;
-        m_SelectedEntityId = id;
-        m_SelectedLightId = Engine::InvalidLightId;
-        m_SelectedCameraId = Engine::InvalidCameraId;
-        BroadcastSceneChanged();
-        EntitySelectedEvent selected(EntitySelectedEvent::ItemType::Object,
-                                     static_cast<int>(m_ActiveScene->GetEntityCount() - 1), -1, -1, id,
-                                     Engine::InvalidLightId, Engine::InvalidCameraId, entity, {}, {});
+void Editor::UpdateEditorCamera(float deltaTime) {
+  if (!m_ViewportHovered || !m_ActiveScene) {
+    return;
+  }
+  const Engine::EntityHandle cameraEntity = FindActiveCamera();
+  const auto* storedTransform = m_ActiveScene->World().Get<Engine::Ecs::LocalTransform>(cameraEntity);
+  if (storedTransform == nullptr) {
+    return;
+  }
+
+  Engine::Ecs::LocalTransform updated = *storedTransform;
+  bool changed = false;
+  if (m_MouseDeltaX != 0.0 || m_MouseDeltaY != 0.0) {
+    std::array<float, 3> pitchYawRoll = QuaternionToPitchYawRoll(updated.Rotation);
+    pitchYawRoll[0] = std::clamp(pitchYawRoll[0] + (static_cast<float>(m_MouseDeltaY) * 0.0025F), -1.55F, 1.55F);
+    pitchYawRoll[1] += static_cast<float>(m_MouseDeltaX) * 0.0025F;
+    const DirectX::XMVECTOR newRotation =
+        DirectX::XMQuaternionRotationRollPitchYaw(pitchYawRoll[0], pitchYawRoll[1], pitchYawRoll[2]);
+    DirectX::XMFLOAT4 rotation{};
+    DirectX::XMStoreFloat4(&rotation, newRotation);
+    updated.Rotation = {rotation.x, rotation.y, rotation.z, rotation.w};
+    changed = true;
+    m_MouseDeltaX = 0.0;
+    m_MouseDeltaY = 0.0;
+  }
+  using Engine::Events::KeyCode;
+  const auto isDown = [this](KeyCode key) -> bool { return m_CameraKeysDown[static_cast<size_t>(key)]; };
+  DirectX::XMVECTOR movement = DirectX::XMVectorZero();
+  const DirectX::XMVECTOR rotation = DirectX::XMQuaternionNormalize(
+      DirectX::XMVectorSet(updated.Rotation[0], updated.Rotation[1], updated.Rotation[2], updated.Rotation[3]));
+  const DirectX::XMVECTOR forward = DirectX::XMVector3Rotate(DirectX::XMVectorSet(0.0F, 0.0F, 1.0F, 0.0F), rotation);
+  const DirectX::XMVECTOR right = DirectX::XMVector3Rotate(DirectX::XMVectorSet(1.0F, 0.0F, 0.0F, 0.0F), rotation);
+  const DirectX::XMVECTOR up = DirectX::XMVectorSet(0.0F, 1.0F, 0.0F, 0.0F);
+  if (isDown(KeyCode::W)) {
+    movement = DirectX::XMVectorAdd(movement, forward);
+  }
+  if (isDown(KeyCode::S)) {
+    movement = DirectX::XMVectorSubtract(movement, forward);
+  }
+  if (isDown(KeyCode::D)) {
+    movement = DirectX::XMVectorAdd(movement, right);
+  }
+  if (isDown(KeyCode::A)) {
+    movement = DirectX::XMVectorSubtract(movement, right);
+  }
+  if (isDown(KeyCode::E)) {
+    movement = DirectX::XMVectorAdd(movement, up);
+  }
+  if (isDown(KeyCode::Q)) {
+    movement = DirectX::XMVectorSubtract(movement, up);
+  }
+  if (DirectX::XMVectorGetX(DirectX::XMVector3LengthSq(movement)) < 1.0e-6F || deltaTime <= 0.0F) {
+    if (changed) {
+      const Engine::Status status = m_ActiveScene->SetInPlace(cameraEntity, updated);
+      if (!status) {
+        ENGINE_LOG_WARN("Scene", "Editor camera rotation rejected | reason: {}", status.error().Message);
+      }
+    }
+    return;
+  }
+
+  const float speed = isDown(KeyCode::LeftShift) ? 15.0F : 5.0F;
+  movement = DirectX::XMVectorScale(DirectX::XMVector3Normalize(movement), speed * deltaTime);
+  const DirectX::XMVECTOR position = DirectX::XMVectorAdd(
+      DirectX::XMVectorSet(updated.Position[0], updated.Position[1], updated.Position[2], 0.0F), movement);
+  DirectX::XMFLOAT3 movedPosition{};
+  DirectX::XMStoreFloat3(&movedPosition, position);
+  updated.Position = {movedPosition.x, movedPosition.y, movedPosition.z};
+  const Engine::Status status = m_ActiveScene->SetInPlace(cameraEntity, updated);
+  if (!status) {
+    ENGINE_LOG_WARN("Scene", "Editor camera movement rejected | reason: {}", status.error().Message);
+  }
+}
+
+void Editor::OnSetupViews() {
+  if (!m_ActiveScene || !m_EditorViewport) {
+    return;
+  }
+  std::optional<Engine::EntityHandle> cameraEntity;
+  m_ActiveScene->World().ForEachChunkReadOnly<Engine::Ecs::Camera, Engine::Ecs::GlobalVisibility>(
+      [&cameraEntity](std::span<const Engine::EntityHandle> entities, std::span<const Engine::Ecs::Camera> cameras,
+                      std::span<const Engine::Ecs::GlobalVisibility> visibility) -> void {
+        if (cameraEntity) {
+          return;
+        }
+        for (size_t row = 0; row < entities.size(); ++row) {
+          if (cameras[row].Active && visibility[row].IsVisible) {
+            cameraEntity = entities[row];
+            return;
+          }
+        }
+      });
+  if (!cameraEntity) {
+    return;
+  }
+  Engine::ViewportBinding binding;
+  binding.CameraEntity = *cameraEntity;
+  binding.TargetViewport = m_EditorViewport.get();
+  binding.TargetScene = m_ActiveScene.get();
+  binding.DebugSettings.ShowLightGizmos = m_ShowDebugLightGizmos;
+  binding.DebugSettings.ShowWireframePlane = m_ShowDebugWireframePlane;
+  RegisterView(binding);
+}
+
+void Editor::OnRender() {}
+
+void Editor::OnEvent(Engine::Events::Event& event) {
+  using namespace Engine::Events;
+  EventDispatcher dispatcher(event);
+  dispatcher.Dispatch<KeyPressedEvent>([this](const auto& pressed) -> bool {
+    const size_t key = static_cast<size_t>(pressed.Key);
+    if (m_ViewportHovered && key < m_CameraKeysDown.size()) {
+      m_CameraKeysDown[key] = true;
+    }
+    return false;
+  });
+  dispatcher.Dispatch<KeyReleasedEvent>([this](const auto& released) -> bool {
+    const size_t key = static_cast<size_t>(released.Key);
+    if (key < m_CameraKeysDown.size()) {
+      m_CameraKeysDown[key] = false;
+    }
+    return false;
+  });
+  dispatcher.Dispatch<MouseButtonPressedEvent>([this](const auto& pressed) -> bool {
+    m_CameraLookActive = m_ViewportHovered && pressed.Button == MouseButton::Right;
+    return false;
+  });
+  dispatcher.Dispatch<MouseButtonReleasedEvent>([this](const auto& released) -> bool {
+    if (released.Button == MouseButton::Right) {
+      m_CameraLookActive = false;
+    }
+    return false;
+  });
+  dispatcher.Dispatch<MouseMovedEvent>([this](const auto& moved) -> bool {
+    if (!m_CameraLookActive || !m_ActiveScene) {
+      return false;
+    }
+    m_MouseDeltaX += moved.DeltaX;
+    m_MouseDeltaY += moved.DeltaY;
+    return false;
+  });
+  m_EventRouter.DispatchInput(event);
+}
+
+void Editor::OnUIRender() {
+  if (!m_UiIntegration.IsInitialized()) {
+    return;
+  }
+  const ImGuiID dockspaceId = ImGui::GetID("MainDockSpace");
+  ImGui::DockSpaceOverViewport(dockspaceId, ImGui::GetMainViewport(), ImGuiDockNodeFlags_PassthruCentralNode);
+  BuildDefaultDockLayoutIfNeeded(dockspaceId);
+  for (auto& panel : m_Panels) {
+    panel->Draw();
+  }
+  if (m_ActiveScene) {
+    for (const auto& result : m_ActiveScene->sync()) {
+      if (!result.Outcome) {
+        ENGINE_LOG_WARN("Scene", "Staged editor command rejected | sequence: {} | reason: {}", result.Sequence,
+                        result.Outcome.error().Message);
+        continue;
+      }
+      if (result.EntityCreated) {
+        m_SelectedEntity = result.Entity;
+        EcsEntitySelectedEvent selected(result.Entity);
         BroadcastEvent(selected);
-        return;
+      }
+      BroadcastSceneChanged();
     }
-    BroadcastSceneChanged();
-    if (m_SelectedItemType == SelectedItemType::Object && m_SelectedEntityId == id)
-    {
-        m_SelectedItemType = SelectedItemType::None;
-        m_SelectedEntityId = Engine::InvalidEntityId;
-        m_SelectedLightId = Engine::InvalidLightId;
-        m_SelectedCameraId = Engine::InvalidCameraId;
-        EntityDeselectedEvent deselected;
-        BroadcastEvent(deselected);
-    }
+  }
+  m_EditorConsole.UpdateAndRender(&m_EngineConsoleOpen);
 }
 
-Editor::SelectionSnapshot Editor::CaptureSelection() const noexcept
-{
-    return {m_SelectedItemType, m_SelectedEntityId, m_SelectedLightId, m_SelectedCameraId};
+void Editor::OnBeginUIFrame() { m_UiIntegration.BeginFrame(); }
+void Editor::OnEndUIFrame() { m_UiIntegration.EndFrame(); }
+
+void Editor::OnShutdownUI() {
+  m_EditorConsole.DetachFromLogger();
+  m_UiIntegration.Shutdown();
 }
 
-void Editor::RestoreSelection(const SelectionSnapshot &snapshot)
-{
-    if (!m_ActiveScene)
-        return;
-    if (snapshot.Type == SelectedItemType::Object && m_ActiveScene->FindEntity(snapshot.EntityId))
-    {
-        int index = -1;
-        for (size_t i = 0; i < m_ActiveScene->GetEntityCount(); ++i)
-            if (m_ActiveScene->GetEntityIdAt(i) == snapshot.EntityId)
-            {
-                index = static_cast<int>(i);
-                break;
-            }
-        ProcessPanelEvent(std::make_unique<EntitySelectedEvent>(
-            EntitySelectedEvent::ItemType::Object, index, -1, -1, snapshot.EntityId, Engine::InvalidLightId,
-            Engine::InvalidCameraId));
-        return;
-    }
-    if (snapshot.Type == SelectedItemType::Light && m_ActiveScene->FindLight(snapshot.LightId))
-    {
-        ProcessPanelEvent(std::make_unique<EntitySelectedEvent>(EntitySelectedEvent::ItemType::Light, -1, -1,
-                                                                -1, Engine::InvalidEntityId, snapshot.LightId,
-                                                                Engine::InvalidCameraId));
-        return;
-    }
-    if (snapshot.Type == SelectedItemType::Camera && m_ActiveScene->FindCamera(snapshot.CameraId))
-    {
-        ProcessPanelEvent(std::make_unique<EntitySelectedEvent>(EntitySelectedEvent::ItemType::Camera, -1, -1,
-                                                                -1, Engine::InvalidEntityId,
-                                                                Engine::InvalidLightId, snapshot.CameraId));
-        return;
-    }
-    ProcessPanelEvent(std::make_unique<EntityDeselectedEvent>());
-}
+void Editor::OnResize(uint32_t width, uint32_t height) { CreateViewport(width, height); }
 
-bool Editor::AssignTexture(Engine::EntityId entityId, int32_t materialSlot,
-                           AssetImportRequestedEvent::TextureSemantic semantic,
-                           const std::optional<std::string> &textureGuid)
-{
-    auto entity = m_ActiveScene ? m_ActiveScene->FindEntity(entityId) : nullptr;
-    if (!entity || !GetRenderSystem())
-        return false;
-    auto material = entity->material;
-    if (entity->ModelGuid && materialSlot >= 0)
-    {
-        const auto found = std::find_if(
-            entity->Submeshes.begin(), entity->Submeshes.end(),
-            [materialSlot](const auto &submesh) { return submesh.MaterialSlot == materialSlot; });
-        material = found == entity->Submeshes.end() ? nullptr : found->material;
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
+  if (!event || !m_ActiveScene) {
+    return;
+  }
+  Engine::Events::EventDispatcher dispatcher(*event);
+  dispatcher.Dispatch<ViewportResizeRequestedEvent>([this](const auto& request) -> bool {
+    const uint32_t width = request.GetWidth();
+    const uint32_t height = request.GetHeight();
+    if (width > 0 && height > 0 &&
+        (m_EditorViewportTarget == nullptr || m_EditorViewportTarget->GetWidth() != width ||
+         m_EditorViewportTarget->GetHeight() != height)) {
+      CreateViewport(width, height);
     }
-    if (!material)
-    {
-        m_FileError = "The selected material slot is no longer available.";
-        return false;
-    }
-    auto baseColor = material->GetBaseColorTexture();
-    auto normal = material->GetNormalTexture();
-    auto baseGuid = material->GetBaseColorTextureGuid();
-    auto normalGuid = material->GetNormalTextureGuid();
-    const auto beforeBaseColor = baseColor;
-    const auto beforeNormal = normal;
-    const auto beforeBaseGuid = baseGuid;
-    const auto beforeNormalGuid = normalGuid;
-    if (semantic == AssetImportRequestedEvent::TextureSemantic::BaseColor)
-    {
-        baseGuid = textureGuid;
-        if (textureGuid)
-        {
-            std::string error;
-            if (!GetAssetManager()->LoadTexture(*textureGuid, error))
-            {
-                m_FileError = std::move(error);
-                return false;
-            }
-            const auto image = GetAssetManager()->GetTexture(*textureGuid);
-            const auto generation = GetAssetManager()->GetGeneration(*textureGuid);
-            if (!image || !generation)
-            {
-                m_FileError = "The selected texture has no decoded image data.";
-                return false;
-            }
-            baseColor = GetRenderSystem()->GetOrCreateTexture(*textureGuid, *generation, *image, true, error);
-            if (!baseColor)
-            {
-                m_FileError = std::move(error);
-                return false;
-            }
-        }
-        else
-            baseColor = material->GetDefaultBaseColorTexture();
-    }
-    else
-    {
-        normalGuid = textureGuid;
-        if (textureGuid)
-        {
-            std::string error;
-            if (!GetAssetManager()->LoadTexture(*textureGuid, error))
-            {
-                m_FileError = std::move(error);
-                return false;
-            }
-            const auto image = GetAssetManager()->GetTexture(*textureGuid);
-            const auto generation = GetAssetManager()->GetGeneration(*textureGuid);
-            if (!image || !generation)
-            {
-                m_FileError = "The selected texture has no decoded image data.";
-                return false;
-            }
-            normal = GetRenderSystem()->GetOrCreateTexture(*textureGuid, *generation, *image, false, error);
-            if (!normal)
-            {
-                m_FileError = std::move(error);
-                return false;
-            }
-        }
-        else
-            normal = material->GetDefaultNormalTexture();
-    }
-    if (baseGuid == beforeBaseGuid && normalGuid == beforeNormalGuid)
-        return true;
-    m_CommandHistory.Execute(std::make_unique<ChangeMaterialTextureCommand>(
-        material, beforeBaseColor, beforeNormal, beforeBaseGuid, beforeNormalGuid, std::move(baseColor),
-        std::move(normal), baseGuid, normalGuid,
-        [this](const auto &target, const auto &base, const auto &normalMap, const auto &baseId,
-               const auto &normalId) {
-            if (!GetRenderSystem()->SetMaterialTextures(target, base, normalMap, baseId, normalId))
-            {
-                m_FileError = "The renderer could not update the material texture bindings.";
-                return false;
-            }
-            m_FileError.clear();
-            m_SceneDirty = true;
-            return true;
-        }));
     return true;
-}
-
-void Editor::ReassignModel(Engine::EntityId entityId, const std::string &guid)
-{
-    if (!m_ActiveScene || !GetRenderSystem())
-        return;
-    auto before = m_ActiveScene->FindEntity(entityId);
-    if (!before)
-    {
-        m_FileError = "Select a scene object before replacing its model.";
-        return;
+  });
+  dispatcher.Dispatch<ViewportHoveredEvent>([this](const auto& hover) -> bool {
+    m_ViewportHovered = hover.IsHovered();
+    if (!m_ViewportHovered) {
+      m_CameraLookActive = false;
+      m_CameraKeysDown.fill(false);
+      m_MouseDeltaX = 0.0;
+      m_MouseDeltaY = 0.0;
     }
-    std::string error;
-    if (!GetAssetManager()->LoadModel(guid, error))
-    {
-        m_FileError = std::move(error);
-        return;
-    }
-    const auto model = GetAssetManager()->GetModel(guid);
-    const auto generation = GetAssetManager()->GetGeneration(guid);
-    if (!model || !generation)
-    {
-        m_FileError = "The selected model is unavailable in the asset registry.";
-        return;
-    }
-    std::vector<std::optional<::Engine::Renderer::MaterialProperties>> overrides(model->materials.size());
-    std::unordered_map<int32_t, std::shared_ptr<::Engine::Renderer::Material>> oldSlots;
-    for (const auto &submesh : before->Submeshes)
-    {
-        if (submesh.MaterialSlot >= 0 && submesh.material)
-            oldSlots.try_emplace(submesh.MaterialSlot, submesh.material);
-    }
-    std::shared_ptr<::Engine::Renderer::Material> primitiveMaterial =
-        before->ModelGuid ? nullptr : before->material;
-    for (size_t slot = 0; slot < overrides.size(); ++slot)
-    {
-        const auto found = oldSlots.find(static_cast<int32_t>(slot));
-        if (found != oldSlots.end())
-            overrides[slot] = found->second->GetProperties();
-        else if (primitiveMaterial && slot == 0)
-            overrides[slot] = primitiveMaterial->GetProperties();
-    }
-    std::vector<std::string> warnings;
-    auto after = GetRenderSystem()->CreateModelEntity(guid, *generation, *model, overrides, error, warnings);
-    if (!after)
-    {
-        m_FileError = std::move(error);
-        return;
-    }
-    after->Name = before->Name;
-    after->transform.SetPosition(before->transform.Position.x, before->transform.Position.y,
-                                 before->transform.Position.z);
-    after->transform.Rotation = before->transform.Rotation;
-    after->transform.SetScale(before->transform.Scale.x, before->transform.Scale.y,
-                              before->transform.Scale.z);
-    after->ForceWireframe = before->ForceWireframe;
-    after->DisableDepthTest = before->DisableDepthTest;
-    after->CastShadows = before->CastShadows;
-    after->ReceiveShadows = before->ReceiveShadows;
-    after->CullMode = before->CullMode;
-    std::unordered_set<int32_t> appliedSlots;
-    for (const auto &submesh : after->Submeshes)
-    {
-        if (submesh.MaterialSlot < 0 || !submesh.material ||
-            !appliedSlots.insert(submesh.MaterialSlot).second)
-            continue;
-        std::shared_ptr<::Engine::Renderer::Material> sourceMaterial;
-        if (const auto found = oldSlots.find(submesh.MaterialSlot); found != oldSlots.end())
-            sourceMaterial = found->second;
-        else if (primitiveMaterial && submesh.MaterialSlot == 0)
-            sourceMaterial = primitiveMaterial;
-        if (!sourceMaterial)
-            continue;
-        auto base = submesh.material->GetBaseColorTexture();
-        auto normal = submesh.material->GetNormalTexture();
-        const auto rebind = [&](const std::optional<std::string> &textureGuid, bool srgb,
-                                std::shared_ptr<::Engine::Renderer::TextureResource> &destination) {
-            if (!textureGuid)
-                return;
-            std::string textureError;
-            if (!GetAssetManager()->LoadTexture(*textureGuid, textureError))
-            {
-                warnings.push_back(textureError);
-                return;
-            }
-            const auto image = GetAssetManager()->GetTexture(*textureGuid);
-            const auto textureGeneration = GetAssetManager()->GetGeneration(*textureGuid);
-            if (!image || !textureGeneration)
-            {
-                warnings.push_back("missing texture " + *textureGuid);
-                return;
-            }
-            auto uploaded = GetRenderSystem()->GetOrCreateTexture(*textureGuid, *textureGeneration, *image,
-                                                                  srgb, textureError);
-            if (uploaded)
-                destination = std::move(uploaded);
-            else
-                warnings.push_back(textureError);
-        };
-        rebind(sourceMaterial->GetBaseColorTextureGuid(), true, base);
-        rebind(sourceMaterial->GetNormalTextureGuid(), false, normal);
-        if (!GetRenderSystem()->SetMaterialTextures(submesh.material, base, normal,
-                                                    sourceMaterial->GetBaseColorTextureGuid(),
-                                                    sourceMaterial->GetNormalTextureGuid()))
-        {
-            for (const auto &staged : after->Submeshes)
-                if (staged.material)
-                    GetRenderSystem()->UnregisterMaterial(staged.material);
-            m_FileError = "The new model's texture bindings could not be created.";
-            return;
-        }
-    }
-    m_CommandHistory.Execute(std::make_unique<ReplaceEntityCommand>(
-        m_ActiveScene, entityId, before, after,
-        [this](Engine::EntityId id, const std::shared_ptr<::Engine::Renderer::Entity> &entity) {
-            m_SceneDirty = true;
-            BroadcastSceneChanged();
-            int index = -1;
-            for (size_t i = 0; i < m_ActiveScene->GetEntityCount(); ++i)
-                if (m_ActiveScene->GetEntityIdAt(i) == id)
-                {
-                    index = static_cast<int>(i);
-                    break;
-                }
-            ProcessPanelEvent(std::make_unique<EntitySelectedEvent>(
-                EntitySelectedEvent::ItemType::Object, index, -1, -1, id, Engine::InvalidLightId,
-                Engine::InvalidCameraId, entity, std::weak_ptr<::Engine::Renderer::SpotLight>{},
-                std::weak_ptr<::Engine::Renderer::Camera>{}));
-        }));
-    m_FileError = JoinWarnings(warnings);
-}
-
-void Editor::ReimportAsset(const std::string &guid)
-{
-    const auto sourcePath = GetAssetManager()->GetSourcePath(guid);
-    if (!sourcePath)
-    {
-        m_FileError = "The selected asset is no longer in the project registry.";
-        return;
-    }
-    std::string error;
-    if (GetAssetManager()->GetTexture(guid))
-    {
-        if (!m_ActiveScene)
-        {
-            m_FileError = "There is no active scene to refresh.";
-            return;
-        }
-        auto imported = GetAssetManager()->ImportTexture(*sourcePath);
-        if (!imported)
-        {
-            m_FileError = std::move(imported.error().Message);
-            return;
-        }
-        const auto image = GetAssetManager()->GetTexture(guid);
-        const auto generation = GetAssetManager()->GetGeneration(guid);
-        if (!image || !generation)
-        {
-            m_FileError = "Texture reimport completed without decoded image data.";
-            return;
-        }
-        std::unordered_set<::Engine::Renderer::Material *> updated;
-        for (const auto &entity : m_ActiveScene->GetEntities())
-        {
-            if (!entity)
-                continue;
-            std::vector<std::shared_ptr<::Engine::Renderer::Material>> materials;
-            if (entity->material)
-                materials.push_back(entity->material);
-            for (const auto &submesh : entity->Submeshes)
-                if (submesh.material)
-                    materials.push_back(submesh.material);
-            for (const auto &material : materials)
-            {
-                if (!updated.insert(material.get()).second)
-                    continue;
-                const bool baseMatch =
-                    material->GetBaseColorTextureGuid() == std::optional<std::string>(guid);
-                const bool normalMatch = material->GetNormalTextureGuid() == std::optional<std::string>(guid);
-                if (!baseMatch && !normalMatch)
-                    continue;
-                auto base = material->GetBaseColorTexture();
-                auto normal = material->GetNormalTexture();
-                if (baseMatch)
-                    base = GetRenderSystem()->GetOrCreateTexture(guid, *generation, *image, true, error);
-                if (normalMatch)
-                    normal = GetRenderSystem()->GetOrCreateTexture(guid, *generation, *image, false, error);
-                if (!base || !normal ||
-                    !GetRenderSystem()->SetMaterialTextures(material, base, normal,
-                                                            material->GetBaseColorTextureGuid(),
-                                                            material->GetNormalTextureGuid()))
-                {
-                    m_FileError = error.empty()
-                                      ? "Texture reimport could not refresh all live material bindings."
-                                      : error;
-                    return;
-                }
-            }
-        }
-        AssetRegistryChangedEvent update(GetAssetManager()->GetKnownModels(),
-                                         GetAssetManager()->GetKnownTextures());
-        BroadcastEvent(update);
-        m_FileError.clear();
-        return;
-    }
-
-    auto imported = GetAssetManager()->ImportModel(*sourcePath);
-    if (!imported)
-    {
-        m_FileError = std::move(imported.error().Message);
-        return;
-    }
-    if (!m_ActiveScene)
-        return;
-    const auto model = GetAssetManager()->GetModel(guid);
-    const auto generation = GetAssetManager()->GetGeneration(guid);
-    if (!model || !generation)
-    {
-        m_FileError = "Model reimport completed without an imported model.";
-        return;
-    }
-    struct Replacement
-    {
-        Engine::EntityId id;
-        std::shared_ptr<::Engine::Renderer::Entity> entity;
-    };
-    std::vector<Replacement> replacements;
-    std::vector<std::string> warnings;
-    const auto cleanup = [&]() {
-        for (const auto &replacement : replacements)
-        {
-            for (const auto &submesh : replacement.entity->Submeshes)
-                if (submesh.material)
-                    GetRenderSystem()->UnregisterMaterial(submesh.material);
-        }
-    };
-    for (size_t i = 0; i < m_ActiveScene->GetEntities().size(); ++i)
-    {
-        const auto oldEntity = m_ActiveScene->GetEntities()[i];
-        if (!oldEntity || oldEntity->ModelGuid != std::optional<std::string>(guid))
-            continue;
-        std::vector<std::optional<::Engine::Renderer::MaterialProperties>> overrides(model->materials.size());
-        for (const auto &submesh : oldEntity->Submeshes)
-        {
-            if (submesh.MaterialSlot >= 0 && static_cast<size_t>(submesh.MaterialSlot) < overrides.size() &&
-                submesh.material)
-                overrides[static_cast<size_t>(submesh.MaterialSlot)] = submesh.material->GetProperties();
-        }
-        auto replacement =
-            GetRenderSystem()->CreateModelEntity(guid, *generation, *model, overrides, error, warnings);
-        if (!replacement)
-        {
-            cleanup();
-            m_FileError = std::move(error);
-            return;
-        }
-        replacement->Name = oldEntity->Name;
-        replacement->transform.SetPosition(oldEntity->transform.Position.x, oldEntity->transform.Position.y,
-                                           oldEntity->transform.Position.z);
-        replacement->transform.Rotation = oldEntity->transform.Rotation;
-        replacement->transform.SetScale(oldEntity->transform.Scale.x, oldEntity->transform.Scale.y,
-                                        oldEntity->transform.Scale.z);
-        replacement->ForceWireframe = oldEntity->ForceWireframe;
-        replacement->DisableDepthTest = oldEntity->DisableDepthTest;
-        replacement->CastShadows = oldEntity->CastShadows;
-        replacement->ReceiveShadows = oldEntity->ReceiveShadows;
-        replacement->CullMode = oldEntity->CullMode;
-        std::unordered_set<int32_t> appliedSlots;
-        for (const auto &oldSubmesh : oldEntity->Submeshes)
-        {
-            if (oldSubmesh.MaterialSlot < 0 || !oldSubmesh.material ||
-                !appliedSlots.insert(oldSubmesh.MaterialSlot).second)
-                continue;
-            const auto next =
-                std::find_if(replacement->Submeshes.begin(), replacement->Submeshes.end(),
-                             [&](const auto &item) { return item.MaterialSlot == oldSubmesh.MaterialSlot; });
-            if (next == replacement->Submeshes.end())
-                continue;
-            auto base = next->material->GetBaseColorTexture();
-            auto normal = next->material->GetNormalTexture();
-            const auto rebind = [&](const std::optional<std::string> &textureGuid, bool srgb,
-                                    std::shared_ptr<::Engine::Renderer::TextureResource> &destination) {
-                if (!textureGuid)
-                    return;
-                std::string textureError;
-                if (!GetAssetManager()->LoadTexture(*textureGuid, textureError))
-                {
-                    warnings.push_back(textureError);
-                    return;
-                }
-                const auto texture = GetAssetManager()->GetTexture(*textureGuid);
-                const auto textureGeneration = GetAssetManager()->GetGeneration(*textureGuid);
-                if (!texture || !textureGeneration)
-                {
-                    warnings.push_back("missing texture " + *textureGuid);
-                    return;
-                }
-                auto uploaded = GetRenderSystem()->GetOrCreateTexture(*textureGuid, *textureGeneration,
-                                                                      *texture, srgb, textureError);
-                if (uploaded)
-                    destination = std::move(uploaded);
-                else
-                    warnings.push_back(textureError);
-            };
-            rebind(oldSubmesh.material->GetBaseColorTextureGuid(), true, base);
-            rebind(oldSubmesh.material->GetNormalTextureGuid(), false, normal);
-            if (!GetRenderSystem()->SetMaterialTextures(next->material, base, normal,
-                                                        oldSubmesh.material->GetBaseColorTextureGuid(),
-                                                        oldSubmesh.material->GetNormalTextureGuid()))
-            {
-                for (const auto &submesh : replacement->Submeshes)
-                    if (submesh.material)
-                        GetRenderSystem()->UnregisterMaterial(submesh.material);
-                cleanup();
-                m_FileError = "Model reimport could not restore material texture bindings.";
-                return;
-            }
-        }
-        replacements.push_back({m_ActiveScene->GetEntityIdAt(i), std::move(replacement)});
-    }
-    for (auto &replacement : replacements)
-        m_ActiveScene->ReplaceEntity(replacement.id, replacement.entity);
-    BroadcastSceneChanged();
-    AssetRegistryChangedEvent update(GetAssetManager()->GetKnownModels(),
-                                     GetAssetManager()->GetKnownTextures());
-    BroadcastEvent(update);
-    if (m_SelectedEntityId != Engine::InvalidEntityId)
-        ProcessPanelEvent(std::make_unique<EntitySelectedEvent>(
-            EntitySelectedEvent::ItemType::Object, -1, -1, -1, m_SelectedEntityId, Engine::InvalidLightId,
-            Engine::InvalidCameraId));
-    m_FileError = JoinWarnings(warnings);
-}
-
-void Editor::BroadcastEvent(Engine::Events::Event &event)
-{
-    m_EventRouter.NotifyPanels(event);
-}
-
-void Editor::BroadcastSceneChanged()
-{
-    std::vector<Engine::EntityId> entityIds;
-    std::vector<Engine::LightId> lightIds;
-    std::vector<Engine::CameraId> cameraIds;
-    if (m_ActiveScene)
-    {
-        entityIds.reserve(m_ActiveScene->GetEntityCount());
-        for (size_t i = 0; i < m_ActiveScene->GetEntityCount(); ++i)
-        {
-            entityIds.push_back(m_ActiveScene->GetEntityIdAt(i));
-        }
-        lightIds.reserve(m_ActiveScene->GetLights().size());
-        for (size_t i = 0; i < m_ActiveScene->GetLights().size(); ++i)
-        {
-            lightIds.push_back(m_ActiveScene->GetLightIdAt(i));
-        }
-        cameraIds.reserve(m_ActiveScene->GetCameras().size());
-        for (size_t i = 0; i < m_ActiveScene->GetCameras().size(); ++i)
-        {
-            cameraIds.push_back(m_ActiveScene->GetCameraIdAt(i));
-        }
-    }
-    SceneChangedEvent event(std::move(entityIds), std::move(lightIds), std::move(cameraIds), m_ActiveScene);
-    BroadcastEvent(event);
-}
-
-void Editor::BroadcastCameraSettings()
-{
-    CameraSettingsChangedEvent event(m_CameraFov, m_CameraNearPlane, m_CameraFarPlane);
-    BroadcastEvent(event);
-}
-
-void Editor::BroadcastViewportChanged()
-{
-    ViewportChangedEvent event(GetViewportTextureID(), m_ViewportSize.first, m_ViewportSize.second);
-    BroadcastEvent(event);
-}
-
-void Editor::Undo()
-{
-    if (m_CommandHistory.CanUndo())
-    {
-        m_CommandHistory.Undo();
-        m_SceneDirty = true;
-    }
-}
-
-void Editor::Redo()
-{
-    if (m_CommandHistory.CanRedo())
-    {
-        m_CommandHistory.Redo();
-        m_SceneDirty = true;
-    }
-}
-
-void Editor::OnUIRender()
-{
-    if (!m_UiIntegration.IsInitialized())
-        return;
-    if (m_ActiveScene && m_SelectedEntityId != Engine::InvalidEntityId &&
-        !m_ActiveScene->FindEntity(m_SelectedEntityId))
-    {
-        m_SelectedEntityId = Engine::InvalidEntityId;
-        if (m_SelectedItemType == SelectedItemType::Object)
-            m_SelectedItemType = SelectedItemType::None;
-    }
-
-    if (m_ActiveScene && m_SelectedLightId != Engine::InvalidLightId &&
-        !m_ActiveScene->FindLight(m_SelectedLightId))
-    {
-        m_SelectedLightId = Engine::InvalidLightId;
-        if (m_SelectedItemType == SelectedItemType::Light)
-            m_SelectedItemType = SelectedItemType::None;
-    }
-
-    if (m_ActiveScene && m_SelectedCameraId != Engine::InvalidCameraId &&
-        !m_ActiveScene->FindCamera(m_SelectedCameraId))
-    {
-        m_SelectedCameraId = Engine::InvalidCameraId;
-        if (m_SelectedItemType == SelectedItemType::Camera)
-            m_SelectedItemType = SelectedItemType::None;
-    }
-
-    ImGuiID dockspaceId = ImGui::GetID("MainDockSpace");
-    ImGui::DockSpaceOverViewport(dockspaceId, ImGui::GetMainViewport(),
-                                 ImGuiDockNodeFlags_PassthruCentralNode);
-    BuildDefaultDockLayoutIfNeeded(dockspaceId);
-
-    for (auto &window : m_Windows)
-    {
-        if (window)
-        {
-            window->Draw();
-        }
-    }
-    m_EditorConsole.UpdateAndRender(&m_EngineConsoleOpen);
-    DrawUnsavedChangesModal();
-}
-
-void Editor::OnBeginUIFrame()
-{
-    m_UiIntegration.BeginFrame();
-}
-
-void Editor::OnEndUIFrame()
-{
-    m_UiIntegration.EndFrame();
-}
-
-void Editor::OnShutdownUI()
-{
-    m_EditorConsole.DetachFromLogger();
-    m_UiIntegration.Shutdown();
-}
-
-void Editor::RequestSceneAction(SceneFileActionRequestedEvent::Action action)
-{
-    m_FileError.clear();
-    if (m_SceneDirty)
-    {
-        m_PendingSceneAction = action;
-        m_ShowUnsavedModal = true;
-        return;
-    }
-    if (action == SceneFileActionRequestedEvent::Action::NewScene)
-    {
-        auto scene = std::make_shared<Engine::Scene>();
-        auto camera =
-            std::make_shared<::Engine::Renderer::Camera>(m_CameraFov, m_CameraNearPlane, m_CameraFarPlane);
-        camera->transform.SetPosition(0.0f, 0.0f, -5.0f);
-        scene->AddCamera(camera);
-        if (m_ActiveScene)
-            RemoveScene(m_ActiveScene);
-        AddScene(scene);
-        OnSceneReplaced(scene);
-        m_SceneDocument.Reset();
-        m_SceneDirty = false;
-        return;
-    }
-    if (action == SceneFileActionRequestedEvent::Action::SaveScene)
-    {
-        SaveCurrentScene(m_SceneDocument.GetPath().empty());
-        return;
-    }
-    if (action == SceneFileActionRequestedEvent::Action::SaveSceneAs)
-    {
-        SaveCurrentScene(true);
-        return;
-    }
-    if (action == SceneFileActionRequestedEvent::Action::OpenProject)
-    {
-        const auto folder = EditorPlatform::ChooseProjectFolder(GetAssetManager()->GetProjectRoot());
-        if (!folder)
-            return;
-        std::string error;
-        if (!GetAssetManager()->SetProjectRoot(*folder, error))
-        {
-            m_FileError = std::move(error);
-            return;
-        }
-        std::vector<std::string> registryWarnings;
-        if (!GetAssetManager()->RefreshRegistry(registryWarnings, error))
-        {
-            m_FileError = std::move(error);
-            return;
-        }
-        EditorPlatform::RememberProjectRoot(GetAssetManager()->GetProjectRoot());
-        auto scene = std::make_shared<Engine::Scene>();
-        auto camera =
-            std::make_shared<::Engine::Renderer::Camera>(m_CameraFov, m_CameraNearPlane, m_CameraFarPlane);
-        camera->transform.SetPosition(0.0f, 0.0f, -5.0f);
-        scene->AddCamera(camera);
-        if (m_ActiveScene)
-            RemoveScene(m_ActiveScene);
-        AddScene(scene);
-        OnSceneReplaced(scene);
-        m_SceneDocument.Reset();
-        m_SceneDirty = false;
-        if (!registryWarnings.empty())
-            m_FileError = JoinWarnings(registryWarnings);
-        return;
-    }
-    const auto path = EditorPlatform::ChooseSceneFile(false, m_SceneDocument.GetPath(),
-                                                      GetAssetManager()->GetProjectRoot());
-    if (!path)
-        return;
-    std::string error;
-    Engine::SceneDocumentResult loaded = m_SceneDocument.Load(*GetAssetManager(), *path);
-    if (!loaded)
-    {
-        m_FileError = std::move(loaded.error);
-        ENGINE_LOG_ERROR("Asset", "Editor scene load failed | path: {} | error: {}", path->generic_string(),
-                         m_FileError);
-        return;
-    }
-    if (!LoadSceneDocument(loaded.document, error, loaded.warnings))
-    {
-        m_FileError = std::move(error);
-        ENGINE_LOG_ERROR("Core", "Editor scene activation failed | path: {} | error: {}",
-                         path->generic_string(), m_FileError);
-        return;
-    }
-    m_SceneDocument.CommitPath(*path);
-    m_SceneDirty = false;
-    if (!loaded.warnings.empty())
-    {
-        m_FileError = JoinWarnings(loaded.warnings);
-        ENGINE_LOG_WARN("Asset",
-                        "Editor scene loaded with warnings | path: {} | warning_count: {} | details: {}",
-                        path->generic_string(), loaded.warnings.size(), m_FileError);
-    }
-    else
-        ENGINE_LOG_INFO("Core", "Editor scene activated | path: {} | entities: {} | lights: {} | cameras: {}",
-                        path->generic_string(), loaded.document.entities.size(),
-                        loaded.document.lights.size(), loaded.document.cameras.size());
-}
-
-bool Editor::SaveCurrentScene(bool choosePath)
-{
-    if (!m_ActiveScene)
-    {
-        m_FileError = "There is no active scene to save.";
-        ENGINE_LOG_ERROR("Asset", "Editor scene save rejected | active_scene_valid: false");
-        return false;
-    }
-    auto path = choosePath ? EditorPlatform::ChooseSceneFile(true, m_SceneDocument.GetPath(),
-                                                             GetAssetManager()->GetProjectRoot())
-                           : (m_SceneDocument.GetPath().empty() ? std::nullopt
-                                                                : std::optional(m_SceneDocument.GetPath()));
-    if (!path)
-        return false;
-    const Engine::SceneDocument document = CreateSceneDocument(*m_ActiveScene);
-    Engine::Status saved = m_SceneDocument.Save(*GetAssetManager(), document, *path);
-    if (!saved)
-    {
-        m_FileError = std::move(saved.error().Message);
-        ENGINE_LOG_ERROR("Asset", "Editor scene save failed | path: {} | entity_count: {} | error: {}",
-                         path->generic_string(), m_ActiveScene->GetEntities().size(), m_FileError);
-        return false;
-    }
-    m_SceneDirty = false;
-    m_FileError.clear();
-    ENGINE_LOG_INFO("Asset", "Editor scene saved | path: {} | entity_count: {} | choose_path: {}",
-                    path->generic_string(), document.entities.size(), choosePath);
     return true;
+  });
+  dispatcher.Dispatch<EcsEntitySelectedEvent>([this, &event](const auto& selected) -> bool {
+    m_SelectedEntity = selected.GetEntity();
+    BroadcastEvent(*event);
+    return true;
+  });
+  dispatcher.Dispatch<EntityDeselectedEvent>([this, &event](const auto&) -> bool {
+    m_SelectedEntity = Engine::InvalidEntityHandle;
+    BroadcastEvent(*event);
+    return true;
+  });
+  dispatcher.Dispatch<EcsEntityCreateRequestedEvent>([this](const auto& request) -> bool {
+    (void)m_ActiveScene->QueueCreate(request.GetName(), request.GetParent(), request.GetPreset());
+    return true;
+  });
+  dispatcher.Dispatch<EcsEntityDeleteRequestedEvent>([this](const auto& request) -> bool {
+    (void)m_ActiveScene->QueueDestroy(request.GetEntity());
+    return true;
+  });
+  dispatcher.Dispatch<EcsEntityReparentRequestedEvent>([this](const auto& request) -> bool {
+    (void)m_ActiveScene->QueueReparent(request.GetEntity(), request.GetParent());
+    return true;
+  });
+  // NOLINTNEXTLINE(readability-function-cognitive-complexity)
+  dispatcher.Dispatch<EcsComponentMutationRequestedEvent>([this](auto& request) -> bool {
+    const auto entity = request.GetEntity();
+    const auto operation = request.GetOperation();
+    auto payload = request.TakePayload();
+    const auto queueMutation = [&]<typename Component>(Component component) -> void {
+      if (operation == EcsComponentMutationRequestedEvent::Operation::Add) {
+        (void)m_ActiveScene->QueueAdd(entity, std::move(component));
+      } else if (operation == EcsComponentMutationRequestedEvent::Operation::Set) {
+        const Engine::Status status = m_ActiveScene->SetInPlace(entity, std::move(component));
+        if (!status) {
+          ENGINE_LOG_WARN("Scene", "Editor component edit rejected | reason: {}", status.error().Message);
+        }
+      }
+    };
+    switch (request.GetComponent()) {
+    case EcsComponentMutationRequestedEvent::Component::Name:
+      if (operation == EcsComponentMutationRequestedEvent::Operation::Set) {
+        if (const auto* value = std::get_if<Engine::Ecs::Name>(&payload)) {
+          queueMutation(*value);
+        }
+      }
+      break;
+    case EcsComponentMutationRequestedEvent::Component::Transform:
+      if (operation == EcsComponentMutationRequestedEvent::Operation::Set) {
+        if (const auto* value = std::get_if<Engine::Ecs::LocalTransform>(&payload)) {
+          queueMutation(*value);
+        }
+      }
+      break;
+    case EcsComponentMutationRequestedEvent::Component::LocalVisibility:
+      if (operation == EcsComponentMutationRequestedEvent::Operation::Set) {
+        if (const auto* value = std::get_if<Engine::Ecs::LocalVisibility>(&payload)) {
+          queueMutation(*value);
+        }
+      }
+      break;
+    case EcsComponentMutationRequestedEvent::Component::MeshRenderer:
+      if (operation == EcsComponentMutationRequestedEvent::Operation::Remove) {
+        (void)m_ActiveScene->QueueRemove<Engine::Ecs::MeshRenderer>(entity);
+      } else if (const auto* value = std::get_if<Engine::Ecs::MeshRenderer>(&payload)) {
+        queueMutation(*value);
+      } else if (operation == EcsComponentMutationRequestedEvent::Operation::Add) {
+        queueMutation(Engine::Ecs::MeshRenderer{});
+      }
+      break;
+    case EcsComponentMutationRequestedEvent::Component::SpotLight:
+      if (operation == EcsComponentMutationRequestedEvent::Operation::Remove) {
+        (void)m_ActiveScene->QueueRemove<Engine::Ecs::SpotLight>(entity);
+      } else if (const auto* value = std::get_if<Engine::Ecs::SpotLight>(&payload)) {
+        queueMutation(*value);
+      } else if (operation == EcsComponentMutationRequestedEvent::Operation::Add) {
+        queueMutation(Engine::Ecs::SpotLight{});
+      }
+      break;
+    case EcsComponentMutationRequestedEvent::Component::Camera:
+      if (operation == EcsComponentMutationRequestedEvent::Operation::Remove) {
+        (void)m_ActiveScene->QueueRemove<Engine::Ecs::Camera>(entity);
+      } else if (const auto* value = std::get_if<Engine::Ecs::Camera>(&payload)) {
+        queueMutation(*value);
+      } else if (operation == EcsComponentMutationRequestedEvent::Operation::Add) {
+        queueMutation(Engine::Ecs::Camera{});
+      }
+      break;
+    }
+    return true;
+  });
 }
 
-void Editor::DrawUnsavedChangesModal()
-{
-    if (m_ShowUnsavedModal)
-    {
-        ImGui::OpenPopup("Unsaved changes");
-        m_ShowUnsavedModal = false;
-    }
-    if (ImGui::BeginPopupModal("Unsaved changes", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
-    {
-        ImGui::TextUnformatted("Save changes to the current scene before continuing?");
-        if (ImGui::Button("Save", ImVec2(120, 0)))
-        {
-            if (SaveCurrentScene(m_SceneDocument.GetPath().empty()))
-            {
-                const auto action = m_PendingSceneAction;
-                ImGui::CloseCurrentPopup();
-                RequestSceneAction(action);
-            }
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Discard", ImVec2(120, 0)))
-        {
-            m_SceneDirty = false;
-            const auto action = m_PendingSceneAction;
-            ImGui::CloseCurrentPopup();
-            RequestSceneAction(action);
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Cancel", ImVec2(120, 0)))
-            ImGui::CloseCurrentPopup();
-        ImGui::EndPopup();
-    }
-    if (!m_FileError.empty())
-    {
-        ImGui::OpenPopup("Scene operation");
-    }
-    ImGui::SetNextWindowSize(ImVec2(640.0f, 320.0f), ImGuiCond_Appearing);
-    if (ImGui::BeginPopupModal("Scene operation"))
-    {
-        ImGui::BeginChild("Operation details", ImVec2(0.0f, -ImGui::GetFrameHeightWithSpacing()), true);
-        ImGui::TextWrapped("%s", m_FileError.c_str());
-        ImGui::EndChild();
-        const float buttonWidth = ImGui::CalcTextSize("OK").x + ImGui::GetStyle().FramePadding.x * 2.0f;
-        ImGui::SetCursorPosX((ImGui::GetWindowWidth() - buttonWidth) * 0.5f);
-        if (ImGui::Button("OK"))
-        {
-            m_FileError.clear();
-            ImGui::CloseCurrentPopup();
-        }
-        ImGui::EndPopup();
-    }
-    if (m_PendingUnsupportedModelLoad)
-        ImGui::OpenPopup("Unsupported model extensions");
-    ImGui::SetNextWindowSize(ImVec2(640.0f, 300.0f), ImGuiCond_Appearing);
-    if (ImGui::BeginPopupModal("Unsupported model extensions", nullptr, ImGuiWindowFlags_NoResize))
-    {
-        if (!m_PendingUnsupportedModelLoad)
-        {
-            ImGui::EndPopup();
-            return;
-        }
-        auto pendingLoad = *m_PendingUnsupportedModelLoad;
-        ImGui::TextWrapped("This model uses a glTF extension that the renderer does not support. Its "
-                           "geometry can still be loaded, but the affected material may look different.");
-        ImGui::Spacing();
-        ImGui::BeginChild("Unsupported extension details", ImVec2(0.0f, 150.0f), true);
-        ImGui::TextWrapped("%s", m_UnsupportedModelWarnings.c_str());
-        ImGui::EndChild();
-        if (ImGui::Button("Cancel", ImVec2(140.0f, 0.0f)))
-        {
-            if (pendingLoad.Result)
-                pendingLoad.Result->Complete(false, "Model creation was cancelled.");
-            m_PendingUnsupportedModelLoad.reset();
-            m_UnsupportedModelWarnings.clear();
-            ImGui::CloseCurrentPopup();
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Load unsupported", ImVec2(180.0f, 0.0f)))
-        {
-            auto pending = std::move(pendingLoad);
-            m_PendingUnsupportedModelLoad.reset();
-            m_UnsupportedModelWarnings.clear();
-            ImGui::CloseCurrentPopup();
-            std::string error;
-            if (!AddModelToScene(pending.Guid, pending.Position, pending.Scale, error, pending.Name))
-            {
-                m_FileError = error;
-                if (pending.Result)
-                    pending.Result->Complete(false, std::move(error));
-            }
-            else if (pending.Result)
-            {
-                pending.Result->Complete(true);
-            }
-        }
-        ImGui::EndPopup();
-    }
+void Editor::BroadcastEvent(Engine::Events::Event& event) { m_EventRouter.NotifyPanels(event); }
+
+void Editor::BroadcastSceneChanged() {
+  SceneChangedEvent event(m_ActiveScene);
+  BroadcastEvent(event);
 }
 
-void Editor::BuildDefaultDockLayoutIfNeeded(ImGuiID dockspaceId)
-{
-    if (m_DefaultLayoutBuilt)
-        return;
+void Editor::CreateViewport(uint32_t width, uint32_t height) {
+  if (width == 0 || height == 0 || GetRenderSystem() == nullptr) {
+    return;
+  }
+  DestroyViewport();
+  auto target = GetRenderSystem()->CreateViewportTarget(width, height);
+  if (!target) {
+    ENGINE_LOG_ERROR("Render", "Editor viewport target creation failed | width: {} | height: {}", width, height);
+    return;
+  }
+  m_ViewportSize = {static_cast<float>(width), static_cast<float>(height)};
+  m_EditorViewportTarget = std::move(target);
+  m_EditorViewport = std::make_shared<Engine::Viewport>(m_EditorViewportTarget);
+  AddViewport(m_EditorViewport);
+  ViewportChangedEvent changed(GetViewportTextureID(), m_ViewportSize.first, m_ViewportSize.second);
+  BroadcastEvent(changed);
+}
 
-    ImGuiDockNode *node = ImGui::DockBuilderGetNode(dockspaceId);
-    if (!node || node->Windows.Size > 0 || node->ChildNodes[0] != nullptr || node->ChildNodes[1] != nullptr)
-    {
-        m_DefaultLayoutBuilt = true;
-        return;
-    }
+void Editor::DestroyViewport() {
+  if (m_EditorViewport) {
+    RemoveViewport(m_EditorViewport);
+  }
+  m_EditorViewport.reset();
+  m_EditorViewportTarget.reset();
+  m_ViewportSize = {0.0F, 0.0F};
+}
 
-    BuildDefaultDockLayout(dockspaceId);
+auto Editor::GetViewportTextureID() const -> void* {
+  return m_UiIntegration.GetTextureId(m_EditorViewportTarget.get());
+}
+
+void Editor::BuildDefaultDockLayoutIfNeeded(uint32_t dockspaceId) {
+  if (m_DefaultLayoutBuilt) {
+    return;
+  }
+  ImGuiDockNode* node = ImGui::DockBuilderGetNode(dockspaceId);
+  if (node != nullptr && (node->Windows.Size > 0 || node->ChildNodes[0] != nullptr || node->ChildNodes[1] != nullptr)) {
     m_DefaultLayoutBuilt = true;
+    return;
+  }
+  BuildDefaultDockLayout(dockspaceId);
+  m_DefaultLayoutBuilt = true;
 }
 
-void Editor::BuildDefaultDockLayout(ImGuiID dockspaceId)
-{
-    ImGui::DockBuilderRemoveNode(dockspaceId);
-    ImGui::DockBuilderAddNode(dockspaceId, ImGuiDockNodeFlags_DockSpace);
-    ImGui::DockBuilderSetNodeSize(dockspaceId, ImGui::GetMainViewport()->Size);
-
-    ImGuiID dockMain = dockspaceId;
-    ImGuiID dockLeft = 0;
-    ImGuiID dockRight = 0;
-    ImGuiID dockBottom = 0;
-
-    ImGui::DockBuilderSplitNode(dockMain, ImGuiDir_Left, 0.20f, &dockLeft, &dockMain);
-    ImGui::DockBuilderSplitNode(dockMain, ImGuiDir_Right, 0.25f, &dockRight, &dockMain);
-    ImGui::DockBuilderSplitNode(dockMain, ImGuiDir_Down, 0.25f, &dockBottom, &dockMain);
-
-    if (ImGuiDockNode *centralNode = ImGui::DockBuilderGetNode(dockMain))
-    {
-        centralNode->LocalFlags |= ImGuiDockNodeFlags_CentralNode;
-        centralNode->LocalFlags |= ImGuiDockNodeFlags_NoTabBar;
-    }
-
-    ImGui::DockBuilderDockWindow("Scene", dockLeft);
-    ImGui::DockBuilderDockWindow("Inspector", dockRight);
-    ImGui::DockBuilderDockWindow("Statistics", dockBottom);
-    ImGui::DockBuilderDockWindow("Assets", dockBottom);
-    ImGui::DockBuilderDockWindow("Engine Console", dockBottom);
-    ImGui::DockBuilderDockWindow("Viewport", dockMain);
-    ImGui::DockBuilderFinish(dockspaceId);
+void Editor::BuildDefaultDockLayout(uint32_t dockspaceId) {
+  ImGui::DockBuilderRemoveNode(dockspaceId);
+  ImGui::DockBuilderAddNode(dockspaceId, ImGuiDockNodeFlags_DockSpace);
+  ImGui::DockBuilderSetNodeSize(dockspaceId, ImGui::GetMainViewport()->Size);
+  ImGuiID main = dockspaceId;
+  ImGuiID left = 0;
+  ImGuiID right = 0;
+  ImGuiID bottom = 0;
+  ImGui::DockBuilderSplitNode(main, ImGuiDir_Left, 0.20F, &left, &main);
+  ImGui::DockBuilderSplitNode(main, ImGuiDir_Right, 0.25F, &right, &main);
+  ImGui::DockBuilderSplitNode(main, ImGuiDir_Down, 0.25F, &bottom, &main);
+  ImGui::DockBuilderDockWindow("Scene", left);
+  ImGui::DockBuilderDockWindow("Scene Hierarchy", left);
+  ImGui::DockBuilderDockWindow("Inspector", right);
+  ImGui::DockBuilderDockWindow("Statistics", bottom);
+  ImGui::DockBuilderDockWindow("Assets", bottom);
+  ImGui::DockBuilderDockWindow("Engine Console", bottom);
+  ImGui::DockBuilderDockWindow("Viewport", main);
+  ImGui::DockBuilderFinish(dockspaceId);
 }

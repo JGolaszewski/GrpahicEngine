@@ -1,5 +1,18 @@
-BasedOnStyle: Microsoft
-ColumnLimit: 110
-IndentWidth: 4
-UseTab: Never
-SortIncludes: false
+Language: Cpp
+Standard: Latest
+BasedOnStyle: LLVM
+
+# Enforce clean pointer alignment
+PointerAlignment: Left
+DerivePointerAlignment: false
+
+ColumnLimit: 120
+AllowAllArgumentsOnNextLine: false
+AlignAfterOpenBracket: Align
+
+# Standardize namespaces for your modules
+FixNamespaceComments: true
+CompactNamespaces: false
+
+# Keep shader/graphics macro formatting clean
+IndentPPDirectives: AfterHash

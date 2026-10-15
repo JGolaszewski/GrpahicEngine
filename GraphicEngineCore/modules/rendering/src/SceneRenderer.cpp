@@ -1,1041 +1,929 @@
-#include "SceneRenderer.h"
-#include "MaterialBackend.h"
-#include "MeshBackend.h"
-#include "PipelineCache.h"
-#include "ShaderFactory.h"
-#include "TextureBackend.h"
+#include "rendering/src/SceneRenderer.h"
 #include "runtime/include/LogMacros.h"
 
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstring>
 #include <limits>
 
-#include "scene/include/Scene.h"
 #include "rendering/include/renderer/DebugGeometry.h"
-#include "rendering/include/renderer/Entity.h"
 #include "rendering/include/renderer/Material.h"
 #include "rendering/include/renderer/Mesh.h"
+#include "rendering/src/MaterialBackend.h"
+#include "rendering/src/MeshBackend.h"
+#include "scene/include/Scene.h"
 
-namespace
-{
-nvrhi::PrimitiveType ToBackendPrimitiveType(::Engine::Renderer::PrimitiveTopology topology)
-{
-    switch (topology)
-    {
-    case ::Engine::Renderer::PrimitiveTopology::Triangles:
-        return nvrhi::PrimitiveType::TriangleList;
-    case ::Engine::Renderer::PrimitiveTopology::Lines:
-        return nvrhi::PrimitiveType::LineList;
-    case ::Engine::Renderer::PrimitiveTopology::LineStrip:
-        return nvrhi::PrimitiveType::LineStrip;
-    case ::Engine::Renderer::PrimitiveTopology::Points:
-        return nvrhi::PrimitiveType::PointList;
-    }
-    return nvrhi::PrimitiveType::TriangleList;
-}
-
-struct DebugViewData
-{
-    DirectX::XMFLOAT4X4 ViewProjection;
+namespace {
+struct DebugViewData {
+  DirectX::XMFLOAT4X4 ViewProjection;
 };
 
-bool Equal(const DirectX::XMFLOAT3 &left, const DirectX::XMFLOAT3 &right)
-{
-    return left.x == right.x && left.y == right.y && left.z == right.z;
+auto Equal(const DirectX::XMFLOAT3& left, const DirectX::XMFLOAT3& right) noexcept -> bool {
+  return left.x == right.x && left.y == right.y && left.z == right.z;
 }
 
-bool Equal(const DirectX::XMFLOAT4X4 &left, const DirectX::XMFLOAT4X4 &right)
-{
-    for (size_t row = 0; row < 4; ++row)
-    {
-        for (size_t column = 0; column < 4; ++column)
-        {
-            if (left.m[row][column] != right.m[row][column])
-            {
-                return false;
-            }
-        }
-    }
-    return true;
+// NOLINTBEGIN(cppcoreguidelines-pro-type-union-access) // DirectXMath exposes matrix elements through its documented
+// union layout.
+auto Equal(const DirectX::XMFLOAT4X4& left, const DirectX::XMFLOAT4X4& right) noexcept -> bool {
+  return left._11 == right._11 && left._12 == right._12 && left._13 == right._13 && left._14 == right._14 &&
+         left._21 == right._21 && left._22 == right._22 && left._23 == right._23 && left._24 == right._24 &&
+         left._31 == right._31 && left._32 == right._32 && left._33 == right._33 && left._34 == right._34 &&
+         left._41 == right._41 && left._42 == right._42 && left._43 == right._43 && left._44 == right._44;
+}
+// NOLINTEND(cppcoreguidelines-pro-type-union-access)
+
+auto NormalizeOrDefault(const DirectX::XMFLOAT3& value) -> DirectX::XMVECTOR {
+  DirectX::XMVECTOR vector = DirectX::XMLoadFloat3(&value);
+  const float lengthSquared = DirectX::XMVectorGetX(DirectX::XMVector3LengthSq(vector));
+  if (!std::isfinite(lengthSquared) || lengthSquared < 1e-6F) {
+    return DirectX::XMVectorSet(0.0F, -1.0F, 0.0F, 0.0F);
+  }
+  return DirectX::XMVector3Normalize(vector);
 }
 
-nvrhi::RasterCullMode ToBackendCullMode(::Engine::Renderer::FaceCullMode mode)
-{
-    switch (mode)
-    {
-    case ::Engine::Renderer::FaceCullMode::None:
-        return nvrhi::RasterCullMode::None;
-    case ::Engine::Renderer::FaceCullMode::Front:
-        return nvrhi::RasterCullMode::Front;
-    case ::Engine::Renderer::FaceCullMode::Back:
-        return nvrhi::RasterCullMode::Back;
-    }
-    return nvrhi::RasterCullMode::Back;
+static_assert(sizeof(::Engine::Renderer::PerObjectGpuData) == Engine::SceneRenderer::PerObjectDataStride);
+
+auto ComputeSpotLightViewProj(const ::Engine::Renderer::DirectionalLightData& lightData) -> DirectX::XMMATRIX {
+  using namespace DirectX;
+
+  XMFLOAT3 position = XMFLOAT3(lightData.PositionRange.x, lightData.PositionRange.y, lightData.PositionRange.z);
+  XMFLOAT3 direction =
+      XMFLOAT3(lightData.DirectionIntensity.x, lightData.DirectionIntensity.y, lightData.DirectionIntensity.z);
+
+  XMVECTOR dir = XMVector3Normalize(XMLoadFloat3(&direction));
+  if (XMVectorGetX(XMVector3LengthSq(dir)) < 1e-6F) {
+    dir = XMVectorSet(0.0F, -1.0F, 0.0F, 0.0F);
+  }
+
+  XMVECTOR up = XMVectorSet(0.0F, 1.0F, 0.0F, 0.0F);
+  const float upDot = std::abs(XMVectorGetX(XMVector3Dot(up, dir)));
+  if (upDot > 0.98F) {
+    up = XMVectorSet(1.0F, 0.0F, 0.0F, 0.0F);
+  }
+
+  XMVECTOR pos = XMLoadFloat3(&position);
+  XMMATRIX view = XMMatrixLookToLH(pos, dir, up);
+
+  const float outerCos = std::clamp(lightData.ConeParams.y, -1.0F, 1.0F);
+  const float outerAngle = std::acos(outerCos);
+  const float fovY = std::clamp(outerAngle * 2.0F, 0.2F, DirectX::XM_PI - 0.01F);
+  const float nearPlane = 0.05F;
+  const float farPlane = std::max(lightData.PositionRange.w, nearPlane + 0.01F);
+
+  XMMATRIX proj = XMMatrixPerspectiveFovLH(fovY, 1.0F, nearPlane, farPlane);
+  return view * proj;
 }
 
-DirectX::XMVECTOR NormalizeOrDefault(const DirectX::XMFLOAT3 &value)
-{
-    DirectX::XMVECTOR vector = DirectX::XMLoadFloat3(&value);
-    const float lengthSquared = DirectX::XMVectorGetX(DirectX::XMVector3LengthSq(vector));
-    if (!std::isfinite(lengthSquared) || lengthSquared < 1e-6f)
-    {
-        return DirectX::XMVectorSet(0.0f, -1.0f, 0.0f, 0.0f);
-    }
-    return DirectX::XMVector3Normalize(vector);
+auto ToDirectionalLightData(const ::Engine::Ecs::SpotLight& light, const ::Engine::Ecs::WorldTransform& transform)
+    -> ::Engine::Renderer::DirectionalLightData {
+  ::Engine::Renderer::DirectionalLightData data;
+  const float innerRadians = DirectX::XMConvertToRadians(light.InnerAngleDegrees);
+  const float outerRadians = DirectX::XMConvertToRadians(light.OuterAngleDegrees);
+  const DirectX::XMVECTOR localDirection =
+      DirectX::XMVectorSet(light.Direction[0], light.Direction[1], light.Direction[2], 0.0F);
+  const DirectX::XMVECTOR worldDirection = DirectX::XMVector3Normalize(
+      DirectX::XMVector3TransformNormal(localDirection, DirectX::XMLoadFloat4x4(&transform.Matrix)));
+  DirectX::XMFLOAT3 direction{};
+  DirectX::XMStoreFloat3(&direction, worldDirection);
+  data.DirectionIntensity = {direction.x, direction.y, direction.z, light.Intensity};
+  data.ColorUsePosition = {light.Color[0], light.Color[1], light.Color[2], light.UsePosition ? 1.0F : 0.0F};
+  DirectX::XMFLOAT3 position{};
+  DirectX::XMStoreFloat3(
+      &position, DirectX::XMVector3TransformCoord(DirectX::XMVectorZero(), DirectX::XMLoadFloat4x4(&transform.Matrix)));
+  data.PositionRange = {position.x, position.y, position.z, light.Range};
+  data.ConeParams = {std::cos(innerRadians), std::cos(outerRadians), 0.0F, 0.0F};
+  data.ShadowParams = {-1.0F, light.ShadowBias, light.ShadowNormalBias, light.CastShadows ? 1.0F : 0.0F};
+  return data;
 }
 
-static_assert(sizeof(::Engine::Renderer::PerObjectGpuData) == Engine::PerObjectDataStride);
-
-DirectX::XMMATRIX ComputeSpotLightViewProj(const ::Engine::Renderer::DirectionalLightData &lightData)
-{
-    using namespace DirectX;
-
-    XMFLOAT3 position =
-        XMFLOAT3(lightData.PositionRange.x, lightData.PositionRange.y, lightData.PositionRange.z);
-    XMFLOAT3 direction = XMFLOAT3(lightData.DirectionIntensity.x, lightData.DirectionIntensity.y,
-                                  lightData.DirectionIntensity.z);
-
-    XMVECTOR dir = XMVector3Normalize(XMLoadFloat3(&direction));
-    if (XMVectorGetX(XMVector3LengthSq(dir)) < 1e-6f)
-    {
-        dir = XMVectorSet(0.0f, -1.0f, 0.0f, 0.0f);
+auto PositiveQuadraticRoot(float quadraticA, float quadraticB, float quadraticC) -> std::optional<float> {
+  if (std::abs(quadraticA) < 1e-6F) {
+    if (std::abs(quadraticB) > 1e-6F) {
+      const float root = -quadraticC / quadraticB;
+      return root > 0.0F ? std::optional<float>(root) : std::nullopt;
     }
+    return std::nullopt;
+  }
 
-    XMVECTOR up = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
-    const float upDot = std::abs(XMVectorGetX(XMVector3Dot(up, dir)));
-    if (upDot > 0.98f)
-    {
-        up = XMVectorSet(1.0f, 0.0f, 0.0f, 0.0f);
-    }
+  const float discriminant = (quadraticB * quadraticB) - (4.0F * quadraticA * quadraticC);
+  if (discriminant < 0.0F) {
+    return std::nullopt;
+  }
+  const float sqrtDiscriminant = std::sqrt(discriminant);
+  const float denominator = 2.0F * quadraticA;
+  const float rootA = (-quadraticB - sqrtDiscriminant) / denominator;
+  const float rootB = (-quadraticB + sqrtDiscriminant) / denominator;
+  if (rootA > 0.0F && rootB > 0.0F) {
+    return (std::min)(rootA, rootB);
+  }
+  if (rootA > 0.0F) {
+    return rootA;
+  }
+  return rootB > 0.0F ? std::optional<float>(rootB) : std::nullopt;
+}
 
-    XMVECTOR pos = XMLoadFloat3(&position);
-    XMMATRIX view = XMMatrixLookToLH(pos, dir, up);
+auto FindLightTargetDistance(DirectX::FXMVECTOR rayOrigin, DirectX::FXMVECTOR rayDirection,
+                             const ::Engine::Renderer::DebugLightTarget& target) -> std::optional<float> {
+  const DirectX::XMVECTOR axis = NormalizeOrDefault(target.Direction);
+  const DirectX::XMVECTOR offset = DirectX::XMVectorSubtract(rayOrigin, DirectX::XMLoadFloat3(&target.Position));
+  const float axisRayDot = DirectX::XMVectorGetX(DirectX::XMVector3Dot(axis, rayDirection));
+  const float axisOffsetDot = DirectX::XMVectorGetX(DirectX::XMVector3Dot(axis, offset));
+  const float safeRange = (std::max)(target.Range, 0.25F);
+  const float coneSlope = std::tan(std::clamp(target.OuterAngleRadians, 0.0F, DirectX::XM_PIDIV2 - 0.001F));
+  const float coneScale = 1.0F + (coneSlope * coneSlope);
+  const float quadraticA = 1.0F - (axisRayDot * axisRayDot * coneScale);
+  const float quadraticB = 2.0F * (DirectX::XMVectorGetX(DirectX::XMVector3Dot(offset, rayDirection)) -
+                                   (axisOffsetDot * axisRayDot * coneScale));
+  const float quadraticC =
+      DirectX::XMVectorGetX(DirectX::XMVector3Dot(offset, offset)) - (axisOffsetDot * axisOffsetDot * coneScale);
+  std::optional<float> hitDistance = PositiveQuadraticRoot(quadraticA, quadraticB, quadraticC);
+  if (!hitDistance) {
+    const float sphereRadius = (std::max)(0.2F, safeRange * 0.025F);
+    const float sphereA = DirectX::XMVectorGetX(DirectX::XMVector3Dot(rayDirection, rayDirection));
+    const float sphereB = 2.0F * DirectX::XMVectorGetX(DirectX::XMVector3Dot(offset, rayDirection));
+    const float sphereC = DirectX::XMVectorGetX(DirectX::XMVector3Dot(offset, offset)) - (sphereRadius * sphereRadius);
+    hitDistance = PositiveQuadraticRoot(sphereA, sphereB, sphereC);
+  }
+  if (!hitDistance) {
+    return std::nullopt;
+  }
 
-    const float outerCos = std::clamp(lightData.ConeParams.y, -1.0f, 1.0f);
-    const float outerAngle = std::acos(outerCos);
-    const float fovY = std::clamp(outerAngle * 2.0f, 0.2f, DirectX::XM_PI - 0.01f);
-    const float nearPlane = 0.05f;
-    const float farPlane = std::max(lightData.PositionRange.w, nearPlane + 0.01f);
-
-    XMMATRIX proj = XMMatrixPerspectiveFovLH(fovY, 1.0f, nearPlane, farPlane);
-    return view * proj;
+  const DirectX::XMVECTOR hitPoint =
+      DirectX::XMVectorAdd(rayOrigin, DirectX::XMVectorScale(rayDirection, *hitDistance));
+  const float hitAxialDistance = DirectX::XMVectorGetX(
+      DirectX::XMVector3Dot(DirectX::XMVectorSubtract(hitPoint, DirectX::XMLoadFloat3(&target.Position)), axis));
+  if (hitAxialDistance < -0.25F || hitAxialDistance > safeRange + 0.25F) {
+    return std::nullopt;
+  }
+  return hitDistance;
 }
 } // namespace
 
 // --- Initialization ---
 
-Engine::SceneRenderer::SceneRenderer(nvrhi::IDevice *) : m_PipelineCache(std::make_unique<PipelineCache>())
-{
+Engine::SceneRenderer::SceneRenderer(nvrhi::IDevice* /*unused*/) {}
+
+void Engine::SceneRenderer::Init(nvrhi::IDevice* device, ::Engine::Renderer::MaterialSystem* materialSystem,
+                                 ::Engine::Renderer::ShaderFactory* shaderFactory,
+                                 const ::Engine::Renderer::ModelResourceLibrary* modelResources) {
+  m_MaterialSystem = materialSystem;
+  m_ModelResources = modelResources;
+  m_PipelineCache.Init(device);
+
+  m_Device = device;
+
+  if (shaderFactory != nullptr) {
+    m_DebugVS = shaderFactory->GetShader("shaders/debug_vs.dxbc", nvrhi::ShaderType::Vertex);
+    m_DebugPS = shaderFactory->GetShader("shaders/debug_ps.dxbc", nvrhi::ShaderType::Pixel);
+    m_ShadowMaskPS = shaderFactory->GetShader("shaders/shadow_mask_ps.dxbc", nvrhi::ShaderType::Pixel);
+  }
+
+  nvrhi::BindingLayoutDesc perObjectLayoutDesc;
+  perObjectLayoutDesc.visibility = nvrhi::ShaderType::All;
+  perObjectLayoutDesc.bindings = {nvrhi::BindingLayoutItem::ConstantBuffer(0)};
+  m_PerObjectBindingLayout = device->createBindingLayout(perObjectLayoutDesc);
+
+  nvrhi::BindingLayoutDesc sceneLayoutDesc;
+  sceneLayoutDesc.visibility = nvrhi::ShaderType::All;
+  sceneLayoutDesc.bindings = {
+      nvrhi::BindingLayoutItem::ConstantBuffer(2),
+      nvrhi::BindingLayoutItem::Texture_SRV(6),
+      nvrhi::BindingLayoutItem::Sampler(6),
+      nvrhi::BindingLayoutItem::ConstantBuffer(4),
+  };
+  m_SceneBindingLayout = device->createBindingLayout(sceneLayoutDesc);
+
+  nvrhi::BindingLayoutDesc debugLayoutDesc;
+  debugLayoutDesc.visibility = nvrhi::ShaderType::Vertex;
+  debugLayoutDesc.bindings = {nvrhi::BindingLayoutItem::ConstantBuffer(0)};
+  m_DebugBindingLayout = device->createBindingLayout(debugLayoutDesc);
+
+  nvrhi::BufferDesc debugViewDesc;
+  debugViewDesc.byteSize = sizeof(DebugViewData);
+  debugViewDesc.isConstantBuffer = true;
+  debugViewDesc.isVolatile = true;
+  debugViewDesc.maxVersions = 8;
+  debugViewDesc.debugName = "DebugView_Buffer";
+  m_DebugViewBuffer = device->createBuffer(debugViewDesc);
+
+  nvrhi::SamplerDesc shadowSamplerDesc;
+  shadowSamplerDesc.setAddressU(nvrhi::SamplerAddressMode::Border)
+      .setAddressV(nvrhi::SamplerAddressMode::Border)
+      .setAddressW(nvrhi::SamplerAddressMode::Border)
+      .setMinFilter(true)
+      .setMagFilter(true)
+      .setMipFilter(false)
+      .setReductionType(nvrhi::SamplerReductionType::Comparison)
+      .setBorderColor(nvrhi::Color(1.0F, 1.0F, 1.0F, 1.0F));
+  m_ShadowSampler = device->createSampler(shadowSamplerDesc);
 }
 
-Engine::SceneRenderer::~SceneRenderer() = default;
+void Engine::SceneRenderer::EnsureDebugBuffer(nvrhi::BufferHandle& buffer, uint64_t& capacity, size_t vertexCount,
+                                              const char* debugName) {
+  if (vertexCount == 0) {
+    return;
+  }
 
-void Engine::SceneRenderer::Init(nvrhi::IDevice *device, ::Engine::Renderer::MaterialSystem *materialSystem,
-                                 ::Engine::Renderer::ShaderFactory *shaderFactory)
-{
-    m_MaterialSystem = materialSystem;
-    m_PipelineCache->Init(device);
+  const uint64_t requiredBytes = static_cast<uint64_t>(vertexCount) * sizeof(::Engine::Renderer::DebugVertex);
+  if ((buffer != nullptr) && capacity >= requiredBytes) {
+    return;
+  }
 
-    m_Device = device;
+  uint64_t newCapacity =
+      (std::max)(requiredBytes, static_cast<uint64_t>(sizeof(::Engine::Renderer::DebugVertex) * 256));
+  while (newCapacity < requiredBytes && newCapacity <= UINT64_MAX / 2) {
+    newCapacity *= 2;
+  }
 
-    if (shaderFactory)
-    {
-        m_DebugVS = shaderFactory->GetShader("shaders/debug_vs.dxbc", nvrhi::ShaderType::Vertex);
-        m_DebugPS = shaderFactory->GetShader("shaders/debug_ps.dxbc", nvrhi::ShaderType::Pixel);
-        m_ShadowMaskPS = shaderFactory->GetShader("shaders/shadow_mask_ps.dxbc", nvrhi::ShaderType::Pixel);
-    }
-
-    nvrhi::BindingLayoutDesc perObjectLayoutDesc;
-    perObjectLayoutDesc.visibility = nvrhi::ShaderType::All;
-    perObjectLayoutDesc.bindings = {nvrhi::BindingLayoutItem::ConstantBuffer(0)};
-    m_PerObjectBindingLayout = device->createBindingLayout(perObjectLayoutDesc);
-
-    nvrhi::BindingLayoutDesc sceneLayoutDesc;
-    sceneLayoutDesc.visibility = nvrhi::ShaderType::All;
-    sceneLayoutDesc.bindings = {
-        nvrhi::BindingLayoutItem::ConstantBuffer(2), nvrhi::BindingLayoutItem::Texture_SRV(6),
-        nvrhi::BindingLayoutItem::Sampler(6),        nvrhi::BindingLayoutItem::ConstantBuffer(4),
-        nvrhi::BindingLayoutItem::Texture_SRV(7),    nvrhi::BindingLayoutItem::Sampler(7),
-        nvrhi::BindingLayoutItem::Texture_SRV(8),    nvrhi::BindingLayoutItem::Sampler(8),
-        nvrhi::BindingLayoutItem::Texture_SRV(9),    nvrhi::BindingLayoutItem::Sampler(9)};
-    m_SceneBindingLayout = device->createBindingLayout(sceneLayoutDesc);
-
-    nvrhi::BindingLayoutDesc debugLayoutDesc;
-    debugLayoutDesc.visibility = nvrhi::ShaderType::Vertex;
-    debugLayoutDesc.bindings = {nvrhi::BindingLayoutItem::ConstantBuffer(0)};
-    m_DebugBindingLayout = device->createBindingLayout(debugLayoutDesc);
-
-    nvrhi::BufferDesc debugViewDesc;
-    debugViewDesc.byteSize = sizeof(DebugViewData);
-    debugViewDesc.isConstantBuffer = true;
-    debugViewDesc.isVolatile = true;
-    debugViewDesc.maxVersions = 8;
-    debugViewDesc.debugName = "DebugView_Buffer";
-    m_DebugViewBuffer = device->createBuffer(debugViewDesc);
-
-    nvrhi::SamplerDesc shadowSamplerDesc;
-    shadowSamplerDesc.setAddressU(nvrhi::SamplerAddressMode::Border)
-        .setAddressV(nvrhi::SamplerAddressMode::Border)
-        .setAddressW(nvrhi::SamplerAddressMode::Border)
-        .setMinFilter(true)
-        .setMagFilter(true)
-        .setMipFilter(false)
-        .setReductionType(nvrhi::SamplerReductionType::Comparison)
-        .setBorderColor(nvrhi::Color(1.0f, 1.0f, 1.0f, 1.0f));
-    m_ShadowSampler = device->createSampler(shadowSamplerDesc);
+  nvrhi::BufferDesc desc;
+  desc.byteSize = newCapacity;
+  desc.isVertexBuffer = true;
+  desc.initialState = nvrhi::ResourceStates::VertexBuffer;
+  desc.keepInitialState = true;
+  desc.debugName = (debugName != nullptr) ? debugName : "DebugGeometry_Buffer";
+  nvrhi::BufferHandle newBuffer = (m_Device != nullptr) ? m_Device->createBuffer(desc) : nullptr;
+  if (newBuffer != nullptr) {
+    buffer = std::move(newBuffer);
+    capacity = newCapacity;
+  }
 }
 
-void Engine::SceneRenderer::EnsureDebugBuffer(nvrhi::BufferHandle &buffer, uint64_t &capacity,
-                                              size_t vertexCount, const char *debugName)
-{
-    if (vertexCount == 0)
-    {
-        return;
-    }
+auto Engine::SceneRenderer::GetDebugPipeline(const nvrhi::FramebufferInfo& framebuffer,
+                                             nvrhi::PrimitiveType primitiveType,
+                                             ::Engine::Renderer::DebugDepthMode depthMode)
+    -> nvrhi::GraphicsPipelineHandle {
+  if ((m_DebugVS == nullptr) || (m_DebugPS == nullptr) || (m_DebugBindingLayout == nullptr)) {
+    return nullptr;
+  }
 
-    const uint64_t requiredBytes =
-        static_cast<uint64_t>(vertexCount) * sizeof(::Engine::Renderer::DebugVertex);
-    if (buffer && capacity >= requiredBytes)
-    {
-        return;
-    }
+  Engine::PipelineKey key;
+  key.VS = m_DebugVS;
+  key.PS = m_DebugPS;
+  key.PerObjectLayout = m_DebugBindingLayout;
+  key.PrimType = primitiveType;
+  key.InputLayout = {
+      nvrhi::VertexAttributeDesc()
+          .setName("POSITION")
+          .setFormat(nvrhi::Format::RGB32_FLOAT)
+          .setOffset(offsetof(::Engine::Renderer::DebugVertex, Position))
+          .setElementStride(sizeof(::Engine::Renderer::DebugVertex)),
+      nvrhi::VertexAttributeDesc()
+          .setName("COLOR")
+          .setFormat(nvrhi::Format::RGBA32_FLOAT)
+          .setOffset(offsetof(::Engine::Renderer::DebugVertex, Color))
+          .setElementStride(sizeof(::Engine::Renderer::DebugVertex)),
+  };
+  key.DepthTest = depthMode == ::Engine::Renderer::DebugDepthMode::Test;
+  key.DepthWrite = false;
+  key.CullMode = nvrhi::RasterCullMode::None;
+  key.RasterState.setCullNone();
+  key.RasterState.setAntialiasedLineEnable(primitiveType == nvrhi::PrimitiveType::LineList);
 
-    uint64_t newCapacity =
-        (std::max)(requiredBytes, static_cast<uint64_t>(sizeof(::Engine::Renderer::DebugVertex) * 256));
-    while (newCapacity < requiredBytes && newCapacity <= UINT64_MAX / 2)
-    {
-        newCapacity *= 2;
-    }
+  nvrhi::BlendState::RenderTarget blendTarget;
+  blendTarget.enableBlend()
+      .setSrcBlend(nvrhi::BlendFactor::SrcAlpha)
+      .setDestBlend(nvrhi::BlendFactor::InvSrcAlpha)
+      .setSrcBlendAlpha(nvrhi::BlendFactor::One)
+      .setDestBlendAlpha(nvrhi::BlendFactor::InvSrcAlpha);
+  key.BlendState.setRenderTarget(0, blendTarget);
 
-    nvrhi::BufferDesc desc;
-    desc.byteSize = newCapacity;
-    desc.isVertexBuffer = true;
-    desc.initialState = nvrhi::ResourceStates::VertexBuffer;
-    desc.keepInitialState = true;
-    desc.debugName = debugName ? debugName : "DebugGeometry_Buffer";
-    nvrhi::BufferHandle newBuffer = m_Device ? m_Device->createBuffer(desc) : nullptr;
-    if (newBuffer)
-    {
-        buffer = std::move(newBuffer);
-        capacity = newCapacity;
-    }
+  return m_PipelineCache.GetOrCreatePipeline(key, framebuffer);
 }
 
-nvrhi::GraphicsPipelineHandle Engine::SceneRenderer::GetDebugPipeline(
-    const nvrhi::FramebufferInfo &framebuffer, nvrhi::PrimitiveType primitiveType,
-    ::Engine::Renderer::DebugDepthMode depthMode)
-{
-    if (!m_DebugVS || !m_DebugPS || !m_DebugBindingLayout)
-    {
-        return nullptr;
+void Engine::SceneRenderer::RenderDebugGeometry(nvrhi::ICommandList* commandList,
+                                                const ::Engine::Renderer::RenderView& view) {
+  if ((commandList == nullptr) || (view.TargetFramebuffer == nullptr) || view.DebugGeometryData.Empty() ||
+      (m_DebugViewBuffer == nullptr) || (m_DebugBindingLayout == nullptr)) {
+    return;
+  }
+
+  const ::Engine::Renderer::DebugGeometry& geometry = view.DebugGeometryData;
+  EnsureDebugBuffer(m_DebugLineBuffer, m_DebugLineBufferCapacity, geometry.GetLineVertices().size(),
+                    "DebugLineVertices");
+  EnsureDebugBuffer(m_DebugTriangleBuffer, m_DebugTriangleBufferCapacity, geometry.GetTriangleVertices().size(),
+                    "DebugTriangleVertices");
+
+  if ((!geometry.GetLineVertices().empty() && (m_DebugLineBuffer == nullptr)) ||
+      (!geometry.GetTriangleVertices().empty() && (m_DebugTriangleBuffer == nullptr))) {
+    return;
+  }
+
+  DebugViewData viewData{};
+  DirectX::XMStoreFloat4x4(&viewData.ViewProjection, DirectX::XMMatrixTranspose(view.ViewProjection));
+  commandList->writeBuffer(m_DebugViewBuffer, &viewData, sizeof(viewData));
+
+  nvrhi::BindingSetDesc bindingDesc;
+  bindingDesc.addItem(nvrhi::BindingSetItem::ConstantBuffer(0, m_DebugViewBuffer));
+  nvrhi::BindingSetHandle bindings = m_Device->createBindingSet(bindingDesc, m_DebugBindingLayout);
+  if (bindings == nullptr) {
+    return;
+  }
+
+  const auto framebufferInfo = view.TargetFramebuffer->getFramebufferInfo();
+  const nvrhi::Viewport viewport =
+      nvrhi::Viewport(static_cast<float>(view.ViewportWidth), static_cast<float>(view.ViewportHeight));
+  const nvrhi::Rect scissor = nvrhi::Rect(static_cast<int>(view.ViewportWidth), static_cast<int>(view.ViewportHeight));
+
+  const auto drawVertices = [&](const std::vector<::Engine::Renderer::DebugVertex>& vertices,
+                                const nvrhi::BufferHandle& vertexBuffer, nvrhi::PrimitiveType primitiveType) -> void {
+    if (vertices.empty() || !vertexBuffer) {
+      return;
     }
 
-    Engine::PipelineKey key;
-    key.VS = m_DebugVS;
-    key.PS = m_DebugPS;
-    key.PerObjectLayout = m_DebugBindingLayout;
-    key.PrimType = primitiveType;
-    key.InputLayout = {nvrhi::VertexAttributeDesc()
-                           .setName("POSITION")
-                           .setFormat(nvrhi::Format::RGB32_FLOAT)
-                           .setOffset(offsetof(::Engine::Renderer::DebugVertex, Position))
-                           .setElementStride(sizeof(::Engine::Renderer::DebugVertex)),
-                       nvrhi::VertexAttributeDesc()
-                           .setName("COLOR")
-                           .setFormat(nvrhi::Format::RGBA32_FLOAT)
-                           .setOffset(offsetof(::Engine::Renderer::DebugVertex, Color))
-                           .setElementStride(sizeof(::Engine::Renderer::DebugVertex))};
-    key.DepthTest = depthMode == ::Engine::Renderer::DebugDepthMode::Test;
-    key.DepthWrite = false;
-    key.CullMode = nvrhi::RasterCullMode::None;
-    key.RasterState.setCullNone();
-    key.RasterState.setAntialiasedLineEnable(primitiveType == nvrhi::PrimitiveType::LineList);
+    commandList->writeBuffer(vertexBuffer, vertices.data(), vertices.size() * sizeof(::Engine::Renderer::DebugVertex));
+    nvrhi::GraphicsPipelineHandle pipeline =
+        GetDebugPipeline(framebufferInfo, primitiveType, view.DebugSettings.DepthMode);
+    if (!pipeline) {
+      return;
+    }
 
-    nvrhi::BlendState::RenderTarget blendTarget;
-    blendTarget.enableBlend()
-        .setSrcBlend(nvrhi::BlendFactor::SrcAlpha)
-        .setDestBlend(nvrhi::BlendFactor::InvSrcAlpha)
-        .setSrcBlendAlpha(nvrhi::BlendFactor::One)
-        .setDestBlendAlpha(nvrhi::BlendFactor::InvSrcAlpha);
-    key.BlendState.setRenderTarget(0, blendTarget);
+    nvrhi::GraphicsState state;
+    state.pipeline = pipeline;
+    state.framebuffer = view.TargetFramebuffer;
+    state.viewport.addViewport(viewport);
+    state.viewport.addScissorRect(scissor);
+    state.bindings = {bindings};
+    state.vertexBuffers = {nvrhi::VertexBufferBinding{.buffer = vertexBuffer, .slot = 0, .offset = 0}};
+    commandList->setGraphicsState(state);
 
-    return m_PipelineCache->GetOrCreatePipeline(key, framebuffer);
+    nvrhi::DrawArguments arguments;
+    arguments.vertexCount = static_cast<uint32_t>(vertices.size());
+    arguments.instanceCount = 1;
+    commandList->draw(arguments);
+  };
+
+  drawVertices(geometry.GetTriangleVertices(), m_DebugTriangleBuffer, nvrhi::PrimitiveType::TriangleList);
+  drawVertices(geometry.GetLineVertices(), m_DebugLineBuffer, nvrhi::PrimitiveType::LineList);
 }
 
-void Engine::SceneRenderer::RenderDebugGeometry(nvrhi::ICommandList *commandList,
-                                                const ::Engine::Renderer::RenderView &view)
-{
-    if (!commandList || !view.TargetFramebuffer || view.DebugGeometryData.Empty() || !m_DebugViewBuffer ||
-        !m_DebugBindingLayout ||
-        view.ViewportWidth > static_cast<uint32_t>(std::numeric_limits<int>::max()) ||
-        view.ViewportHeight > static_cast<uint32_t>(std::numeric_limits<int>::max()))
-    {
-        return;
+auto Engine::SceneRenderer::PickLight(const ::Engine::Renderer::RenderView& view, float viewportX, float viewportY)
+    -> std::optional<Engine::LightId> {
+  if (view.ViewportWidth == 0 || view.ViewportHeight == 0 || viewportX < 0.0F || viewportY < 0.0F ||
+      viewportX >= static_cast<float>(view.ViewportWidth) || viewportY >= static_cast<float>(view.ViewportHeight)) {
+    return std::nullopt;
+  }
+
+  const float ndcX = (viewportX / static_cast<float>(view.ViewportWidth) * 2.0F) - 1.0F;
+  const float ndcY = 1.0F - (viewportY / static_cast<float>(view.ViewportHeight) * 2.0F);
+  const DirectX::XMMATRIX inverseViewProjection = DirectX::XMMatrixInverse(nullptr, view.ViewProjection);
+  const DirectX::XMVECTOR clipNear = DirectX::XMVectorSet(ndcX, ndcY, 0.0F, 1.0F);
+  const DirectX::XMVECTOR clipFar = DirectX::XMVectorSet(ndcX, ndcY, 1.0F, 1.0F);
+  DirectX::XMVECTOR rayOrigin = DirectX::XMVector4Transform(clipNear, inverseViewProjection);
+  DirectX::XMVECTOR rayEnd = DirectX::XMVector4Transform(clipFar, inverseViewProjection);
+  const float originW = DirectX::XMVectorGetW(rayOrigin);
+  const float endW = DirectX::XMVectorGetW(rayEnd);
+  if (!std::isfinite(originW) || !std::isfinite(endW) || std::abs(originW) < 1e-5F || std::abs(endW) < 1e-5F) {
+    return std::nullopt;
+  }
+
+  rayOrigin = DirectX::XMVectorScale(rayOrigin, 1.0F / originW);
+  rayEnd = DirectX::XMVectorScale(rayEnd, 1.0F / endW);
+  const DirectX::XMVECTOR rayDirection = DirectX::XMVector3Normalize(DirectX::XMVectorSubtract(rayEnd, rayOrigin));
+  const auto& targets = view.DebugGeometryData.GetLightTargets();
+  float closestDistance = std::numeric_limits<float>::max();
+  Engine::LightId closestLight = Engine::InvalidLightId;
+
+  for (const ::Engine::Renderer::DebugLightTarget& target : targets) {
+    const std::optional<float> hitDistance = FindLightTargetDistance(rayOrigin, rayDirection, target);
+    if (hitDistance && *hitDistance < closestDistance) {
+      closestDistance = *hitDistance;
+      closestLight = target.Id;
     }
+  }
 
-    const ::Engine::Renderer::DebugGeometry &geometry = view.DebugGeometryData;
-    EnsureDebugBuffer(m_DebugLineBuffer, m_DebugLineBufferCapacity, geometry.GetLineVertices().size(),
-                      "DebugLineVertices");
-    EnsureDebugBuffer(m_DebugTriangleBuffer, m_DebugTriangleBufferCapacity,
-                      geometry.GetTriangleVertices().size(), "DebugTriangleVertices");
-
-    if ((!geometry.GetLineVertices().empty() && !m_DebugLineBuffer) ||
-        (!geometry.GetTriangleVertices().empty() && !m_DebugTriangleBuffer))
-    {
-        return;
-    }
-
-    DebugViewData viewData;
-    DirectX::XMStoreFloat4x4(&viewData.ViewProjection, DirectX::XMMatrixTranspose(view.ViewProjection));
-    commandList->writeBuffer(m_DebugViewBuffer, &viewData, sizeof(viewData));
-
-    nvrhi::BindingSetDesc bindingDesc;
-    bindingDesc.addItem(nvrhi::BindingSetItem::ConstantBuffer(0, m_DebugViewBuffer));
-    nvrhi::BindingSetHandle bindings = m_Device->createBindingSet(bindingDesc, m_DebugBindingLayout);
-    if (!bindings)
-    {
-        return;
-    }
-
-    const nvrhi::FramebufferInfo framebufferInfo = view.TargetFramebuffer->getFramebufferInfo();
-    const nvrhi::Viewport viewport =
-        nvrhi::Viewport(static_cast<float>(view.ViewportWidth), static_cast<float>(view.ViewportHeight));
-    const nvrhi::Rect scissor =
-        nvrhi::Rect(static_cast<int>(view.ViewportWidth), static_cast<int>(view.ViewportHeight));
-
-    const auto drawVertices = [&](const std::vector<::Engine::Renderer::DebugVertex> &vertices,
-                                  const nvrhi::BufferHandle &vertexBuffer,
-                                  nvrhi::PrimitiveType primitiveType) {
-        if (vertices.empty() || !vertexBuffer)
-        {
-            return;
-        }
-
-        commandList->writeBuffer(vertexBuffer, vertices.data(),
-                                 vertices.size() * sizeof(::Engine::Renderer::DebugVertex));
-        nvrhi::GraphicsPipelineHandle pipeline =
-            GetDebugPipeline(framebufferInfo, primitiveType, view.DebugSettings.DepthMode);
-        if (!pipeline)
-        {
-            return;
-        }
-
-        nvrhi::GraphicsState state;
-        state.pipeline = pipeline;
-        state.framebuffer = view.TargetFramebuffer;
-        state.viewport.addViewport(viewport);
-        state.viewport.addScissorRect(scissor);
-        state.bindings = {bindings};
-        state.vertexBuffers = {nvrhi::VertexBufferBinding{vertexBuffer, 0, 0}};
-        commandList->setGraphicsState(state);
-
-        nvrhi::DrawArguments arguments;
-        arguments.vertexCount = static_cast<uint32_t>(vertices.size());
-        arguments.instanceCount = 1;
-        commandList->draw(arguments);
-    };
-
-    drawVertices(geometry.GetTriangleVertices(), m_DebugTriangleBuffer, nvrhi::PrimitiveType::TriangleList);
-    drawVertices(geometry.GetLineVertices(), m_DebugLineBuffer, nvrhi::PrimitiveType::LineList);
-}
-
-std::optional<Engine::LightId> Engine::SceneRenderer::PickLight(const ::Engine::Renderer::RenderView &view,
-                                                                float viewportX, float viewportY) const
-{
-    if (view.ViewportWidth == 0 || view.ViewportHeight == 0 || viewportX < 0.0f || viewportY < 0.0f ||
-        viewportX >= static_cast<float>(view.ViewportWidth) ||
-        viewportY >= static_cast<float>(view.ViewportHeight))
-    {
-        return std::nullopt;
-    }
-
-    const float ndcX = viewportX / static_cast<float>(view.ViewportWidth) * 2.0f - 1.0f;
-    const float ndcY = 1.0f - viewportY / static_cast<float>(view.ViewportHeight) * 2.0f;
-    const DirectX::XMMATRIX inverseViewProjection = DirectX::XMMatrixInverse(nullptr, view.ViewProjection);
-    const DirectX::XMVECTOR clipNear = DirectX::XMVectorSet(ndcX, ndcY, 0.0f, 1.0f);
-    const DirectX::XMVECTOR clipFar = DirectX::XMVectorSet(ndcX, ndcY, 1.0f, 1.0f);
-    DirectX::XMVECTOR rayOrigin = DirectX::XMVector4Transform(clipNear, inverseViewProjection);
-    DirectX::XMVECTOR rayEnd = DirectX::XMVector4Transform(clipFar, inverseViewProjection);
-    const float originW = DirectX::XMVectorGetW(rayOrigin);
-    const float endW = DirectX::XMVectorGetW(rayEnd);
-    if (!std::isfinite(originW) || !std::isfinite(endW) || std::abs(originW) < 1e-5f ||
-        std::abs(endW) < 1e-5f)
-    {
-        return std::nullopt;
-    }
-
-    rayOrigin = DirectX::XMVectorScale(rayOrigin, 1.0f / originW);
-    rayEnd = DirectX::XMVectorScale(rayEnd, 1.0f / endW);
-    const DirectX::XMVECTOR rayDirection =
-        DirectX::XMVector3Normalize(DirectX::XMVectorSubtract(rayEnd, rayOrigin));
-    const auto &targets = view.DebugGeometryData.GetLightTargets();
-    float closestDistance = std::numeric_limits<float>::max();
-    Engine::LightId closestLight = Engine::InvalidLightId;
-
-    for (const ::Engine::Renderer::DebugLightTarget &target : targets)
-    {
-        const DirectX::XMVECTOR axis = NormalizeOrDefault(target.Direction);
-        const DirectX::XMVECTOR offset =
-            DirectX::XMVectorSubtract(rayOrigin, DirectX::XMLoadFloat3(&target.Position));
-        const float axisRayDot = DirectX::XMVectorGetX(DirectX::XMVector3Dot(axis, rayDirection));
-        const float axisOffsetDot = DirectX::XMVectorGetX(DirectX::XMVector3Dot(axis, offset));
-
-        const float safeRange = std::max(target.Range, 0.25f);
-        const float coneSlope =
-            std::tan(std::clamp(target.OuterAngleRadians, 0.0f, DirectX::XM_PIDIV2 - 0.001f));
-        const float quadraticA = 1.0f - axisRayDot * axisRayDot * (1.0f + coneSlope * coneSlope);
-        const float quadraticB = 2.0f * (DirectX::XMVectorGetX(DirectX::XMVector3Dot(offset, rayDirection)) -
-                                         axisOffsetDot * axisRayDot * (1.0f + coneSlope * coneSlope));
-        const float quadraticC = DirectX::XMVectorGetX(DirectX::XMVector3Dot(offset, offset)) -
-                                 axisOffsetDot * axisOffsetDot * (1.0f + coneSlope * coneSlope);
-
-        float hitDistance = std::numeric_limits<float>::max();
-        if (std::abs(quadraticA) < 1e-6f)
-        {
-            if (std::abs(quadraticB) > 1e-6f)
-            {
-                hitDistance = -quadraticC / quadraticB;
-            }
-        }
-        else
-        {
-            const float discriminant = quadraticB * quadraticB - 4.0f * quadraticA * quadraticC;
-            if (discriminant >= 0.0f)
-            {
-                const float sqrtDiscriminant = std::sqrt(discriminant);
-                const float rootA = (-quadraticB - sqrtDiscriminant) / (2.0f * quadraticA);
-                const float rootB = (-quadraticB + sqrtDiscriminant) / (2.0f * quadraticA);
-                if (rootA > 0.0f)
-                    hitDistance = rootA;
-                if (rootB > 0.0f)
-                    hitDistance = std::min(hitDistance, rootB);
-            }
-        }
-
-        if (hitDistance == std::numeric_limits<float>::max())
-        {
-            const float sphereRadius = std::max(0.2f, safeRange * 0.025f);
-            const float sphereA = DirectX::XMVectorGetX(DirectX::XMVector3Dot(rayDirection, rayDirection));
-            const float sphereB = 2.0f * DirectX::XMVectorGetX(DirectX::XMVector3Dot(offset, rayDirection));
-            const float sphereC =
-                DirectX::XMVectorGetX(DirectX::XMVector3Dot(offset, offset)) - sphereRadius * sphereRadius;
-            const float sphereDiscriminant = sphereB * sphereB - 4.0f * sphereA * sphereC;
-            if (sphereDiscriminant >= 0.0f)
-            {
-                const float sphereRoot = (-sphereB - std::sqrt(sphereDiscriminant)) / (2.0f * sphereA);
-                if (sphereRoot > 0.0f)
-                    hitDistance = sphereRoot;
-            }
-        }
-
-        if (hitDistance <= 0.0f || hitDistance >= std::numeric_limits<float>::max())
-        {
-            continue;
-        }
-
-        const DirectX::XMVECTOR hitPoint =
-            DirectX::XMVectorAdd(rayOrigin, DirectX::XMVectorScale(rayDirection, hitDistance));
-        const float hitAxialDistance = DirectX::XMVectorGetX(DirectX::XMVector3Dot(
-            DirectX::XMVectorSubtract(hitPoint, DirectX::XMLoadFloat3(&target.Position)), axis));
-        if (hitAxialDistance < -0.25f || hitAxialDistance > safeRange + 0.25f)
-        {
-            continue;
-        }
-
-        if (hitDistance < closestDistance)
-        {
-            closestDistance = hitDistance;
-            closestLight = target.Id;
-        }
-    }
-
-    return closestLight == Engine::InvalidLightId ? std::nullopt
-                                                  : std::optional<Engine::LightId>(closestLight);
+  return closestLight == Engine::InvalidLightId ? std::nullopt : std::optional<Engine::LightId>(closestLight);
 }
 
 // --- Uploads ---
 
-size_t Engine::SceneRenderer::EstimateDrawCount(const ::Engine::Renderer::FrameBlackboard &blackboard) const
-{
-    size_t count = 0;
-    const auto accumulate = [&count](const std::vector<::Engine::Renderer::RenderView *> &views) {
-        for (const ::Engine::Renderer::RenderView *view : views)
-        {
-            if (!view || !view->TargetScene)
-                continue;
-            for (const auto &entity : view->TargetScene->GetEntities())
-            {
-                if (!entity)
-                    continue;
-                const size_t submeshCount = entity->Submeshes.empty() ? 1 : entity->Submeshes.size();
-                if (submeshCount > std::numeric_limits<size_t>::max() - count)
-                {
-                    count = std::numeric_limits<size_t>::max();
-                    return;
-                }
-                count += submeshCount;
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+auto Engine::SceneRenderer::EstimateDrawCount(const ::Engine::Renderer::FrameBlackboard& blackboard) const -> size_t {
+  size_t count = 0;
+  const auto accumulate = [this, &count](const std::vector<::Engine::Renderer::RenderView*>& views) -> void {
+    for (const ::Engine::Renderer::RenderView* view : views) {
+      if (!view || !view->TargetScene) {
+        continue;
+      }
+      view->TargetScene->World().ForEachChunkReadOnly<::Engine::Ecs::MeshRenderer>(
+          [this, &count](std::span<const Engine::EntityHandle>,
+                         std::span<const ::Engine::Ecs::MeshRenderer> meshRenderers) -> void {
+            for (const auto& meshRenderer : meshRenderers) {
+              std::string resourceKey = meshRenderer.ModelGuid;
+              if (resourceKey.empty() && !meshRenderer.PrimitiveType.empty()) {
+                resourceKey = "primitive:" + meshRenderer.PrimitiveType;
+              }
+              const auto* submeshes = m_ModelResources == nullptr ? nullptr : m_ModelResources->Find(resourceKey);
+              const size_t submeshCount = submeshes == nullptr ? 1 : submeshes->size();
+              if (submeshCount > std::numeric_limits<size_t>::max() - count) {
+                count = std::numeric_limits<size_t>::max();
+                return;
+              }
+              count += submeshCount;
             }
-        }
-    };
-    accumulate(blackboard.GetShadowViews());
-    accumulate(blackboard.GetSceneViews());
-    return count;
-}
-
-bool Engine::SceneRenderer::EnsureLightBuffers(size_t viewCount,
-                                               ::Engine::Renderer::FrameContext &frameContext)
-{
-    for (size_t viewIndex = 0; viewIndex < viewCount; ++viewIndex)
-    {
-        if (!frameContext.GetOrCreateUploadBuffer(
-                "PerViewLights/" + std::to_string(viewIndex), sizeof(::Engine::Renderer::LightsCBData),
-                static_cast<uint32_t>(::Engine::Renderer::FrameContext::FramesInFlight + 1)))
-            return false;
+          });
     }
-    return true;
+  };
+  accumulate(blackboard.GetShadowViews());
+  accumulate(blackboard.GetSceneViews());
+  return count;
 }
 
-nvrhi::BufferHandle Engine::SceneRenderer::GetLightBuffer(
-    size_t viewIndex, ::Engine::Renderer::FrameContext &frameContext) const
-{
-    return frameContext.GetOrCreateUploadBuffer(
-        "PerViewLights/" + std::to_string(viewIndex), sizeof(::Engine::Renderer::LightsCBData),
-        static_cast<uint32_t>(::Engine::Renderer::FrameContext::FramesInFlight + 1));
-}
-
-nvrhi::BindingSetHandle Engine::SceneRenderer::GetSceneBindingSet(
-    size_t viewIndex, nvrhi::BufferHandle lightBuffer, nvrhi::TextureHandle shadowMap,
-    nvrhi::SamplerHandle shadowSampler, nvrhi::BufferHandle cameraBuffer,
-    ::Engine::Renderer::FrameDiagnostics &diagnostics)
-{
-    if (!m_Device || !lightBuffer || !shadowMap || !shadowSampler || !cameraBuffer || !m_SceneBindingLayout)
-        return nullptr;
-    if (m_SceneBindingCaches.size() <= viewIndex)
-        m_SceneBindingCaches.resize(viewIndex + 1);
-    auto &cache = m_SceneBindingCaches[viewIndex];
-    if (cache.Bindings && cache.LightBuffer == lightBuffer && cache.ShadowMap == shadowMap &&
-        cache.ShadowSampler == shadowSampler && cache.CameraBuffer == cameraBuffer &&
-        cache.Layout == m_SceneBindingLayout)
-    {
-        return cache.Bindings;
+auto Engine::SceneRenderer::EnsureLightBuffers(size_t viewCount, ::Engine::Renderer::FrameContext& frameContext)
+    -> bool {
+  for (size_t viewIndex = 0; viewIndex < viewCount; ++viewIndex) {
+    if (frameContext.GetOrCreateUploadBuffer(
+            "PerViewLights/" + std::to_string(viewIndex), sizeof(::Engine::Renderer::LightsCBData),
+            static_cast<uint32_t>(::Engine::Renderer::FrameContext::FramesInFlight + 1)) == nullptr) {
+      return false;
     }
+  }
+  return true;
+}
 
-    const std::shared_ptr<::Engine::Renderer::TextureResource> fallbackEnvironment =
-        m_MaterialSystem != nullptr ? m_MaterialSystem->GetFallbackColorTexture() : nullptr;
-    const auto &irradiance =
-        m_EnvironmentIrradiance != nullptr ? m_EnvironmentIrradiance : fallbackEnvironment;
-    const auto &prefiltered =
-        m_PrefilteredEnvironment != nullptr ? m_PrefilteredEnvironment : fallbackEnvironment;
-    const auto &integrationLut = m_BrdfIntegrationLut != nullptr ? m_BrdfIntegrationLut : fallbackEnvironment;
-    if (irradiance == nullptr || prefiltered == nullptr || integrationLut == nullptr ||
-        !::Engine::Renderer::TextureBackendAccess::GetTexture(*irradiance) ||
-        !::Engine::Renderer::TextureBackendAccess::GetSampler(*irradiance) ||
-        !::Engine::Renderer::TextureBackendAccess::GetTexture(*prefiltered) ||
-        !::Engine::Renderer::TextureBackendAccess::GetSampler(*prefiltered) ||
-        !::Engine::Renderer::TextureBackendAccess::GetTexture(*integrationLut) ||
-        !::Engine::Renderer::TextureBackendAccess::GetSampler(*integrationLut))
-        return nullptr;
+auto Engine::SceneRenderer::GetLightBuffer(size_t viewIndex, ::Engine::Renderer::FrameContext& frameContext)
+    -> nvrhi::BufferHandle {
+  return frameContext.GetOrCreateUploadBuffer(
+      "PerViewLights/" + std::to_string(viewIndex), sizeof(::Engine::Renderer::LightsCBData),
+      static_cast<uint32_t>(::Engine::Renderer::FrameContext::FramesInFlight + 1));
+}
 
-    nvrhi::BindingSetDesc desc;
-    desc.addItem(nvrhi::BindingSetItem::ConstantBuffer(2, lightBuffer));
-    desc.addItem(nvrhi::BindingSetItem::Texture_SRV(6, shadowMap));
-    desc.addItem(nvrhi::BindingSetItem::Sampler(6, shadowSampler));
-    desc.addItem(nvrhi::BindingSetItem::ConstantBuffer(4, cameraBuffer));
-    desc.addItem(nvrhi::BindingSetItem::Texture_SRV(
-        7, ::Engine::Renderer::TextureBackendAccess::GetTexture(*irradiance)));
-    desc.addItem(
-        nvrhi::BindingSetItem::Sampler(7, ::Engine::Renderer::TextureBackendAccess::GetSampler(*irradiance)));
-    desc.addItem(nvrhi::BindingSetItem::Texture_SRV(
-        8, ::Engine::Renderer::TextureBackendAccess::GetTexture(*prefiltered)));
-    desc.addItem(nvrhi::BindingSetItem::Sampler(
-        8, ::Engine::Renderer::TextureBackendAccess::GetSampler(*prefiltered)));
-    desc.addItem(nvrhi::BindingSetItem::Texture_SRV(
-        9, ::Engine::Renderer::TextureBackendAccess::GetTexture(*integrationLut)));
-    desc.addItem(nvrhi::BindingSetItem::Sampler(
-        9, ::Engine::Renderer::TextureBackendAccess::GetSampler(*integrationLut)));
-    nvrhi::BindingSetHandle bindings = m_Device->createBindingSet(desc, m_SceneBindingLayout);
-    if (!bindings)
-        return nullptr;
-    cache.LightBuffer = std::move(lightBuffer);
-    cache.ShadowMap = std::move(shadowMap);
-    cache.ShadowSampler = std::move(shadowSampler);
-    cache.CameraBuffer = std::move(cameraBuffer);
-    cache.Layout = m_SceneBindingLayout;
-    cache.Bindings = std::move(bindings);
-    ++diagnostics.BindingSetAllocations;
+auto Engine::SceneRenderer::GetSceneBindingSet(size_t viewIndex, nvrhi::BufferHandle lightBuffer,
+                                               nvrhi::TextureHandle shadowMap, nvrhi::SamplerHandle shadowSampler,
+                                               nvrhi::BufferHandle cameraBuffer,
+                                               ::Engine::Renderer::FrameDiagnostics& diagnostics)
+    -> nvrhi::BindingSetHandle {
+  if ((m_Device == nullptr) || (lightBuffer == nullptr) || (shadowMap == nullptr) || (shadowSampler == nullptr) ||
+      (cameraBuffer == nullptr) || (m_SceneBindingLayout == nullptr)) {
+    return nullptr;
+  }
+  if (m_SceneBindingCaches.size() <= viewIndex) {
+    m_SceneBindingCaches.resize(viewIndex + 1);
+  }
+  auto& cache = m_SceneBindingCaches.at(viewIndex);
+  if ((cache.Bindings != nullptr) && cache.LightBuffer == lightBuffer && cache.ShadowMap == shadowMap &&
+      cache.ShadowSampler == shadowSampler && cache.CameraBuffer == cameraBuffer &&
+      cache.Layout == m_SceneBindingLayout) {
     return cache.Bindings;
+  }
+
+  nvrhi::BindingSetDesc desc;
+  desc.addItem(nvrhi::BindingSetItem::ConstantBuffer(2, lightBuffer));
+  desc.addItem(nvrhi::BindingSetItem::Texture_SRV(6, shadowMap));
+  desc.addItem(nvrhi::BindingSetItem::Sampler(6, shadowSampler));
+  desc.addItem(nvrhi::BindingSetItem::ConstantBuffer(4, cameraBuffer));
+  nvrhi::BindingSetHandle bindings = m_Device->createBindingSet(desc, m_SceneBindingLayout);
+  if (bindings == nullptr) {
+    return nullptr;
+  }
+  cache.LightBuffer = std::move(lightBuffer);
+  cache.ShadowMap = std::move(shadowMap);
+  cache.ShadowSampler = std::move(shadowSampler);
+  cache.CameraBuffer = std::move(cameraBuffer);
+  cache.Layout = m_SceneBindingLayout;
+  cache.Bindings = std::move(bindings);
+  ++diagnostics.BindingSetAllocations;
+  return cache.Bindings;
 }
 
-bool Engine::SceneRenderer::SetEnvironmentLighting(
-    std::shared_ptr<::Engine::Renderer::TextureResource> irradiance,
-    std::shared_ptr<::Engine::Renderer::TextureResource> prefilteredEnvironment,
-    std::shared_ptr<::Engine::Renderer::TextureResource> brdfIntegrationLut)
-{
-    const bool disable =
-        irradiance == nullptr && prefilteredEnvironment == nullptr && brdfIntegrationLut == nullptr;
-    const bool complete = irradiance != nullptr && prefilteredEnvironment != nullptr &&
-                          brdfIntegrationLut != nullptr &&
-                          ::Engine::Renderer::TextureBackendAccess::GetTexture(*irradiance) &&
-                          ::Engine::Renderer::TextureBackendAccess::GetSampler(*irradiance) &&
-                          ::Engine::Renderer::TextureBackendAccess::GetTexture(*prefilteredEnvironment) &&
-                          ::Engine::Renderer::TextureBackendAccess::GetSampler(*prefilteredEnvironment) &&
-                          ::Engine::Renderer::TextureBackendAccess::GetTexture(*brdfIntegrationLut) &&
-                          ::Engine::Renderer::TextureBackendAccess::GetSampler(*brdfIntegrationLut);
-    if (!disable && !complete)
-        return false;
-
-    m_EnvironmentIrradiance = std::move(irradiance);
-    m_PrefilteredEnvironment = std::move(prefilteredEnvironment);
-    m_BrdfIntegrationLut = std::move(brdfIntegrationLut);
-    m_SceneBindingCaches.clear();
+auto Engine::SceneRenderer::EnsurePerObjectResources(size_t maxDrawCount,
+                                                     ::Engine::Renderer::FrameContext& frameContext,
+                                                     ::Engine::Renderer::FrameDiagnostics& diagnostics) -> bool {
+  maxDrawCount = (std::max)(maxDrawCount, size_t{1});
+  if (maxDrawCount <= m_PerObjectBufferCapacity && (m_PerObjectBuffer != nullptr) &&
+      (m_PerObjectBindingSet != nullptr)) {
     return true;
+  }
+  if (maxDrawCount > std::numeric_limits<uint32_t>::max()) {
+    return false;
+  }
+
+  nvrhi::BufferHandle buffer = frameContext.GetOrCreateUploadBuffer(
+      "PerObjectDataRing", static_cast<uint32_t>(PerObjectDataStride), static_cast<uint32_t>(maxDrawCount));
+  if (buffer == nullptr) {
+    return false;
+  }
+
+  nvrhi::BindingSetDesc setDesc;
+  setDesc.addItem(nvrhi::BindingSetItem::ConstantBuffer(0, buffer));
+  nvrhi::BindingSetHandle bindingSet = m_Device->createBindingSet(setDesc, m_PerObjectBindingLayout);
+  if (bindingSet == nullptr) {
+    return false;
+  }
+
+  m_PerObjectBuffer = std::move(buffer);
+  m_PerObjectBindingSet = std::move(bindingSet);
+  m_PerObjectBufferCapacity = maxDrawCount;
+  ++diagnostics.BindingSetAllocations;
+  return true;
 }
 
-bool Engine::SceneRenderer::HasEnvironmentLighting() const noexcept
-{
-    return m_EnvironmentIrradiance != nullptr && m_PrefilteredEnvironment != nullptr &&
-           m_BrdfIntegrationLut != nullptr;
+auto Engine::SceneRenderer::IsSubmeshVisible(::Engine::Renderer::RenderView* view,
+                                             const ::Engine::Renderer::Submesh& submesh, DirectX::FXMMATRIX world,
+                                             const DirectX::XMFLOAT4X4& worldTransform) -> bool {
+  const auto cullingStart = std::chrono::steady_clock::now();
+  const bool boundsCacheMatches = submesh.WorldBoundsCached && Equal(worldTransform, submesh.CachedWorldTransform) &&
+                                  Equal(submesh.BoundsMin, submesh.CachedBoundsMin) &&
+                                  Equal(submesh.BoundsMax, submesh.CachedBoundsMax);
+  if (!boundsCacheMatches) {
+    const DirectX::XMFLOAT3 localCenter = {(submesh.BoundsMin.x + submesh.BoundsMax.x) * 0.5F,
+                                           (submesh.BoundsMin.y + submesh.BoundsMax.y) * 0.5F,
+                                           (submesh.BoundsMin.z + submesh.BoundsMax.z) * 0.5F};
+    const DirectX::XMVECTOR center = DirectX::XMVector3TransformCoord(DirectX::XMLoadFloat3(&localCenter), world);
+    float radius = 0.0F;
+    for (uint32_t corner = 0; corner < 8; ++corner) {
+      const DirectX::XMFLOAT3 point = {(corner & 1U) != 0U ? submesh.BoundsMax.x : submesh.BoundsMin.x,
+                                       (corner & 2U) != 0U ? submesh.BoundsMax.y : submesh.BoundsMin.y,
+                                       (corner & 4U) != 0U ? submesh.BoundsMax.z : submesh.BoundsMin.z};
+      const DirectX::XMVECTOR worldPoint = DirectX::XMVector3TransformCoord(DirectX::XMLoadFloat3(&point), world);
+      radius =
+          (std::max)(radius,
+                     DirectX::XMVectorGetX(DirectX::XMVector3Length(DirectX::XMVectorSubtract(worldPoint, center))));
+    }
+    DirectX::XMStoreFloat3(&submesh.CachedWorldBoundsCenter, center);
+    submesh.CachedWorldBoundsRadius = radius;
+    submesh.CachedWorldTransform = worldTransform;
+    submesh.CachedBoundsMin = submesh.BoundsMin;
+    submesh.CachedBoundsMax = submesh.BoundsMax;
+    submesh.WorldBoundsCached = true;
+  }
+  const bool visible = view->IsSphereVisible(submesh.CachedWorldBoundsCenter, submesh.CachedWorldBoundsRadius);
+  m_SubmissionStats.CullingTimeMs +=
+      std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - cullingStart).count();
+  return visible;
 }
 
-bool Engine::SceneRenderer::EnsurePerObjectResources(size_t maxDrawCount,
-                                                     ::Engine::Renderer::FrameContext &frameContext,
-                                                     ::Engine::Renderer::FrameDiagnostics &diagnostics)
-{
-    maxDrawCount = (std::max)(maxDrawCount, size_t{1});
-    if (maxDrawCount <= m_PerObjectBufferCapacity && m_PerObjectBuffer && m_PerObjectBindingSet)
-        return true;
-    if (maxDrawCount > std::numeric_limits<uint32_t>::max())
-        return false;
-
-    nvrhi::BufferHandle buffer = frameContext.GetOrCreateUploadBuffer(
-        "PerObjectDataRing", static_cast<uint32_t>(PerObjectDataStride), static_cast<uint32_t>(maxDrawCount));
-    if (!buffer)
-        return false;
-
-    nvrhi::BindingSetDesc setDesc;
-    setDesc.addItem(nvrhi::BindingSetItem::ConstantBuffer(0, buffer));
-    nvrhi::BindingSetHandle bindingSet = m_Device->createBindingSet(setDesc, m_PerObjectBindingLayout);
-    if (!bindingSet)
-        return false;
-
-    m_PerObjectBuffer = std::move(buffer);
-    m_PerObjectBindingSet = std::move(bindingSet);
-    m_PerObjectBufferCapacity = maxDrawCount;
-    ++diagnostics.BindingSetAllocations;
-    return true;
+auto Engine::SceneRenderer::ConfigureAndQueuePacket(::Engine::Renderer::RenderView* view,
+                                                    const ::Engine::Ecs::MeshRenderer& meshRenderer,
+                                                    const ::Engine::Renderer::Submesh& submesh,
+                                                    const ::Engine::Renderer::MaterialProperties& materialProperties,
+                                                    const nvrhi::FramebufferInfoEx& framebufferInfo,
+                                                    ::Engine::Renderer::RenderPacket& packet) -> bool {
+  if (view->ViewType == ::Engine::Renderer::RenderView::Type::Shadow &&
+      materialProperties.AlphaMode == ::Engine::Renderer::MaterialAlphaMode::Blend) {
+    return false;
+  }
+  packet.ShadowAlphaTest = view->ViewType == ::Engine::Renderer::RenderView::Type::Shadow &&
+                           materialProperties.AlphaMode == ::Engine::Renderer::MaterialAlphaMode::Mask;
+  packet.Queue = ::Engine::Renderer::RenderQueueType::Opaque;
+  if (view->ViewType != ::Engine::Renderer::RenderView::Type::Shadow) {
+    if (materialProperties.AlphaMode == ::Engine::Renderer::MaterialAlphaMode::Mask) {
+      packet.Queue = ::Engine::Renderer::RenderQueueType::Masked;
+    } else if (materialProperties.AlphaMode == ::Engine::Renderer::MaterialAlphaMode::Blend) {
+      packet.Queue = ::Engine::Renderer::RenderQueueType::Transparent;
+    }
+  }
+  packet.CameraDepth = DirectX::XMVectorGetZ(
+      DirectX::XMVector3TransformCoord(DirectX::XMLoadFloat3(&submesh.CachedWorldBoundsCenter), view->ViewMatrix));
+  ++m_SubmissionStats.ObjectsSubmitted;
+  m_SubmissionStats.PerObjectBytesUsed += PerObjectDataStride;
+  Engine::PipelineKey key;
+  switch (submesh.mesh->GetPrimitiveTopology()) {
+  case ::Engine::Renderer::PrimitiveTopology::Lines:
+    key.PrimType = nvrhi::PrimitiveType::LineList;
+    break;
+  case ::Engine::Renderer::PrimitiveTopology::LineStrip:
+    key.PrimType = nvrhi::PrimitiveType::LineStrip;
+    break;
+  case ::Engine::Renderer::PrimitiveTopology::Points:
+    key.PrimType = nvrhi::PrimitiveType::PointList;
+    break;
+  case ::Engine::Renderer::PrimitiveTopology::Triangles:
+  default:
+    key.PrimType = nvrhi::PrimitiveType::TriangleList;
+    break;
+  }
+  key.VS = m_MaterialSystem->GetStandardVS();
+  key.PerObjectLayout = m_PerObjectBindingLayout;
+  key.SceneLayout = m_SceneBindingLayout;
+  key.MaterialLayout = m_MaterialSystem->GetStandardMaterialLayout();
+  key.DepthWrite = packet.Queue != ::Engine::Renderer::RenderQueueType::Transparent;
+  if (view->ViewType == ::Engine::Renderer::RenderView::Type::Shadow) {
+    key.PS = packet.ShadowAlphaTest ? m_ShadowMaskPS : nullptr;
+    key.SceneLayout = nullptr;
+    key.MaterialLayout = packet.ShadowAlphaTest ? m_MaterialSystem->GetStandardMaterialLayout() : nullptr;
+    key.Wireframe = false;
+    key.DepthTest = true;
+    key.CullMode = materialProperties.DoubleSided ? nvrhi::RasterCullMode::None : nvrhi::RasterCullMode::Back;
+  } else {
+    key.PS =
+        submesh.material->HasTextureOverrides() ? m_MaterialSystem->GetTexturedPS() : m_MaterialSystem->GetStandardPS();
+    key.Wireframe = meshRenderer.Wireframe;
+    key.DepthTest = !meshRenderer.DisableDepthTest;
+    key.CullMode = meshRenderer.Wireframe || materialProperties.DoubleSided ? nvrhi::RasterCullMode::None
+                                                                            : nvrhi::RasterCullMode::Back;
+    if (packet.Queue == ::Engine::Renderer::RenderQueueType::Transparent) {
+      nvrhi::BlendState::RenderTarget blendTarget;
+      blendTarget.enableBlend()
+          .setSrcBlend(nvrhi::BlendFactor::SrcAlpha)
+          .setDestBlend(nvrhi::BlendFactor::InvSrcAlpha)
+          .setSrcBlendAlpha(nvrhi::BlendFactor::One)
+          .setDestBlendAlpha(nvrhi::BlendFactor::InvSrcAlpha);
+      key.BlendState.setRenderTarget(0, blendTarget);
+    }
+  }
+  packet.Pipeline = packet.ShadowAlphaTest && (m_ShadowMaskPS == nullptr)
+                        ? nullptr
+                        : m_PipelineCache.GetOrCreatePipeline(key, framebufferInfo);
+  switch (packet.Queue) {
+  case ::Engine::Renderer::RenderQueueType::Masked:
+    view->Queues.Masked.push_back(packet);
+    ++m_SubmissionStats.MaskedPackets;
+    break;
+  case ::Engine::Renderer::RenderQueueType::Transparent:
+    view->Queues.Transparent.push_back(packet);
+    ++m_SubmissionStats.TransparentPackets;
+    break;
+  default:
+    view->Queues.Opaque.push_back(packet);
+    ++m_SubmissionStats.OpaquePackets;
+    break;
+  }
+  ++m_SubmissionStats.PacketsBuilt;
+  return true;
 }
 
-void Engine::SceneRenderer::CullAndFillView(::Engine::Renderer::RenderView *view)
-{
-    if (!view || !view->TargetScene)
-        return;
+void Engine::SceneRenderer::SubmitSubmesh(::Engine::Renderer::RenderView* view,
+                                          const ::Engine::Ecs::WorldTransform& transform,
+                                          const ::Engine::Ecs::MeshRenderer& meshRenderer,
+                                          const ::Engine::Renderer::Submesh& submesh, DirectX::FXMMATRIX viewProjection,
+                                          const nvrhi::FramebufferInfoEx& framebufferInfo) {
+  if (!submesh.mesh || !submesh.material) {
+    ++m_SubmissionStats.ObjectsCulled;
+    return;
+  }
+  const DirectX::XMMATRIX entityWorld = DirectX::XMLoadFloat4x4(&transform.Matrix);
+  const DirectX::XMMATRIX world = DirectX::XMLoadFloat4x4(&submesh.LocalTransform) * entityWorld;
+  DirectX::XMFLOAT4X4 worldTransform{};
+  DirectX::XMStoreFloat4x4(&worldTransform, world);
+  if (!IsSubmeshVisible(view, submesh, world, worldTransform)) {
+    ++m_SubmissionStats.ObjectsCulled;
+    return;
+  }
+  const auto packetBuildStart = std::chrono::steady_clock::now();
+  ::Engine::Renderer::PerObjectGpuData perObjectData{};
+  const DirectX::XMMATRIX mvp = world * viewProjection;
+  DirectX::XMVECTOR determinant;
+  const DirectX::XMMATRIX inverseWorld = DirectX::XMMatrixInverse(&determinant, world);
+  const DirectX::XMMATRIX normal = std::abs(DirectX::XMVectorGetX(determinant)) > 1.0e-8F
+                                       ? DirectX::XMMatrixTranspose(inverseWorld)
+                                       : DirectX::XMMatrixIdentity();
+  DirectX::XMStoreFloat4x4(&perObjectData.World, DirectX::XMMatrixTranspose(world));
+  DirectX::XMStoreFloat4x4(&perObjectData.MVP, DirectX::XMMatrixTranspose(mvp));
+  DirectX::XMStoreFloat4x4(&perObjectData.Normal, DirectX::XMMatrixTranspose(normal));
+  perObjectData.ObjectParams = {meshRenderer.ReceiveShadows ? 1.0F : 0.0F, meshRenderer.Wireframe ? 1.0F : 0.0F, 0.0F,
+                                0.0F};
+  auto packet = CreateRenderPacket(submesh.mesh.get(), submesh.material.get());
+  packet.PerObjectData = perObjectData;
+  if (ConfigureAndQueuePacket(view, meshRenderer, submesh, submesh.material->GetProperties(), framebufferInfo,
+                              packet)) {
+    m_SubmissionStats.PacketBuildTimeMs +=
+        std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - packetBuildStart).count();
+  }
+}
 
-    DirectX::XMMATRIX viewProj = view->ViewProjection;
-    nvrhi::IFramebuffer *framebuffer = view->TargetFramebuffer; // FIXME
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+void Engine::SceneRenderer::CullAndFillView(::Engine::Renderer::RenderView* view) {
+  if ((view == nullptr) || (view->TargetScene == nullptr)) {
+    return;
+  }
 
-    nvrhi::FramebufferInfo fbInfo;
-    if (framebuffer)
-    {
-        fbInfo = framebuffer->getFramebufferInfo();
-    }
-    else if (view->ViewType == ::Engine::Renderer::RenderView::Type::Shadow)
-    {
-        fbInfo.depthFormat = nvrhi::Format::D32;
-    }
-    else
-    {
-        return;
-    }
+  DirectX::XMMATRIX viewProj = view->ViewProjection;
+  nvrhi::IFramebuffer* framebuffer = view->TargetFramebuffer; // FIXME
 
-    for (const auto &entity : view->TargetScene->GetEntities())
-    {
-        if (!entity || (entity->Submeshes.empty() && (!entity->mesh || !entity->material)))
-        {
-            ++m_SubmissionStats.ObjectsCulled;
-            continue;
-        }
+  nvrhi::FramebufferInfoEx fbInfo;
+  if (framebuffer != nullptr) {
+    fbInfo = framebuffer->getFramebufferInfo();
+  } else if (view->ViewType == ::Engine::Renderer::RenderView::Type::Shadow) {
+    fbInfo.depthFormat = nvrhi::Format::D32;
+  } else {
+    return;
+  }
 
-        if (view->ViewType == ::Engine::Renderer::RenderView::Type::Shadow && !entity->CastShadows)
-        {
-            ++m_SubmissionStats.ObjectsCulled;
-            continue;
-        }
-
-        const auto submitSubmesh = [&](const ::Engine::Renderer::Submesh &submesh) {
-            if (!submesh.mesh || !submesh.material)
-            {
+  view->TargetScene->World()
+      .ForEachChunkReadOnly<::Engine::Ecs::MeshRenderer, ::Engine::Ecs::WorldTransform,
+                            ::Engine::Ecs::GlobalVisibility>(
+          [this, view, viewProj, &fbInfo](std::span<const Engine::EntityHandle>,
+                                          std::span<const ::Engine::Ecs::MeshRenderer> meshRenderers,
+                                          std::span<const ::Engine::Ecs::WorldTransform> transforms,
+                                          std::span<const ::Engine::Ecs::GlobalVisibility> visibility) -> void {
+            for (size_t row = 0; row < meshRenderers.size(); ++row) {
+              const auto& meshRenderer = meshRenderers[row];
+              if (!visibility[row].IsVisible || !meshRenderer.Visible ||
+                  (view->ViewType == ::Engine::Renderer::RenderView::Type::Shadow && !meshRenderer.CastShadows)) {
                 ++m_SubmissionStats.ObjectsCulled;
-                return;
-            }
-
-            const auto cullingStart = std::chrono::steady_clock::now();
-            const DirectX::XMMATRIX local = DirectX::XMLoadFloat4x4(&submesh.LocalTransform);
-            const DirectX::XMMATRIX world = local * entity->transform.GetWorldMat();
-            DirectX::XMFLOAT4X4 worldTransform;
-            DirectX::XMStoreFloat4x4(&worldTransform, world);
-            const bool boundsCacheMatches = submesh.WorldBoundsCached &&
-                                            Equal(worldTransform, submesh.CachedWorldTransform) &&
-                                            Equal(submesh.BoundsMin, submesh.CachedBoundsMin) &&
-                                            Equal(submesh.BoundsMax, submesh.CachedBoundsMax);
-            if (!boundsCacheMatches)
-            {
-                const DirectX::XMFLOAT3 localCenter = {(submesh.BoundsMin.x + submesh.BoundsMax.x) * 0.5f,
-                                                       (submesh.BoundsMin.y + submesh.BoundsMax.y) * 0.5f,
-                                                       (submesh.BoundsMin.z + submesh.BoundsMax.z) * 0.5f};
-                const DirectX::XMVECTOR center =
-                    DirectX::XMVector3TransformCoord(DirectX::XMLoadFloat3(&localCenter), world);
-                float radius = 0.0f;
-                for (uint32_t corner = 0; corner < 8; ++corner)
-                {
-                    const DirectX::XMFLOAT3 point = {(corner & 1) ? submesh.BoundsMax.x : submesh.BoundsMin.x,
-                                                     (corner & 2) ? submesh.BoundsMax.y : submesh.BoundsMin.y,
-                                                     (corner & 4) ? submesh.BoundsMax.z
-                                                                  : submesh.BoundsMin.z};
-                    const DirectX::XMVECTOR worldPoint =
-                        DirectX::XMVector3TransformCoord(DirectX::XMLoadFloat3(&point), world);
-                    radius = (std::max)(radius, DirectX::XMVectorGetX(DirectX::XMVector3Length(
-                                                    DirectX::XMVectorSubtract(worldPoint, center))));
-                }
-                DirectX::XMStoreFloat3(&submesh.CachedWorldBoundsCenter, center);
-                submesh.CachedWorldBoundsRadius = radius;
-                submesh.CachedWorldTransform = worldTransform;
-                submesh.CachedBoundsMin = submesh.BoundsMin;
-                submesh.CachedBoundsMax = submesh.BoundsMax;
-                submesh.WorldBoundsCached = true;
-            }
-            const bool visible =
-                view->IsSphereVisible(submesh.CachedWorldBoundsCenter, submesh.CachedWorldBoundsRadius);
-            m_SubmissionStats.CullingTimeMs +=
-                std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - cullingStart)
-                    .count();
-            if (!visible)
-            {
+                continue;
+              }
+              std::string resourceKey = meshRenderer.ModelGuid;
+              if (resourceKey.empty() && !meshRenderer.PrimitiveType.empty()) {
+                resourceKey = "primitive:" + meshRenderer.PrimitiveType;
+              }
+              const auto* submeshes = m_ModelResources == nullptr ? nullptr : m_ModelResources->Find(resourceKey);
+              if (submeshes == nullptr || submeshes->empty()) {
                 ++m_SubmissionStats.ObjectsCulled;
-                return;
+                continue;
+              }
+              for (const auto& submesh : *submeshes) {
+                SubmitSubmesh(view, transforms[row], meshRenderer, submesh, viewProj, fbInfo);
+              }
             }
-
-            const auto packetBuildStart = std::chrono::steady_clock::now();
-            ::Engine::Renderer::PerObjectGpuData perObjectData{};
-            const DirectX::XMMATRIX mvp = world * viewProj;
-            DirectX::XMVECTOR determinant;
-            const DirectX::XMMATRIX inverseWorld = DirectX::XMMatrixInverse(&determinant, world);
-            const DirectX::XMMATRIX normal = std::abs(DirectX::XMVectorGetX(determinant)) > 1.0e-8f
-                                                 ? DirectX::XMMatrixTranspose(inverseWorld)
-                                                 : DirectX::XMMatrixIdentity();
-            DirectX::XMStoreFloat4x4(&perObjectData.World, DirectX::XMMatrixTranspose(world));
-            DirectX::XMStoreFloat4x4(&perObjectData.MVP, DirectX::XMMatrixTranspose(mvp));
-            DirectX::XMStoreFloat4x4(&perObjectData.Normal, DirectX::XMMatrixTranspose(normal));
-            perObjectData.ObjectParams = {entity->ReceiveShadows ? 1.0f : 0.0f,
-                                          entity->ForceWireframe ? 1.0f : 0.0f, 0.0f, 0.0f};
-
-            auto packet = CreateRenderPacket(submesh.mesh.get(), submesh.material.get());
-            packet.PerObjectData = perObjectData;
-            const ::Engine::Renderer::MaterialProperties materialProperties =
-                submesh.material->GetProperties();
-            if (view->ViewType == ::Engine::Renderer::RenderView::Type::Shadow &&
-                materialProperties.AlphaMode == ::Engine::Renderer::MaterialAlphaMode::Blend)
-            {
-                return;
-            }
-            packet.ShadowAlphaTest =
-                view->ViewType == ::Engine::Renderer::RenderView::Type::Shadow &&
-                materialProperties.AlphaMode == ::Engine::Renderer::MaterialAlphaMode::Mask;
-            packet.Queue = view->ViewType == ::Engine::Renderer::RenderView::Type::Shadow
-                               ? ::Engine::Renderer::RenderQueueType::Opaque
-                           : materialProperties.AlphaMode == ::Engine::Renderer::MaterialAlphaMode::Mask
-                               ? ::Engine::Renderer::RenderQueueType::Masked
-                           : materialProperties.AlphaMode == ::Engine::Renderer::MaterialAlphaMode::Blend
-                               ? ::Engine::Renderer::RenderQueueType::Transparent
-                               : ::Engine::Renderer::RenderQueueType::Opaque;
-            packet.CameraDepth = DirectX::XMVectorGetZ(DirectX::XMVector3TransformCoord(
-                DirectX::XMLoadFloat3(&submesh.CachedWorldBoundsCenter), view->ViewMatrix));
-            ++m_SubmissionStats.ObjectsSubmitted;
-            m_SubmissionStats.PerObjectBytesUsed += PerObjectDataStride;
-
-            Engine::PipelineKey key;
-            key.PrimType = ToBackendPrimitiveType(submesh.mesh->GetPrimitiveTopology());
-            key.VS = m_MaterialSystem->GetStandardVS();
-            key.PerObjectLayout = m_PerObjectBindingLayout;
-            key.SceneLayout = m_SceneBindingLayout;
-            key.MaterialLayout = m_MaterialSystem->GetStandardMaterialLayout();
-            key.DepthWrite = packet.Queue != ::Engine::Renderer::RenderQueueType::Transparent;
-            if (view->ViewType == ::Engine::Renderer::RenderView::Type::Shadow)
-            {
-                key.PS = packet.ShadowAlphaTest ? m_ShadowMaskPS : nullptr;
-                key.SceneLayout = nullptr;
-                key.MaterialLayout =
-                    packet.ShadowAlphaTest ? m_MaterialSystem->GetStandardMaterialLayout() : nullptr;
-                key.Wireframe = false;
-                key.DepthTest = true;
-                key.CullMode = materialProperties.DoubleSided ? nvrhi::RasterCullMode::None
-                                                              : nvrhi::RasterCullMode::Back;
-            }
-            else
-            {
-                key.PS = submesh.material && submesh.material->HasTextureOverrides()
-                             ? m_MaterialSystem->GetTexturedPS()
-                             : m_MaterialSystem->GetStandardPS();
-                key.Wireframe = entity->ForceWireframe;
-                key.DepthTest = !entity->DisableDepthTest;
-                key.CullMode = entity->ForceWireframe || materialProperties.DoubleSided
-                                   ? nvrhi::RasterCullMode::None
-                                   : ToBackendCullMode(entity->CullMode);
-                if (packet.Queue == ::Engine::Renderer::RenderQueueType::Transparent)
-                {
-                    nvrhi::BlendState::RenderTarget blendTarget;
-                    blendTarget.enableBlend()
-                        .setSrcBlend(nvrhi::BlendFactor::SrcAlpha)
-                        .setDestBlend(nvrhi::BlendFactor::InvSrcAlpha)
-                        .setSrcBlendAlpha(nvrhi::BlendFactor::One)
-                        .setDestBlendAlpha(nvrhi::BlendFactor::InvSrcAlpha);
-                    key.BlendState.setRenderTarget(0, blendTarget);
-                }
-            }
-            packet.Pipeline = packet.ShadowAlphaTest && !m_ShadowMaskPS
-                                  ? nullptr
-                                  : m_PipelineCache->GetOrCreatePipeline(key, fbInfo);
-            switch (packet.Queue)
-            {
-            case ::Engine::Renderer::RenderQueueType::Masked:
-                view->Queues.Masked.push_back(packet);
-                ++m_SubmissionStats.MaskedPackets;
-                break;
-            case ::Engine::Renderer::RenderQueueType::Transparent:
-                view->Queues.Transparent.push_back(packet);
-                ++m_SubmissionStats.TransparentPackets;
-                break;
-            default:
-                view->Queues.Opaque.push_back(packet);
-                ++m_SubmissionStats.OpaquePackets;
-                break;
-            }
-            ++m_SubmissionStats.PacketsBuilt;
-            m_SubmissionStats.PacketBuildTimeMs +=
-                std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - packetBuildStart)
-                    .count();
-        };
-
-        if (entity->Submeshes.empty())
-        {
-            ::Engine::Renderer::Submesh submesh;
-            submesh.mesh = entity->mesh;
-            submesh.material = entity->material;
-            submesh.BoundsMin = {-1.0f, -1.0f, -1.0f};
-            submesh.BoundsMax = {1.0f, 1.0f, 1.0f};
-            submitSubmesh(submesh);
-        }
-        else
-        {
-            for (const auto &submesh : entity->Submeshes)
-                submitSubmesh(submesh);
-        }
-    }
+          });
 }
 
 // --- RenderPacket creation ---
 
-::Engine::Renderer::RenderPacket Engine::SceneRenderer::CreateRenderPacket(
-    const ::Engine::Renderer::Mesh *mesh, const ::Engine::Renderer::Material *material)
-{
-    ::Engine::Renderer::RenderPacket packet;
-    packet.VertexBuffer = ::Engine::Renderer::MeshBackendAccess::GetVertexBuffer(*mesh);
-    packet.IndexBuffer = ::Engine::Renderer::MeshBackendAccess::GetIndexBuffer(*mesh);
-    packet.VertexCount = mesh->GetVertexCount();
-    packet.IndexCount = mesh->GetIndexCount();
-    packet.MaterialBindings = ::Engine::Renderer::MaterialBackendAccess::GetBindingSet(*material);
-    packet.BaseVertexOffset = 0;
-    packet.StartIndexLocation = 0;
+auto Engine::SceneRenderer::CreateRenderPacket(const ::Engine::Renderer::Mesh* mesh,
+                                               const ::Engine::Renderer::Material* material)
+    -> ::Engine::Renderer::RenderPacket {
+  ::Engine::Renderer::RenderPacket packet;
+  packet.VertexBuffer = ::Engine::Renderer::MeshBackendAccess::GetVertexBuffer(*mesh);
+  packet.IndexBuffer = ::Engine::Renderer::MeshBackendAccess::GetIndexBuffer(*mesh);
+  packet.VertexCount = mesh->GetVertexCount();
+  packet.IndexCount = mesh->GetIndexCount();
+  packet.MaterialBindings = ::Engine::Renderer::MaterialBackendAccess::GetBindingSet(*material);
+  packet.BaseVertexOffset = 0;
+  packet.StartIndexLocation = 0;
 
-    return packet;
+  return packet;
 }
 
-void Engine::SceneRenderer::SortViewQueues(::Engine::Renderer::RenderView *view)
-{
-    if (!view)
-        return;
+void Engine::SceneRenderer::SortViewQueues(::Engine::Renderer::RenderView* view) {
+  if (view == nullptr) {
+    return;
+  }
 
-    const auto lessBySubmissionState = [](const ::Engine::Renderer::RenderPacket &left,
-                                          const ::Engine::Renderer::RenderPacket &right) {
-        if (left.Pipeline.Get() != right.Pipeline.Get())
-            return left.Pipeline.Get() < right.Pipeline.Get();
-        if (left.MaterialBindings.Get() != right.MaterialBindings.Get())
-            return left.MaterialBindings.Get() < right.MaterialBindings.Get();
-        if (left.VertexBuffer.Get() != right.VertexBuffer.Get())
-            return left.VertexBuffer.Get() < right.VertexBuffer.Get();
-        return left.IndexBuffer.Get() < right.IndexBuffer.Get();
-    };
+  const auto lessBySubmissionState = [](const ::Engine::Renderer::RenderPacket& left,
+                                        const ::Engine::Renderer::RenderPacket& right) -> bool {
+    if (left.Pipeline.Get() != right.Pipeline.Get()) {
+      return left.Pipeline.Get() < right.Pipeline.Get();
+    }
+    if (left.MaterialBindings.Get() != right.MaterialBindings.Get()) {
+      return left.MaterialBindings.Get() < right.MaterialBindings.Get();
+    }
+    if (left.VertexBuffer.Get() != right.VertexBuffer.Get()) {
+      return left.VertexBuffer.Get() < right.VertexBuffer.Get();
+    }
+    return left.IndexBuffer.Get() < right.IndexBuffer.Get();
+  };
 
-    std::stable_sort(view->Queues.Opaque.begin(), view->Queues.Opaque.end(), lessBySubmissionState);
-    std::stable_sort(view->Queues.Masked.begin(), view->Queues.Masked.end(), lessBySubmissionState);
-    std::stable_sort(
-        view->Queues.Transparent.begin(), view->Queues.Transparent.end(),
-        [](const ::Engine::Renderer::RenderPacket &left, const ::Engine::Renderer::RenderPacket &right) {
-            return left.CameraDepth > right.CameraDepth;
-        });
+  std::ranges::stable_sort(view->Queues.Opaque, lessBySubmissionState);
+  std::ranges::stable_sort(view->Queues.Masked, lessBySubmissionState);
+  std::ranges::stable_sort(
+      view->Queues.Transparent,
+      [](const ::Engine::Renderer::RenderPacket& left, const ::Engine::Renderer::RenderPacket& right) -> bool {
+        return left.CameraDepth > right.CameraDepth;
+      });
 }
 
 // --- View Building ---
 
-void Engine::SceneRenderer::BuildViews(::Engine::Renderer::FrameBlackboard &blackboard,
-                                       nvrhi::ICommandList *commandList,
-                                       ::Engine::Renderer::FrameContext &frameContext,
-                                       ::Engine::Renderer::FrameDiagnostics &diagnostics)
-{
-    if (!commandList)
-    {
-        return;
-    }
+void Engine::SceneRenderer::BuildViews(::Engine::Renderer::FrameBlackboard& blackboard,
+                                       nvrhi::ICommandList* commandList, ::Engine::Renderer::FrameContext& frameContext,
+                                       ::Engine::Renderer::FrameDiagnostics& diagnostics) {
+  if (commandList == nullptr) {
+    return;
+  }
 
-    m_SubmissionStats = {};
-    m_PipelineCache->BeginFrame();
-    if (!EnsurePerObjectResources(EstimateDrawCount(blackboard), frameContext, diagnostics))
-    {
-        ENGINE_LOG_ERROR(
-            "Render", "Per-object frame resources unavailable | estimated_draw_count: {} | frame_index: {}",
-            EstimateDrawCount(blackboard), frameContext.GetFrameIndex());
-        return;
-    }
+  m_SubmissionStats = {};
+  m_PipelineCache.BeginFrame();
+  if (!EnsurePerObjectResources(EstimateDrawCount(blackboard), frameContext, diagnostics)) {
+    ENGINE_LOG_ERROR("Render", "Per-object frame resources unavailable | estimated_draw_count: {} | frame_index: {}",
+                     EstimateDrawCount(blackboard), frameContext.GetFrameIndex());
+    return;
+  }
 
-    const auto &shadowViews = blackboard.GetShadowViews();
-    for (uint32_t viewIndex = 0; viewIndex < shadowViews.size(); ++viewIndex)
-    {
-        ::Engine::Renderer::RenderView *view = shadowViews[viewIndex];
-        if (view)
-        {
-            view->Clear();
-            CullAndFillView(view);
-            SortViewQueues(view);
-        }
+  const auto& shadowViews = blackboard.GetShadowViews();
+  for (auto* view : shadowViews) {
+    if (view != nullptr) {
+      view->Clear();
+      CullAndFillView(view);
+      SortViewQueues(view);
     }
+  }
 
-    const auto &sceneViews = blackboard.GetSceneViews();
-    for (uint32_t viewIndex = 0; viewIndex < sceneViews.size(); ++viewIndex)
-    {
-        ::Engine::Renderer::RenderView *view = sceneViews[viewIndex];
-        if (view)
-        {
-            view->Clear();
-            view->CameraBuffer = frameContext.GetOrCreateUploadBuffer(
-                "ViewCameraPosition/" + std::to_string(viewIndex), sizeof(::Engine::Renderer::CameraGpuData),
-                static_cast<uint32_t>(::Engine::Renderer::FrameContext::FramesInFlight + 1));
-            if (view->CameraBuffer)
-            {
-                const ::Engine::Renderer::CameraGpuData cameraData{
-                    {view->CameraPosition.x, view->CameraPosition.y, view->CameraPosition.z, 1.0f}};
-                commandList->writeBuffer(view->CameraBuffer, &cameraData, sizeof(cameraData));
-                diagnostics.UploadBytes += sizeof(cameraData);
+  const auto& sceneViews = blackboard.GetSceneViews();
+  for (uint32_t viewIndex = 0; viewIndex < sceneViews.size(); ++viewIndex) {
+    ::Engine::Renderer::RenderView* view = sceneViews.at(viewIndex);
+    if (view != nullptr) {
+      view->Clear();
+      view->CameraBuffer = frameContext.GetOrCreateUploadBuffer(
+          "ViewCameraPosition/" + std::to_string(viewIndex), sizeof(::Engine::Renderer::CameraGpuData),
+          static_cast<uint32_t>(::Engine::Renderer::FrameContext::FramesInFlight + 1));
+      if (view->CameraBuffer != nullptr) {
+        const ::Engine::Renderer::CameraGpuData cameraData{
+            {view->CameraPosition.x, view->CameraPosition.y, view->CameraPosition.z, 1.0F},
+        };
+        commandList->writeBuffer(view->CameraBuffer, &cameraData, sizeof(cameraData));
+        diagnostics.UploadBytes += sizeof(cameraData);
+      }
+      CullAndFillView(view);
+      SortViewQueues(view);
+      BuildDebugGeometry(view);
+    }
+  }
+  const PipelineCache::FrameStats& pipelineStats = m_PipelineCache.GetFrameStats();
+  m_SubmissionStats.PipelineCacheHits = pipelineStats.Hits;
+  m_SubmissionStats.PipelineCacheMisses = pipelineStats.Misses;
+  m_SubmissionStats.PipelineCreations = pipelineStats.Creations;
+}
+
+void Engine::SceneRenderer::BuildDebugGeometry(::Engine::Renderer::RenderView* view) {
+  if ((view == nullptr) || view->ViewType != ::Engine::Renderer::RenderView::Type::Main ||
+      (view->TargetScene == nullptr)) {
+    return;
+  }
+
+  ::Engine::Renderer::DebugGeometryBuilder::BuildScene(*view->TargetScene, view->DebugSettings,
+                                                       view->DebugGeometryData);
+}
+
+void Engine::SceneRenderer::BuildShadowData(Engine::Scene* scene,
+                                            const std::vector<::Engine::Renderer::RenderView*>& shadowViews,
+                                            uint32_t firstShadowSlot, uint32_t maxShadowedLights) {
+  if (scene == nullptr) {
+    return;
+  }
+  uint32_t viewIndex = firstShadowSlot;
+  scene->World()
+      .ForEachChunkReadOnly<::Engine::Ecs::SpotLight, ::Engine::Ecs::WorldTransform, ::Engine::Ecs::GlobalVisibility>(
+          [scene, &shadowViews, firstShadowSlot, maxShadowedLights,
+           &viewIndex](std::span<const Engine::EntityHandle>, std::span<const ::Engine::Ecs::SpotLight> lightComponents,
+                       std::span<const ::Engine::Ecs::WorldTransform> transforms,
+                       std::span<const ::Engine::Ecs::GlobalVisibility> visibility) -> void {
+            for (size_t row = 0; row < lightComponents.size(); ++row) {
+              if (viewIndex >= firstShadowSlot + maxShadowedLights || viewIndex >= shadowViews.size()) {
+                return;
+              }
+              if (!visibility[row].IsVisible) {
+                continue;
+              }
+              const auto lightData = ToDirectionalLightData(lightComponents[row], transforms[row]);
+              if (lightData.ColorUsePosition.w <= 0.5F || lightData.ShadowParams.w <= 0.5F) {
+                continue;
+              }
+              auto* shadowView = shadowViews.at(viewIndex++);
+              if (shadowView == nullptr) {
+                continue;
+              }
+              shadowView->TargetScene = scene;
+              shadowView->ViewProjection = ComputeSpotLightViewProj(lightData);
+              shadowView->ExtractFrustumPlanes();
             }
-            CullAndFillView(view);
-            SortViewQueues(view);
-            BuildDebugGeometry(view);
-        }
-    }
-    const PipelineCache::FrameStats &pipelineStats = m_PipelineCache->GetFrameStats();
-    m_SubmissionStats.PipelineCacheHits = pipelineStats.Hits;
-    m_SubmissionStats.PipelineCacheMisses = pipelineStats.Misses;
-    m_SubmissionStats.PipelineCreations = pipelineStats.Creations;
+          });
 }
-
-void Engine::SceneRenderer::BuildDebugGeometry(::Engine::Renderer::RenderView *view)
-{
-    if (!view || view->ViewType != ::Engine::Renderer::RenderView::Type::Main || !view->TargetScene)
-    {
-        return;
-    }
-
-    ::Engine::Renderer::DebugGeometryBuilder::BuildScene(*view->TargetScene, view->DebugSettings,
-                                                         view->DebugGeometryData);
-}
-
-void Engine::SceneRenderer::BuildShadowData(Engine::Scene *scene,
-                                            const std::vector<::Engine::Renderer::RenderView *> &shadowViews,
-                                            uint32_t firstShadowSlot, uint32_t maxShadowedLights)
-{
-    if (!scene)
-        return;
-
-    uint32_t viewIdx = firstShadowSlot;
-
-    for (uint32_t idx = 0; idx < scene->GetLights().size(); ++idx)
-    {
-        if (viewIdx >= firstShadowSlot + maxShadowedLights || viewIdx >= shadowViews.size())
-            break;
-
-        auto lightData = scene->GetLights()[idx]->GetDirectionalLightData();
-        const bool usePosition = lightData.ColorUsePosition.w > 0.5f;
-        const bool castShadows = lightData.ShadowParams.w > 0.5f;
-        if (!usePosition || !castShadows)
-            continue;
-
-        const DirectX::XMMATRIX lightViewProj = ComputeSpotLightViewProj(lightData);
-
-        ::Engine::Renderer::RenderView *currentShadowView = shadowViews[viewIdx];
-        currentShadowView->TargetScene = scene;
-        currentShadowView->ViewProjection = lightViewProj;
-        currentShadowView->ExtractFrustumPlanes();
-
-        viewIdx++;
-    }
-}
-
-uint32_t Engine::SceneRenderer::CountShadowCasters(const Engine::Scene *scene, uint32_t limit) const
-{
-    if (!scene || limit == 0)
-        return 0;
-
-    uint32_t count = 0;
-    for (const auto &light : scene->GetLights())
-    {
-        if (!light || count == limit || count == MaxShadowedLights)
-            break;
-        const ::Engine::Renderer::DirectionalLightData lightData = light->GetDirectionalLightData();
-        if (lightData.ColorUsePosition.w > 0.5f && lightData.ShadowParams.w > 0.5f)
-        {
+auto Engine::SceneRenderer::CountShadowCasters(const Engine::Scene* scene, uint32_t limit) -> uint32_t {
+  if (scene == nullptr || limit == 0) {
+    return 0;
+  }
+  uint32_t count = 0;
+  scene->World().ForEachChunkReadOnly<::Engine::Ecs::SpotLight>(
+      [&count, limit](std::span<const Engine::EntityHandle>,
+                      std::span<const ::Engine::Ecs::SpotLight> lightComponents) -> void {
+        for (const auto& light : lightComponents) {
+          if (count >= limit || count >= MaxShadowedLights) {
+            return;
+          }
+          if (light.UsePosition && light.CastShadows) {
             ++count;
+          }
         }
-    }
-    return count;
+      });
+  return count;
 }
-
-void Engine::SceneRenderer::BuildLighting(Engine::Scene *scene,
-                                          const std::vector<::Engine::Renderer::RenderView *> &shadowViews,
-                                          std::vector<::Engine::Renderer::DirectionalLightData> &lights)
-{
-    if (!scene)
-        return;
-
-    lights.reserve(scene->GetLights().size());
-
-    uint32_t shadowSearchStart = 0;
-
-    for (const auto &light : scene->GetLights())
-    {
-        if (lights.size() >= MaxLights)
-        {
-            break;
-        }
-
-        auto lightData = light->GetDirectionalLightData();
-
-        const bool usePosition = lightData.ColorUsePosition.w > 0.5f;
-        const bool castShadows = lightData.ShadowParams.w > 0.5f;
-
-        if (usePosition && castShadows)
-        {
-            for (uint32_t shadowIdx = shadowSearchStart; shadowIdx < shadowViews.size(); ++shadowIdx)
-            {
-                const ::Engine::Renderer::RenderView *shadowView = shadowViews[shadowIdx];
-                if (!shadowView || shadowView->TargetScene != scene)
+void Engine::SceneRenderer::BuildLighting(Engine::Scene* scene,
+                                          const std::vector<::Engine::Renderer::RenderView*>& shadowViews,
+                                          std::vector<::Engine::Renderer::DirectionalLightData>& lights) {
+  lights.clear();
+  if (scene == nullptr) {
+    return;
+  }
+  lights.reserve((std::min)(scene->EntityCount(), static_cast<size_t>(MaxLights)));
+  uint32_t shadowSearchStart = 0;
+  scene->World()
+      .ForEachChunkReadOnly<::Engine::Ecs::SpotLight, ::Engine::Ecs::WorldTransform, ::Engine::Ecs::GlobalVisibility>(
+          [&lights, &shadowSearchStart, &shadowViews,
+           scene](std::span<const Engine::EntityHandle>, std::span<const ::Engine::Ecs::SpotLight> lightComponents,
+                  std::span<const ::Engine::Ecs::WorldTransform> transforms,
+                  std::span<const ::Engine::Ecs::GlobalVisibility> visibility) -> void {
+            for (size_t row = 0; row < lightComponents.size() && lights.size() < MaxLights; ++row) {
+              if (!visibility[row].IsVisible) {
+                continue;
+              }
+              auto lightData = ToDirectionalLightData(lightComponents[row], transforms[row]);
+              if (lightData.ColorUsePosition.w > 0.5F && lightData.ShadowParams.w > 0.5F) {
+                for (uint32_t shadowIndex = shadowSearchStart; shadowIndex < shadowViews.size(); ++shadowIndex) {
+                  const auto* shadowView = shadowViews.at(shadowIndex);
+                  if (shadowView == nullptr || shadowView->TargetScene != scene) {
                     continue;
-                DirectX::XMStoreFloat4x4(&lightData.LightViewProj,
-                                         DirectX::XMMatrixTranspose(shadowView->ViewProjection));
-                lightData.ShadowParams.x = static_cast<float>(shadowIdx);
-                shadowSearchStart = shadowIdx + 1;
-                break;
+                  }
+                  DirectX::XMStoreFloat4x4(&lightData.LightViewProj,
+                                           DirectX::XMMatrixTranspose(shadowView->ViewProjection));
+                  lightData.ShadowParams.x = static_cast<float>(shadowIndex);
+                  shadowSearchStart = shadowIndex + 1;
+                  break;
+                }
+              }
+              lights.push_back(lightData);
             }
-        }
-
-        lights.push_back(lightData);
-    }
+          });
 }

@@ -1,7 +1,7 @@
 #pragma once
 
-#include "panels/include/EditorPanel.h"
 #include "events/include/EditorEvents.h"
+#include "panels/include/EditorPanel.h"
 #include <cstdint>
 #include <utility>
 
@@ -14,16 +14,15 @@
 // hover state changes.
 // ================================================================================
 
-class ScenePanel : public EditorPanel
-{
-  public:
-    ScenePanel() = default;
+class ScenePanel : public EditorPanel {
+public:
+  ScenePanel() = default;
 
-    void Draw() override;
-    void OnEvent(Engine::Events::Event &event) override;
+  void Draw() override;
+  void OnEvent(Engine::Events::Event& event) override;
 
-  private:
-    void *m_TextureId = nullptr;
-    std::pair<float, float> m_ViewportSize = {0.0f, 0.0f};
-    bool m_IsHovered = false;
+private:
+  void* m_TextureId = nullptr;
+  std::pair<float, float> m_ViewportSize = {0.0f, 0.0f};
+  bool m_IsHovered = false;
 };

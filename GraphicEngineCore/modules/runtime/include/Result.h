@@ -4,12 +4,10 @@
 #include <string>
 #include <utility>
 
-namespace Engine
-{
+namespace Engine {
 /// Error payload carried by failed engine operations.
-struct Error
-{
-    std::string Message; ///< Human-readable description of the failure.
+struct Error {
+  std::string Message; ///< Human-readable description of the failure.
 };
 
 /// Expected-style result value whose error payload is Engine::Error.
@@ -21,8 +19,5 @@ using Status = Result<void>;
 /// Creates an error payload from a diagnostic message.
 /// @param message Human-readable failure description.
 /// @return Error containing the moved message.
-inline Error MakeError(std::string message)
-{
-    return {std::move(message)};
-}
+inline Error MakeError(std::string message) { return {std::move(message)}; }
 } // namespace Engine

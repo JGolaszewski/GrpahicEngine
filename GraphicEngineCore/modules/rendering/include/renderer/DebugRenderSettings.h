@@ -4,21 +4,13 @@
 
 #include <cstdint>
 
-namespace Engine::Renderer
-{
-/// Depth behavior for overlay and construction-plane debug geometry.
-enum class DebugDepthMode : uint8_t
-{
-    Test,
-    AlwaysOnTop
-};
+namespace Engine::Renderer {
+enum class DebugDepthMode : uint8_t { Test, AlwaysOnTop };
 
-/// Per-view controls for editor debug rendering.
-struct DebugRenderSettings
-{
-    bool ShowLightGizmos = false;    ///< Whether spotlight cones and positions are drawn.
-    bool ShowWireframePlane = false; ///< Whether the world construction plane is drawn.
-    DebugDepthMode DepthMode = DebugDepthMode::AlwaysOnTop;   ///< Depth behavior for debug primitives.
-    Engine::LightId SelectedLightId = Engine::InvalidLightId; ///< Light to highlight, or InvalidLightId.
+struct DebugRenderSettings {
+  bool ShowLightGizmos = false;
+  bool ShowWireframePlane = false;
+  DebugDepthMode DepthMode = DebugDepthMode::AlwaysOnTop;
+  Engine::LightId SelectedLightId = Engine::InvalidLightId;
 };
 } // namespace Engine::Renderer

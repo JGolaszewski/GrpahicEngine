@@ -10,28 +10,16 @@
 // when the viewport is hovered).
 // ================================================================================
 
-class ViewportHoveredEvent : public Engine::Events::Event
-{
-  public:
-    explicit ViewportHoveredEvent(bool hovered) : m_Hovered(hovered)
-    {
-    }
+class ViewportHoveredEvent : public Engine::Events::Event {
+public:
+  explicit ViewportHoveredEvent(bool hovered) : m_Hovered(hovered) {}
 
-    static Engine::Events::EventType GetStaticType()
-    {
-        return Engine::Events::EventType::ViewportHovered;
-    }
+  static Engine::Events::EventType GetStaticType() { return Engine::Events::EventType::ViewportHovered; }
 
-    Engine::Events::EventType GetType() const override
-    {
-        return GetStaticType();
-    }
+  Engine::Events::EventType GetType() const override { return GetStaticType(); }
 
-    [[nodiscard]] bool IsHovered() const noexcept
-    {
-        return m_Hovered;
-    }
+  [[nodiscard]] bool IsHovered() const noexcept { return m_Hovered; }
 
-  private:
-    bool m_Hovered;
+private:
+  bool m_Hovered;
 };
