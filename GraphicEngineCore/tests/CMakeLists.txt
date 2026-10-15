@@ -23,6 +23,10 @@ if(BUILD_TESTING)
         d3d11
         nlohmann_json::nlohmann_json
         GTest::gtest_main
+        OpenImageIO::OpenImageIO
+    )
+    target_include_directories(GraphicEngineUnitTests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/../modules/rendering/src"
     )
     target_compile_features(GraphicEngineUnitTests PRIVATE cxx_std_23)
     engine_configure_test_target(GraphicEngineUnitTests)
