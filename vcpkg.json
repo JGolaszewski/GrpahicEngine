@@ -4,11 +4,18 @@
   "builtin-baseline": "2bc124dac8436f5d8e108273aacf3f68d9824185",
   "dependencies": [
     "directxmath",
+    "gtest",
     "glfw3",
     "nlohmann-json",
     "stb",
     "tinygltf"
   ],
+  "features": {
+    "benchmarks": {
+      "description": "Opt-in engine performance benchmarks",
+      "dependencies": ["benchmark"]
+    }
+  },
   "overrides": [
     {
       "name": "directxmath",

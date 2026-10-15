@@ -35,6 +35,17 @@ project ("GraphicEngine")
 
 include(CTest)
 
+function(engine_enable_strict_msvc_checks TARGET)
+    if(MSVC AND CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+        target_compile_options(${TARGET} PRIVATE
+            /W4
+            /WX
+            /permissive-
+            /Zc:preprocessor
+        )
+    endif()
+endfunction()
+
 find_program(ENGINE_CLANG_TIDY_EXECUTABLE NAMES clang-tidy)
 if(NOT ENGINE_CLANG_TIDY_EXECUTABLE AND DEFINED ENV{VSINSTALLDIR})
     find_program(ENGINE_CLANG_TIDY_EXECUTABLE NAMES clang-tidy
@@ -148,6 +159,7 @@ endif()
 add_subdirectory ("GraphicEngineCore")
 add_subdirectory ("GraphicEngineBackends")
 add_subdirectory ("GraphicEngineEditor")
+add_subdirectory ("GraphicEngineCore/tests")
 
 add_subdirectory ("SandboxApp")
 
