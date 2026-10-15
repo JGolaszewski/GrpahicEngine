@@ -144,7 +144,8 @@ void CameraPreviewPanel::Draw() {
     ImGui::Separator();
 
     const ImVec2 available = ImGui::GetContentRegionAvail();
-    if (ImGui::BeginChild("CameraPreviewImage", available, true, ImGuiWindowFlags_HorizontalScrollbar)) {
+    if (ImGui::BeginChild("CameraPreviewImage", available, true,
+                          ImGuiWindowFlags_HorizontalScrollbar | ImGuiWindowFlags_NoScrollWithMouse)) {
       const ImVec2 childAvailable = ImGui::GetContentRegionAvail();
       const CameraPreviewImageLayout::ImageSize imageSize = CameraPreviewImageLayout::ComputeImageSize(
           m_ImageWidth, m_ImageHeight, childAvailable.x, childAvailable.y, m_Zoom);
