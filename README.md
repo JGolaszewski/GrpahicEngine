@@ -35,7 +35,6 @@ For tests, other build configurations, and toolchain details, see [Testing and p
 
 - [Documentation home](docs/index.md)
 - [C++ guidelines](docs/cpp-guidelines.md)
-- [Development workflow](docs/development-workflow.md)
 - [Testing and performance](docs/testing.md)
 - [Windows build and renderer validation](docs/validation/windows.md)
 - [Logging](docs/logging.md)
@@ -44,4 +43,4 @@ For tests, other build configurations, and toolchain details, see [Testing and p
 
 ## Contributing
 
-Before making changes, read [AGENTS.md](AGENTS.md) and the [development workflow](docs/development-workflow.md). The project is licensed under the [Apache License 2.0](LICENSE).
+Before making changes, read [Testing and performance](docs/testing.md) and the documentation that applies to your change. The project is licensed under the [Apache License 2.0](LICENSE).
