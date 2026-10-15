@@ -27,6 +27,10 @@ plugins:
             PREDEFINED: "ENGINE_API="
             GENERATE_HTML: NO
             GENERATE_XML: YES
+            WARN_IF_UNDOCUMENTED: YES
+            WARN_NO_PARAMDOC: YES
+            WARN_IF_DOC_ERROR: YES
+            WARN_AS_ERROR: YES
 
 markdown_extensions:
   - toc:
