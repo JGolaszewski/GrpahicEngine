@@ -2,10 +2,10 @@
 
 #include "assets/include/AssetManager.h"
 #include "runtime/include/LogMacros.h"
+#include "rendering/include/RenderBackend.h"
 #include "rendering/include/PrimitiveFactory.h"
 #include "rendering/include/RenderSystem.h"
 #include "scene/include/Scene.h"
-#include "rendering/include/SceneRenderer.h"
 #include "rendering/include/ViewportTarget.h"
 #include "runtime/include/Window.h"
 #include "commands/include/ChangeMaterialTextureCommand.h"
@@ -565,9 +565,10 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event)
         };
         if (!finite3(e.GetPosition()) || !finite3(e.GetScale()) || !finite3(e.GetEmissive()) ||
             !std::isfinite(e.GetColor().x) || !std::isfinite(e.GetColor().y) ||
-            !std::isfinite(e.GetColor().z) || !std::isfinite(e.GetColor().w) ||
-            e.GetScale().x <= 0.0f || e.GetScale().y <= 0.0f || e.GetScale().z <= 0.0f)
-            return fail("Position, scale, color, and emission must be finite; scale components must be positive.");
+            !std::isfinite(e.GetColor().z) || !std::isfinite(e.GetColor().w) || e.GetScale().x <= 0.0f ||
+            e.GetScale().y <= 0.0f || e.GetScale().z <= 0.0f)
+            return fail(
+                "Position, scale, color, and emission must be finite; scale components must be positive.");
         if (!std::isfinite(e.GetMetallic()) || e.GetMetallic() < 0.0f || e.GetMetallic() > 1.0f ||
             !std::isfinite(e.GetRoughness()) || e.GetRoughness() < 0.0f || e.GetRoughness() > 1.0f)
             return fail("Metallic and roughness values must be between 0 and 1.");

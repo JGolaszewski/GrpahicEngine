@@ -40,11 +40,16 @@ Json ToJson(const Engine::Log::LogArgument &argument)
     using Engine::Log::ArgumentType;
     switch (argument.type)
     {
-    case ArgumentType::Signed: return argument.value.signedValue;
-    case ArgumentType::Unsigned: return argument.value.unsignedValue;
-    case ArgumentType::Floating: return argument.value.floatingValue;
-    case ArgumentType::Boolean: return argument.value.booleanValue;
-    case ArgumentType::Text: return argument.value.text;
+    case ArgumentType::Signed:
+        return argument.value.signedValue;
+    case ArgumentType::Unsigned:
+        return argument.value.unsignedValue;
+    case ArgumentType::Floating:
+        return argument.value.floatingValue;
+    case ArgumentType::Boolean:
+        return argument.value.booleanValue;
+    case ArgumentType::Text:
+        return argument.value.text;
     }
     return nullptr;
 }
@@ -124,13 +129,19 @@ ImVec4 LevelColor(Engine::Log::Level level)
     using Engine::Log::Level;
     switch (level)
     {
-    case Level::Trace: return ImVec4(0.60f, 0.62f, 0.66f, 1.0f);
-    case Level::Debug: return ImVec4(0.70f, 0.72f, 0.76f, 1.0f);
-    case Level::Info: return ImVec4(0.92f, 0.92f, 0.92f, 1.0f);
-    case Level::Warning: return ImVec4(1.0f, 0.82f, 0.20f, 1.0f);
+    case Level::Trace:
+        return ImVec4(0.60f, 0.62f, 0.66f, 1.0f);
+    case Level::Debug:
+        return ImVec4(0.70f, 0.72f, 0.76f, 1.0f);
+    case Level::Info:
+        return ImVec4(0.92f, 0.92f, 0.92f, 1.0f);
+    case Level::Warning:
+        return ImVec4(1.0f, 0.82f, 0.20f, 1.0f);
     case Level::Error:
-    case Level::Fatal: return ImVec4(1.0f, 0.30f, 0.30f, 1.0f);
-    default: return ImVec4(0.92f, 0.92f, 0.92f, 1.0f);
+    case Level::Fatal:
+        return ImVec4(1.0f, 0.30f, 0.30f, 1.0f);
+    default:
+        return ImVec4(0.92f, 0.92f, 0.92f, 1.0f);
     }
 }
 
@@ -154,13 +165,13 @@ void EditorConsoleSink::Push(const Engine::Log::LogRecord &record)
                     (record.event.function ? record.event.function : "");
     entry->message = record.text;
     entry->filterText = entry->message;
-    entry->filterText += " ";
+    entry->filterText += ' ';
     entry->filterText += Engine::Log::ToString(record.event.category);
-    entry->filterText += " ";
+    entry->filterText += ' ';
     entry->filterText += record.event.errorCode;
-    entry->filterText += " ";
+    entry->filterText += ' ';
     entry->filterText += entry->source;
-    entry->filterText += " ";
+    entry->filterText += ' ';
     entry->filterText += std::to_string(record.event.threadId);
 
     std::shared_ptr<const EditorConsoleEntry> retired;
@@ -270,7 +281,7 @@ bool EditorConsole::ConsumePauseRequest() noexcept
 }
 
 void EditorConsole::SetSimulationStateCallbacks(std::function<bool()> isPaused,
-                                               std::function<void(bool)> setPaused)
+                                                std::function<void(bool)> setPaused)
 {
     m_IsSimulationPaused = std::move(isPaused);
     m_SetSimulationPaused = std::move(setPaused);
@@ -297,8 +308,8 @@ void EditorConsole::UpdateAndRender(bool *isOpen)
             m_Sink->CopySnapshot(m_Snapshot);
             m_SnapshotGeneration = generation;
         }
-        const char *fileStatus = health.fileStatus == Engine::Log::FileSinkStatus::Ready    ? "ready"
-                                 : health.fileStatus == Engine::Log::FileSinkStatus::Failed ? "failed"
+        const char *fileStatus = health.fileStatus == Engine::Log::FileSinkStatus::Ready     ? "ready"
+                                 : health.fileStatus == Engine::Log::FileSinkStatus::Failed  ? "failed"
                                  : health.fileStatus == Engine::Log::FileSinkStatus::Opening ? "opening"
                                                                                              : "disabled";
         if (ImGui::Button(m_CapturePaused ? "Resume Capture" : "Pause Capture"))
@@ -327,13 +338,15 @@ void EditorConsole::UpdateAndRender(bool *isOpen)
                 m_SetSimulationPaused(false);
         }
 
-        ImGui::Text("Logger %s | queue %zu/%zu (high %zu) | drops %llu queue / %llu callbacks | sink errors %llu | callback errors %llu",
+        ImGui::Text("Logger %s | queue %zu/%zu (high %zu) | drops %llu queue / %llu callbacks | sink errors "
+                    "%llu | callback errors %llu",
                     fileStatus, health.queueDepth, health.queueCapacity, health.queueHighWaterMark,
                     static_cast<unsigned long long>(health.queueDroppedEvents),
                     static_cast<unsigned long long>(health.callbackDroppedEvents),
                     static_cast<unsigned long long>(health.fileFailedEvents),
                     static_cast<unsigned long long>(health.callbackFailedEvents));
-        ImGui::Text("Retained %zu/%zu | ring overwrites %llu | dropped while paused %llu | accepted/written %llu/%llu | breadcrumbs overwritten %llu",
+        ImGui::Text("Retained %zu/%zu | ring overwrites %llu | dropped while paused %llu | accepted/written "
+                    "%llu/%llu | breadcrumbs overwritten %llu",
                     m_Snapshot.size(), EditorConsoleSink::Capacity,
                     static_cast<unsigned long long>(m_Sink->OverwrittenEntries()),
                     static_cast<unsigned long long>(m_Sink->DroppedWhilePaused()),
@@ -346,20 +359,20 @@ void EditorConsole::UpdateAndRender(bool *isOpen)
         if (!health.lastSinkError.empty())
             ImGui::TextWrapped("Log sink: %s", health.lastSinkError.c_str());
 
-        constexpr const char *runtimeLevels[] = {"Trace", "Debug", "Info", "Warning", "Error", "Fatal", "None"};
+        constexpr const char *runtimeLevels[] = {"Trace", "Debug", "Info", "Warning",
+                                                 "Error", "Fatal", "None"};
         int runtimeLevel = static_cast<int>(m_RuntimeMinimumLevel);
-        if (ImGui::Combo("Runtime minimum", &runtimeLevel, runtimeLevels,
-                         7))
+        if (ImGui::Combo("Runtime minimum", &runtimeLevel, runtimeLevels, 7))
         {
             m_RuntimeMinimumLevel = static_cast<Engine::Log::Level>(runtimeLevel);
             Engine::Log::SetMinimumLevel(m_RuntimeMinimumLevel);
         }
-        constexpr const char *categoryNames[] = {"Core", "Editor", "Physics", "Render", "Backend",
-                                                  "Audio", "ECS", "Network", "Asset", "Diagnostics"};
+        constexpr const char *categoryNames[] = {"Core",  "Editor", "Physics", "Render", "Backend",
+                                                 "Audio", "ECS",    "Network", "Asset",  "Diagnostics"};
         constexpr Engine::Log::Category categories[] = {
-            Engine::Log::Category::Core, Engine::Log::Category::Editor, Engine::Log::Category::Physics,
-            Engine::Log::Category::Render, Engine::Log::Category::Backend, Engine::Log::Category::Audio,
-            Engine::Log::Category::ECS, Engine::Log::Category::Network, Engine::Log::Category::Asset,
+            Engine::Log::Category::Core,       Engine::Log::Category::Editor,  Engine::Log::Category::Physics,
+            Engine::Log::Category::Render,     Engine::Log::Category::Backend, Engine::Log::Category::Audio,
+            Engine::Log::Category::ECS,        Engine::Log::Category::Network, Engine::Log::Category::Asset,
             Engine::Log::Category::Diagnostics};
         if (ImGui::Combo("Runtime category", &m_RuntimeCategoryIndex, categoryNames, 10))
             m_RuntimeCategoryMinimumLevel =
@@ -414,16 +427,17 @@ void EditorConsole::UpdateAndRender(bool *isOpen)
         if (m_TimeRangeEnabled)
         {
             constexpr const char *timeRanges[] = {"1 sec", "5 sec", "30 sec", "5 min"};
-            int timeRangeIndex = m_TimeRangeSeconds == 1 ? 0 : (m_TimeRangeSeconds == 5 ? 1 :
-                                  (m_TimeRangeSeconds == 30 ? 2 : 3));
+            int timeRangeIndex = m_TimeRangeSeconds == 1
+                                     ? 0
+                                     : (m_TimeRangeSeconds == 5 ? 1 : (m_TimeRangeSeconds == 30 ? 2 : 3));
             ImGui::SameLine();
             if (ImGui::Combo("##TimeRange", &timeRangeIndex, timeRanges, 4))
-                m_TimeRangeSeconds = timeRangeIndex == 0 ? 1 : (timeRangeIndex == 1 ? 5 :
-                                    (timeRangeIndex == 2 ? 30 : 300));
+                m_TimeRangeSeconds =
+                    timeRangeIndex == 0 ? 1 : (timeRangeIndex == 1 ? 5 : (timeRangeIndex == 2 ? 30 : 300));
         }
 
-        constexpr const char *quickFilters[] = {"All", "Errors", "Current frame", "Backend",
-                                                 "Asset operation", "Recent regression"};
+        constexpr const char *quickFilters[] = {"All",     "Errors",          "Current frame",
+                                                "Backend", "Asset operation", "Recent regression"};
         ImGui::SetNextItemWidth(170.0f);
         ImGui::Combo("Quick filter", &m_QuickFilter, quickFilters, 6);
 
@@ -441,14 +455,13 @@ void EditorConsole::UpdateAndRender(bool *isOpen)
         std::array<size_t, 6> levelCounts{};
         std::array<size_t, Engine::Log::CategoryCount> categoryCounts{};
         const uint64_t currentFrame = m_CurrentFrameProvider ? m_CurrentFrameProvider() : UINT64_MAX;
-        const uint64_t nowMonotonicNs = static_cast<uint64_t>(
-            std::chrono::duration_cast<std::chrono::nanoseconds>(
-                std::chrono::steady_clock::now().time_since_epoch()).count());
+        const uint64_t nowMonotonicNs =
+            static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                      std::chrono::steady_clock::now().time_since_epoch())
+                                      .count());
         const uint64_t timeRangeNs = static_cast<uint64_t>(m_TimeRangeSeconds) * 1'000'000'000ULL;
-        const uint64_t oldestTimeNs = m_TimeRangeEnabled && nowMonotonicNs >
-                                                       timeRangeNs
-                                           ? nowMonotonicNs - timeRangeNs
-                                           : 0;
+        const uint64_t oldestTimeNs =
+            m_TimeRangeEnabled && nowMonotonicNs > timeRangeNs ? nowMonotonicNs - timeRangeNs : 0;
         for (const auto &entry : m_Snapshot)
         {
             if (!entry)
@@ -464,13 +477,13 @@ void EditorConsole::UpdateAndRender(bool *isOpen)
                 categoryIndex >= m_VisibleCategories.size() || !m_VisibleCategories[categoryIndex] ||
                 !m_Filter.PassFilter(entry->filterText.c_str()))
                 continue;
-            if (m_ErrorCodeFilter[0] && std::string_view(entry->event.errorCode).find(m_ErrorCodeFilter) ==
-                                             std::string_view::npos)
+            if (m_ErrorCodeFilter[0] &&
+                std::string_view(entry->event.errorCode).find(m_ErrorCodeFilter) == std::string_view::npos)
                 continue;
             if (m_SourceFilter[0] && entry->source.find(m_SourceFilter) == std::string::npos)
                 continue;
-            if (m_ThreadFilter[0] && std::to_string(entry->event.threadId).find(m_ThreadFilter) ==
-                                         std::string::npos)
+            if (m_ThreadFilter[0] &&
+                std::to_string(entry->event.threadId).find(m_ThreadFilter) == std::string::npos)
                 continue;
             if (m_FrameRangeEnabled && (entry->event.frameIndex < m_FrameRangeMinimum ||
                                         entry->event.frameIndex > m_FrameRangeMaximum))
@@ -508,7 +521,8 @@ void EditorConsole::UpdateAndRender(bool *isOpen)
         if (ImGui::Button("Export visible JSONL"))
         {
             m_ExportError.clear();
-            const auto path = EditorPlatform::ChooseLogExportFile(std::filesystem::current_path() / "logs.jsonl");
+            const auto path =
+                EditorPlatform::ChooseLogExportFile(std::filesystem::current_path() / "logs.jsonl");
             if (path)
             {
                 std::ofstream output(*path, std::ios::out | std::ios::trunc);
@@ -536,18 +550,19 @@ void EditorConsole::UpdateAndRender(bool *isOpen)
                         {"capture_paused", m_CapturePaused},
                         {"dropped_while_paused", m_Sink->DroppedWhilePaused()},
                         {"ring_overwritten_entries", m_Sink->OverwrittenEntries()},
-                        {"logger_health", {{"file_status", fileStatus},
-                                            {"jsonl_path", health.jsonlPath.generic_string()},
-                                            {"breadcrumb_path", health.breadcrumbPath.generic_string()},
-                                            {"accepted", health.acceptedEvents},
-                                            {"written", health.writtenEvents},
-                                            {"queue_depth", health.queueDepth},
-                                            {"queue_capacity", health.queueCapacity},
-                                            {"queue_dropped", health.queueDroppedEvents},
-                                            {"callback_dropped", health.callbackDroppedEvents},
-                                            {"file_failures", health.fileFailedEvents},
-                                            {"callback_failures", health.callbackFailedEvents},
-                                            {"last_sink_error", health.lastSinkError}}},
+                        {"logger_health",
+                         {{"file_status", fileStatus},
+                          {"jsonl_path", health.jsonlPath.generic_string()},
+                          {"breadcrumb_path", health.breadcrumbPath.generic_string()},
+                          {"accepted", health.acceptedEvents},
+                          {"written", health.writtenEvents},
+                          {"queue_depth", health.queueDepth},
+                          {"queue_capacity", health.queueCapacity},
+                          {"queue_dropped", health.queueDroppedEvents},
+                          {"callback_dropped", health.callbackDroppedEvents},
+                          {"file_failures", health.fileFailedEvents},
+                          {"callback_failures", health.callbackFailedEvents},
+                          {"last_sink_error", health.lastSinkError}}},
                         {"recent_records", Json::array()}};
             const std::vector<Engine::Log::LogRecord> breadcrumbs = Engine::Log::GetRecentRecords();
             const size_t bundleStart = breadcrumbs.size() > 200 ? breadcrumbs.size() - 200 : 0;
@@ -674,7 +689,8 @@ void EditorConsole::UpdateAndRender(bool *isOpen)
                             }
                             if (ImGui::MenuItem("Copy source reference"))
                                 ImGui::SetClipboardText((std::string(event.file ? event.file : "") + ":" +
-                                                         std::to_string(event.line)).c_str());
+                                                         std::to_string(event.line))
+                                                            .c_str());
                             if (ImGui::MenuItem("Open source file") && event.file)
                                 EditorPlatform::OpenSourceFile(event.file);
                             ImGui::EndPopup();
@@ -730,15 +746,15 @@ void EditorConsole::UpdateAndRender(bool *isOpen)
             ImGui::SameLine();
             if (ImGui::Button("Copy file:line"))
                 ImGui::SetClipboardText((std::string(entry.event.file ? entry.event.file : "") + ":" +
-                                         std::to_string(entry.event.line)).c_str());
+                                         std::to_string(entry.event.line))
+                                            .c_str());
             ImGui::SameLine();
             if (ImGui::Button("Open source file") && entry.event.file)
                 EditorPlatform::OpenSourceFile(entry.event.file);
             Json details = ToJson(entry.event, entry.message);
             if (m_RedactPaths)
                 RedactJsonStrings(details);
-            ImGui::BeginChild("LogDetails", ImVec2(0.0f, 160.0f), true,
-                              ImGuiWindowFlags_HorizontalScrollbar);
+            ImGui::BeginChild("LogDetails", ImVec2(0.0f, 160.0f), true, ImGuiWindowFlags_HorizontalScrollbar);
             ImGui::TextUnformatted(details.dump(2).c_str());
             ImGui::EndChild();
         }

@@ -269,9 +269,8 @@ void HierarchyPanel::DrawAddObjectModal()
         if (ImGui::Button("Add selected model", ImVec2(-1.0f, 0.0f)))
         {
             const auto &model = m_Models[static_cast<size_t>(m_SelectedModelIndex)];
-            auto request =
-                std::make_unique<AddModelRequestedEvent>(model.guid, m_SpawnPosition, m_SpawnScale,
-                                                         m_SpawnName);
+            auto request = std::make_unique<AddModelRequestedEvent>(model.guid, m_SpawnPosition, m_SpawnScale,
+                                                                    m_SpawnName);
             m_PendingCreation = request->GetCreationResult();
             m_CreationError.clear();
             EmitEvent(std::move(request));
@@ -309,10 +308,9 @@ void HierarchyPanel::DrawAddObjectModal()
             break;
         }
 
-        auto request =
-            std::make_unique<AddObjectRequestedEvent>(shape, m_SpawnPosition, m_SpawnScale, m_SpawnColor,
-                                                      m_SpawnEmissive, m_SpawnMetallic, m_SpawnRoughness,
-                                                      m_SpawnName);
+        auto request = std::make_unique<AddObjectRequestedEvent>(
+            shape, m_SpawnPosition, m_SpawnScale, m_SpawnColor, m_SpawnEmissive, m_SpawnMetallic,
+            m_SpawnRoughness, m_SpawnName);
         m_PendingCreation = request->GetCreationResult();
         m_CreationError.clear();
         EmitEvent(std::move(request));

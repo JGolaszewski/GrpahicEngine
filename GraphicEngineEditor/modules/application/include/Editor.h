@@ -97,8 +97,7 @@ class Editor : public Engine::Application
     void ReimportAsset(const std::string &guid);
     void ReassignModel(Engine::EntityId entityId, const std::string &guid);
     bool AddModelToScene(const std::string &guid, const DirectX::XMFLOAT3 &position,
-                         const DirectX::XMFLOAT3 &scale, std::string &error,
-                         const std::string &name = {});
+                         const DirectX::XMFLOAT3 &scale, std::string &error, const std::string &name = {});
     bool CommitCreatedEntity(const std::shared_ptr<::Engine::Renderer::Entity> &entity, std::string &error);
     struct SelectionSnapshot
     {

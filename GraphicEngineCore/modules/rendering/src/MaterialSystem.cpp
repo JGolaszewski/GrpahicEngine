@@ -1,13 +1,17 @@
-#include "rendering/include/renderer/MaterialSystem.h"
+#include "MaterialSystem.h"
+
+#include "MaterialBackend.h"
+#include "TextureBackend.h"
 
 #include <algorithm>
+#include <utility>
 
 namespace Engine::Renderer
 {
 MaterialSystem::MaterialSystem(nvrhi::IDevice *device, nvrhi::ShaderHandle standardVS,
                                nvrhi::ShaderHandle standardPS, std::shared_ptr<TextureResource> fallbackColor,
                                std::shared_ptr<TextureResource> fallbackNormal)
-    : m_Device(device), m_StandardVS(standardVS), m_StandardPS(standardPS),
+    : m_Device(device), m_StandardVS(std::move(standardVS)), m_StandardPS(std::move(standardPS)),
       m_FallbackColor(std::move(fallbackColor)), m_FallbackNormal(std::move(fallbackNormal))
 {
     nvrhi::BindingLayoutDesc layoutDesc;
@@ -15,10 +19,11 @@ MaterialSystem::MaterialSystem(nvrhi::IDevice *device, nvrhi::ShaderHandle stand
     layoutDesc.bindings = {nvrhi::BindingLayoutItem::ConstantBuffer(1),
                            nvrhi::BindingLayoutItem::Texture_SRV(0), nvrhi::BindingLayoutItem::Sampler(0),
                            nvrhi::BindingLayoutItem::Texture_SRV(1), nvrhi::BindingLayoutItem::Sampler(1)};
-    layoutDesc.bindings.insert(layoutDesc.bindings.end(), {
-        nvrhi::BindingLayoutItem::Texture_SRV(2), nvrhi::BindingLayoutItem::Sampler(2),
-        nvrhi::BindingLayoutItem::Texture_SRV(4), nvrhi::BindingLayoutItem::Sampler(4),
-        nvrhi::BindingLayoutItem::Texture_SRV(5), nvrhi::BindingLayoutItem::Sampler(5)});
+    layoutDesc.bindings.insert(
+        layoutDesc.bindings.end(),
+        {nvrhi::BindingLayoutItem::Texture_SRV(2), nvrhi::BindingLayoutItem::Sampler(2),
+         nvrhi::BindingLayoutItem::Texture_SRV(4), nvrhi::BindingLayoutItem::Sampler(4),
+         nvrhi::BindingLayoutItem::Texture_SRV(5), nvrhi::BindingLayoutItem::Sampler(5)});
     m_StandardLayout = m_Device->createBindingLayout(layoutDesc);
 }
 
@@ -45,8 +50,8 @@ bool MaterialSystem::RegisterMaterial(std::shared_ptr<Material> material)
     bufferDesc.isConstantBuffer = true;
     bufferDesc.isVolatile = false;
     bufferDesc.debugName = "Material_ConstantBuffer";
-    material->m_ConstantBuffer = m_Device->createBuffer(bufferDesc);
-    if (!material->m_ConstantBuffer)
+    MaterialBackendAccess::SetConstantBuffer(*material, m_Device->createBuffer(bufferDesc));
+    if (!MaterialBackendAccess::GetConstantBuffer(*material))
     {
         return false;
     }
@@ -60,26 +65,31 @@ bool MaterialSystem::RegisterMaterial(std::shared_ptr<Material> material)
     material->m_DefaultNormalTexture = m_FallbackNormal;
     material->m_HasTextureOverrides = false;
     nvrhi::BindingSetDesc setDesc;
-    setDesc.bindings = {nvrhi::BindingSetItem::ConstantBuffer(1, material->m_ConstantBuffer),
-                        nvrhi::BindingSetItem::Texture_SRV(0, material->m_BaseColorTexture->Texture),
-                        nvrhi::BindingSetItem::Sampler(0, material->m_BaseColorTexture->Sampler),
-                        nvrhi::BindingSetItem::Texture_SRV(1, material->m_NormalTexture->Texture),
-                        nvrhi::BindingSetItem::Sampler(1, material->m_NormalTexture->Sampler),
-                        nvrhi::BindingSetItem::Texture_SRV(2, material->m_MetallicRoughnessTexture->Texture),
-                        nvrhi::BindingSetItem::Sampler(2, material->m_MetallicRoughnessTexture->Sampler),
-                        nvrhi::BindingSetItem::Texture_SRV(4, material->m_OcclusionTexture->Texture),
-                        nvrhi::BindingSetItem::Sampler(4, material->m_OcclusionTexture->Sampler),
-                        nvrhi::BindingSetItem::Texture_SRV(5, material->m_EmissiveTexture->Texture),
-                        nvrhi::BindingSetItem::Sampler(5, material->m_EmissiveTexture->Sampler)};
-    material->m_BindingSet = m_Device->createBindingSet(setDesc, m_StandardLayout);
-    if (!material->m_BindingSet)
+    setDesc.bindings = {
+        nvrhi::BindingSetItem::ConstantBuffer(1, MaterialBackendAccess::GetConstantBuffer(*material)),
+        nvrhi::BindingSetItem::Texture_SRV(0,
+                                           TextureBackendAccess::GetTexture(*material->m_BaseColorTexture)),
+        nvrhi::BindingSetItem::Sampler(0, TextureBackendAccess::GetSampler(*material->m_BaseColorTexture)),
+        nvrhi::BindingSetItem::Texture_SRV(1, TextureBackendAccess::GetTexture(*material->m_NormalTexture)),
+        nvrhi::BindingSetItem::Sampler(1, TextureBackendAccess::GetSampler(*material->m_NormalTexture)),
+        nvrhi::BindingSetItem::Texture_SRV(
+            2, TextureBackendAccess::GetTexture(*material->m_MetallicRoughnessTexture)),
+        nvrhi::BindingSetItem::Sampler(
+            2, TextureBackendAccess::GetSampler(*material->m_MetallicRoughnessTexture)),
+        nvrhi::BindingSetItem::Texture_SRV(4,
+                                           TextureBackendAccess::GetTexture(*material->m_OcclusionTexture)),
+        nvrhi::BindingSetItem::Sampler(4, TextureBackendAccess::GetSampler(*material->m_OcclusionTexture)),
+        nvrhi::BindingSetItem::Texture_SRV(5, TextureBackendAccess::GetTexture(*material->m_EmissiveTexture)),
+        nvrhi::BindingSetItem::Sampler(5, TextureBackendAccess::GetSampler(*material->m_EmissiveTexture))};
+    MaterialBackendAccess::SetBindingSet(*material, m_Device->createBindingSet(setDesc, m_StandardLayout));
+    if (!MaterialBackendAccess::GetBindingSet(*material))
     {
-        material->m_ConstantBuffer = nullptr;
+        MaterialBackendAccess::SetConstantBuffer(*material, nullptr);
         return false;
     }
     material->m_IsDirty = true;
 
-    m_ActiveMaterials.push_back(std::move(material));
+    m_ActiveMaterials.push_back(material);
     return true;
 }
 
@@ -102,10 +112,10 @@ void MaterialSystem::UpdateDirtyMaterials(nvrhi::ICommandList *commandList)
     {
         if (const auto material = it->lock())
         {
-            if (material->IsDirty() && material->m_ConstantBuffer)
+            if (material->IsDirty() && MaterialBackendAccess::GetConstantBuffer(*material))
             {
-                commandList->writeBuffer(material->m_ConstantBuffer, &material->m_Constants,
-                                         sizeof(MaterialGpu));
+                commandList->writeBuffer(MaterialBackendAccess::GetConstantBuffer(*material),
+                                         &material->m_Constants, sizeof(MaterialGpu));
                 material->ClearDirtyFlag();
             }
             ++it;
@@ -149,27 +159,33 @@ bool MaterialSystem::SetPbrTextureBindings(const std::shared_ptr<Material> &mate
                                            std::shared_ptr<TextureResource> emissive,
                                            bool setImportedDefaults)
 {
-    if (!material || !material->m_ConstantBuffer || !m_Device || !m_StandardLayout)
+    if (!material || !MaterialBackendAccess::GetConstantBuffer(*material) || !m_Device || !m_StandardLayout)
         return false;
-    if (!baseColor) baseColor = m_FallbackColor;
-    if (!normal) normal = m_FallbackNormal;
-    if (!metallicRoughness) metallicRoughness = m_FallbackColor;
-    if (!occlusion) occlusion = m_FallbackColor;
-    if (!emissive) emissive = m_FallbackColor;
+    if (!baseColor)
+        baseColor = m_FallbackColor;
+    if (!normal)
+        normal = m_FallbackNormal;
+    if (!metallicRoughness)
+        metallicRoughness = m_FallbackColor;
+    if (!occlusion)
+        occlusion = m_FallbackColor;
+    if (!emissive)
+        emissive = m_FallbackColor;
     if (!baseColor || !normal || !metallicRoughness || !occlusion || !emissive)
         return false;
     nvrhi::BindingSetDesc setDesc;
-    setDesc.bindings = {nvrhi::BindingSetItem::ConstantBuffer(1, material->m_ConstantBuffer),
-                        nvrhi::BindingSetItem::Texture_SRV(0, baseColor->Texture),
-                        nvrhi::BindingSetItem::Sampler(0, baseColor->Sampler),
-                        nvrhi::BindingSetItem::Texture_SRV(1, normal->Texture),
-                        nvrhi::BindingSetItem::Sampler(1, normal->Sampler),
-                        nvrhi::BindingSetItem::Texture_SRV(2, metallicRoughness->Texture),
-                        nvrhi::BindingSetItem::Sampler(2, metallicRoughness->Sampler),
-                        nvrhi::BindingSetItem::Texture_SRV(4, occlusion->Texture),
-                        nvrhi::BindingSetItem::Sampler(4, occlusion->Sampler),
-                        nvrhi::BindingSetItem::Texture_SRV(5, emissive->Texture),
-                        nvrhi::BindingSetItem::Sampler(5, emissive->Sampler)};
+    setDesc.bindings = {
+        nvrhi::BindingSetItem::ConstantBuffer(1, MaterialBackendAccess::GetConstantBuffer(*material)),
+        nvrhi::BindingSetItem::Texture_SRV(0, TextureBackendAccess::GetTexture(*baseColor)),
+        nvrhi::BindingSetItem::Sampler(0, TextureBackendAccess::GetSampler(*baseColor)),
+        nvrhi::BindingSetItem::Texture_SRV(1, TextureBackendAccess::GetTexture(*normal)),
+        nvrhi::BindingSetItem::Sampler(1, TextureBackendAccess::GetSampler(*normal)),
+        nvrhi::BindingSetItem::Texture_SRV(2, TextureBackendAccess::GetTexture(*metallicRoughness)),
+        nvrhi::BindingSetItem::Sampler(2, TextureBackendAccess::GetSampler(*metallicRoughness)),
+        nvrhi::BindingSetItem::Texture_SRV(4, TextureBackendAccess::GetTexture(*occlusion)),
+        nvrhi::BindingSetItem::Sampler(4, TextureBackendAccess::GetSampler(*occlusion)),
+        nvrhi::BindingSetItem::Texture_SRV(5, TextureBackendAccess::GetTexture(*emissive)),
+        nvrhi::BindingSetItem::Sampler(5, TextureBackendAccess::GetSampler(*emissive))};
     auto bindings = m_Device->createBindingSet(setDesc, m_StandardLayout);
     if (!bindings)
         return false;
@@ -183,12 +199,11 @@ bool MaterialSystem::SetPbrTextureBindings(const std::shared_ptr<Material> &mate
         material->m_DefaultBaseColorTexture = material->m_BaseColorTexture;
         material->m_DefaultNormalTexture = material->m_NormalTexture;
     }
-    material->m_HasTextureOverrides = material->m_BaseColorTexture != m_FallbackColor ||
-                                      material->m_NormalTexture != m_FallbackNormal ||
-                                      material->m_MetallicRoughnessTexture != m_FallbackColor ||
-                                      material->m_OcclusionTexture != m_FallbackColor ||
-                                      material->m_EmissiveTexture != m_FallbackColor;
-    material->m_BindingSet = std::move(bindings);
+    material->m_HasTextureOverrides =
+        material->m_BaseColorTexture != m_FallbackColor || material->m_NormalTexture != m_FallbackNormal ||
+        material->m_MetallicRoughnessTexture != m_FallbackColor ||
+        material->m_OcclusionTexture != m_FallbackColor || material->m_EmissiveTexture != m_FallbackColor;
+    MaterialBackendAccess::SetBindingSet(*material, std::move(bindings));
     return true;
 }
 

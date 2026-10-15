@@ -78,8 +78,8 @@ GLFWWindow::GLFWWindow(int width, int height, const char *title)
                               health.jsonlPath.generic_string(), health.lastSinkError);
     }
 #endif
-    ENGINE_LOG_INFO("Core", "GLFW window initialization started | width: {} | height: {} | title: {}",
-                    width, height, title ? title : "<null>");
+    ENGINE_LOG_INFO("Core", "GLFW window initialization started | width: {} | height: {} | title: {}", width,
+                    height, title ? title : "<null>");
     if (!glfwInit())
     {
         ENGINE_LOG_ERROR("Core", "GLFW initialization failed | width: {} | height: {}", width, height);
@@ -95,8 +95,8 @@ GLFWWindow::GLFWWindow(int width, int height, const char *title)
 
     if (!m_Window)
     {
-        ENGINE_LOG_ERROR("Core", "GLFW window creation failed | width: {} | height: {} | title: {}",
-                         width, height, title ? title : "<null>");
+        ENGINE_LOG_ERROR("Core", "GLFW window creation failed | width: {} | height: {} | title: {}", width,
+                         height, title ? title : "<null>");
         glfwTerminate();
         return;
     }

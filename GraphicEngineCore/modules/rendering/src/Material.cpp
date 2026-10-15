@@ -1,17 +1,85 @@
 #include "rendering/include/renderer/Material.h"
 
-#include <cstring>
+#include "MaterialBackend.h"
+
+#include <iterator>
+#include <utility>
 
 namespace Engine::Renderer
 {
-Material::Material(uint32_t materialID) : m_MaterialID(materialID), m_Constants(BuildMaterialGpu({}))
+struct Material::GpuState
+{
+    nvrhi::BufferHandle ConstantBuffer;
+    nvrhi::BindingSetHandle BindingSet;
+};
+
+Material::~Material() = default;
+
+nvrhi::BufferHandle MaterialBackendAccess::GetConstantBuffer(const Material &material)
+{
+    return material.m_GpuState->ConstantBuffer;
+}
+
+void MaterialBackendAccess::SetConstantBuffer(Material &material, nvrhi::BufferHandle buffer)
+{
+    material.m_GpuState->ConstantBuffer = std::move(buffer);
+}
+
+nvrhi::BindingSetHandle MaterialBackendAccess::GetBindingSet(const Material &material)
+{
+    return material.m_GpuState->BindingSet;
+}
+
+void MaterialBackendAccess::SetBindingSet(Material &material, nvrhi::BindingSetHandle bindingSet)
+{
+    material.m_GpuState->BindingSet = std::move(bindingSet);
+}
+
+namespace
+{
+bool Equal(const DirectX::XMFLOAT4 &left, const DirectX::XMFLOAT4 &right)
+{
+    return left.x == right.x && left.y == right.y && left.z == right.z && left.w == right.w;
+}
+
+bool Equal(const DirectX::XMUINT4 &left, const DirectX::XMUINT4 &right)
+{
+    return left.x == right.x && left.y == right.y && left.z == right.z && left.w == right.w;
+}
+
+bool Equal(const MaterialGpu &left, const MaterialGpu &right)
+{
+    if (!Equal(left.BaseColor, right.BaseColor) || !Equal(left.EmissiveMetallic, right.EmissiveMetallic) ||
+        !Equal(left.SurfaceParams, right.SurfaceParams) ||
+        !Equal(left.SpecularParams, right.SpecularParams) || !Equal(left.ModelFlags, right.ModelFlags) ||
+        !Equal(left.AlphaParams, right.AlphaParams) ||
+        !Equal(left.TextureCoordinates0, right.TextureCoordinates0) ||
+        !Equal(left.TextureCoordinates1, right.TextureCoordinates1) ||
+        !Equal(left.TextureParams, right.TextureParams))
+    {
+        return false;
+    }
+    for (size_t index = 0; index < std::size(left.TextureTransformRows); ++index)
+    {
+        if (!Equal(left.TextureTransformRows[index], right.TextureTransformRows[index]) ||
+            !Equal(left.TextureTransformOffsets[index], right.TextureTransformOffsets[index]))
+        {
+            return false;
+        }
+    }
+    return true;
+}
+} // namespace
+
+Material::Material(uint32_t materialID)
+    : m_MaterialID(materialID), m_GpuState(std::make_unique<GpuState>()), m_Constants(BuildMaterialGpu({}))
 {
 }
 
 void Material::SetProperties(const MaterialProperties &properties)
 {
     const MaterialGpu constants = BuildMaterialGpu(properties);
-    if (std::memcmp(&constants, &m_Constants, sizeof(MaterialGpu)) != 0)
+    if (!Equal(constants, m_Constants))
     {
         m_Constants = constants;
         m_IsDirty = true;
@@ -79,9 +147,8 @@ MaterialProperties Material::GetProperties() const
         auto &transform = properties.TextureTransforms[i];
         transform.Offset = {offset.x, offset.y};
         transform.Scale.x = std::sqrt(rows.x * rows.x + rows.z * rows.z);
-        transform.Scale.y = transform.Scale.x > 0.0f
-                                ? (rows.x * rows.w - rows.y * rows.z) / transform.Scale.x
-                                : 0.0f;
+        transform.Scale.y =
+            transform.Scale.x > 0.0f ? (rows.x * rows.w - rows.y * rows.z) / transform.Scale.x : 0.0f;
         transform.Rotation = std::atan2(rows.z, rows.x);
     }
     return properties;

@@ -1,0 +1,133 @@
+**********************************************************************
+** Visual Studio 2026 Developer Command Prompt v18.9.1
+** Copyright (c) 2026 Microsoft Corporation
+**********************************************************************
+-- Running vcpkg install
+Fetching registry information from https://github.com/microsoft/vcpkg (HEAD)...
+Detecting compiler hash for triplet x64-windows...
+Compiler found: C:/Program Files/Microsoft Visual Studio/18/Enterprise/VC/Tools/MSVC/14.51.36231/bin/Hostx64/x64/cl.exe
+The following packages will be built and installed:
+    directxmath:x64-windows@2026-03-12 -- git+https://github.com/microsoft/vcpkg@28b3a14bbce32017e2f630c0558ddbdd23fb4c85
+    glfw3:x64-windows@3.4#1 -- git+https://github.com/microsoft/vcpkg@d4bbd4f27c2ca619f57778985120cddcedadb1cc
+    gtest:x64-windows@1.17.0#3 -- git+https://github.com/microsoft/vcpkg@dab84cf3bb50ef2ca3e0b0212c1d55e9e05a75bc
+    nlohmann-json:x64-windows@3.12.0#2 -- git+https://github.com/microsoft/vcpkg@ac3b8821cf486e45dd543bef2a4ba1d1ba230258
+    stb:x64-windows@2024-07-29#1 -- git+https://github.com/microsoft/vcpkg@c362152d1d02973e7b1ce777960f8a6876656560
+    tinygltf:x64-windows@3.0.0#1 -- git+https://github.com/microsoft/vcpkg@9c983959bc083131a4f5ca06ea51178a3e5a04b1
+  * vcpkg-cmake:x64-windows@2024-04-23 -- git+https://github.com/microsoft/vcpkg@e74aa1e8f93278a8e71372f1fa08c3df420eb840
+  * vcpkg-cmake-config:x64-windows@2026-07-21 -- git+https://github.com/microsoft/vcpkg@51befcb03097f8d19c1c59f9ec3625e69d85322a
+Additional packages (*) will be modified to complete this operation.
+Restored 8 package(s) from C:\Users\jgolasz\AppData\Local\vcpkg\archives in 259 ms. Use --debug to see more details.
+Installing 1/8 vcpkg-cmake-config:x64-windows@2026-07-21...
+vcpkg-cmake-config:x64-windows@2026-07-21 package ABI: 9860d21c43440b9fe07808c94b5c9d67a186bb009f7b51cc1aad7e9660dfc77d
+Elapsed time to handle vcpkg-cmake-config:x64-windows: 49.2 ms
+Installing 2/8 vcpkg-cmake:x64-windows@2024-04-23...
+vcpkg-cmake:x64-windows@2024-04-23 package ABI: 18e76365ca28fc4fca4ad0f8031ca0a9e1f2c7fd40a8081daf7c059ca08dec90
+Elapsed time to handle vcpkg-cmake:x64-windows: 77.7 ms
+Installing 3/8 directxmath:x64-windows@2026-03-12...
+directxmath:x64-windows@2026-03-12 package ABI: c1736ad6dd511ea10acf9948144edaa261dd9024322908350749e5def6380a69
+Elapsed time to handle directxmath:x64-windows: 120 ms
+Installing 4/8 glfw3:x64-windows@3.4#1...
+glfw3:x64-windows@3.4#1 package ABI: ddf9a13e612cc0771b990e435a2bf434abae40b519b582caaa6681e9454e9be5
+Elapsed time to handle glfw3:x64-windows: 76.5 ms
+Installing 5/8 gtest:x64-windows@1.17.0#3...
+gtest:x64-windows@1.17.0#3 package ABI: a596e2e9d5af55ceeecaacd86a4bdbb4f31411f07958599a536bb0ee000c338b
+Elapsed time to handle gtest:x64-windows: 107 ms
+Installing 6/8 nlohmann-json:x64-windows@3.12.0#2...
+nlohmann-json:x64-windows@3.12.0#2 package ABI: 2e97bf211f5ad73ba9649d2512e0289bb29c73da4f1ba8b2ed2a828948eb07a4
+Elapsed time to handle nlohmann-json:x64-windows: 109 ms
+Installing 7/8 stb:x64-windows@2024-07-29#1...
+stb:x64-windows@2024-07-29#1 package ABI: f9b0166341056cbf347f49910f34fb53fcd38548a497eda1d77560a41550a4fc
+Elapsed time to handle stb:x64-windows: 161 ms
+Installing 8/8 tinygltf:x64-windows@3.0.0#1...
+tinygltf:x64-windows@3.0.0#1 package ABI: 15f59aecdabd739b997f3610ec33c4184cb6de2422c3a6a97a4ee305be6b427c
+Elapsed time to handle tinygltf:x64-windows: 42.6 ms
+Installed contents are licensed to you by owners. Microsoft is not responsible for, nor does it grant any licenses to, third-party packages.
+Packages installed in this vcpkg installation declare the following licenses:
+(MIT OR CC-PDDC)
+BSD-3-Clause
+BSL-1.0
+MIT
+Zlib
+The DirectXMath package provides CMake targets:
+
+    find_package(directxmath CONFIG REQUIRED)
+    target_link_libraries(main PRIVATE Microsoft::DirectXMath)
+
+glfw3 provides CMake targets:
+
+  # this is heuristically generated, and may not be correct
+  find_package(glfw3 CONFIG REQUIRED)
+  target_link_libraries(main PRIVATE glfw)
+
+glfw3 provides pkg-config modules:
+
+  # A multi-platform library for OpenGL, window and input
+  glfw3
+
+The package gtest is compatible with built-in CMake targets:
+
+    enable_testing()
+
+    find_package(GTest CONFIG REQUIRED)
+    target_link_libraries(main PRIVATE GTest::gtest GTest::gtest_main GTest::gmock GTest::gmock_main)
+
+    add_test(AllTestsInMain main)
+
+The package nlohmann-json provides CMake targets:
+
+    find_package(nlohmann_json CONFIG REQUIRED)
+    target_link_libraries(main PRIVATE nlohmann_json::nlohmann_json)
+
+The package nlohmann-json can be configured to not provide implicit conversions via a custom triplet file:
+
+    set(nlohmann-json_IMPLICIT_CONVERSIONS OFF)
+
+For more information, see the docs here:
+
+    https://json.nlohmann.me/api/macros/json_use_implicit_conversions/
+
+The package stb provides CMake targets:
+
+    find_package(Stb REQUIRED)
+    target_include_directories(main PRIVATE ${Stb_INCLUDE_DIR})
+tinygltf is header-only and can be used from CMake via:
+
+  find_path(TINYGLTF_INCLUDE_DIRS "tiny_gltf.h")
+  target_include_directories(main PRIVATE ${TINYGLTF_INCLUDE_DIRS})
+
+All requested installations completed successfully in: 749 ms
+-- Running vcpkg install - done
+-- The C compiler identification is MSVC 19.51.36256.0
+-- The CXX compiler identification is MSVC 19.51.36256.0
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Check for working C compiler: C:/Program Files/Microsoft Visual Studio/18/Enterprise/VC/Tools/MSVC/14.51.36231/bin/Hostx64/x64/cl.exe - skipped
+-- Detecting C compile features
+-- Detecting C compile features - done
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: C:/Program Files/Microsoft Visual Studio/18/Enterprise/VC/Tools/MSVC/14.51.36231/bin/Hostx64/x64/cl.exe - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Failed
+-- Looking for pthread_create in pthreads
+-- Looking for pthread_create in pthreads - not found
+-- Looking for pthread_create in pthread
+-- Looking for pthread_create in pthread - not found
+-- Found Threads: TRUE
+-- Found nlohmann_json: C:/Users/jgolasz/.codex/worktrees/refactor-integration/GrpahicEngine/out/build/x64-debug-clean/vcpkg_installed/x64-windows/share/nlohmann_json/nlohmann_jsonConfig.cmake (found version "3.12.0")
+CMake Warning (dev) at C:/Program Files/Microsoft Visual Studio/18/Enterprise/Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/share/cmake-4.3/Modules/CMakeDependentOption.cmake:236 (option):
+  Policy CMP0077 is not set: option() honors normal variables.  Run "cmake
+  --help-policy CMP0077" for policy details.  Use the cmake_policy command to
+  set the policy and suppress this warning.
+
+  For compatibility with older versions of CMake, option is clearing the
+  normal variable 'NVRHI_WITH_DX11'.
+Call Stack (most recent call first):
+  vendor/nvrhi/CMakeLists.txt:42 (cmake_dependent_option)
+This warning is for project developers.  Use -Wno-dev to suppress it.
+
+-- Configuring done (10.2s)
+-- Generating done (0.3s)
+-- Build files have been written to: C:/Users/jgolasz/.codex/worktrees/refactor-integration/GrpahicEngine/out/build/x64-debug-clean

@@ -1,16 +1,16 @@
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+set(ENGINE_EDITOR_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
 
 file(GLOB_RECURSE EDITOR_MODULE_HEADERS CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/modules/*/include/*.h"
 )
 
-set(EDITOR_MODULES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/modules")
-
 function(configure_editor_module TARGET MODULE_NAME)
+    engine_enable_strict_msvc_checks(${TARGET})
     target_include_directories(${TARGET}
         PUBLIC
-            "${EDITOR_MODULES_DIR}"
-            "${EDITOR_MODULES_DIR}/${MODULE_NAME}/include"
+            "${ENGINE_EDITOR_SOURCE_DIR}/modules"
+            "${ENGINE_EDITOR_SOURCE_DIR}/modules/${MODULE_NAME}/include"
     )
     target_compile_features(${TARGET} PUBLIC cxx_std_23)
     if(NOT CMAKE_GENERATOR MATCHES "Ninja|Makefiles")
@@ -24,7 +24,7 @@ add_subdirectory(modules/panels)
 add_subdirectory(modules/platform)
 add_subdirectory(modules/application)
 
-set(EDITOR_MODULE_INCLUDE_DIRS "${EDITOR_MODULES_DIR}")
+set(EDITOR_MODULE_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/modules")
 
 add_executable(Editor
     $<TARGET_OBJECTS:EditorApplication>
@@ -32,6 +32,7 @@ add_executable(Editor
     $<TARGET_OBJECTS:EditorPanels>
     ${EDITOR_MODULE_HEADERS}
 )
+engine_enable_strict_msvc_checks(Editor)
 set_target_properties(Editor PROPERTIES
     OUTPUT_NAME "Editor"
     VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
@@ -69,6 +70,7 @@ foreach(HEADER IN LISTS EDITOR_MODULE_HEADERS)
     list(APPEND EDITOR_HEADER_CHECK_SOURCES "${HEADER_CHECK_SOURCE}")
 endforeach()
 add_library(EditorPublicHeaderChecks OBJECT ${EDITOR_HEADER_CHECK_SOURCES})
+engine_enable_strict_msvc_checks(EditorPublicHeaderChecks)
 target_include_directories(EditorPublicHeaderChecks PRIVATE
     "${EDITOR_MODULE_INCLUDE_DIRS}"
     "${CMAKE_CURRENT_SOURCE_DIR}/modules/application/include"

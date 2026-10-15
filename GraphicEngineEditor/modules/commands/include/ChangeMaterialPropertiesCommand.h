@@ -8,7 +8,8 @@ class ChangeMaterialPropertiesCommand final : public ICommand
 {
   public:
     ChangeMaterialPropertiesCommand(std::shared_ptr<::Engine::Renderer::Material> material,
-                                    ::Engine::Renderer::MaterialProperties before, ::Engine::Renderer::MaterialProperties after);
+                                    ::Engine::Renderer::MaterialProperties before,
+                                    ::Engine::Renderer::MaterialProperties after);
     void Execute() override;
     void Undo() override;
 

@@ -1,0 +1,24 @@
+{
+  "branch": "codex/refactor-integration",
+  "commit": "7c5aebd051098eed56bab7349ade43344b5d7aeb",
+  "configuration": "Release",
+  "architecture": "x64",
+  "compiler": "Microsoft (R) C/C++ Optimizing Compiler Version 19.51.36256 for x64",
+  "cmake": "cmake version 4.3.1-msvc1",
+  "benchmark_library": "Google Benchmark v1.9.5",
+  "benchmark_command": "GraphicEngineBenchmarks.exe --benchmark_min_time=0.1s --benchmark_repetitions=3 --benchmark_report_aggregates_only=true --benchmark_out=artifacts/refactor/integration-benchmarks-release.json --benchmark_out_format=json",
+  "operating_system": {
+    "Caption": "Microsoft Windows 11 Pro",
+    "Version": "10.0.26200",
+    "BuildNumber": "26200"
+  },
+  "processor": {
+    "Name": "Intel(R) Core(TM) Ultra 9 285K",
+    "NumberOfCores": 24,
+    "NumberOfLogicalProcessors": 24,
+    "MaxClockSpeed": 3700
+  },
+  "report": "artifacts/refactor/integration-benchmarks-release.json",
+  "generated_at": "2026-10-15T11:43:18.6779759+02:00",
+  "source_state": "Clean committed source at the recorded commit."
+}

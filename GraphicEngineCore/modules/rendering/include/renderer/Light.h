@@ -8,8 +8,8 @@
 #include <cstdint>
 
 #ifdef _MSC_VER
-#  pragma warning(push)
-#  pragma warning(disable : 4251) // These engine DLL types intentionally expose same-toolchain member types.
+#pragma warning(push)
+#pragma warning(disable : 4251) // These engine DLL types intentionally expose same-toolchain member types.
 #endif
 
 namespace Engine::Renderer
@@ -107,5 +107,5 @@ class ENGINE_API SpotLight : public ::Engine::Object
 } // namespace Engine::Renderer
 
 #ifdef _MSC_VER
-#  pragma warning(pop)
+#pragma warning(pop)
 #endif

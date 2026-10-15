@@ -1,4 +1,4 @@
-#include "rendering/include/renderer/ShaderFactory.h"
+#include "ShaderFactory.h"
 #include "runtime/include/EnvironmentVariable.h"
 #include "runtime/include/LogMacros.h"
 

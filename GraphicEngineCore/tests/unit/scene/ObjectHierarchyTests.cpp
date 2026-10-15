@@ -4,41 +4,149 @@
 
 #include <memory>
 
-TEST(ObjectHierarchyTests, RejectsDuplicateParentingAndCycles) {
-  Engine::Object root;
-  auto child = std::make_shared<Engine::Object>();
-  auto grandchild = std::make_shared<Engine::Object>();
+namespace
+{
+class CountingComponent final : public Engine::Components::Component
+{
+  public:
+    void Update(float deltaTime) override
+    {
+        ++updates;
+        lastDeltaTime = deltaTime;
+    }
 
-  ASSERT_TRUE(root.AddChild(child));
-  ASSERT_TRUE(child->AddChild(grandchild));
-  EXPECT_FALSE(root.AddChild(child));
-  EXPECT_FALSE(child->AddChild(nullptr));
-  EXPECT_FALSE(child->SetParent(grandchild.get()));
-  EXPECT_EQ(child->GetParent(), &root);
-  EXPECT_EQ(grandchild->GetParent(), child.get());
+    int updates = 0;
+    float lastDeltaTime = 0.0f;
+};
+} // namespace
+
+TEST(ObjectHierarchyTests, RejectsDuplicateParentingAndCycles)
+{
+    Engine::Object root;
+    auto child = std::make_shared<Engine::Object>();
+    auto grandchild = std::make_shared<Engine::Object>();
+
+    ASSERT_TRUE(root.AddChild(child));
+    ASSERT_TRUE(child->AddChild(grandchild));
+    EXPECT_FALSE(root.AddChild(child));
+    EXPECT_FALSE(child->AddChild(nullptr));
+    EXPECT_FALSE(child->SetParent(grandchild.get()));
+    EXPECT_EQ(child->GetParent(), &root);
+    EXPECT_EQ(grandchild->GetParent(), child.get());
 }
 
-TEST(ObjectHierarchyTests, DetachesChildAndClearsTransformParent) {
-  Engine::Object root;
-  auto child = std::make_shared<Engine::Object>();
-  ASSERT_TRUE(root.AddChild(child));
-  ASSERT_EQ(child->transform.GetParent(), &root.transform);
+TEST(ObjectHierarchyTests, RejectsSelfAndAncestorOwnershipCycles)
+{
+    auto root = std::make_shared<Engine::Object>();
+    auto child = std::make_shared<Engine::Object>();
+    auto grandchild = std::make_shared<Engine::Object>();
 
-  EXPECT_TRUE(root.RemoveChild(child.get()));
-  EXPECT_EQ(child->GetParent(), nullptr);
-  EXPECT_EQ(child->transform.GetParent(), nullptr);
-  EXPECT_FALSE(root.RemoveChild(child.get()));
+    EXPECT_FALSE(root->AddChild(root));
+    ASSERT_TRUE(root->AddChild(child));
+    ASSERT_TRUE(child->AddChild(grandchild));
+    EXPECT_FALSE(grandchild->AddChild(root));
+    EXPECT_EQ(root->GetParent(), nullptr);
+    EXPECT_EQ(grandchild->GetParent(), child.get());
 }
 
-TEST(ObjectHierarchyTests, ReparentsThroughParentApiAndKeepsSingleOwnership) {
-  Engine::Object first;
-  Engine::Object second;
-  auto child = std::make_shared<Engine::Object>();
-  ASSERT_TRUE(first.AddChild(child));
+TEST(ObjectHierarchyTests, DetachesChildAndClearsTransformParent)
+{
+    Engine::Object root;
+    auto child = std::make_shared<Engine::Object>();
+    ASSERT_TRUE(root.AddChild(child));
+    ASSERT_EQ(child->transform.GetParent(), &root.transform);
 
-  ASSERT_TRUE(child->SetParent(&second));
-  EXPECT_TRUE(first.GetChildren().empty());
-  ASSERT_EQ(second.GetChildren().size(), 1U);
-  EXPECT_EQ(second.GetChildren().front().get(), child.get());
-  EXPECT_EQ(child->transform.GetParent(), &second.transform);
+    EXPECT_TRUE(root.RemoveChild(child.get()));
+    EXPECT_EQ(child->GetParent(), nullptr);
+    EXPECT_EQ(child->transform.GetParent(), nullptr);
+    EXPECT_FALSE(root.RemoveChild(child.get()));
+}
+
+TEST(ObjectHierarchyTests, ReparentsThroughParentApiAndKeepsSingleOwnership)
+{
+    Engine::Object first;
+    Engine::Object second;
+    auto child = std::make_shared<Engine::Object>();
+    ASSERT_TRUE(first.AddChild(child));
+
+    ASSERT_TRUE(child->SetParent(&second));
+    EXPECT_TRUE(first.GetChildren().empty());
+    ASSERT_EQ(second.GetChildren().size(), 1U);
+    EXPECT_EQ(second.GetChildren().front().get(), child.get());
+    EXPECT_EQ(child->transform.GetParent(), &second.transform);
+}
+
+TEST(ObjectHierarchyTests, KeepsWorldTransformWhenReparenting)
+{
+    auto first = std::make_shared<Engine::Object>();
+    auto second = std::make_shared<Engine::Object>();
+    auto child = std::make_shared<Engine::Object>();
+    first->transform.SetPosition(3.0F, -2.0F, 1.0F);
+    second->transform.SetPosition(-5.0F, 4.0F, 2.0F);
+    child->transform.SetPosition(1.0F, 2.0F, 3.0F);
+    ASSERT_TRUE(first->AddChild(child));
+
+    const DirectX::XMVECTOR origin = DirectX::XMVectorSet(0.0F, 0.0F, 0.0F, 1.0F);
+    DirectX::XMFLOAT3 before{};
+    DirectX::XMStoreFloat3(&before, DirectX::XMVector3TransformCoord(origin, child->transform.GetWorldMat()));
+
+    ASSERT_TRUE(child->SetParent(second.get(), Engine::Object::ParentTransformMode::KeepWorld));
+
+    DirectX::XMFLOAT3 after{};
+    DirectX::XMStoreFloat3(&after, DirectX::XMVector3TransformCoord(origin, child->transform.GetWorldMat()));
+    EXPECT_NEAR(after.x, before.x, 1.0e-5F);
+    EXPECT_NEAR(after.y, before.y, 1.0e-5F);
+    EXPECT_NEAR(after.z, before.z, 1.0e-5F);
+    EXPECT_TRUE(first->GetChildren().empty());
+    ASSERT_EQ(second->GetChildren().size(), 1U);
+    EXPECT_EQ(second->GetChildren().front().get(), child.get());
+}
+
+TEST(ObjectHierarchyTests, RejectsKeepWorldReparentingToSingularParent)
+{
+    auto first = std::make_shared<Engine::Object>();
+    auto singular = std::make_shared<Engine::Object>();
+    auto child = std::make_shared<Engine::Object>();
+    singular->transform.SetScale(0.0F, 1.0F, 1.0F);
+    ASSERT_TRUE(first->AddChild(child));
+
+    EXPECT_FALSE(child->SetParent(singular.get(), Engine::Object::ParentTransformMode::KeepWorld));
+    EXPECT_EQ(child->GetParent(), first.get());
+    ASSERT_EQ(first->GetChildren().size(), 1U);
+    EXPECT_EQ(first->GetChildren().front().get(), child.get());
+    EXPECT_TRUE(singular->GetChildren().empty());
+}
+
+TEST(ObjectHierarchyTests, SetParentHandlesNoOpSelfAndDetachCases)
+{
+    auto parent = std::make_shared<Engine::Object>();
+    auto child = std::make_shared<Engine::Object>();
+
+    EXPECT_FALSE(child->SetParent(nullptr));
+    EXPECT_FALSE(child->SetParent(child.get()));
+    ASSERT_TRUE(parent->AddChild(child));
+    EXPECT_FALSE(child->SetParent(parent.get()));
+    EXPECT_TRUE(child->SetParent(nullptr));
+    EXPECT_EQ(child->GetParent(), nullptr);
+    EXPECT_TRUE(parent->GetChildren().empty());
+
+    Engine::Object stackOwned;
+    EXPECT_FALSE(stackOwned.SetParent(nullptr));
+    EXPECT_FALSE(stackOwned.SetParent(parent.get()));
+}
+
+TEST(ObjectHierarchyTests, UpdatesComponentsAndDescendantsRecursively)
+{
+    auto root = std::make_shared<Engine::Object>();
+    auto child = std::make_shared<Engine::Object>();
+    auto &rootComponent = root->AddComponent<CountingComponent>();
+    auto &childComponent = child->AddComponent<CountingComponent>();
+    ASSERT_TRUE(root->AddChild(child));
+
+    root->Update(0.25f);
+
+    EXPECT_EQ(rootComponent.updates, 1);
+    EXPECT_EQ(rootComponent.lastDeltaTime, 0.25f);
+    EXPECT_EQ(childComponent.updates, 1);
+    EXPECT_EQ(childComponent.lastDeltaTime, 0.25f);
 }

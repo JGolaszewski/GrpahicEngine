@@ -15,6 +15,7 @@
 #include "rendering/include/renderer/Viewport.h"
 
 #include <algorithm>
+#include <nvrhi/nvrhi.h>
 #include <chrono>
 #include <set>
 #include <thread>
@@ -134,9 +135,10 @@ Application::~Application()
     m_ActiveScenes.clear();
     m_Viewports.clear();
     m_DefaultViewport.reset();
-    if (m_RenderBackend && m_RenderBackend->GetDevice())
+    auto *device = m_RenderBackend ? static_cast<nvrhi::IDevice *>(m_RenderBackend->GetDevice()) : nullptr;
+    if (device)
     {
-        m_RenderBackend->GetDevice()->waitForIdle();
+        device->waitForIdle();
     }
     m_RenderSystem.reset();
     m_RenderBackend.reset();
@@ -311,21 +313,18 @@ void Application::Run(std::unique_ptr<IWindow> window, std::unique_ptr<IRenderBa
             std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - frameStart).count();
         if (renderFrameStarted)
         {
-            if (const SceneRenderer *sceneRenderer = m_RenderSystem->GetSceneRenderer())
-            {
-                const SceneRenderer::SubmissionStats &submission = sceneRenderer->GetSubmissionStats();
-                frameTimingStats.ObjectsSubmitted = submission.ObjectsSubmitted;
-                frameTimingStats.ObjectsCulled = submission.ObjectsCulled;
-                frameTimingStats.PacketsBuilt = submission.PacketsBuilt;
-                frameTimingStats.OpaquePackets = submission.OpaquePackets;
-                frameTimingStats.MaskedPackets = submission.MaskedPackets;
-                frameTimingStats.TransparentPackets = submission.TransparentPackets;
-                frameTimingStats.PipelineCacheHits = submission.PipelineCacheHits;
-                frameTimingStats.PipelineCacheMisses = submission.PipelineCacheMisses;
-                frameTimingStats.PipelineCreations = submission.PipelineCreations;
-                frameTimingStats.CullingTimeMs = static_cast<float>(submission.CullingTimeMs);
-                frameTimingStats.PacketBuildTimeMs = static_cast<float>(submission.PacketBuildTimeMs);
-            }
+            const RenderSubmissionStats submission = m_RenderSystem->GetSubmissionStats();
+            frameTimingStats.ObjectsSubmitted = submission.ObjectsSubmitted;
+            frameTimingStats.ObjectsCulled = submission.ObjectsCulled;
+            frameTimingStats.PacketsBuilt = submission.PacketsBuilt;
+            frameTimingStats.OpaquePackets = submission.OpaquePackets;
+            frameTimingStats.MaskedPackets = submission.MaskedPackets;
+            frameTimingStats.TransparentPackets = submission.TransparentPackets;
+            frameTimingStats.PipelineCacheHits = submission.PipelineCacheHits;
+            frameTimingStats.PipelineCacheMisses = submission.PipelineCacheMisses;
+            frameTimingStats.PipelineCreations = submission.PipelineCreations;
+            frameTimingStats.CullingTimeMs = static_cast<float>(submission.CullingTimeMs);
+            frameTimingStats.PacketBuildTimeMs = static_cast<float>(submission.PacketBuildTimeMs);
             const ::Engine::Renderer::FrameDiagnostics &renderDiagnostics =
                 m_RenderSystem->GetFrameDiagnostics();
             frameTimingStats.ViewsSubmitted = m_RenderSystem->GetSubmittedViewCount();
@@ -405,14 +404,14 @@ void Application::RegisterDefaultView()
     }
 }
 
-void Application::AddScene(std::shared_ptr<Scene> scene)
+void Application::AddScene(const std::shared_ptr<Scene> &scene)
 {
     m_ActiveScenes.push_back(scene);
     ENGINE_LOG_DEBUG("ECS", "Scene registered | scene_valid: {} | active_scene_count: {} | entity_count: {}",
                      scene != nullptr, m_ActiveScenes.size(), scene ? scene->GetEntities().size() : 0);
 }
 
-void Application::RemoveScene(std::shared_ptr<Scene> scene)
+void Application::RemoveScene(const std::shared_ptr<Scene> &scene)
 {
     auto it = std::find(m_ActiveScenes.begin(), m_ActiveScenes.end(), scene);
     if (it != m_ActiveScenes.end())
@@ -567,7 +566,6 @@ bool Application::LoadSceneDocument(const SceneDocument &document, std::string &
                     };
                 resolveOverride(materialDocument.baseColorTextureGuid, true, baseColor);
                 resolveOverride(materialDocument.normalTextureGuid, false, normal);
-                std::string bindingError;
                 if (!m_RenderSystem->SetMaterialTextures(submesh.material, baseColor, normal,
                                                          materialDocument.baseColorTextureGuid,
                                                          materialDocument.normalTextureGuid))
@@ -670,11 +668,11 @@ bool Application::LoadSceneDocument(const SceneDocument &document, std::string &
 
     for (const auto &source : document.entities)
     {
-        if (!source.parentId)
+        if (!source.parentId || source.parent)
             continue;
         const auto child = stagedScene->FindEntity(source.id);
         const auto parent = stagedScene->FindEntity(*source.parentId);
-        if (!child || !parent || !child->SetParent(parent.get()))
+        if (!child || !parent || !child->SetParent(parent.get(), Object::ParentTransformMode::KeepLocal))
             warnings.push_back("entity " + std::to_string(source.id) +
                                " could not be attached to its saved parent and remains at the scene root");
     }
@@ -684,8 +682,8 @@ bool Application::LoadSceneDocument(const SceneDocument &document, std::string &
         auto light = std::make_shared<::Engine::Renderer::SpotLight>(
             DirectX::XMFLOAT3(source.direction[0], source.direction[1], source.direction[2]),
             DirectX::XMFLOAT3(source.color[0], source.color[1], source.color[2]), source.intensity);
-        light->Name = source.name;
         light->SetType(static_cast<::Engine::Renderer::LightType>(source.type));
+        light->SetUsePosition(source.usePosition);
         light->SetPosition({source.position[0], source.position[1], source.position[2]});
         light->SetRange(source.range);
         light->SetConeAngles(source.innerAngleDegrees, source.outerAngleDegrees);
@@ -700,12 +698,11 @@ bool Application::LoadSceneDocument(const SceneDocument &document, std::string &
 
     for (const auto &source : document.cameras)
     {
-        auto camera =
-            std::make_shared<::Engine::Renderer::Camera>(source.fovRadians, source.nearPlane, source.farPlane);
-        camera->Name = source.name;
+        auto camera = std::make_shared<::Engine::Renderer::Camera>(source.fovRadians, source.nearPlane,
+                                                                   source.farPlane);
         camera->transform.SetPosition(source.position[0], source.position[1], source.position[2]);
         camera->transform.Rotation = {source.rotation[0], source.rotation[1], source.rotation[2],
-                                        source.rotation[3]};
+                                      source.rotation[3]};
         if (stagedScene->AddCamera(std::move(camera), source.id) == InvalidCameraId)
         {
             return fail("scene contains a duplicate or unsupported camera ID " + std::to_string(source.id));
@@ -714,30 +711,24 @@ bool Application::LoadSceneDocument(const SceneDocument &document, std::string &
 
     struct PendingParent
     {
-        Engine::Object *Child = nullptr;
-        Engine::SceneNodeParentDocument Parent;
+        Object *Child = nullptr;
+        SceneNodeParentDocument Parent;
         std::string Description;
     };
     std::vector<PendingParent> pendingParents;
     pendingParents.reserve(document.entities.size() + document.lights.size() + document.cameras.size());
     for (const auto &source : document.entities)
-    {
         if (source.parent)
             pendingParents.push_back({stagedScene->FindEntity(source.id).get(), *source.parent,
                                       "entity " + std::to_string(source.id)});
-    }
     for (const auto &source : document.lights)
-    {
         if (source.parent)
             pendingParents.push_back({stagedScene->FindLight(source.id).get(), *source.parent,
                                       "light " + std::to_string(source.id)});
-    }
     for (const auto &source : document.cameras)
-    {
         if (source.parent)
             pendingParents.push_back({stagedScene->FindCamera(source.id).get(), *source.parent,
                                       "camera " + std::to_string(source.id)});
-    }
     std::stable_sort(pendingParents.begin(), pendingParents.end(), [](const auto &left, const auto &right) {
         if (left.Parent.type != right.Parent.type)
             return left.Parent.type < right.Parent.type;
@@ -745,7 +736,7 @@ bool Application::LoadSceneDocument(const SceneDocument &document, std::string &
             return left.Parent.id < right.Parent.id;
         return left.Parent.siblingOrder < right.Parent.siblingOrder;
     });
-    const auto resolveParent = [&stagedScene](const Engine::SceneNodeParentDocument &parent) -> Engine::Object * {
+    const auto resolveParent = [&stagedScene](const SceneNodeParentDocument &parent) -> Object * {
         if (parent.type == "entity")
             return stagedScene->FindEntity(parent.id).get();
         if (parent.type == "light")
@@ -756,14 +747,15 @@ bool Application::LoadSceneDocument(const SceneDocument &document, std::string &
     };
     for (const auto &pending : pendingParents)
     {
-        Engine::Object *parent = resolveParent(pending.Parent);
+        Object *parent = resolveParent(pending.Parent);
         if (!pending.Child || !parent)
         {
             warnings.push_back(pending.Description + " references a missing parent; placed at scene root");
             continue;
         }
-        if (!pending.Child->SetParent(parent, Engine::Object::ParentTransformMode::KeepLocal))
-            warnings.push_back(pending.Description + " has an invalid or cyclic parent; placed at scene root");
+        if (!pending.Child->SetParent(parent, Object::ParentTransformMode::KeepLocal))
+            warnings.push_back(pending.Description +
+                               " has an invalid or cyclic parent; placed at scene root");
     }
 
     m_ActiveViews.clear();
@@ -789,6 +781,24 @@ SceneDocument Application::CreateSceneDocument(const Scene &scene) const
 {
     SceneDocument document;
     document.unitsPerMeter = scene.GetUnitsPerMeter();
+    const auto makeParentDocument = [&scene](const Object &child) -> std::optional<SceneNodeParentDocument> {
+        const Object *parent = child.GetParent();
+        if (!parent || parent == &scene.GetRoot())
+            return std::nullopt;
+        const auto children = parent->GetChildren();
+        const auto sibling = std::find_if(children.begin(), children.end(), [&child](const auto &candidate) {
+            return candidate.get() == &child;
+        });
+        const uint32_t siblingOrder =
+            sibling == children.end() ? 0u : static_cast<uint32_t>(sibling - children.begin());
+        if (const auto *entity = dynamic_cast<const ::Engine::Renderer::Entity *>(parent))
+            return SceneNodeParentDocument{"entity", scene.GetEntityId(entity), siblingOrder};
+        if (const auto *light = dynamic_cast<const ::Engine::Renderer::SpotLight *>(parent))
+            return SceneNodeParentDocument{"light", scene.GetLightId(light), siblingOrder};
+        if (const auto *camera = dynamic_cast<const ::Engine::Renderer::Camera *>(parent))
+            return SceneNodeParentDocument{"camera", scene.GetCameraId(camera), siblingOrder};
+        return std::nullopt;
+    };
     for (const auto &entity : scene.GetEntities())
     {
         if (!entity)
@@ -797,21 +807,8 @@ SceneDocument Application::CreateSceneDocument(const Scene &scene) const
         item.id = scene.GetEntityId(entity.get());
         if (const auto *parentEntity = dynamic_cast<const ::Engine::Renderer::Entity *>(entity->GetParent()))
             item.parentId = scene.GetEntityId(parentEntity);
+        item.parent = makeParentDocument(*entity);
         item.name = entity->Name;
-        if (entity->GetParent() && entity->GetParent() != &scene.GetRoot())
-        {
-            const auto children = entity->GetParent()->GetChildren();
-            const auto sibling = std::find_if(children.begin(), children.end(), [&](const auto &candidate) {
-                return candidate.get() == entity.get();
-            });
-            const uint32_t siblingOrder = sibling == children.end() ? 0u : static_cast<uint32_t>(sibling - children.begin());
-            if (const auto *parentEntity = dynamic_cast<const ::Engine::Renderer::Entity *>(entity->GetParent()))
-                item.parent = Engine::SceneNodeParentDocument{"entity", scene.GetEntityId(parentEntity), siblingOrder};
-            else if (const auto *parentLight = dynamic_cast<const ::Engine::Renderer::SpotLight *>(entity->GetParent()))
-                item.parent = Engine::SceneNodeParentDocument{"light", scene.GetLightId(parentLight), siblingOrder};
-            else if (const auto *parentCamera = dynamic_cast<const ::Engine::Renderer::Camera *>(entity->GetParent()))
-                item.parent = Engine::SceneNodeParentDocument{"camera", scene.GetCameraId(parentCamera), siblingOrder};
-        }
         item.modelGuid = entity->ModelGuid;
         item.materialGuid = entity->MaterialGuid;
         item.primitiveType = entity->PrimitiveType;
@@ -855,21 +852,7 @@ SceneDocument Application::CreateSceneDocument(const Scene &scene) const
             continue;
         SceneLightDocument item;
         item.id = scene.GetLightIdAt(i);
-        item.name = light->Name;
-        if (light->GetParent() && light->GetParent() != &scene.GetRoot())
-        {
-            const auto children = light->GetParent()->GetChildren();
-            const auto sibling = std::find_if(children.begin(), children.end(), [&](const auto &candidate) {
-                return candidate.get() == light.get();
-            });
-            const uint32_t siblingOrder = sibling == children.end() ? 0u : static_cast<uint32_t>(sibling - children.begin());
-            if (const auto *parentEntity = dynamic_cast<const ::Engine::Renderer::Entity *>(light->GetParent()))
-                item.parent = Engine::SceneNodeParentDocument{"entity", scene.GetEntityId(parentEntity), siblingOrder};
-            else if (const auto *parentLight = dynamic_cast<const ::Engine::Renderer::SpotLight *>(light->GetParent()))
-                item.parent = Engine::SceneNodeParentDocument{"light", scene.GetLightId(parentLight), siblingOrder};
-            else if (const auto *parentCamera = dynamic_cast<const ::Engine::Renderer::Camera *>(light->GetParent()))
-                item.parent = Engine::SceneNodeParentDocument{"camera", scene.GetCameraId(parentCamera), siblingOrder};
-        }
+        item.parent = makeParentDocument(*light);
         const auto direction = light->GetDirection();
         const auto position = light->GetPosition();
         const auto color = light->GetColor();
@@ -885,7 +868,7 @@ SceneDocument Application::CreateSceneDocument(const Scene &scene) const
         item.type = static_cast<uint32_t>(light->GetType());
         item.usePosition = light->GetUsePosition();
         item.castShadows = light->GetCastShadows();
-        document.lights.push_back(std::move(item));
+        document.lights.push_back(item);
     }
 
     for (size_t i = 0; i < scene.GetCameras().size(); ++i)
@@ -895,21 +878,7 @@ SceneDocument Application::CreateSceneDocument(const Scene &scene) const
             continue;
         SceneCameraDocument item;
         item.id = scene.GetCameraIdAt(i);
-        item.name = camera->Name;
-        if (camera->GetParent() && camera->GetParent() != &scene.GetRoot())
-        {
-            const auto children = camera->GetParent()->GetChildren();
-            const auto sibling = std::find_if(children.begin(), children.end(), [&](const auto &candidate) {
-                return candidate.get() == camera.get();
-            });
-            const uint32_t siblingOrder = sibling == children.end() ? 0u : static_cast<uint32_t>(sibling - children.begin());
-            if (const auto *parentEntity = dynamic_cast<const ::Engine::Renderer::Entity *>(camera->GetParent()))
-                item.parent = Engine::SceneNodeParentDocument{"entity", scene.GetEntityId(parentEntity), siblingOrder};
-            else if (const auto *parentLight = dynamic_cast<const ::Engine::Renderer::SpotLight *>(camera->GetParent()))
-                item.parent = Engine::SceneNodeParentDocument{"light", scene.GetLightId(parentLight), siblingOrder};
-            else if (const auto *parentCamera = dynamic_cast<const ::Engine::Renderer::Camera *>(camera->GetParent()))
-                item.parent = Engine::SceneNodeParentDocument{"camera", scene.GetCameraId(parentCamera), siblingOrder};
-        }
+        item.parent = makeParentDocument(*camera);
         const auto &transform = camera->transform;
         item.position = {transform.Position.x, transform.Position.y, transform.Position.z};
         item.rotation = {transform.Rotation.x, transform.Rotation.y, transform.Rotation.z,
@@ -917,17 +886,17 @@ SceneDocument Application::CreateSceneDocument(const Scene &scene) const
         item.fovRadians = camera->GetFovRadians();
         item.nearPlane = camera->GetNearPlane();
         item.farPlane = camera->GetFarPlane();
-        document.cameras.push_back(std::move(item));
+        document.cameras.push_back(item);
     }
     return document;
 }
 
-void Application::AddViewport(std::shared_ptr<Engine::Viewport> viewport)
+void Application::AddViewport(const std::shared_ptr<Engine::Viewport> &viewport)
 {
     m_Viewports.push_back(viewport);
 }
 
-void Application::RemoveViewport(std::shared_ptr<Engine::Viewport> viewport)
+void Application::RemoveViewport(const std::shared_ptr<Engine::Viewport> &viewport)
 {
     auto it = std::find(m_Viewports.begin(), m_Viewports.end(), viewport);
     if (it != m_Viewports.end())
@@ -949,21 +918,4 @@ IWindow *Application::GetWindow() const
     return m_Window.get();
 }
 
-SceneRenderer *Application::GetSceneRenderer() const
-{
-    return m_RenderSystem ? m_RenderSystem->GetSceneRenderer() : nullptr;
-}
-
-::Engine::Renderer::ShaderFactory *Application::GetShaderFactory() const
-{
-    return m_RenderSystem ? m_RenderSystem->GetShaderFactory() : nullptr;
-}
-
-void Application::ExecuteImmediate(std::function<void(nvrhi::ICommandList *)> fn)
-{
-    if (m_RenderSystem)
-    {
-        m_RenderSystem->ExecuteImmediate(std::move(fn));
-    }
-}
 } // namespace Engine

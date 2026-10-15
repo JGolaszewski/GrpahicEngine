@@ -4,6 +4,10 @@
 
 #include <nvrhi/d3d11.h>
 #include <nvrhi/validation.h>
+#include <GLFW/glfw3.h>
+#include <imgui.h>
+#include <imgui_impl_dx11.h>
+#include <imgui_impl_glfw.h>
 #include <atomic>
 #include <chrono>
 
@@ -13,12 +17,59 @@ namespace
 {
 std::atomic<uint64_t> s_ValidationWarnings{0};
 std::atomic<uint64_t> s_ValidationErrors{0};
-}
+} // namespace
 
-void *D3D11Backend::RegisterViewportTexture(void *renderTexture) const
+void *D3D11Backend::RegisterViewportTextureHandle(void *renderTexture) const
 {
     auto *texture = static_cast<nvrhi::ITexture *>(renderTexture);
     return texture ? texture->getNativeView(nvrhi::ObjectTypes::D3D11_ShaderResourceView).pointer : nullptr;
+}
+
+bool D3D11Backend::InitializeEditorUi(IWindow *window)
+{
+    if (!window || !window->GetEventSourceHandle() || !m_Device || !m_Context)
+        return false;
+
+    auto *glfwWindow = static_cast<GLFWwindow *>(window->GetEventSourceHandle());
+    if (!ImGui_ImplGlfw_InitForOther(glfwWindow, true))
+        return false;
+    if (!ImGui_ImplDX11_Init(m_Device.Get(), m_Context.Get()))
+    {
+        ImGui_ImplGlfw_Shutdown();
+        return false;
+    }
+
+    float xScale = 1.0f;
+    float yScale = 1.0f;
+    glfwGetWindowContentScale(glfwWindow, &xScale, &yScale);
+    const float uiScale = (std::max)(xScale, yScale);
+    if (uiScale > 1.0f)
+    {
+        ImGui::GetStyle().ScaleAllSizes(uiScale);
+        ImGui::GetIO().FontGlobalScale = uiScale;
+    }
+    return true;
+}
+
+void D3D11Backend::BeginEditorUiFrame()
+{
+    ImGui_ImplDX11_NewFrame();
+    ImGui_ImplGlfw_NewFrame();
+}
+
+void D3D11Backend::RenderEditorUi(void *drawData)
+{
+    if (!drawData || !m_Context || !m_RenderTargetView)
+        return;
+    ID3D11RenderTargetView *renderTarget = m_RenderTargetView.Get();
+    m_Context->OMSetRenderTargets(1, &renderTarget, nullptr);
+    ImGui_ImplDX11_RenderDrawData(static_cast<ImDrawData *>(drawData));
+}
+
+void D3D11Backend::ShutdownEditorUi()
+{
+    ImGui_ImplDX11_Shutdown();
+    ImGui_ImplGlfw_Shutdown();
 }
 
 class NvrhiMessageCallback final : public nvrhi::IMessageCallback
@@ -37,7 +88,7 @@ class NvrhiMessageCallback final : public nvrhi::IMessageCallback
             s_ValidationErrors.fetch_add(1, std::memory_order_relaxed);
             ENGINE_LOG_ERROR_CODE("Backend", "backend.nvrhi.validation_error",
                                   "NVRHI diagnostic | severity: Error | message: {}",
-                             messageText ? messageText : "<null>");
+                                  messageText ? messageText : "<null>");
             break;
         default:
             break;
@@ -107,7 +158,8 @@ bool D3D11Backend::Initialize(IWindow *window)
 #ifdef _DEBUG
     if (FAILED(hr) && createDeviceFlags != 0)
     {
-        ENGINE_LOG_WARN("Render", "D3D11 debug device creation failed | hresult: 0x{:X} | retry: without_debug_layer",
+        ENGINE_LOG_WARN("Render",
+                        "D3D11 debug device creation failed | hresult: 0x{:X} | retry: without_debug_layer",
                         static_cast<uint32_t>(hr));
         createDeviceFlags = 0;
         hr = D3D11CreateDeviceAndSwapChain(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, createDeviceFlags,
@@ -119,9 +171,10 @@ bool D3D11Backend::Initialize(IWindow *window)
     if (FAILED(hr) || !m_Device || !m_Context || !m_SwapChain)
     {
         ENGINE_LOG_ERROR_CODE("Backend", "backend.d3d11.device.create_failed",
-                              "D3D11 device and swap-chain creation failed | hresult: 0x{:X} | device_valid: {} | context_valid: {} | swap_chain_valid: {}",
-                         static_cast<uint32_t>(hr), m_Device.Get() != nullptr, m_Context.Get() != nullptr,
-                         m_SwapChain.Get() != nullptr);
+                              "D3D11 device and swap-chain creation failed | hresult: 0x{:X} | device_valid: "
+                              "{} | context_valid: {} | swap_chain_valid: {}",
+                              static_cast<uint32_t>(hr), m_Device.Get() != nullptr,
+                              m_Context.Get() != nullptr, m_SwapChain.Get() != nullptr);
         return false;
     }
 
@@ -143,7 +196,7 @@ bool D3D11Backend::Initialize(IWindow *window)
     {
         ENGINE_LOG_ERROR_CODE("Backend", "backend.nvrhi.device.create_failed",
                               "NVRHI D3D11 device creation failed | d3d_device_valid: {}",
-                         m_Device != nullptr);
+                              m_Device != nullptr);
         return false;
     }
 
@@ -153,7 +206,7 @@ bool D3D11Backend::Initialize(IWindow *window)
     {
         ENGINE_LOG_ERROR_CODE("Backend", "backend.d3d11.swap_chain.initialize_failed",
                               "D3D11 swap-chain resource initialization failed | width: {} | height: {}",
-                         width, height);
+                              width, height);
         return false;
     }
 
@@ -179,8 +232,9 @@ bool D3D11Backend::CreateSwapChainResources(uint32_t width, uint32_t height)
     if (!m_Device || !m_SwapChain || !m_NvrhiDevice || width == 0 || height == 0)
     {
         ENGINE_LOG_ERROR_CODE("Backend", "backend.d3d11.swap_chain.resource_rejected",
-                              "Swap-chain resource creation rejected | device_valid: {} | swap_chain_valid: {} | width: {} | height: {}",
-                         m_Device != nullptr, m_SwapChain != nullptr, width, height);
+                              "Swap-chain resource creation rejected | device_valid: {} | swap_chain_valid: "
+                              "{} | width: {} | height: {}",
+                              m_Device != nullptr, m_SwapChain != nullptr, width, height);
         return false;
     }
 
@@ -190,7 +244,7 @@ bool D3D11Backend::CreateSwapChainResources(uint32_t width, uint32_t height)
     {
         ENGINE_LOG_ERROR_CODE("Backend", "backend.d3d11.swap_chain.back_buffer_failed",
                               "Swap-chain back-buffer acquisition failed | hresult: 0x{:X} | buffer_index: 0",
-                         static_cast<uint32_t>(hr));
+                              static_cast<uint32_t>(hr));
         return false;
     }
 
@@ -200,7 +254,7 @@ bool D3D11Backend::CreateSwapChainResources(uint32_t width, uint32_t height)
     {
         ENGINE_LOG_ERROR_CODE("Backend", "backend.d3d11.render_target.create_failed",
                               "Render-target view creation failed | hresult: 0x{:X} | width: {} | height: {}",
-                         static_cast<uint32_t>(hr), width, height);
+                              static_cast<uint32_t>(hr), width, height);
         return false;
     }
 
@@ -235,7 +289,7 @@ bool D3D11Backend::CreateSwapChainResources(uint32_t width, uint32_t height)
     {
         ENGINE_LOG_ERROR_CODE("Backend", "backend.d3d11.depth_buffer.create_failed",
                               "D3D11 depth-buffer creation failed | width: {} | height: {} | format: D24S8",
-                         width, height);
+                              width, height);
         return false;
     }
 
@@ -247,7 +301,7 @@ bool D3D11Backend::CreateSwapChainResources(uint32_t width, uint32_t height)
     {
         ENGINE_LOG_ERROR_CODE("Backend", "backend.nvrhi.framebuffer.create_failed",
                               "D3D11 framebuffer creation failed | color_valid: {} | depth_valid: {}",
-                         backBufferHandle != nullptr, depthBufferHandle != nullptr);
+                              backBufferHandle != nullptr, depthBufferHandle != nullptr);
         return false;
     }
 
@@ -269,8 +323,8 @@ void D3D11Backend::Present()
     }
     const auto presentStart = std::chrono::steady_clock::now();
     const HRESULT hr = m_SwapChain->Present(m_VSyncEnabled ? 1 : 0, 0);
-    m_LastPresentTimeMs = std::chrono::duration<float, std::milli>(
-        std::chrono::steady_clock::now() - presentStart).count();
+    m_LastPresentTimeMs =
+        std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - presentStart).count();
     m_LastPresentResult = hr;
     if (SUCCEEDED(hr))
     {
@@ -286,7 +340,8 @@ void D3D11Backend::Present()
         Engine::Log::ScopedOperation operation;
         const HRESULT removalReason = m_Device ? m_Device->GetDeviceRemovedReason() : E_FAIL;
         ENGINE_LOG_ERROR_CODE("Backend", "backend.d3d11.present.device_removed",
-                              "D3D11 device removed during present | hresult: 0x{:X} | device_removed_reason: 0x{:X} | width: {} | height: {} | vsync: {}",
+                              "D3D11 device removed during present | hresult: 0x{:X} | "
+                              "device_removed_reason: 0x{:X} | width: {} | height: {} | vsync: {}",
                               static_cast<uint32_t>(hr), static_cast<uint32_t>(removalReason),
                               m_SwapChainWidth, m_SwapChainHeight, m_VSyncEnabled);
     }
@@ -294,9 +349,10 @@ void D3D11Backend::Present()
     {
         Engine::Log::ScopedOperation operation;
         ENGINE_LOG_ERROR_CODE("Backend", "backend.d3d11.present.failed",
-                              "D3D11 swap-chain present failed | hresult: 0x{:X} | width: {} | height: {} | vsync: {} | present_ms: {:.3f}",
-                              static_cast<uint32_t>(hr), m_SwapChainWidth, m_SwapChainHeight,
-                              m_VSyncEnabled, m_LastPresentTimeMs);
+                              "D3D11 swap-chain present failed | hresult: 0x{:X} | width: {} | height: {} | "
+                              "vsync: {} | present_ms: {:.3f}",
+                              static_cast<uint32_t>(hr), m_SwapChainWidth, m_SwapChainHeight, m_VSyncEnabled,
+                              m_LastPresentTimeMs);
     }
 }
 
@@ -353,14 +409,16 @@ void D3D11Backend::Resize(int width, int height)
     {
         m_LastBackendError = hr;
         ENGINE_LOG_ERROR_CODE("Backend", "backend.d3d11.resize.failed",
-                              "Swap-chain resize failed | hresult: 0x{:X} | requested_width: {} | requested_height: {} | previous_width: {} | previous_height: {}",
-                         static_cast<uint32_t>(hr), width, height, previousWidth, previousHeight);
+                              "Swap-chain resize failed | hresult: 0x{:X} | requested_width: {} | "
+                              "requested_height: {} | previous_width: {} | previous_height: {}",
+                              static_cast<uint32_t>(hr), width, height, previousWidth, previousHeight);
         if (previousWidth > 0 && previousHeight > 0 &&
             !CreateSwapChainResources(previousWidth, previousHeight))
         {
-            ENGINE_LOG_ERROR_CODE("Backend", "backend.d3d11.resize.restore_failed",
-                                  "Previous swap-chain framebuffer restoration failed | width: {} | height: {}",
-                             previousWidth, previousHeight);
+            ENGINE_LOG_ERROR_CODE(
+                "Backend", "backend.d3d11.resize.restore_failed",
+                "Previous swap-chain framebuffer restoration failed | width: {} | height: {}", previousWidth,
+                previousHeight);
         }
         return;
     }
@@ -372,8 +430,9 @@ void D3D11Backend::Resize(int width, int height)
     }
 
     ENGINE_LOG_ERROR_CODE("Backend", "backend.d3d11.resize.resources_incomplete",
-                          "Resized swap-chain resources incomplete | requested_width: {} | requested_height: {} | recovery: previous_size",
-                     width, height);
+                          "Resized swap-chain resources incomplete | requested_width: {} | requested_height: "
+                          "{} | recovery: previous_size",
+                          width, height);
     m_NvrhiFramebuffer = nullptr;
     m_NvrhiBackBuffer = nullptr;
     m_NvrhiDepthBuffer = nullptr;
@@ -387,8 +446,9 @@ void D3D11Backend::Resize(int width, int height)
         }
     }
     ENGINE_LOG_ERROR_CODE("Backend", "backend.d3d11.resize.recovery_failed",
-                          "Swap-chain recovery failed | requested_width: {} | requested_height: {} | previous_width: {} | previous_height: {}",
-                     width, height, previousWidth, previousHeight);
+                          "Swap-chain recovery failed | requested_width: {} | requested_height: {} | "
+                          "previous_width: {} | previous_height: {}",
+                          width, height, previousWidth, previousHeight);
 }
 
 } // namespace Engine

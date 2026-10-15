@@ -97,7 +97,8 @@ DirectX::XMFLOAT3 SpotLight::GetDirection() const
 {
     using namespace DirectX;
     const XMMATRIX world = transform.GetWorldMat();
-    const XMVECTOR direction = XMVector3Normalize(XMVector3TransformNormal(XMLoadFloat3(&m_Direction), world));
+    const XMVECTOR direction =
+        XMVector3Normalize(XMVector3TransformNormal(XMLoadFloat3(&m_Direction), world));
     XMFLOAT3 result{};
     XMStoreFloat3(&result, direction);
     return result;
@@ -106,8 +107,8 @@ DirectX::XMFLOAT3 SpotLight::GetDirection() const
 DirectX::XMFLOAT3 SpotLight::GetPosition() const
 {
     DirectX::XMFLOAT3 result{};
-    DirectX::XMStoreFloat3(&result, DirectX::XMVector3TransformCoord(
-                                      DirectX::XMLoadFloat3(&m_Position), transform.GetWorldMat()));
+    DirectX::XMStoreFloat3(&result, DirectX::XMVector3TransformCoord(DirectX::XMLoadFloat3(&m_Position),
+                                                                     transform.GetWorldMat()));
     return result;
 }
 

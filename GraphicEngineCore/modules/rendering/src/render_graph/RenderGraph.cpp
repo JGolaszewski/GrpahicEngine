@@ -1,8 +1,9 @@
-#include "rendering/include/renderer/render_graph/RenderGraph.h"
+#include "rendering/src/render_graph/RenderGraph.h"
 
 #include <algorithm>
 #include <queue>
 #include <sstream>
+#include <utility>
 #include <vector>
 
 namespace
@@ -27,7 +28,7 @@ void AddEdge(std::vector<std::vector<size_t>> &adjacency, std::vector<int> &inDe
 namespace Engine::Renderer
 {
 RenderGraph::RenderGraph(nvrhi::DeviceHandle device, FrameContext &frameContext)
-    : m_FrameContext(frameContext), m_Device(device)
+    : m_FrameContext(frameContext), m_Device(std::move(device))
 {
 }
 

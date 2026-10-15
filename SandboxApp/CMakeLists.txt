@@ -3,6 +3,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 add_executable(Sandbox 
 	"main.cpp"
 )
+engine_enable_strict_msvc_checks(Sandbox)
 
 set_target_properties(Sandbox PROPERTIES
     OUTPUT_NAME "Sandbox"

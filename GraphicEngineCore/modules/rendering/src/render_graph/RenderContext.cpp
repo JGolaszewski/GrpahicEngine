@@ -1,5 +1,5 @@
-#include "rendering/include/renderer/render_graph/RenderContext.h"
-#include "rendering/include/renderer/render_graph/FrameContext.h"
+#include "rendering/src/render_graph/RenderContext.h"
+#include "rendering/src/render_graph/FrameContext.h"
 
 namespace Engine::Renderer
 {

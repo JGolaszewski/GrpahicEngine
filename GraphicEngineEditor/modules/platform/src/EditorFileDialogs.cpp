@@ -106,8 +106,8 @@ std::optional<std::filesystem::path> ChooseLogExportFile(const std::filesystem::
     dialog.nMaxFile = static_cast<DWORD>(filename.size());
     dialog.lpstrFilter = L"JSONL logs (*.jsonl)\0*.jsonl\0All files (*.*)\0*.*\0\0";
     dialog.nFilterIndex = 1;
-    const auto initialDirectory = initialPath.empty() ? std::filesystem::current_path().wstring()
-                                                      : initialPath.parent_path().wstring();
+    const auto initialDirectory =
+        initialPath.empty() ? std::filesystem::current_path().wstring() : initialPath.parent_path().wstring();
     dialog.lpstrInitialDir = initialDirectory.c_str();
     dialog.Flags = OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR | OFN_OVERWRITEPROMPT;
     dialog.lpstrDefExt = L"jsonl";
@@ -120,8 +120,8 @@ bool OpenSourceFile(const std::filesystem::path &path)
     if (path.empty() || !std::filesystem::exists(path, error) || error)
         return false;
     const std::wstring sourcePath = path.wstring();
-    return reinterpret_cast<INT_PTR>(ShellExecuteW(nullptr, L"open", sourcePath.c_str(), nullptr, nullptr,
-                                                   SW_SHOWNORMAL)) > 32;
+    return reinterpret_cast<INT_PTR>(
+               ShellExecuteW(nullptr, L"open", sourcePath.c_str(), nullptr, nullptr, SW_SHOWNORMAL)) > 32;
 }
 
 std::optional<std::filesystem::path> ChooseProjectFolder(const std::filesystem::path &initialPath)

@@ -1,12 +1,14 @@
-#include "rendering/include/renderer/render_graph/RGResourcePool.h"
+#include <utility>
+
+#include "rendering/src/render_graph/RGResourcePool.h"
 
 namespace Engine::Renderer
 {
-RGResourcePool::RGResourcePool(nvrhi::DeviceHandle device) : m_Device(device)
+RGResourcePool::RGResourcePool(nvrhi::DeviceHandle device) : m_Device(std::move(device))
 {
 }
 
-void RGResourcePool::Release(const RGTextureDesc &desc, nvrhi::TextureHandle texture)
+void RGResourcePool::Release(const RGTextureDesc &desc, const nvrhi::TextureHandle &texture)
 {
     m_FreeTextures[desc].push_back(texture);
 }

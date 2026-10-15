@@ -3,6 +3,7 @@
 #include "runtime/include/Application.h"
 #include "rendering/include/RenderBackend.h"
 #include "rendering/include/RenderSystem.h"
+#include "rendering/include/RenderLimits.h"
 
 #include <algorithm>
 #include <imgui.h>
@@ -46,17 +47,19 @@ void EngineSettingsPanel::Draw()
             shadowSettings.Resolution = static_cast<uint32_t>((std::clamp)(shadowResolution, 128, 8192));
             renderSystem->SetShadowSettings(shadowSettings);
         }
-        ImGui::SetItemTooltip("Higher resolutions improve shadow detail and use more GPU memory and bandwidth.");
+        ImGui::SetItemTooltip(
+            "Higher resolutions improve shadow detail and use more GPU memory and bandwidth.");
 
         int shadowCasters = static_cast<int>(shadowSettings.MaxShadowCastersPerScene);
         if (ImGui::SliderInt("Shadow-casting lights", &shadowCasters, 0,
-                             static_cast<int>(Engine::SceneRenderer::MaxShadowedLights)))
+                             static_cast<int>(Engine::MaxShadowedLights)))
         {
             shadowSettings.MaxShadowCastersPerScene = static_cast<uint32_t>(shadowCasters);
             renderSystem->SetShadowSettings(shadowSettings);
         }
-        ImGui::SetItemTooltip("Maximum shadow maps rendered per scene. The current renderer supports up to %u.",
-                              Engine::SceneRenderer::MaxShadowedLights);
+        ImGui::SetItemTooltip(
+            "Maximum shadow maps rendered per scene. The current renderer supports up to %u.",
+            Engine::MaxShadowedLights);
     }
     else
     {
@@ -77,7 +80,8 @@ void EngineSettingsPanel::Draw()
             bool vsync = diagnostics.VSyncEnabled;
             if (ImGui::Checkbox("VSync", &vsync))
                 backend->SetVSyncEnabled(vsync);
-            ImGui::SetItemTooltip("Applied on the next present. This can cap the frame rate to the display refresh rate.");
+            ImGui::SetItemTooltip(
+                "Applied on the next present. This can cap the frame rate to the display refresh rate.");
         }
         else
         {

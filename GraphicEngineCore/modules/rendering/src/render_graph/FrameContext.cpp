@@ -1,4 +1,4 @@
-#include "rendering/include/renderer/render_graph/FrameContext.h"
+#include "rendering/src/render_graph/FrameContext.h"
 #include "runtime/include/LogMacros.h"
 
 #include <algorithm>
@@ -107,7 +107,9 @@ void FrameContext::MarkSubmitted()
     if (!query)
     {
         if (!m_CompletionQueryFailureLogged)
-            ENGINE_LOG_ERROR("Render", "GPU completion query creation failed | submitted_frame: {} | inflight_frames: {} | fallback: wait_for_idle",
+            ENGINE_LOG_ERROR("Render",
+                             "GPU completion query creation failed | submitted_frame: {} | inflight_frames: "
+                             "{} | fallback: wait_for_idle",
                              m_SubmittedFrames, m_InFlightFrames.size());
         m_CompletionQueryFailureLogged = true;
         m_Device->waitForIdle();

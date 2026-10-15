@@ -20,8 +20,8 @@ class Entity;
 class TransformEntityCommand : public ICommand
 {
   public:
-    explicit TransformEntityCommand(std::weak_ptr<::Engine::Renderer::Entity> entity, const DirectX::XMFLOAT3 &oldPos,
-                                    const DirectX::XMFLOAT3 &newPos);
+    explicit TransformEntityCommand(std::weak_ptr<::Engine::Renderer::Entity> entity,
+                                    const DirectX::XMFLOAT3 &oldPos, const DirectX::XMFLOAT3 &newPos);
 
     void Execute() override;
     void Undo() override;

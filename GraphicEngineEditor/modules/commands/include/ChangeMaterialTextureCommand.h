@@ -14,18 +14,22 @@ class ChangeMaterialTextureCommand final : public ICommand
                                      const std::shared_ptr<::Engine::Renderer::TextureResource> &,
                                      const std::shared_ptr<::Engine::Renderer::TextureResource> &,
                                      const std::optional<std::string> &, const std::optional<std::string> &)>;
-    ChangeMaterialTextureCommand(
-        std::shared_ptr<::Engine::Renderer::Material> material, std::shared_ptr<::Engine::Renderer::TextureResource> beforeBase,
-        std::shared_ptr<::Engine::Renderer::TextureResource> beforeNormal, std::optional<std::string> beforeBaseGuid,
-        std::optional<std::string> beforeNormalGuid, std::shared_ptr<::Engine::Renderer::TextureResource> afterBase,
-        std::shared_ptr<::Engine::Renderer::TextureResource> afterNormal, std::optional<std::string> afterBaseGuid,
-        std::optional<std::string> afterNormalGuid, Apply apply);
+    ChangeMaterialTextureCommand(std::shared_ptr<::Engine::Renderer::Material> material,
+                                 std::shared_ptr<::Engine::Renderer::TextureResource> beforeBase,
+                                 std::shared_ptr<::Engine::Renderer::TextureResource> beforeNormal,
+                                 std::optional<std::string> beforeBaseGuid,
+                                 std::optional<std::string> beforeNormalGuid,
+                                 std::shared_ptr<::Engine::Renderer::TextureResource> afterBase,
+                                 std::shared_ptr<::Engine::Renderer::TextureResource> afterNormal,
+                                 std::optional<std::string> afterBaseGuid,
+                                 std::optional<std::string> afterNormalGuid, Apply apply);
     void Execute() override;
     void Undo() override;
 
   private:
     std::shared_ptr<::Engine::Renderer::Material> m_Material;
-    std::shared_ptr<::Engine::Renderer::TextureResource> m_BeforeBase, m_BeforeNormal, m_AfterBase, m_AfterNormal;
+    std::shared_ptr<::Engine::Renderer::TextureResource> m_BeforeBase, m_BeforeNormal, m_AfterBase,
+        m_AfterNormal;
     std::optional<std::string> m_BeforeBaseGuid, m_BeforeNormalGuid, m_AfterBaseGuid, m_AfterNormalGuid;
     Apply m_Apply;
 };

@@ -2,12 +2,12 @@
 #define STB_IMAGE_IMPLEMENTATION
 #define TINYGLTF_NO_STB_IMAGE_WRITE
 #ifdef _MSC_VER
-#  pragma warning(push)
-#  pragma warning(disable : 6262) // stb_image decoder uses a large fixed stack frame.
+#pragma warning(push)
+#pragma warning(disable : 6262) // stb_image decoder uses a large fixed stack frame.
 #endif
 #include <tiny_gltf.h>
 #ifdef _MSC_VER
-#  pragma warning(pop)
+#pragma warning(pop)
 #endif
 
 #include "assets/include/AssetImporter.h"
@@ -88,9 +88,8 @@ bool ReadTextureTransformValue(const tinygltf::Value &value, ImportedTextureTran
     return true;
 }
 
-bool ReadTextureTransform(const tinygltf::ExtensionMap &extensions,
-                          ImportedTextureTransform &transform, uint32_t &texCoord,
-                          std::string &error, const std::string &label)
+bool ReadTextureTransform(const tinygltf::ExtensionMap &extensions, ImportedTextureTransform &transform,
+                          uint32_t &texCoord, std::string &error, const std::string &label)
 {
     const auto extension = extensions.find("KHR_texture_transform");
     return extension == extensions.end() ||
@@ -149,9 +148,8 @@ bool ReadExtensionScalar(const tinygltf::Value &value, const char *name, float &
 }
 
 bool ReadExtensionTextureInfo(const tinygltf::Value &materialExtension, const char *name,
-                              int32_t &textureIndex, uint32_t &texCoord,
-                              ImportedTextureTransform &transform, std::string &error,
-                              const std::string &label)
+                              int32_t &textureIndex, uint32_t &texCoord, ImportedTextureTransform &transform,
+                              std::string &error, const std::string &label)
 {
     if (!materialExtension.Has(name))
         return true;
@@ -493,14 +491,22 @@ bool ImportPrimitive(const tinygltf::Model &source, const tinygltf::Primitive &i
         error = "primitive uses an unsupported topology";
         return false;
     }
-    if (mode == TINYGLTF_MODE_LINE)
-        output.primitiveType = nvrhi::PrimitiveType::LineList;
-    else if (mode == TINYGLTF_MODE_LINE_STRIP)
-        output.primitiveType = nvrhi::PrimitiveType::LineStrip;
-    else if (mode == TINYGLTF_MODE_LINE_LOOP)
-        output.primitiveType = nvrhi::PrimitiveType::LineList;
-    else if (mode == TINYGLTF_MODE_POINTS)
-        output.primitiveType = nvrhi::PrimitiveType::PointList;
+    switch (mode)
+    {
+    case TINYGLTF_MODE_LINE:
+    case TINYGLTF_MODE_LINE_LOOP:
+        output.primitiveType = ImportedPrimitiveType::Lines;
+        break;
+    case TINYGLTF_MODE_LINE_STRIP:
+        output.primitiveType = ImportedPrimitiveType::LineStrip;
+        break;
+    case TINYGLTF_MODE_POINTS:
+        output.primitiveType = ImportedPrimitiveType::Points;
+        break;
+    default:
+        output.primitiveType = ImportedPrimitiveType::Triangles;
+        break;
+    }
     const auto positionIt = input.attributes.find("POSITION");
     if (positionIt == input.attributes.end())
     {
@@ -644,7 +650,8 @@ bool ImportPrimitive(const tinygltf::Model &source, const tinygltf::Primitive &i
         output.indices.clear();
         output.indices.reserve(sourceIndices.size() * 2);
         for (size_t i = 0; i < sourceIndices.size(); ++i)
-            output.indices.insert(output.indices.end(), {sourceIndices[i], sourceIndices[(i + 1) % sourceIndices.size()]});
+            output.indices.insert(output.indices.end(),
+                                  {sourceIndices[i], sourceIndices[(i + 1) % sourceIndices.size()]});
     }
     else if (mode == TINYGLTF_MODE_TRIANGLE_STRIP || mode == TINYGLTF_MODE_TRIANGLE_FAN)
     {
@@ -668,17 +675,18 @@ bool ImportPrimitive(const tinygltf::Model &source, const tinygltf::Primitive &i
             }
             else
             {
-                output.indices.insert(output.indices.end(), {sourceIndices[0], sourceIndices[i - 1], sourceIndices[i]});
+                output.indices.insert(output.indices.end(),
+                                      {sourceIndices[0], sourceIndices[i - 1], sourceIndices[i]});
             }
         }
     }
     const size_t elementCount = output.indices.size();
-    if ((output.primitiveType == nvrhi::PrimitiveType::TriangleList &&
+    if ((output.primitiveType == ImportedPrimitiveType::Triangles &&
          (elementCount < 3 || elementCount % 3 != 0)) ||
-        (output.primitiveType == nvrhi::PrimitiveType::LineList &&
+        (output.primitiveType == ImportedPrimitiveType::Lines &&
          (elementCount < 2 || elementCount % 2 != 0)) ||
-        (output.primitiveType == nvrhi::PrimitiveType::LineStrip && elementCount < 2) ||
-        (output.primitiveType == nvrhi::PrimitiveType::PointList && elementCount == 0))
+        (output.primitiveType == ImportedPrimitiveType::LineStrip && elementCount < 2) ||
+        (output.primitiveType == ImportedPrimitiveType::Points && elementCount == 0))
     {
         error = "primitive has too few elements or an invalid element count for its topology";
         return false;
@@ -695,9 +703,9 @@ bool ImportPrimitive(const tinygltf::Model &source, const tinygltf::Primitive &i
         output.boundsMax.y = (std::max)(output.boundsMax.y, p.y);
         output.boundsMax.z = (std::max)(output.boundsMax.z, p.z);
     }
-    if (normals.empty() && output.primitiveType == nvrhi::PrimitiveType::TriangleList)
+    if (normals.empty() && output.primitiveType == ImportedPrimitiveType::Triangles)
         GenerateNormals(output);
-    if (tangents.empty() && output.primitiveType == nvrhi::PrimitiveType::TriangleList)
+    if (tangents.empty() && output.primitiveType == ImportedPrimitiveType::Triangles)
         GenerateTangents(output, tangentTexCoord);
     return true;
 }
@@ -939,10 +947,11 @@ AssetImportResult AssetImporter::ImportGltf(const std::filesystem::path &sourceP
         material.occlusionTexCoord = input.occlusionTexture.texCoord;
         material.emissiveTexCoord = input.emissiveTexture.texCoord;
         if (!ReadTextureTransform(input.pbrMetallicRoughness.baseColorTexture.extensions,
-                                  material.baseColorTransform, material.baseColorTexCoord, error, "baseColorTexture") ||
+                                  material.baseColorTransform, material.baseColorTexCoord, error,
+                                  "baseColorTexture") ||
             !ReadTextureTransform(input.pbrMetallicRoughness.metallicRoughnessTexture.extensions,
-                                  material.metallicRoughnessTransform, material.metallicRoughnessTexCoord, error,
-                                  "metallicRoughnessTexture") ||
+                                  material.metallicRoughnessTransform, material.metallicRoughnessTexCoord,
+                                  error, "metallicRoughnessTexture") ||
             !ReadTextureTransform(input.normalTexture.extensions, material.normalTransform,
                                   material.normalTexCoord, error, "normalTexture") ||
             !ReadTextureTransform(input.occlusionTexture.extensions, material.occlusionTransform,
@@ -963,18 +972,22 @@ AssetImportResult AssetImporter::ImportGltf(const std::filesystem::path &sourceP
             float diffuseFactor[] = {1.0f, 1.0f, 1.0f, 1.0f};
             float specularFactor[] = {1.0f, 1.0f, 1.0f};
             if (!value.IsObject() ||
-                !ReadExtensionFactor(value, "diffuseFactor", 4, diffuseFactor, error, "specular-glossiness") ||
-                !ReadExtensionFactor(value, "specularFactor", 3, specularFactor, error, "specular-glossiness") ||
+                !ReadExtensionFactor(value, "diffuseFactor", 4, diffuseFactor, error,
+                                     "specular-glossiness") ||
+                !ReadExtensionFactor(value, "specularFactor", 3, specularFactor, error,
+                                     "specular-glossiness") ||
                 !ReadExtensionScalar(value, "glossinessFactor", material.glossiness, error,
                                      "specular-glossiness") ||
                 !ReadExtensionTextureInfo(value, "diffuseTexture", material.baseColorTexture,
                                           material.baseColorTexCoord, material.baseColorTransform, error,
                                           "specular-glossiness") ||
-                !ReadExtensionTextureInfo(value, "specularGlossinessTexture", material.metallicRoughnessTexture,
+                !ReadExtensionTextureInfo(value, "specularGlossinessTexture",
+                                          material.metallicRoughnessTexture,
                                           material.metallicRoughnessTexCoord,
                                           material.metallicRoughnessTransform, error, "specular-glossiness"))
             {
-                result.error = Context(sourcePath, error.empty() ? "malformed specular-glossiness extension" : error);
+                result.error =
+                    Context(sourcePath, error.empty() ? "malformed specular-glossiness extension" : error);
                 return result;
             }
             material.baseColor = {diffuseFactor[0], diffuseFactor[1], diffuseFactor[2], diffuseFactor[3]};
@@ -1017,16 +1030,14 @@ AssetImportResult AssetImporter::ImportGltf(const std::filesystem::path &sourceP
             texture.wrapT = sampler.wrapT;
         }
         const auto validMinFilter = [](int filter) {
-            return filter < 0 || filter == 9728 || filter == 9729 ||
-                   (filter >= 9984 && filter <= 9987);
+            return filter < 0 || filter == 9728 || filter == 9729 || (filter >= 9984 && filter <= 9987);
         };
         const auto validMagFilter = [](int filter) { return filter < 0 || filter == 9728 || filter == 9729; };
         const auto validAddress = [](int address) {
             return address == 33071 || address == 33648 || address == 10497;
         };
-        if (!validMagFilter(texture.magFilter) || !validMinFilter(texture.minFilter) ||
-            texture.wrapS < 0 || texture.wrapT < 0 || !validAddress(texture.wrapS) ||
-            !validAddress(texture.wrapT))
+        if (!validMagFilter(texture.magFilter) || !validMinFilter(texture.minFilter) || texture.wrapS < 0 ||
+            texture.wrapT < 0 || !validAddress(texture.wrapS) || !validAddress(texture.wrapT))
         {
             result.error = Context(sourcePath, "texture uses an invalid glTF sampler state");
             return result;
@@ -1097,9 +1108,10 @@ AssetImportResult AssetImporter::ImportGltf(const std::filesystem::path &sourceP
             }
             ImportedPrimitive imported;
             imported.name = mesh.name;
-            const uint32_t tangentTexCoord = primitive.material >= 0
-                ? result.model.materials[static_cast<size_t>(primitive.material)].normalTexCoord
-                : 0;
+            const uint32_t tangentTexCoord =
+                primitive.material >= 0
+                    ? result.model.materials[static_cast<size_t>(primitive.material)].normalTexCoord
+                    : 0;
             if (!ImportPrimitive(source, primitive, imported, error, tangentTexCoord))
             {
                 result.error = Context(sourcePath, error);
@@ -1108,16 +1120,17 @@ AssetImportResult AssetImporter::ImportGltf(const std::filesystem::path &sourceP
             if (primitive.material >= 0)
             {
                 const auto &material = result.model.materials[static_cast<size_t>(primitive.material)];
-                const uint32_t coordinates[] = {material.baseColorTexCoord, material.metallicRoughnessTexCoord,
-                                                material.normalTexCoord, material.occlusionTexCoord,
-                                                material.emissiveTexCoord};
+                const uint32_t coordinates[] = {material.baseColorTexCoord,
+                                                material.metallicRoughnessTexCoord, material.normalTexCoord,
+                                                material.occlusionTexCoord, material.emissiveTexCoord};
                 for (uint32_t coordinate : coordinates)
                 {
                     if (coordinate != 0 &&
                         !primitive.attributes.contains("TEXCOORD_" + std::to_string(coordinate)))
                     {
-                        result.error = Context(sourcePath, "material selects TEXCOORD_" +
-                            std::to_string(coordinate) + " but its primitive has no matching attribute");
+                        result.error =
+                            Context(sourcePath, "material selects TEXCOORD_" + std::to_string(coordinate) +
+                                                    " but its primitive has no matching attribute");
                         return result;
                     }
                 }

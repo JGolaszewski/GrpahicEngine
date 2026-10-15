@@ -37,7 +37,8 @@ class InspectorPanel : public EditorPanel
     void DrawObjectInspector();
     void DrawLightInspector();
     void DrawCameraInspector();
-    void DrawTextureAssignment(const char *label, const std::shared_ptr<::Engine::Renderer::Material> &material,
+    void DrawTextureAssignment(const char *label,
+                               const std::shared_ptr<::Engine::Renderer::Material> &material,
                                AssetImportRequestedEvent::TextureSemantic semantic);
 
     // Selection state — received via EntitySelectedEvent

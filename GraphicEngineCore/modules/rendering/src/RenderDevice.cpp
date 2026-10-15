@@ -1,4 +1,7 @@
-#include "rendering/include/renderer/RenderDevice.h"
+#include "RenderDevice.h"
+
+#include "MeshBackend.h"
+#include "TextureBackend.h"
 
 #include <algorithm>
 #include <limits>
@@ -7,7 +10,7 @@ namespace Engine::Renderer
 {
 std::shared_ptr<Mesh> RenderDevice::CreateMesh(const std::vector<Vertex> &vertices,
                                                const std::vector<uint32_t> &indices, std::string &error,
-                                               nvrhi::PrimitiveType primitiveType) const
+                                               PrimitiveTopology topology) const
 {
     error.clear();
     if (!m_Device || vertices.empty() || vertices.size() > std::numeric_limits<uint32_t>::max() ||
@@ -25,8 +28,8 @@ std::shared_ptr<Mesh> RenderDevice::CreateMesh(const std::vector<Vertex> &vertic
             return nullptr;
         }
     }
-    auto mesh = std::make_shared<Mesh>(m_Device, vertices, indices, primitiveType);
-    if (!mesh->IsValid())
+    auto mesh = std::shared_ptr<Mesh>(new Mesh());
+    if (!MeshBackendAccess::Initialize(*mesh, m_Device, vertices, indices, topology))
     {
         error = "NVRHI failed to create mesh buffers";
         return nullptr;
@@ -60,8 +63,8 @@ std::shared_ptr<TextureResource> RenderDevice::CreateTexture(const Engine::Impor
         .setFormat(srgb ? nvrhi::Format::SRGBA8_UNORM : nvrhi::Format::RGBA8_UNORM)
         .setDebugName(image.name.empty() ? "AssetTexture" : image.name)
         .enableAutomaticStateTracking(nvrhi::ResourceStates::ShaderResource);
-    resource->Texture = m_Device->createTexture(textureDesc);
-    if (!resource->Texture)
+    TextureBackendAccess::SetTexture(*resource, m_Device->createTexture(textureDesc));
+    if (!TextureBackendAccess::GetTexture(*resource))
     {
         error = "NVRHI failed to create a texture resource";
         return nullptr;
@@ -70,9 +73,12 @@ std::shared_ptr<TextureResource> RenderDevice::CreateTexture(const Engine::Impor
     const auto addressMode = [](int value) {
         switch (value)
         {
-        case 33071: return nvrhi::SamplerAddressMode::Clamp;
-        case 33648: return nvrhi::SamplerAddressMode::Mirror;
-        default: return nvrhi::SamplerAddressMode::Wrap;
+        case 33071:
+            return nvrhi::SamplerAddressMode::Clamp;
+        case 33648:
+            return nvrhi::SamplerAddressMode::Mirror;
+        default:
+            return nvrhi::SamplerAddressMode::Wrap;
         }
     };
     const int minFilter = sampler ? sampler->minFilter : -1;
@@ -87,8 +93,8 @@ std::shared_ptr<TextureResource> RenderDevice::CreateTexture(const Engine::Impor
         .setMinFilter(minLinear)
         .setMagFilter(magLinear)
         .setMipFilter(mipLinear);
-    resource->Sampler = m_Device->createSampler(samplerDesc);
-    if (!resource->Sampler)
+    TextureBackendAccess::SetSampler(*resource, m_Device->createSampler(samplerDesc));
+    if (!TextureBackendAccess::GetSampler(*resource))
     {
         error = "NVRHI failed to create a texture sampler";
         return nullptr;

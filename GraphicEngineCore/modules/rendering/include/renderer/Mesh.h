@@ -1,118 +1,62 @@
 #pragma once
 
 #include "runtime/include/CoreExport.h"
-#include <DirectXMath.h>
-#include <nvrhi/nvrhi.h>
-#include <cstddef>
-#include <stdint.h>
-#include <vector>
+#include "rendering/include/renderer/RenderState.h"
+#include "rendering/include/renderer/Vertex.h"
+
+#include <cstdint>
+#include <memory>
 
 #ifdef _MSC_VER
-#  pragma warning(push)
-#  pragma warning(disable : 4251) // These engine DLL types intentionally expose same-toolchain member types.
+#pragma warning(push)
+#pragma warning(disable : 4251) // These engine DLL types intentionally expose same-toolchain member types.
 #endif
 
 namespace Engine::Renderer
 {
-struct ENGINE_API Vertex
-{
-    Vertex() = default;
-    Vertex(const DirectX::XMFLOAT3 &position, const DirectX::XMFLOAT3 &normal,
-           const DirectX::XMFLOAT2 &uv)
-        : Position(position), Normal(normal)
-    {
-        UV[0] = uv;
-    }
+class MeshBackendAccess;
+class RenderDevice;
+class EntityBuilder;
 
-    DirectX::XMFLOAT3 Position;
-    DirectX::XMFLOAT3 Normal;
-    DirectX::XMFLOAT2 UV[MaxTextureCoordinateSets] = {};
-    DirectX::XMFLOAT4 Tangent = {1.0f, 0.0f, 0.0f, 1.0f};
-    DirectX::XMFLOAT4 Color = {1.0f, 1.0f, 1.0f, 1.0f};
-};
-
+/// GPU geometry buffers and topology metadata for a renderable mesh.
 class ENGINE_API Mesh
 {
+    friend class MeshBackendAccess;
+    friend class RenderDevice;
+    friend class EntityBuilder;
+
   public:
-    Mesh(nvrhi::IDevice *device, const std::vector<Vertex> &vertices,
-         const std::vector<uint32_t> &indices = {},
-         nvrhi::PrimitiveType primitiveType = nvrhi::PrimitiveType::TriangleList);
+    /// Releases the backend vertex and index buffers.
+    ~Mesh();
 
-    void UploadData(nvrhi::ICommandList *commandList, const std::vector<Vertex> &vertices,
-                    const std::vector<uint32_t> &indices = {});
+    /// Returns the number of vertices stored in the GPU buffer.
+    /// @return Vertex count.
+    uint32_t GetVertexCount() const noexcept;
 
-    static std::vector<nvrhi::VertexAttributeDesc> GetVertexAttributes()
-    {
-        return {nvrhi::VertexAttributeDesc()
-                    .setName("POSITION")
-                    .setFormat(nvrhi::Format::RGB32_FLOAT)
-                    .setOffset(offsetof(Vertex, Position))
-                    .setElementStride(sizeof(Vertex)),
-                nvrhi::VertexAttributeDesc()
-                    .setName("NORMAL")
-                    .setFormat(nvrhi::Format::RGB32_FLOAT)
-                    .setOffset(offsetof(Vertex, Normal))
-                    .setElementStride(sizeof(Vertex)),
-                nvrhi::VertexAttributeDesc()
-                    .setName("TEXCOORD")
-                    .setArraySize(MaxTextureCoordinateSets)
-                    .setFormat(nvrhi::Format::RG32_FLOAT)
-                    .setOffset(offsetof(Vertex, UV))
-                    .setElementStride(sizeof(Vertex)),
-                nvrhi::VertexAttributeDesc()
-                    .setName("TANGENT")
-                    .setFormat(nvrhi::Format::RGBA32_FLOAT)
-                    .setOffset(offsetof(Vertex, Tangent))
-                    .setElementStride(sizeof(Vertex)),
-                nvrhi::VertexAttributeDesc()
-                    .setName("COLOR")
-                    .setFormat(nvrhi::Format::RGBA32_FLOAT)
-                    .setOffset(offsetof(Vertex, Color))
-                    .setElementStride(sizeof(Vertex))};
-    }
+    /// Returns the number of indices stored in the GPU buffer.
+    /// @return Index count, or zero when the mesh is not indexed.
+    uint32_t GetIndexCount() const noexcept;
 
-    inline nvrhi::BufferHandle GetVertexBuffer() const
-    {
-        return m_VertexBuffer;
-    }
-    inline nvrhi::BufferHandle GetIndexBuffer() const
-    {
-        return m_IndexBuffer;
-    }
-    inline uint32_t GetVertexCount() const
-    {
-        return m_VertexCount;
-    }
-    inline uint32_t GetIndexCount() const
-    {
-        return m_IndexCount;
-    }
-    inline bool HasIndices() const
-    {
-        return m_IndexBuffer != nullptr;
-    }
-    inline bool IsValid() const
-    {
-        return m_VertexBuffer != nullptr && (m_IndexCount == 0 || m_IndexBuffer != nullptr);
-    }
-    nvrhi::PrimitiveType GetPrimitiveType() const noexcept
-    {
-        return m_PrimitiveType;
-    }
+    /// Reports whether the mesh uses an index buffer.
+    /// @return True when indices are present.
+    bool HasIndices() const noexcept;
+
+    /// Reports whether the backend buffers were created successfully.
+    /// @return True when the mesh is ready for drawing.
+    bool IsValid() const noexcept;
+
+    /// Returns the primitive assembly mode for this mesh.
+    /// @return Mesh topology.
+    PrimitiveTopology GetPrimitiveTopology() const noexcept;
 
   private:
-    nvrhi::BufferHandle m_VertexBuffer;
-    nvrhi::BufferHandle m_IndexBuffer;
+    struct Impl;
+    Mesh();
 
-    uint32_t m_VertexCount = 0;
-    uint32_t m_IndexCount = 0;
-    nvrhi::PrimitiveType m_PrimitiveType = nvrhi::PrimitiveType::TriangleList;
+    std::unique_ptr<Impl> m_Impl;
 };
-
-static_assert(offsetof(Vertex, Tangent) == offsetof(Vertex, UV) +
-              sizeof(DirectX::XMFLOAT2) * MaxTextureCoordinateSets);
 } // namespace Engine::Renderer
 
 #ifdef _MSC_VER
-#  pragma warning(pop)
+#pragma warning(pop)
 #endif

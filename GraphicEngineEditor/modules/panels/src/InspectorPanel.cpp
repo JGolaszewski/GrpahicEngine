@@ -483,7 +483,7 @@ void InspectorPanel::DrawLightInspector()
     bool sceneChanged = false;
 
     int lightType = static_cast<int>(selectedLight->GetType());
-    constexpr const char* lightTypeNames[] = {"Directional", "Point", "Spot"};
+    constexpr const char *lightTypeNames[] = {"Directional", "Point", "Spot"};
     if (ImGui::Combo("Type", &lightType, lightTypeNames, 3))
     {
         selectedLight->SetType(static_cast<::Engine::Renderer::LightType>(lightType));

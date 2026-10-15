@@ -1,0 +1,18 @@
+PROJECT_NAME = GraphicEngineCore
+OUTPUT_DIRECTORY = out/build/doxygen
+INPUT = GraphicEngineCore/modules/assets/include \
+        GraphicEngineCore/modules/rendering/include \
+        GraphicEngineCore/modules/runtime/include \
+        GraphicEngineCore/modules/scene/include
+RECURSIVE = YES
+FILE_PATTERNS = *.h *.hpp
+EXCLUDE_PATTERNS = */vendor/* */tests/*
+EXTRACT_ALL = NO
+WARN_IF_UNDOCUMENTED = YES
+WARN_NO_PARAMDOC = YES
+WARN_IF_DOC_ERROR = YES
+WARN_AS_ERROR = YES
+QUIET = NO
+GENERATE_HTML = YES
+GENERATE_LATEX = NO
+WARN_LOGFILE = out/build/doxygen-warnings.log

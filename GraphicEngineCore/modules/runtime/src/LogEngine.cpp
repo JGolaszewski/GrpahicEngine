@@ -52,14 +52,20 @@ std::optional<Level> ParseLevel(const char *value) noexcept
     if (!value)
         return std::nullopt;
     const std::string_view text(value);
-    if (text == "trace" || text == "Trace" || text == "0") return Level::Trace;
-    if (text == "debug" || text == "Debug" || text == "1") return Level::Debug;
-    if (text == "info" || text == "Info" || text == "2") return Level::Info;
+    if (text == "trace" || text == "Trace" || text == "0")
+        return Level::Trace;
+    if (text == "debug" || text == "Debug" || text == "1")
+        return Level::Debug;
+    if (text == "info" || text == "Info" || text == "2")
+        return Level::Info;
     if (text == "warn" || text == "warning" || text == "Warn" || text == "Warning" || text == "3")
         return Level::Warning;
-    if (text == "error" || text == "Error" || text == "4") return Level::Error;
-    if (text == "fatal" || text == "Fatal" || text == "5") return Level::Fatal;
-    if (text == "none" || text == "None" || text == "6") return Level::None;
+    if (text == "error" || text == "Error" || text == "4")
+        return Level::Error;
+    if (text == "fatal" || text == "Fatal" || text == "5")
+        return Level::Fatal;
+    if (text == "none" || text == "None" || text == "6")
+        return Level::None;
     return std::nullopt;
 }
 
@@ -116,14 +122,19 @@ Configuration ResolveConfiguration(Configuration configuration)
         if (const auto level = ParseLevel(value->c_str()))
             configuration.minimumLevel = *level;
     }
-    constexpr std::array<std::pair<Category, const char *>, 12> categoryVariables{{
-        {Category::Core, "ENGINE_LOG_CORE_LEVEL"}, {Category::Editor, "ENGINE_LOG_EDITOR_LEVEL"},
-        {Category::Physics, "ENGINE_LOG_PHYSICS_LEVEL"}, {Category::Render, "ENGINE_LOG_RENDER_LEVEL"},
-        {Category::Backend, "ENGINE_LOG_BACKEND_LEVEL"}, {Category::Audio, "ENGINE_LOG_AUDIO_LEVEL"},
-        {Category::ECS, "ENGINE_LOG_ECS_LEVEL"}, {Category::Net, "ENGINE_LOG_NET_LEVEL"},
-        {Category::Network, "ENGINE_LOG_NETWORK_LEVEL"},
-        {Category::Asset, "ENGINE_LOG_ASSET_LEVEL"}, {Category::Diagnostics, "ENGINE_LOG_DIAGNOSTICS_LEVEL"},
-        {Category::Count, nullptr}}};
+    constexpr std::array<std::pair<Category, const char *>, 12> categoryVariables{
+        {{Category::Core, "ENGINE_LOG_CORE_LEVEL"},
+         {Category::Editor, "ENGINE_LOG_EDITOR_LEVEL"},
+         {Category::Physics, "ENGINE_LOG_PHYSICS_LEVEL"},
+         {Category::Render, "ENGINE_LOG_RENDER_LEVEL"},
+         {Category::Backend, "ENGINE_LOG_BACKEND_LEVEL"},
+         {Category::Audio, "ENGINE_LOG_AUDIO_LEVEL"},
+         {Category::ECS, "ENGINE_LOG_ECS_LEVEL"},
+         {Category::Net, "ENGINE_LOG_NET_LEVEL"},
+         {Category::Network, "ENGINE_LOG_NETWORK_LEVEL"},
+         {Category::Asset, "ENGINE_LOG_ASSET_LEVEL"},
+         {Category::Diagnostics, "ENGINE_LOG_DIAGNOSTICS_LEVEL"},
+         {Category::Count, nullptr}}};
     for (const auto &[category, variable] : categoryVariables)
     {
         if (!variable)
@@ -139,7 +150,8 @@ Configuration ResolveConfiguration(Configuration configuration)
 
 std::string ArgumentText(const LogArgument &argument, std::string_view specification)
 {
-    const std::string pattern = "{" + (specification.empty() ? std::string{} : ":" + std::string(specification)) + "}";
+    const std::string pattern =
+        "{" + (specification.empty() ? std::string{} : ":" + std::string(specification)) + "}";
     const auto format = [&pattern](const auto &value) {
         try
         {
@@ -215,12 +227,12 @@ void FallbackEvent(const LogEvent &event) noexcept
         diagnostic += ToString(event.level);
         diagnostic += "][";
         diagnostic += ToString(event.category);
-        diagnostic += "]";
+        diagnostic += ']';
         if (event.errorCode[0])
         {
             diagnostic += " [";
             diagnostic += event.errorCode;
-            diagnostic += "]";
+            diagnostic += ']';
         }
         diagnostic += ": ";
         diagnostic += FormatMessage(event);
@@ -328,7 +340,7 @@ struct Manager
         return level >= (std::max)(globalMinimum, categoryMinimum);
     }
 
-    void SetSinkFailure(std::string message)
+    void SetSinkFailure(const std::string &message)
     {
         fileStatus.store(FileSinkStatus::Failed, std::memory_order_release);
         fileFailedEvents.fetch_add(1, std::memory_order_relaxed);
@@ -352,16 +364,16 @@ struct Manager
         }
         else
         {
-            const std::filesystem::path oldest = configuration.jsonlPath.string() + "." +
-                                                 std::to_string(configuration.retainedFileCount);
+            const std::filesystem::path oldest =
+                configuration.jsonlPath.string() + "." + std::to_string(configuration.retainedFileCount);
             std::filesystem::remove(oldest, error);
             error.clear();
             for (size_t index = configuration.retainedFileCount; index > 1; --index)
             {
-                const auto from = std::filesystem::path(configuration.jsonlPath.string() + "." +
-                                                         std::to_string(index - 1));
-                const auto to = std::filesystem::path(configuration.jsonlPath.string() + "." +
-                                                       std::to_string(index));
+                const auto from =
+                    std::filesystem::path(configuration.jsonlPath.string() + "." + std::to_string(index - 1));
+                const auto to =
+                    std::filesystem::path(configuration.jsonlPath.string() + "." + std::to_string(index));
                 if (std::filesystem::exists(from, error))
                 {
                     std::filesystem::rename(from, to, error);
@@ -371,8 +383,8 @@ struct Manager
                 error.clear();
             }
             if (!error)
-                std::filesystem::rename(configuration.jsonlPath,
-                                        configuration.jsonlPath.string() + ".1", error);
+                std::filesystem::rename(configuration.jsonlPath, configuration.jsonlPath.string() + ".1",
+                                        error);
         }
         if (error)
         {
@@ -401,8 +413,7 @@ struct Manager
             const intptr_t difference = static_cast<intptr_t>(sequence) - static_cast<intptr_t>(position);
             if (difference == 0)
             {
-                if (enqueuePosition.compare_exchange_weak(position, position + 1,
-                                                          std::memory_order_relaxed))
+                if (enqueuePosition.compare_exchange_weak(position, position + 1, std::memory_order_relaxed))
                     break;
             }
             else if (difference < 0)
@@ -426,8 +437,7 @@ struct Manager
             const intptr_t difference = static_cast<intptr_t>(sequence) - static_cast<intptr_t>(position + 1);
             if (difference == 0)
             {
-                if (dequeuePosition.compare_exchange_weak(position, position + 1,
-                                                          std::memory_order_relaxed))
+                if (dequeuePosition.compare_exchange_weak(position, position + 1, std::memory_order_relaxed))
                     break;
             }
             else if (difference < 0)
@@ -483,15 +493,15 @@ struct Manager
                         jsonlBytes += line.size();
                         writtenEvents.fetch_add(1, std::memory_order_relaxed);
                     }
-                if (event.level >= Level::Error)
-                {
-                    jsonl.flush();
-                    if (!jsonl)
+                    if (event.level >= Level::Error)
                     {
-                        jsonl.close();
-                        SetSinkFailure("Log file flush failed: " + configuration.jsonlPath.string());
+                        jsonl.flush();
+                        if (!jsonl)
+                        {
+                            jsonl.close();
+                            SetSinkFailure("Log file flush failed: " + configuration.jsonlPath.string());
+                        }
                     }
-                }
                 }
             }
         }
@@ -620,49 +630,49 @@ struct Manager
 #endif
         try
         {
-        if (!configuration.jsonlPath.empty())
-        {
-            fileStatus.store(FileSinkStatus::Opening, std::memory_order_release);
-            std::error_code error;
-            if (configuration.jsonlPath.has_parent_path())
-                std::filesystem::create_directories(configuration.jsonlPath.parent_path(), error);
-            if (error)
-                SetSinkFailure("Unable to create log directory: " + error.message());
-            else
+            if (!configuration.jsonlPath.empty())
             {
-                jsonl.open(configuration.jsonlPath, std::ios::out | std::ios::app);
-                if (!jsonl)
-                    SetSinkFailure("Unable to open log file: " + configuration.jsonlPath.string());
+                fileStatus.store(FileSinkStatus::Opening, std::memory_order_release);
+                std::error_code error;
+                if (configuration.jsonlPath.has_parent_path())
+                    std::filesystem::create_directories(configuration.jsonlPath.parent_path(), error);
+                if (error)
+                    SetSinkFailure("Unable to create log directory: " + error.message());
                 else
                 {
-                    jsonlBytes = std::filesystem::file_size(configuration.jsonlPath, error);
-                    if (error)
-                        jsonlBytes = 0;
-                    const std::string header = Json{{"type", "session_start"},
-                                                    {"session_id", sessionId},
-                                                    {"timestamp_ns", std::chrono::duration_cast<
-                                                                         std::chrono::nanoseconds>(
-                                                                         std::chrono::system_clock::now()
-                                                                             .time_since_epoch())
-                                                                         .count()}}
-                                                   .dump() + '\n';
-                    jsonl.write(header.data(), static_cast<std::streamsize>(header.size()));
+                    jsonl.open(configuration.jsonlPath, std::ios::out | std::ios::app);
                     if (!jsonl)
-                    {
-                        jsonl.close();
-                        SetSinkFailure("Unable to write the log session header: " +
-                                       configuration.jsonlPath.string());
-                    }
+                        SetSinkFailure("Unable to open log file: " + configuration.jsonlPath.string());
                     else
                     {
-                        jsonlBytes += header.size();
-                        fileStatus.store(FileSinkStatus::Ready, std::memory_order_release);
+                        jsonlBytes = std::filesystem::file_size(configuration.jsonlPath, error);
+                        if (error)
+                            jsonlBytes = 0;
+                        const std::string header =
+                            Json{{"type", "session_start"},
+                                 {"session_id", sessionId},
+                                 {"timestamp_ns", std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                                      std::chrono::system_clock::now().time_since_epoch())
+                                                      .count()}}
+                                .dump() +
+                            '\n';
+                        jsonl.write(header.data(), static_cast<std::streamsize>(header.size()));
+                        if (!jsonl)
+                        {
+                            jsonl.close();
+                            SetSinkFailure("Unable to write the log session header: " +
+                                           configuration.jsonlPath.string());
+                        }
+                        else
+                        {
+                            jsonlBytes += header.size();
+                            fileStatus.store(FileSinkStatus::Ready, std::memory_order_release);
+                        }
                     }
                 }
             }
-        }
-        else
-            fileStatus.store(FileSinkStatus::Disabled, std::memory_order_release);
+            else
+                fileStatus.store(FileSinkStatus::Disabled, std::memory_order_release);
         }
         catch (...)
         {
@@ -686,7 +696,7 @@ struct Manager
                 }
                 catch (...)
                 {
-                    // A malformed event or sink failure must not terminate the consumer thread.
+                    FallbackDiagnostic("Unhandled error while processing a log event");
                 }
                 pending.fetch_sub(1, std::memory_order_release);
                 drained.notify_all();
@@ -734,13 +744,20 @@ const char *ToString(Level level) noexcept
 {
     switch (level)
     {
-    case Level::Trace: return "Trace";
-    case Level::Debug: return "Debug";
-    case Level::Info: return "Info";
-    case Level::Warning: return "Warning";
-    case Level::Error: return "Error";
-    case Level::Fatal: return "Fatal";
-    default: return "None";
+    case Level::Trace:
+        return "Trace";
+    case Level::Debug:
+        return "Debug";
+    case Level::Info:
+        return "Info";
+    case Level::Warning:
+        return "Warning";
+    case Level::Error:
+        return "Error";
+    case Level::Fatal:
+        return "Fatal";
+    default:
+        return "None";
     }
 }
 
@@ -748,32 +765,53 @@ const char *ToString(Category category) noexcept
 {
     switch (category)
     {
-    case Category::Core: return "Core";
-    case Category::Editor: return "Editor";
-    case Category::Physics: return "Physics";
-    case Category::Render: return "Render";
-    case Category::Backend: return "Backend";
-    case Category::Audio: return "Audio";
-    case Category::ECS: return "ECS";
-    case Category::Net: return "Network";
-    case Category::Asset: return "Asset";
-    case Category::Diagnostics: return "Diagnostics";
-    default: return "Core";
+    case Category::Core:
+        return "Core";
+    case Category::Editor:
+        return "Editor";
+    case Category::Physics:
+        return "Physics";
+    case Category::Render:
+        return "Render";
+    case Category::Backend:
+        return "Backend";
+    case Category::Audio:
+        return "Audio";
+    case Category::ECS:
+        return "ECS";
+    case Category::Net:
+        return "Network";
+    case Category::Asset:
+        return "Asset";
+    case Category::Diagnostics:
+        return "Diagnostics";
+    default:
+        return "Core";
     }
 }
 
 Category CategoryFromName(std::string_view name) noexcept
 {
-    if (name == "Render") return Category::Render;
-    if (name == "Editor") return Category::Editor;
-    if (name == "Backend") return Category::Backend;
-    if (name == "Diagnostics") return Category::Diagnostics;
-    if (name == "Physics") return Category::Physics;
-    if (name == "Audio") return Category::Audio;
-    if (name == "ECS") return Category::ECS;
-    if (name == "Net") return Category::Net;
-    if (name == "Network") return Category::Network;
-    if (name == "Asset") return Category::Asset;
+    if (name == "Render")
+        return Category::Render;
+    if (name == "Editor")
+        return Category::Editor;
+    if (name == "Backend")
+        return Category::Backend;
+    if (name == "Diagnostics")
+        return Category::Diagnostics;
+    if (name == "Physics")
+        return Category::Physics;
+    if (name == "Audio")
+        return Category::Audio;
+    if (name == "ECS")
+        return Category::ECS;
+    if (name == "Net")
+        return Category::Net;
+    if (name == "Network")
+        return Category::Network;
+    if (name == "Asset")
+        return Category::Asset;
     return Category::Core;
 }
 
@@ -864,24 +902,32 @@ void Shutdown() noexcept
 
 void Flush() noexcept
 {
-    Manager *manager = gManager.load(std::memory_order_acquire);
-    if (!manager)
-        return;
-    std::unique_lock drainLock(manager->drainMutex);
-    if (!manager->drained.wait_for(drainLock, std::chrono::seconds(5), [manager] {
-            return manager->pending.load(std::memory_order_acquire) == 0;
-        }))
-        FallbackDiagnostic("Timed out while flushing the log queue");
-    drainLock.unlock();
-    std::lock_guard lock(manager->ioMutex);
-    if (manager->jsonl.is_open())
+    try
     {
-        manager->jsonl.flush();
-        if (!manager->jsonl)
+        Manager *manager = gManager.load(std::memory_order_acquire);
+        if (!manager)
+            return;
+        std::unique_lock drainLock(manager->drainMutex);
+        if (!manager->drained.wait_for(drainLock, std::chrono::seconds(5), [manager] {
+                return manager->pending.load(std::memory_order_acquire) == 0;
+            }))
+            FallbackDiagnostic("Timed out while flushing the log queue");
+        drainLock.unlock();
+        std::lock_guard lock(manager->ioMutex);
+        if (manager->jsonl.is_open())
         {
-            manager->jsonl.close();
-            manager->SetSinkFailure("Log file flush failed: " + manager->configuration.jsonlPath.string());
+            manager->jsonl.flush();
+            if (!manager->jsonl)
+            {
+                manager->jsonl.close();
+                manager->SetSinkFailure("Log file flush failed: " +
+                                        manager->configuration.jsonlPath.string());
+            }
         }
+    }
+    catch (...)
+    {
+        FallbackDiagnostic("Unexpected error while flushing the log queue");
     }
 }
 
@@ -987,7 +1033,8 @@ HealthSnapshot GetHealthSnapshot()
         result.callbackFailedEvents = manager->callbackFailedEvents.load(std::memory_order_relaxed);
         result.callbackDroppedEvents = manager->callbackDroppedEvents.load(std::memory_order_relaxed);
         result.fileFailedEvents = manager->fileFailedEvents.load(std::memory_order_relaxed);
-        result.breadcrumbOverwrittenEvents = manager->breadcrumbOverwrittenEvents.load(std::memory_order_relaxed);
+        result.breadcrumbOverwrittenEvents =
+            manager->breadcrumbOverwrittenEvents.load(std::memory_order_relaxed);
         result.queueDepth = manager->pending.load(std::memory_order_relaxed);
         result.queueCapacity = manager->capacity;
         result.queueHighWaterMark = manager->queueHighWaterMark.load(std::memory_order_relaxed);
@@ -1004,8 +1051,8 @@ std::vector<LogRecord> GetRecentRecords()
         std::lock_guard lock(manager->sinkMutex);
         std::vector<LogRecord> records;
         records.reserve(manager->breadcrumbSize);
-        const size_t start = (manager->breadcrumbWrite + BreadcrumbCount - manager->breadcrumbSize) %
-                             BreadcrumbCount;
+        const size_t start =
+            (manager->breadcrumbWrite + BreadcrumbCount - manager->breadcrumbSize) % BreadcrumbCount;
         for (size_t i = 0; i < manager->breadcrumbSize; ++i)
             records.push_back(manager->breadcrumbs[(start + i) % BreadcrumbCount]);
         return records;
@@ -1039,17 +1086,19 @@ bool Enqueue(const LogEvent &source) noexcept
         return false;
     }
     event.timestampNs = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
-        std::chrono::system_clock::now().time_since_epoch()).count());
+                                                  std::chrono::system_clock::now().time_since_epoch())
+                                                  .count());
     event.monotonicNs = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
-        std::chrono::steady_clock::now().time_since_epoch()).count());
+                                                  std::chrono::steady_clock::now().time_since_epoch())
+                                                  .count());
     event.frameIndex = gFrameIndex.load(std::memory_order_relaxed);
     event.threadId = std::hash<std::thread::id>{}(std::this_thread::get_id());
     if (event.operationId == 0)
         event.operationId = gCurrentOperationId;
     const size_t depth = manager->pending.fetch_add(1, std::memory_order_relaxed) + 1;
     size_t highWater = manager->queueHighWaterMark.load(std::memory_order_relaxed);
-    while (depth > highWater && !manager->queueHighWaterMark.compare_exchange_weak(
-                                    highWater, depth, std::memory_order_relaxed))
+    while (depth > highWater &&
+           !manager->queueHighWaterMark.compare_exchange_weak(highWater, depth, std::memory_order_relaxed))
     {
     }
     if (!manager->Push(event))

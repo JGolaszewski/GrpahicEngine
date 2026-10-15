@@ -577,8 +577,8 @@ SceneDocumentResult SceneSerializer::Load(const std::filesystem::path &path) con
                 return result;
             }
             KnownKeys(item,
-                      {"id", "name", "parent", "modelGuid", "materialGuid", "primitiveType", "material",
-                       "materialOverrides", "position", "rotation", "scale", "render"},
+                      {"id", "parentId", "name", "parent", "modelGuid", "materialGuid", "primitiveType",
+                       "material", "materialOverrides", "position", "rotation", "scale", "render"},
                       result.warnings, context);
             SceneEntityDocument entity;
             if (!ReadId(item, entity.id, fieldError) || !entityIds.insert(entity.id).second ||
@@ -609,7 +609,10 @@ SceneDocumentResult SceneSerializer::Load(const std::filesystem::path &path) con
             if (!ReadOptionalGuid(item, "modelGuid", entity.modelGuid, fieldError) ||
                 !ReadOptionalGuid(item, "materialGuid", entity.materialGuid, fieldError))
             {
-                result.error = FileContext(path, context + "." + fieldError);
+                std::string fieldContext = context;
+                fieldContext += '.';
+                fieldContext += fieldError;
+                result.error = FileContext(path, fieldContext);
                 return result;
             }
             if (item.contains("primitiveType") && !item["primitiveType"].is_null())
@@ -633,7 +636,10 @@ SceneDocumentResult SceneSerializer::Load(const std::filesystem::path &path) con
                 if (!ReadMaterial(item["material"], material, result.warnings, context + ".material",
                                   fieldError))
                 {
-                    result.error = FileContext(path, context + ".material: " + fieldError);
+                    std::string fieldContext = context;
+                    fieldContext += ".material: ";
+                    fieldContext += fieldError;
+                    result.error = FileContext(path, fieldContext);
                     return result;
                 }
                 entity.material = std::move(material);
@@ -658,9 +664,12 @@ SceneDocumentResult SceneSerializer::Load(const std::filesystem::path &path) con
                                       context + ".materialOverrides[" + std::to_string(materialIndex) + "]",
                                       fieldError))
                     {
-                        result.error =
-                            FileContext(path, context + ".materialOverrides[" +
-                                                  std::to_string(materialIndex) + "]: " + fieldError);
+                        std::string fieldContext = context;
+                        fieldContext += ".materialOverrides[";
+                        fieldContext += std::to_string(materialIndex);
+                        fieldContext += "]: ";
+                        fieldContext += fieldError;
+                        result.error = FileContext(path, fieldContext);
                         return result;
                     }
                     entity.materialOverrides.push_back(std::move(material));
@@ -713,7 +722,10 @@ SceneDocumentResult SceneSerializer::Load(const std::filesystem::path &path) con
                     !ReadBool(render, "castShadows", entity.castShadows, fieldError) ||
                     !ReadBool(render, "receiveShadows", entity.receiveShadows, fieldError))
                 {
-                    result.error = FileContext(path, context + ".render." + fieldError);
+                    std::string fieldContext = context;
+                    fieldContext += ".render.";
+                    fieldContext += fieldError;
+                    result.error = FileContext(path, fieldContext);
                     return result;
                 }
             }
@@ -778,8 +790,9 @@ SceneDocumentResult SceneSerializer::Load(const std::filesystem::path &path) con
                 return result;
             }
             KnownKeys(item,
-                      {"id", "name", "parent", "direction", "position", "color", "intensity", "range", "innerAngleDegrees",
-                       "outerAngleDegrees", "shadowBias", "shadowNormalBias", "type", "usePosition", "castShadows"},
+                      {"id", "name", "parent", "direction", "position", "color", "intensity", "range",
+                       "innerAngleDegrees", "outerAngleDegrees", "shadowBias", "shadowNormalBias", "type",
+                       "usePosition", "castShadows"},
                       result.warnings, context);
             SceneLightDocument light;
             if (!ReadId(item, light.id, fieldError) || !lightIds.insert(light.id).second ||
@@ -833,7 +846,7 @@ SceneDocumentResult SceneSerializer::Load(const std::filesystem::path &path) con
                 result.error = FileContext(path, context + " contains out-of-range light settings");
                 return result;
             }
-            result.document.lights.push_back(std::move(light));
+            result.document.lights.push_back(light);
         }
     }
     std::set<uint64_t> cameraIds;
@@ -853,7 +866,8 @@ SceneDocumentResult SceneSerializer::Load(const std::filesystem::path &path) con
                 result.error = FileContext(path, context + " must be an object");
                 return result;
             }
-            KnownKeys(item, {"id", "name", "parent", "position", "rotation", "fovRadians", "nearPlane", "farPlane"},
+            KnownKeys(item,
+                      {"id", "name", "parent", "position", "rotation", "fovRadians", "nearPlane", "farPlane"},
                       result.warnings, context);
             SceneCameraDocument camera;
             if (!ReadId(item, camera.id, fieldError) || !cameraIds.insert(camera.id).second ||
@@ -886,7 +900,7 @@ SceneDocumentResult SceneSerializer::Load(const std::filesystem::path &path) con
                 result.error = FileContext(path, context + " contains invalid projection or rotation values");
                 return result;
             }
-            result.document.cameras.push_back(std::move(camera));
+            result.document.cameras.push_back(camera);
         }
     }
     return result;
@@ -960,9 +974,12 @@ bool SceneSerializer::SaveAtomic(const std::filesystem::path &path, const SceneD
             const auto current =
                 std::find_if(document.entities.begin(), document.entities.end(),
                              [currentId](const auto &candidate) { return candidate.id == currentId; });
-            if (current == document.entities.end() || !current->parentId)
+            if (current == document.entities.end())
                 break;
-            currentId = *current->parentId;
+            const uint64_t parentId = current->parentId.value_or(0);
+            if (parentId == 0)
+                break;
+            currentId = parentId;
         }
     }
     std::set<uint64_t> lightIds;

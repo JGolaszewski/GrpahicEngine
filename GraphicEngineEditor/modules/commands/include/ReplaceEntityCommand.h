@@ -9,10 +9,11 @@
 class ReplaceEntityCommand final : public ICommand
 {
   public:
-    using Changed = std::function<void(Engine::EntityId, const std::shared_ptr<::Engine::Renderer::Entity> &)>;
+    using Changed =
+        std::function<void(Engine::EntityId, const std::shared_ptr<::Engine::Renderer::Entity> &)>;
     ReplaceEntityCommand(std::shared_ptr<Engine::Scene> scene, Engine::EntityId id,
-                         std::shared_ptr<::Engine::Renderer::Entity> before, std::shared_ptr<::Engine::Renderer::Entity> after,
-                         Changed changed);
+                         std::shared_ptr<::Engine::Renderer::Entity> before,
+                         std::shared_ptr<::Engine::Renderer::Entity> after, Changed changed);
     void Execute() override;
     void Undo() override;
 

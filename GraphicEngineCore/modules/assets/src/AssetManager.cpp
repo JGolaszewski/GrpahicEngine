@@ -374,7 +374,7 @@ bool ValidateModelUris(const std::filesystem::path &sourcePath, const std::files
 }
 } // namespace
 
-AssetManager::AssetManager(std::filesystem::path projectRoot)
+AssetManager::AssetManager(const std::filesystem::path &projectRoot)
 {
     std::string ignored;
     SetProjectRoot(projectRoot, ignored);
@@ -383,7 +383,8 @@ AssetManager::AssetManager(std::filesystem::path projectRoot)
 bool AssetManager::SetProjectRoot(const std::filesystem::path &projectRoot, std::string &error)
 {
     Log::ScopedOperation operation;
-    ENGINE_LOG_INFO("Asset", "Project root update started | requested_path: {}", projectRoot.generic_string());
+    ENGINE_LOG_INFO("Asset", "Project root update started | requested_path: {}",
+                    projectRoot.generic_string());
     error.clear();
     std::error_code ec;
     auto root = std::filesystem::weakly_canonical(projectRoot, ec);
@@ -397,8 +398,10 @@ bool AssetManager::SetProjectRoot(const std::filesystem::path &projectRoot, std:
     m_ProjectRoot = std::move(root);
     m_Models.clear();
     m_Textures.clear();
-    ENGINE_LOG_INFO("Asset", "Project root updated | canonical_path: {} | model_cache_cleared: true | texture_cache_cleared: true",
-                    m_ProjectRoot.generic_string());
+    ENGINE_LOG_INFO(
+        "Asset",
+        "Project root updated | canonical_path: {} | model_cache_cleared: true | texture_cache_cleared: true",
+        m_ProjectRoot.generic_string());
     return true;
 }
 
@@ -411,7 +414,8 @@ Result<std::string> AssetManager::ImportModel(const std::filesystem::path &sourc
     if (!ImportModel(sourcePath, guid, error))
     {
         ENGINE_LOG_ERROR_CODE("Asset", "asset.model.import_failed",
-                              "Model import failed | path: {} | error: {}", sourcePath.generic_string(), error);
+                              "Model import failed | path: {} | error: {}", sourcePath.generic_string(),
+                              error);
         return std::unexpected(MakeError(std::move(error)));
     }
     ENGINE_LOG_INFO("Asset", "Model imported | path: {} | guid: {}", sourcePath.generic_string(), guid);
@@ -427,7 +431,8 @@ Result<std::string> AssetManager::ImportTexture(const std::filesystem::path &sou
     if (!ImportTexture(sourcePath, guid, error))
     {
         ENGINE_LOG_ERROR_CODE("Asset", "asset.texture.import_failed",
-                              "Texture import failed | path: {} | error: {}", sourcePath.generic_string(), error);
+                              "Texture import failed | path: {} | error: {}", sourcePath.generic_string(),
+                              error);
         return std::unexpected(MakeError(std::move(error)));
     }
     ENGINE_LOG_INFO("Asset", "Texture imported | path: {} | guid: {}", sourcePath.generic_string(), guid);
@@ -596,7 +601,7 @@ bool AssetManager::LoadModel(const std::string &guid, std::string &error)
     const auto fail = [&]() {
         ENGINE_LOG_ERROR_CODE("Asset", "asset.model.load_failed",
                               "Model load failed | guid: {} | project_root: {} | error: {}", guid,
-                         m_ProjectRoot.generic_string(), error);
+                              m_ProjectRoot.generic_string(), error);
         return false;
     };
     if (m_ProjectRoot.empty() || !IsGuid(guid))
@@ -666,7 +671,7 @@ bool AssetManager::LoadTexture(const std::string &guid, std::string &error)
     const auto fail = [&]() {
         ENGINE_LOG_ERROR_CODE("Asset", "asset.texture.load_failed",
                               "Texture load failed | guid: {} | project_root: {} | error: {}", guid,
-                         m_ProjectRoot.generic_string(), error);
+                              m_ProjectRoot.generic_string(), error);
         return false;
     };
     if (m_ProjectRoot.empty() || !IsGuid(guid))
@@ -724,11 +729,13 @@ bool AssetManager::RefreshRegistry(std::vector<std::string> &warnings, std::stri
     Log::ScopedOperation operation;
     warnings.clear();
     error.clear();
-    ENGINE_LOG_INFO("Asset", "Asset registry refresh started | project_root: {}", m_ProjectRoot.generic_string());
+    ENGINE_LOG_INFO("Asset", "Asset registry refresh started | project_root: {}",
+                    m_ProjectRoot.generic_string());
     if (m_ProjectRoot.empty())
     {
         error = "project root must be set before enumerating assets";
-        ENGINE_LOG_ERROR("Asset", "Asset registry refresh rejected | project_root_length: 0 | error: {}", error);
+        ENGINE_LOG_ERROR("Asset", "Asset registry refresh rejected | project_root_length: 0 | error: {}",
+                         error);
         return false;
     }
     std::unordered_map<std::string, std::filesystem::path> seen;
@@ -776,10 +783,12 @@ bool AssetManager::RefreshRegistry(std::vector<std::string> &warnings, std::stri
         error = m_ProjectRoot.generic_string() + ": could not enumerate project assets: " + ec.message();
         ENGINE_LOG_ERROR_CODE("Asset", "asset.registry.refresh_failed",
                               "Asset registry refresh failed | project_root: {} | error: {}",
-                         m_ProjectRoot.generic_string(), error);
+                              m_ProjectRoot.generic_string(), error);
         return false;
     }
-    ENGINE_LOG_INFO("Asset", "Asset registry refreshed | project_root: {} | model_count: {} | texture_count: {} | warning_count: {}",
+    ENGINE_LOG_INFO("Asset",
+                    "Asset registry refreshed | project_root: {} | model_count: {} | texture_count: {} | "
+                    "warning_count: {}",
                     m_ProjectRoot.generic_string(), m_Models.size(), m_Textures.size(), warnings.size());
     return true;
 }

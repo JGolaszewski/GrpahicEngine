@@ -1,10 +1,14 @@
-#include "rendering/include/SceneRenderer.h"
+#include "SceneRenderer.h"
+#include "MaterialBackend.h"
+#include "MeshBackend.h"
+#include "PipelineCache.h"
+#include "ShaderFactory.h"
+#include "TextureBackend.h"
 #include "runtime/include/LogMacros.h"
 
 #include <algorithm>
 #include <chrono>
 #include <cmath>
-#include <cstring>
 #include <limits>
 
 #include "scene/include/Scene.h"
@@ -15,10 +19,60 @@
 
 namespace
 {
+nvrhi::PrimitiveType ToBackendPrimitiveType(::Engine::Renderer::PrimitiveTopology topology)
+{
+    switch (topology)
+    {
+    case ::Engine::Renderer::PrimitiveTopology::Triangles:
+        return nvrhi::PrimitiveType::TriangleList;
+    case ::Engine::Renderer::PrimitiveTopology::Lines:
+        return nvrhi::PrimitiveType::LineList;
+    case ::Engine::Renderer::PrimitiveTopology::LineStrip:
+        return nvrhi::PrimitiveType::LineStrip;
+    case ::Engine::Renderer::PrimitiveTopology::Points:
+        return nvrhi::PrimitiveType::PointList;
+    }
+    return nvrhi::PrimitiveType::TriangleList;
+}
+
 struct DebugViewData
 {
     DirectX::XMFLOAT4X4 ViewProjection;
 };
+
+bool Equal(const DirectX::XMFLOAT3 &left, const DirectX::XMFLOAT3 &right)
+{
+    return left.x == right.x && left.y == right.y && left.z == right.z;
+}
+
+bool Equal(const DirectX::XMFLOAT4X4 &left, const DirectX::XMFLOAT4X4 &right)
+{
+    for (size_t row = 0; row < 4; ++row)
+    {
+        for (size_t column = 0; column < 4; ++column)
+        {
+            if (left.m[row][column] != right.m[row][column])
+            {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+nvrhi::RasterCullMode ToBackendCullMode(::Engine::Renderer::FaceCullMode mode)
+{
+    switch (mode)
+    {
+    case ::Engine::Renderer::FaceCullMode::None:
+        return nvrhi::RasterCullMode::None;
+    case ::Engine::Renderer::FaceCullMode::Front:
+        return nvrhi::RasterCullMode::Front;
+    case ::Engine::Renderer::FaceCullMode::Back:
+        return nvrhi::RasterCullMode::Back;
+    }
+    return nvrhi::RasterCullMode::Back;
+}
 
 DirectX::XMVECTOR NormalizeOrDefault(const DirectX::XMFLOAT3 &value)
 {
@@ -31,7 +85,7 @@ DirectX::XMVECTOR NormalizeOrDefault(const DirectX::XMFLOAT3 &value)
     return DirectX::XMVector3Normalize(vector);
 }
 
-static_assert(sizeof(::Engine::Renderer::PerObjectGpuData) == Engine::SceneRenderer::PerObjectDataStride);
+static_assert(sizeof(::Engine::Renderer::PerObjectGpuData) == Engine::PerObjectDataStride);
 
 DirectX::XMMATRIX ComputeSpotLightViewProj(const ::Engine::Renderer::DirectionalLightData &lightData)
 {
@@ -71,15 +125,17 @@ DirectX::XMMATRIX ComputeSpotLightViewProj(const ::Engine::Renderer::Directional
 
 // --- Initialization ---
 
-Engine::SceneRenderer::SceneRenderer(nvrhi::IDevice *)
+Engine::SceneRenderer::SceneRenderer(nvrhi::IDevice *) : m_PipelineCache(std::make_unique<PipelineCache>())
 {
 }
+
+Engine::SceneRenderer::~SceneRenderer() = default;
 
 void Engine::SceneRenderer::Init(nvrhi::IDevice *device, ::Engine::Renderer::MaterialSystem *materialSystem,
                                  ::Engine::Renderer::ShaderFactory *shaderFactory)
 {
     m_MaterialSystem = materialSystem;
-    m_PipelineCache.Init(device);
+    m_PipelineCache->Init(device);
 
     m_Device = device;
 
@@ -99,10 +155,10 @@ void Engine::SceneRenderer::Init(nvrhi::IDevice *device, ::Engine::Renderer::Mat
     sceneLayoutDesc.visibility = nvrhi::ShaderType::All;
     sceneLayoutDesc.bindings = {
         nvrhi::BindingLayoutItem::ConstantBuffer(2), nvrhi::BindingLayoutItem::Texture_SRV(6),
-        nvrhi::BindingLayoutItem::Sampler(6), nvrhi::BindingLayoutItem::ConstantBuffer(4),
-        nvrhi::BindingLayoutItem::Texture_SRV(7), nvrhi::BindingLayoutItem::Sampler(7),
-        nvrhi::BindingLayoutItem::Texture_SRV(8), nvrhi::BindingLayoutItem::Sampler(8),
-        nvrhi::BindingLayoutItem::Texture_SRV(9), nvrhi::BindingLayoutItem::Sampler(9)};
+        nvrhi::BindingLayoutItem::Sampler(6),        nvrhi::BindingLayoutItem::ConstantBuffer(4),
+        nvrhi::BindingLayoutItem::Texture_SRV(7),    nvrhi::BindingLayoutItem::Sampler(7),
+        nvrhi::BindingLayoutItem::Texture_SRV(8),    nvrhi::BindingLayoutItem::Sampler(8),
+        nvrhi::BindingLayoutItem::Texture_SRV(9),    nvrhi::BindingLayoutItem::Sampler(9)};
     m_SceneBindingLayout = device->createBindingLayout(sceneLayoutDesc);
 
     nvrhi::BindingLayoutDesc debugLayoutDesc;
@@ -204,14 +260,16 @@ nvrhi::GraphicsPipelineHandle Engine::SceneRenderer::GetDebugPipeline(
         .setDestBlendAlpha(nvrhi::BlendFactor::InvSrcAlpha);
     key.BlendState.setRenderTarget(0, blendTarget);
 
-    return m_PipelineCache.GetOrCreatePipeline(key, framebuffer);
+    return m_PipelineCache->GetOrCreatePipeline(key, framebuffer);
 }
 
 void Engine::SceneRenderer::RenderDebugGeometry(nvrhi::ICommandList *commandList,
                                                 const ::Engine::Renderer::RenderView &view)
 {
     if (!commandList || !view.TargetFramebuffer || view.DebugGeometryData.Empty() || !m_DebugViewBuffer ||
-        !m_DebugBindingLayout)
+        !m_DebugBindingLayout ||
+        view.ViewportWidth > static_cast<uint32_t>(std::numeric_limits<int>::max()) ||
+        view.ViewportHeight > static_cast<uint32_t>(std::numeric_limits<int>::max()))
     {
         return;
     }
@@ -243,10 +301,12 @@ void Engine::SceneRenderer::RenderDebugGeometry(nvrhi::ICommandList *commandList
     const nvrhi::FramebufferInfo framebufferInfo = view.TargetFramebuffer->getFramebufferInfo();
     const nvrhi::Viewport viewport =
         nvrhi::Viewport(static_cast<float>(view.ViewportWidth), static_cast<float>(view.ViewportHeight));
-    const nvrhi::Rect scissor = nvrhi::Rect(view.ViewportWidth, view.ViewportHeight);
+    const nvrhi::Rect scissor =
+        nvrhi::Rect(static_cast<int>(view.ViewportWidth), static_cast<int>(view.ViewportHeight));
 
     const auto drawVertices = [&](const std::vector<::Engine::Renderer::DebugVertex> &vertices,
-                                  nvrhi::BufferHandle vertexBuffer, nvrhi::PrimitiveType primitiveType) {
+                                  const nvrhi::BufferHandle &vertexBuffer,
+                                  nvrhi::PrimitiveType primitiveType) {
         if (vertices.empty() || !vertexBuffer)
         {
             return;
@@ -423,7 +483,8 @@ size_t Engine::SceneRenderer::EstimateDrawCount(const ::Engine::Renderer::FrameB
     return count;
 }
 
-bool Engine::SceneRenderer::EnsureLightBuffers(size_t viewCount, ::Engine::Renderer::FrameContext &frameContext)
+bool Engine::SceneRenderer::EnsureLightBuffers(size_t viewCount,
+                                               ::Engine::Renderer::FrameContext &frameContext)
 {
     for (size_t viewIndex = 0; viewIndex < viewCount; ++viewIndex)
     {
@@ -435,20 +496,18 @@ bool Engine::SceneRenderer::EnsureLightBuffers(size_t viewCount, ::Engine::Rende
     return true;
 }
 
-nvrhi::BufferHandle Engine::SceneRenderer::GetLightBuffer(size_t viewIndex,
-                                                          ::Engine::Renderer::FrameContext &frameContext) const
+nvrhi::BufferHandle Engine::SceneRenderer::GetLightBuffer(
+    size_t viewIndex, ::Engine::Renderer::FrameContext &frameContext) const
 {
     return frameContext.GetOrCreateUploadBuffer(
         "PerViewLights/" + std::to_string(viewIndex), sizeof(::Engine::Renderer::LightsCBData),
         static_cast<uint32_t>(::Engine::Renderer::FrameContext::FramesInFlight + 1));
 }
 
-nvrhi::BindingSetHandle Engine::SceneRenderer::GetSceneBindingSet(size_t viewIndex,
-                                                                  nvrhi::BufferHandle lightBuffer,
-                                                                  nvrhi::TextureHandle shadowMap,
-                                                                  nvrhi::SamplerHandle shadowSampler,
-                                                                  nvrhi::BufferHandle cameraBuffer,
-                                                                  ::Engine::Renderer::FrameDiagnostics &diagnostics)
+nvrhi::BindingSetHandle Engine::SceneRenderer::GetSceneBindingSet(
+    size_t viewIndex, nvrhi::BufferHandle lightBuffer, nvrhi::TextureHandle shadowMap,
+    nvrhi::SamplerHandle shadowSampler, nvrhi::BufferHandle cameraBuffer,
+    ::Engine::Renderer::FrameDiagnostics &diagnostics)
 {
     if (!m_Device || !lightBuffer || !shadowMap || !shadowSampler || !cameraBuffer || !m_SceneBindingLayout)
         return nullptr;
@@ -464,12 +523,18 @@ nvrhi::BindingSetHandle Engine::SceneRenderer::GetSceneBindingSet(size_t viewInd
 
     const std::shared_ptr<::Engine::Renderer::TextureResource> fallbackEnvironment =
         m_MaterialSystem != nullptr ? m_MaterialSystem->GetFallbackColorTexture() : nullptr;
-    const auto &irradiance = m_EnvironmentIrradiance != nullptr ? m_EnvironmentIrradiance : fallbackEnvironment;
-    const auto &prefiltered = m_PrefilteredEnvironment != nullptr ? m_PrefilteredEnvironment : fallbackEnvironment;
+    const auto &irradiance =
+        m_EnvironmentIrradiance != nullptr ? m_EnvironmentIrradiance : fallbackEnvironment;
+    const auto &prefiltered =
+        m_PrefilteredEnvironment != nullptr ? m_PrefilteredEnvironment : fallbackEnvironment;
     const auto &integrationLut = m_BrdfIntegrationLut != nullptr ? m_BrdfIntegrationLut : fallbackEnvironment;
     if (irradiance == nullptr || prefiltered == nullptr || integrationLut == nullptr ||
-        irradiance->Texture == nullptr || irradiance->Sampler == nullptr || prefiltered->Texture == nullptr ||
-        prefiltered->Sampler == nullptr || integrationLut->Texture == nullptr || integrationLut->Sampler == nullptr)
+        !::Engine::Renderer::TextureBackendAccess::GetTexture(*irradiance) ||
+        !::Engine::Renderer::TextureBackendAccess::GetSampler(*irradiance) ||
+        !::Engine::Renderer::TextureBackendAccess::GetTexture(*prefiltered) ||
+        !::Engine::Renderer::TextureBackendAccess::GetSampler(*prefiltered) ||
+        !::Engine::Renderer::TextureBackendAccess::GetTexture(*integrationLut) ||
+        !::Engine::Renderer::TextureBackendAccess::GetSampler(*integrationLut))
         return nullptr;
 
     nvrhi::BindingSetDesc desc;
@@ -477,12 +542,18 @@ nvrhi::BindingSetHandle Engine::SceneRenderer::GetSceneBindingSet(size_t viewInd
     desc.addItem(nvrhi::BindingSetItem::Texture_SRV(6, shadowMap));
     desc.addItem(nvrhi::BindingSetItem::Sampler(6, shadowSampler));
     desc.addItem(nvrhi::BindingSetItem::ConstantBuffer(4, cameraBuffer));
-    desc.addItem(nvrhi::BindingSetItem::Texture_SRV(7, irradiance->Texture));
-    desc.addItem(nvrhi::BindingSetItem::Sampler(7, irradiance->Sampler));
-    desc.addItem(nvrhi::BindingSetItem::Texture_SRV(8, prefiltered->Texture));
-    desc.addItem(nvrhi::BindingSetItem::Sampler(8, prefiltered->Sampler));
-    desc.addItem(nvrhi::BindingSetItem::Texture_SRV(9, integrationLut->Texture));
-    desc.addItem(nvrhi::BindingSetItem::Sampler(9, integrationLut->Sampler));
+    desc.addItem(nvrhi::BindingSetItem::Texture_SRV(
+        7, ::Engine::Renderer::TextureBackendAccess::GetTexture(*irradiance)));
+    desc.addItem(
+        nvrhi::BindingSetItem::Sampler(7, ::Engine::Renderer::TextureBackendAccess::GetSampler(*irradiance)));
+    desc.addItem(nvrhi::BindingSetItem::Texture_SRV(
+        8, ::Engine::Renderer::TextureBackendAccess::GetTexture(*prefiltered)));
+    desc.addItem(nvrhi::BindingSetItem::Sampler(
+        8, ::Engine::Renderer::TextureBackendAccess::GetSampler(*prefiltered)));
+    desc.addItem(nvrhi::BindingSetItem::Texture_SRV(
+        9, ::Engine::Renderer::TextureBackendAccess::GetTexture(*integrationLut)));
+    desc.addItem(nvrhi::BindingSetItem::Sampler(
+        9, ::Engine::Renderer::TextureBackendAccess::GetSampler(*integrationLut)));
     nvrhi::BindingSetHandle bindings = m_Device->createBindingSet(desc, m_SceneBindingLayout);
     if (!bindings)
         return nullptr;
@@ -496,17 +567,21 @@ nvrhi::BindingSetHandle Engine::SceneRenderer::GetSceneBindingSet(size_t viewInd
     return cache.Bindings;
 }
 
-
 bool Engine::SceneRenderer::SetEnvironmentLighting(
     std::shared_ptr<::Engine::Renderer::TextureResource> irradiance,
     std::shared_ptr<::Engine::Renderer::TextureResource> prefilteredEnvironment,
     std::shared_ptr<::Engine::Renderer::TextureResource> brdfIntegrationLut)
 {
-    const bool disable = irradiance == nullptr && prefilteredEnvironment == nullptr && brdfIntegrationLut == nullptr;
-    const bool complete = irradiance != nullptr && prefilteredEnvironment != nullptr && brdfIntegrationLut != nullptr &&
-                          irradiance->Texture != nullptr && irradiance->Sampler != nullptr &&
-                          prefilteredEnvironment->Texture != nullptr && prefilteredEnvironment->Sampler != nullptr &&
-                          brdfIntegrationLut->Texture != nullptr && brdfIntegrationLut->Sampler != nullptr;
+    const bool disable =
+        irradiance == nullptr && prefilteredEnvironment == nullptr && brdfIntegrationLut == nullptr;
+    const bool complete = irradiance != nullptr && prefilteredEnvironment != nullptr &&
+                          brdfIntegrationLut != nullptr &&
+                          ::Engine::Renderer::TextureBackendAccess::GetTexture(*irradiance) &&
+                          ::Engine::Renderer::TextureBackendAccess::GetSampler(*irradiance) &&
+                          ::Engine::Renderer::TextureBackendAccess::GetTexture(*prefilteredEnvironment) &&
+                          ::Engine::Renderer::TextureBackendAccess::GetSampler(*prefilteredEnvironment) &&
+                          ::Engine::Renderer::TextureBackendAccess::GetTexture(*brdfIntegrationLut) &&
+                          ::Engine::Renderer::TextureBackendAccess::GetSampler(*brdfIntegrationLut);
     if (!disable && !complete)
         return false;
 
@@ -599,11 +674,10 @@ void Engine::SceneRenderer::CullAndFillView(::Engine::Renderer::RenderView *view
             const DirectX::XMMATRIX world = local * entity->transform.GetWorldMat();
             DirectX::XMFLOAT4X4 worldTransform;
             DirectX::XMStoreFloat4x4(&worldTransform, world);
-            const bool boundsCacheMatches =
-                submesh.WorldBoundsCached &&
-                std::memcmp(&worldTransform, &submesh.CachedWorldTransform, sizeof(worldTransform)) == 0 &&
-                std::memcmp(&submesh.BoundsMin, &submesh.CachedBoundsMin, sizeof(submesh.BoundsMin)) == 0 &&
-                std::memcmp(&submesh.BoundsMax, &submesh.CachedBoundsMax, sizeof(submesh.BoundsMax)) == 0;
+            const bool boundsCacheMatches = submesh.WorldBoundsCached &&
+                                            Equal(worldTransform, submesh.CachedWorldTransform) &&
+                                            Equal(submesh.BoundsMin, submesh.CachedBoundsMin) &&
+                                            Equal(submesh.BoundsMax, submesh.CachedBoundsMax);
             if (!boundsCacheMatches)
             {
                 const DirectX::XMFLOAT3 localCenter = {(submesh.BoundsMin.x + submesh.BoundsMax.x) * 0.5f,
@@ -680,7 +754,7 @@ void Engine::SceneRenderer::CullAndFillView(::Engine::Renderer::RenderView *view
             m_SubmissionStats.PerObjectBytesUsed += PerObjectDataStride;
 
             Engine::PipelineKey key;
-            key.PrimType = submesh.mesh->GetPrimitiveType();
+            key.PrimType = ToBackendPrimitiveType(submesh.mesh->GetPrimitiveTopology());
             key.VS = m_MaterialSystem->GetStandardVS();
             key.PerObjectLayout = m_PerObjectBindingLayout;
             key.SceneLayout = m_SceneBindingLayout;
@@ -706,7 +780,7 @@ void Engine::SceneRenderer::CullAndFillView(::Engine::Renderer::RenderView *view
                 key.DepthTest = !entity->DisableDepthTest;
                 key.CullMode = entity->ForceWireframe || materialProperties.DoubleSided
                                    ? nvrhi::RasterCullMode::None
-                                   : entity->CullMode;
+                                   : ToBackendCullMode(entity->CullMode);
                 if (packet.Queue == ::Engine::Renderer::RenderQueueType::Transparent)
                 {
                     nvrhi::BlendState::RenderTarget blendTarget;
@@ -720,7 +794,7 @@ void Engine::SceneRenderer::CullAndFillView(::Engine::Renderer::RenderView *view
             }
             packet.Pipeline = packet.ShadowAlphaTest && !m_ShadowMaskPS
                                   ? nullptr
-                                  : m_PipelineCache.GetOrCreatePipeline(key, fbInfo);
+                                  : m_PipelineCache->GetOrCreatePipeline(key, fbInfo);
             switch (packet.Queue)
             {
             case ::Engine::Renderer::RenderQueueType::Masked:
@@ -761,15 +835,15 @@ void Engine::SceneRenderer::CullAndFillView(::Engine::Renderer::RenderView *view
 
 // --- RenderPacket creation ---
 
-::Engine::Renderer::RenderPacket Engine::SceneRenderer::CreateRenderPacket(const ::Engine::Renderer::Mesh *mesh,
-                                                                 const ::Engine::Renderer::Material *material)
+::Engine::Renderer::RenderPacket Engine::SceneRenderer::CreateRenderPacket(
+    const ::Engine::Renderer::Mesh *mesh, const ::Engine::Renderer::Material *material)
 {
     ::Engine::Renderer::RenderPacket packet;
-    packet.VertexBuffer = mesh->GetVertexBuffer();
-    packet.IndexBuffer = mesh->GetIndexBuffer();
+    packet.VertexBuffer = ::Engine::Renderer::MeshBackendAccess::GetVertexBuffer(*mesh);
+    packet.IndexBuffer = ::Engine::Renderer::MeshBackendAccess::GetIndexBuffer(*mesh);
     packet.VertexCount = mesh->GetVertexCount();
     packet.IndexCount = mesh->GetIndexCount();
-    packet.MaterialBindings = material->GetBindingSet();
+    packet.MaterialBindings = ::Engine::Renderer::MaterialBackendAccess::GetBindingSet(*material);
     packet.BaseVertexOffset = 0;
     packet.StartIndexLocation = 0;
 
@@ -804,7 +878,8 @@ void Engine::SceneRenderer::SortViewQueues(::Engine::Renderer::RenderView *view)
 // --- View Building ---
 
 void Engine::SceneRenderer::BuildViews(::Engine::Renderer::FrameBlackboard &blackboard,
-                                       nvrhi::ICommandList *commandList, ::Engine::Renderer::FrameContext &frameContext,
+                                       nvrhi::ICommandList *commandList,
+                                       ::Engine::Renderer::FrameContext &frameContext,
                                        ::Engine::Renderer::FrameDiagnostics &diagnostics)
 {
     if (!commandList)
@@ -813,7 +888,7 @@ void Engine::SceneRenderer::BuildViews(::Engine::Renderer::FrameBlackboard &blac
     }
 
     m_SubmissionStats = {};
-    m_PipelineCache.BeginFrame();
+    m_PipelineCache->BeginFrame();
     if (!EnsurePerObjectResources(EstimateDrawCount(blackboard), frameContext, diagnostics))
     {
         ENGINE_LOG_ERROR(
@@ -856,7 +931,7 @@ void Engine::SceneRenderer::BuildViews(::Engine::Renderer::FrameBlackboard &blac
             BuildDebugGeometry(view);
         }
     }
-    const PipelineCache::FrameStats &pipelineStats = m_PipelineCache.GetFrameStats();
+    const PipelineCache::FrameStats &pipelineStats = m_PipelineCache->GetFrameStats();
     m_SubmissionStats.PipelineCacheHits = pipelineStats.Hits;
     m_SubmissionStats.PipelineCacheMisses = pipelineStats.Misses;
     m_SubmissionStats.PipelineCreations = pipelineStats.Creations;
@@ -888,9 +963,9 @@ void Engine::SceneRenderer::BuildShadowData(Engine::Scene *scene,
             break;
 
         auto lightData = scene->GetLights()[idx]->GetDirectionalLightData();
-        const bool isSpot = lightData.ConeParams.z == static_cast<float>(::Engine::Renderer::LightType::Spot);
+        const bool usePosition = lightData.ColorUsePosition.w > 0.5f;
         const bool castShadows = lightData.ShadowParams.w > 0.5f;
-        if (!isSpot || !castShadows)
+        if (!usePosition || !castShadows)
             continue;
 
         const DirectX::XMMATRIX lightViewProj = ComputeSpotLightViewProj(lightData);
@@ -915,8 +990,7 @@ uint32_t Engine::SceneRenderer::CountShadowCasters(const Engine::Scene *scene, u
         if (!light || count == limit || count == MaxShadowedLights)
             break;
         const ::Engine::Renderer::DirectionalLightData lightData = light->GetDirectionalLightData();
-        if (lightData.ConeParams.z == static_cast<float>(::Engine::Renderer::LightType::Spot) &&
-            lightData.ShadowParams.w > 0.5f)
+        if (lightData.ColorUsePosition.w > 0.5f && lightData.ShadowParams.w > 0.5f)
         {
             ++count;
         }
@@ -944,9 +1018,10 @@ void Engine::SceneRenderer::BuildLighting(Engine::Scene *scene,
 
         auto lightData = light->GetDirectionalLightData();
 
+        const bool usePosition = lightData.ColorUsePosition.w > 0.5f;
         const bool castShadows = lightData.ShadowParams.w > 0.5f;
 
-        if (lightData.ConeParams.z == static_cast<float>(::Engine::Renderer::LightType::Spot) && castShadows)
+        if (usePosition && castShadows)
         {
             for (uint32_t shadowIdx = shadowSearchStart; shadowIdx < shadowViews.size(); ++shadowIdx)
             {

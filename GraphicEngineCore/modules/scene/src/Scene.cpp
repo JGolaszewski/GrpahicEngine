@@ -5,6 +5,7 @@
 #include "rendering/include/renderer/Light.h"
 
 #include <algorithm>
+#include <iterator>
 #include <limits>
 
 namespace Engine
@@ -16,7 +17,8 @@ void DetachNodePromotingChildren(Engine::Object &node)
     Engine::Object *parent = node.GetParent();
     if (!parent)
         return;
-    const std::vector<std::shared_ptr<Engine::Object>> children(node.GetChildren().begin(), node.GetChildren().end());
+    const std::vector<std::shared_ptr<Engine::Object>> children(node.GetChildren().begin(),
+                                                                node.GetChildren().end());
     for (const auto &child : children)
         child->SetParent(parent, Engine::Object::ParentTransformMode::KeepWorld);
     parent->RemoveChild(&node);
@@ -83,7 +85,7 @@ void Scene::RemoveEntity(EntityId id)
         const size_t index = it->second;
         DetachNodePromotingChildren(*m_Entities[index]);
         EraseIdAt(m_EntityIds, m_EntityIndices, index);
-        m_Entities.erase(m_Entities.begin() + index);
+        m_Entities.erase(std::next(m_Entities.begin(), static_cast<std::ptrdiff_t>(index)));
     }
 }
 
@@ -101,7 +103,8 @@ bool Scene::ReplaceEntity(EntityId id, std::shared_ptr<::Engine::Renderer::Entit
     Object *parent = current->GetParent();
     if (!parent || !parent->AddChild(entity))
         return false;
-    const std::vector<std::shared_ptr<Object>> children(current->GetChildren().begin(), current->GetChildren().end());
+    const std::vector<std::shared_ptr<Object>> children(current->GetChildren().begin(),
+                                                        current->GetChildren().end());
     for (const auto &child : children)
     {
         if (!child->SetParent(entity.get(), Object::ParentTransformMode::KeepLocal))
@@ -227,7 +230,7 @@ void Scene::RemoveLight(LightId id)
         const size_t index = it->second;
         DetachNodePromotingChildren(*m_Lights[index]);
         EraseIdAt(m_LightIds, m_LightIndices, index);
-        m_Lights.erase(m_Lights.begin() + index);
+        m_Lights.erase(std::next(m_Lights.begin(), static_cast<std::ptrdiff_t>(index)));
     }
 }
 
@@ -301,7 +304,7 @@ void Scene::RemoveCamera(CameraId id)
         const size_t index = it->second;
         DetachNodePromotingChildren(*m_Cameras[index]);
         EraseIdAt(m_CameraIds, m_CameraIndices, index);
-        m_Cameras.erase(m_Cameras.begin() + index);
+        m_Cameras.erase(std::next(m_Cameras.begin(), static_cast<std::ptrdiff_t>(index)));
     }
 }
 
