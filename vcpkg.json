@@ -7,6 +7,7 @@
     "gtest",
     "glfw3",
     "nlohmann-json",
+    "openimageio",
     "stb",
     "tinygltf"
   ],

@@ -14,6 +14,11 @@ if(BUILD_TESTING)
         "${CMAKE_CURRENT_SOURCE_DIR}/unit/*.cpp"
     )
     add_executable(GraphicEngineUnitTests ${ENGINE_UNIT_TEST_SOURCES})
+    # Compile the private encoding helpers into the test binary so tests can
+    # exercise them without exporting implementation details from the engine DLL.
+    target_sources(GraphicEngineUnitTests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/../modules/rendering/src/RenderOutputImageWriters.cpp"
+    )
     target_link_libraries(GraphicEngineUnitTests PRIVATE
         GraphicEngineCore
         EditorCommands
@@ -23,6 +28,10 @@ if(BUILD_TESTING)
         d3d11
         nlohmann_json::nlohmann_json
         GTest::gtest_main
+        OpenImageIO::OpenImageIO
+    )
+    target_include_directories(GraphicEngineUnitTests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/../modules/rendering/src"
     )
     target_compile_features(GraphicEngineUnitTests PRIVATE cxx_std_23)
     engine_configure_test_target(GraphicEngineUnitTests)
