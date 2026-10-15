@@ -20,7 +20,7 @@ $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";"
 ./scripts/build-docs.ps1
 ```
 
-The first run creates `.venv-docs` and installs the pinned MkDocs packages into it. The generated site and Doxygen output are written under `out/docs/` and are not source files.
+The first run creates `.venv-docs` and installs the pinned MkDocs, MkDoxy, and Markdown lint packages into it. The generated site, Doxygen XML, and API Markdown are written under `out/docs/` and are not source files.
 
 Pass `-Serve` to preview the generated site locally:
 

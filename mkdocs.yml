@@ -15,6 +15,22 @@ theme:
 
 plugins:
   - search
+  - mkdoxy:
+      projects:
+        coreApi:
+          src-dirs: GraphicEngineCore/modules
+          doxy-cfg-file: Doxyfile
+          full-doc: true
+          doxy-cfg:
+            FILE_PATTERNS: "*.h *.hpp"
+            EXCLUDE_PATTERNS: "*/src/* */tests/* */vendor/*"
+            PREDEFINED: "ENGINE_API="
+            GENERATE_HTML: NO
+            GENERATE_XML: YES
+            WARN_IF_UNDOCUMENTED: YES
+            WARN_NO_PARAMDOC: YES
+            WARN_IF_DOC_ERROR: YES
+            WARN_AS_ERROR: YES
 
 markdown_extensions:
   - toc:
@@ -47,4 +63,13 @@ nav:
       - Development workflow: development-workflow.md
       - Testing: testing.md
       - Windows validation: validation/windows.md
-  - Core API: api-reference.md
+  - Core API:
+      - Overview: api-reference.md
+      - API index: coreApi/links.md
+      - Classes: coreApi/annotated.md
+      - Class index: coreApi/classes.md
+      - Class hierarchy: coreApi/hierarchy.md
+      - Class members: coreApi/class_members.md
+      - Namespaces: coreApi/namespaces.md
+      - Functions: coreApi/functions.md
+      - Files: coreApi/files.md
