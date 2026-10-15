@@ -42,6 +42,9 @@ void MainBar::DrawWindowMenu() {
   if (ImGui::MenuItem("Engine Settings") && m_SettingsOpenHandler) {
     m_SettingsOpenHandler();
   }
+  if (ImGui::MenuItem("Render") && m_RenderOpenHandler) {
+    m_RenderOpenHandler();
+  }
   if (ImGui::MenuItem("Engine Console") && m_ConsoleOpenHandler) {
     m_ConsoleOpenHandler();
   }

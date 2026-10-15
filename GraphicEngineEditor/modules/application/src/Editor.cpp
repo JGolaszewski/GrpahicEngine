@@ -12,6 +12,7 @@
 #include "panels/include/HierarchyPanel.h"
 #include "panels/include/InspectorPanel.h"
 #include "panels/include/MainBar.h"
+#include "panels/include/RenderPanel.h"
 #include "panels/include/ScenePanel.h"
 #include "panels/include/StatisticsPanel.h"
 #include "platform/include/EditorFileDialogs.h"
@@ -27,6 +28,7 @@
 #include <cmath>
 #include <imgui.h>
 #include <imgui_internal.h>
+#include <span>
 #include <string>
 #include <utility>
 
@@ -115,6 +117,7 @@ void Editor::OnInit() {
 
   CreateViewport(1280, 720);
   auto mainBar = std::make_unique<MainBar>();
+  MainBar* mainBarPanel = mainBar.get();
   mainBar->SetConsoleOpenHandler([this] -> void { m_EngineConsoleOpen = true; });
   auto engineSettings = std::make_unique<EngineSettingsPanel>(this);
   auto* engineSettingsPanel = engineSettings.get();
@@ -126,6 +129,26 @@ void Editor::OnInit() {
   m_Panels.push_back(std::make_unique<HierarchyPanel>());
   m_Panels.push_back(std::make_unique<InspectorPanel>());
   m_Panels.push_back(std::make_unique<AssetBrowserPanel>());
+  auto renderPanel = std::make_unique<RenderPanel>(
+      [this](const Engine::Renderer::CameraView& camera, uint32_t width,
+             uint32_t height) -> Engine::Result<Engine::RenderOutput> {
+        if (!m_ActiveScene || GetRenderSystem() == nullptr) {
+          return std::unexpected(Engine::MakeError("No active scene or render system is available"));
+        }
+        return GetRenderSystem()->RenderFinal(*m_ActiveScene, camera, width, height);
+      },
+      [this](uint32_t width, uint32_t height, std::span<const uint8_t> pixels) -> bool {
+        return m_UiIntegration.SetRenderPreview(width, height, pixels);
+      },
+      [this]() -> void* { return m_UiIntegration.GetRenderPreviewTextureId(); });
+  m_RenderPanel = renderPanel.get();
+  m_RenderPanel->SetScene(m_ActiveScene);
+  mainBarPanel->SetRenderOpenHandler([this] -> void {
+    if (m_RenderPanel != nullptr) {
+      m_RenderPanel->Open();
+    }
+  });
+  m_Panels.push_back(std::move(renderPanel));
 
   m_PanelConnections.reserve(m_Panels.size());
   for (auto& panel : m_Panels) {
@@ -140,6 +163,9 @@ void Editor::OnInit() {
 void Editor::OnSceneReplaced(const std::shared_ptr<Engine::Scene>& scene) {
   m_ActiveScene = scene;
   m_SelectedEntity = Engine::InvalidEntityHandle;
+  if (m_RenderPanel != nullptr) {
+    m_RenderPanel->SetScene(scene);
+  }
   BroadcastSceneChanged();
 }
 
@@ -510,6 +536,7 @@ void Editor::BuildDefaultDockLayout(uint32_t dockspaceId) {
   ImGui::DockBuilderDockWindow("Inspector", right);
   ImGui::DockBuilderDockWindow("Statistics", bottom);
   ImGui::DockBuilderDockWindow("Assets", bottom);
+  ImGui::DockBuilderDockWindow("Render", right);
   ImGui::DockBuilderDockWindow("Engine Console", bottom);
   ImGui::DockBuilderDockWindow("Viewport", main);
   ImGui::DockBuilderFinish(dockspaceId);
