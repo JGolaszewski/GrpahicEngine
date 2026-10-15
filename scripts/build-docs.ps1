@@ -51,17 +51,22 @@ try {
         $venvScripts = Join-Path $venvPath 'Scripts'
         $venvPython = Join-Path $venvScripts 'python.exe'
         $mkdocsCommand = Join-Path $venvScripts 'mkdocs.exe'
+        $pymarkdownCommand = Join-Path $venvScripts 'pymarkdown.exe'
     }
     else {
         $venvScripts = Join-Path $venvPath 'bin'
         $venvPython = Join-Path $venvScripts 'python'
         $mkdocsCommand = Join-Path $venvScripts 'mkdocs'
+        $pymarkdownCommand = Join-Path $venvScripts 'pymarkdown'
     }
 
     Write-Host 'Installing pinned documentation packages into .venv-docs.'
     Invoke-CheckedCommand $venvPython @('-m', 'pip', 'install', '--disable-pip-version-check', '-r', 'requirements-docs.txt')
 
     New-Item -ItemType Directory -Path $buildRoot -Force | Out-Null
+
+    Write-Host 'Linting Markdown sources.'
+    Invoke-CheckedCommand $pymarkdownCommand @('--strict-config', 'scan', '--recurse', 'docs')
 
     Write-Host 'Checking Core API documentation with strict Doxygen settings.'
     Remove-GeneratedDirectory $doxygenOutput
