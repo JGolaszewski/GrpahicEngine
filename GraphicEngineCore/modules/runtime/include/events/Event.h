@@ -68,7 +68,8 @@ enum class EventType
     AssetRegistryChanged,
     AddModelRequested,
     RemoveEntityRequested,
-    SceneModified
+    SceneModified,
+    EntityReparentRequested
 };
 
 class ENGINE_API Event

@@ -3,6 +3,7 @@
 #include "MeshBackend.h"
 #include "PipelineCache.h"
 #include "ShaderFactory.h"
+#include "TextureBackend.h"
 #include "runtime/include/LogMacros.h"
 
 #include <algorithm>
@@ -154,7 +155,10 @@ void Engine::SceneRenderer::Init(nvrhi::IDevice *device, ::Engine::Renderer::Mat
     sceneLayoutDesc.visibility = nvrhi::ShaderType::All;
     sceneLayoutDesc.bindings = {
         nvrhi::BindingLayoutItem::ConstantBuffer(2), nvrhi::BindingLayoutItem::Texture_SRV(6),
-        nvrhi::BindingLayoutItem::Sampler(6), nvrhi::BindingLayoutItem::ConstantBuffer(4)};
+        nvrhi::BindingLayoutItem::Sampler(6),        nvrhi::BindingLayoutItem::ConstantBuffer(4),
+        nvrhi::BindingLayoutItem::Texture_SRV(7),    nvrhi::BindingLayoutItem::Sampler(7),
+        nvrhi::BindingLayoutItem::Texture_SRV(8),    nvrhi::BindingLayoutItem::Sampler(8),
+        nvrhi::BindingLayoutItem::Texture_SRV(9),    nvrhi::BindingLayoutItem::Sampler(9)};
     m_SceneBindingLayout = device->createBindingLayout(sceneLayoutDesc);
 
     nvrhi::BindingLayoutDesc debugLayoutDesc;
@@ -517,11 +521,39 @@ nvrhi::BindingSetHandle Engine::SceneRenderer::GetSceneBindingSet(
         return cache.Bindings;
     }
 
+    const std::shared_ptr<::Engine::Renderer::TextureResource> fallbackEnvironment =
+        m_MaterialSystem != nullptr ? m_MaterialSystem->GetFallbackColorTexture() : nullptr;
+    const auto &irradiance =
+        m_EnvironmentIrradiance != nullptr ? m_EnvironmentIrradiance : fallbackEnvironment;
+    const auto &prefiltered =
+        m_PrefilteredEnvironment != nullptr ? m_PrefilteredEnvironment : fallbackEnvironment;
+    const auto &integrationLut = m_BrdfIntegrationLut != nullptr ? m_BrdfIntegrationLut : fallbackEnvironment;
+    if (irradiance == nullptr || prefiltered == nullptr || integrationLut == nullptr ||
+        !::Engine::Renderer::TextureBackendAccess::GetTexture(*irradiance) ||
+        !::Engine::Renderer::TextureBackendAccess::GetSampler(*irradiance) ||
+        !::Engine::Renderer::TextureBackendAccess::GetTexture(*prefiltered) ||
+        !::Engine::Renderer::TextureBackendAccess::GetSampler(*prefiltered) ||
+        !::Engine::Renderer::TextureBackendAccess::GetTexture(*integrationLut) ||
+        !::Engine::Renderer::TextureBackendAccess::GetSampler(*integrationLut))
+        return nullptr;
+
     nvrhi::BindingSetDesc desc;
     desc.addItem(nvrhi::BindingSetItem::ConstantBuffer(2, lightBuffer));
     desc.addItem(nvrhi::BindingSetItem::Texture_SRV(6, shadowMap));
     desc.addItem(nvrhi::BindingSetItem::Sampler(6, shadowSampler));
     desc.addItem(nvrhi::BindingSetItem::ConstantBuffer(4, cameraBuffer));
+    desc.addItem(nvrhi::BindingSetItem::Texture_SRV(
+        7, ::Engine::Renderer::TextureBackendAccess::GetTexture(*irradiance)));
+    desc.addItem(
+        nvrhi::BindingSetItem::Sampler(7, ::Engine::Renderer::TextureBackendAccess::GetSampler(*irradiance)));
+    desc.addItem(nvrhi::BindingSetItem::Texture_SRV(
+        8, ::Engine::Renderer::TextureBackendAccess::GetTexture(*prefiltered)));
+    desc.addItem(nvrhi::BindingSetItem::Sampler(
+        8, ::Engine::Renderer::TextureBackendAccess::GetSampler(*prefiltered)));
+    desc.addItem(nvrhi::BindingSetItem::Texture_SRV(
+        9, ::Engine::Renderer::TextureBackendAccess::GetTexture(*integrationLut)));
+    desc.addItem(nvrhi::BindingSetItem::Sampler(
+        9, ::Engine::Renderer::TextureBackendAccess::GetSampler(*integrationLut)));
     nvrhi::BindingSetHandle bindings = m_Device->createBindingSet(desc, m_SceneBindingLayout);
     if (!bindings)
         return nullptr;
@@ -533,6 +565,37 @@ nvrhi::BindingSetHandle Engine::SceneRenderer::GetSceneBindingSet(
     cache.Bindings = std::move(bindings);
     ++diagnostics.BindingSetAllocations;
     return cache.Bindings;
+}
+
+bool Engine::SceneRenderer::SetEnvironmentLighting(
+    std::shared_ptr<::Engine::Renderer::TextureResource> irradiance,
+    std::shared_ptr<::Engine::Renderer::TextureResource> prefilteredEnvironment,
+    std::shared_ptr<::Engine::Renderer::TextureResource> brdfIntegrationLut)
+{
+    const bool disable =
+        irradiance == nullptr && prefilteredEnvironment == nullptr && brdfIntegrationLut == nullptr;
+    const bool complete = irradiance != nullptr && prefilteredEnvironment != nullptr &&
+                          brdfIntegrationLut != nullptr &&
+                          ::Engine::Renderer::TextureBackendAccess::GetTexture(*irradiance) &&
+                          ::Engine::Renderer::TextureBackendAccess::GetSampler(*irradiance) &&
+                          ::Engine::Renderer::TextureBackendAccess::GetTexture(*prefilteredEnvironment) &&
+                          ::Engine::Renderer::TextureBackendAccess::GetSampler(*prefilteredEnvironment) &&
+                          ::Engine::Renderer::TextureBackendAccess::GetTexture(*brdfIntegrationLut) &&
+                          ::Engine::Renderer::TextureBackendAccess::GetSampler(*brdfIntegrationLut);
+    if (!disable && !complete)
+        return false;
+
+    m_EnvironmentIrradiance = std::move(irradiance);
+    m_PrefilteredEnvironment = std::move(prefilteredEnvironment);
+    m_BrdfIntegrationLut = std::move(brdfIntegrationLut);
+    m_SceneBindingCaches.clear();
+    return true;
+}
+
+bool Engine::SceneRenderer::HasEnvironmentLighting() const noexcept
+{
+    return m_EnvironmentIrradiance != nullptr && m_PrefilteredEnvironment != nullptr &&
+           m_BrdfIntegrationLut != nullptr;
 }
 
 bool Engine::SceneRenderer::EnsurePerObjectResources(size_t maxDrawCount,

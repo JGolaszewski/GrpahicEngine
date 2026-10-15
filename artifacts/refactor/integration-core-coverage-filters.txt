@@ -1,0 +1,5 @@
+Coverage binary: out/build/coverage/bin/GraphicEngineCore.dll
+Profile: artifacts/refactor/integration-coverage.profdata
+Ignore regex: (vendor|out[/\\]build|tests|shaders|public_header_checks)
+Include regex: GraphicEngineCore.*src.*\.cpp$
+Suite: CTest all registered tests (80/80 passed)

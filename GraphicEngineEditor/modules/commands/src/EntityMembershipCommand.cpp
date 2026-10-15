@@ -4,9 +4,9 @@
 EntityMembershipCommand::EntityMembershipCommand(std::shared_ptr<Engine::Scene> scene,
                                                  std::shared_ptr<::Engine::Renderer::Entity> entity,
                                                  Engine::EntityId id, bool addOnExecute,
-                                                 ChangeCallback callback)
+                                                 ChangeCallback callback, bool alreadyPresent)
     : m_Scene(std::move(scene)), m_Entity(std::move(entity)), m_Id(id), m_AddOnExecute(addOnExecute),
-      m_OnChange(std::move(callback))
+      m_InitialPresenceAlreadyApplied(alreadyPresent), m_OnChange(std::move(callback))
 {
 }
 
@@ -30,6 +30,13 @@ void EntityMembershipCommand::SetPresent(bool present, bool undo)
 
 void EntityMembershipCommand::Execute()
 {
+    if (m_InitialPresenceAlreadyApplied)
+    {
+        m_InitialPresenceAlreadyApplied = false;
+        if (m_OnChange)
+            m_OnChange(m_Id, m_Entity, true, false);
+        return;
+    }
     SetPresent(m_AddOnExecute, false);
 }
 

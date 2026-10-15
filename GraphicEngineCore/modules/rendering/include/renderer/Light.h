@@ -2,6 +2,7 @@
 #pragma once
 
 #include "runtime/include/CoreExport.h"
+#include "scene/include/Object.h"
 #include <DirectXMath.h>
 #include <cstddef>
 #include <cstdint>
@@ -13,6 +14,13 @@
 
 namespace Engine::Renderer
 {
+
+enum class LightType : uint32_t
+{
+    Directional = 0,
+    Point = 1,
+    Spot = 2
+};
 
 #ifndef ENGINE_MAX_LIGHTS
 #define ENGINE_MAX_LIGHTS 8
@@ -47,11 +55,14 @@ static_assert(offsetof(DirectionalLightData, ShadowParams) == 128);
 static_assert(offsetof(LightsCBData, LightCount) == ENGINE_MAX_LIGHTS * sizeof(DirectionalLightData));
 static_assert(sizeof(LightsCBData) == ENGINE_MAX_LIGHTS * sizeof(DirectionalLightData) + 16);
 
-class ENGINE_API SpotLight
+class ENGINE_API SpotLight : public ::Engine::Object
 {
   public:
     SpotLight() = default;
     SpotLight(const DirectX::XMFLOAT3 &direction, const DirectX::XMFLOAT3 &color, float intensity);
+
+    void SetType(LightType type);
+    LightType GetType() const;
 
     void SetDirection(const DirectX::XMFLOAT3 &direction);
     void LookAt(const DirectX::XMFLOAT3 &target);
@@ -81,6 +92,7 @@ class ENGINE_API SpotLight
 
   private:
     DirectX::XMFLOAT3 m_Direction = {0.0f, -1.0f, 0.0f};
+    LightType m_Type = LightType::Directional;
     DirectX::XMFLOAT3 m_Position = {0.0f, 3.0f, 0.0f};
     bool m_UsePosition = false;
     DirectX::XMFLOAT3 m_Color = {1.0f, 1.0f, 1.0f};

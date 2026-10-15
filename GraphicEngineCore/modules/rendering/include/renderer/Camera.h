@@ -1,6 +1,7 @@
 #pragma once
 
 #include "runtime/include/CoreExport.h"
+#include "scene/include/Object.h"
 
 #include <DirectXMath.h>
 #include <cstdint>
@@ -15,12 +16,10 @@
 namespace Engine::Renderer
 {
 /// Perspective camera with cached projection and hierarchical transform support.
-class ENGINE_API Camera
+class ENGINE_API Camera : public ::Engine::Object
 {
   public:
-    ::Engine::Components::Transform m_Transform; ///< Camera transform in the scene hierarchy.
-
-    /// Creates a perspective camera, using a default projection if the arguments are invalid.
+    /// Creates a perspective camera, using a default projection if arguments are invalid.
     /// @param fovRadians Vertical field of view in radians.
     /// @param znear Positive near clipping distance.
     /// @param zfar Far clipping distance greater than znear.
@@ -39,33 +38,35 @@ class ENGINE_API Camera
     {
         return m_FovRadians;
     }
+
     /// Returns the near clipping distance.
-    /// @return Positive near-plane distance.
+    /// @return Near plane distance.
     float GetNearPlane() const noexcept
     {
         return m_Near;
     }
+
     /// Returns the far clipping distance.
-    /// @return Far-plane distance greater than the near plane.
+    /// @return Far plane distance.
     float GetFarPlane() const noexcept
     {
         return m_Far;
     }
 
-    /// Replaces the camera transform.
+    /// Replaces the camera's local transform.
     /// @param transform New camera transform.
     void SetPosition(::Engine::Components::Transform transform);
 
-    /// Returns the inverse world transform used for view-space conversion.
+    /// Returns the inverse world transform used to convert world coordinates to view space.
     /// @return View matrix.
     DirectX::XMMATRIX GetView() const;
 
-    /// Returns a left-handed perspective projection for a viewport aspect ratio.
+    /// Returns a left-handed perspective projection for the supplied aspect ratio.
     /// @param aspect Viewport width divided by height.
     /// @return Projection matrix.
     DirectX::XMMATRIX GetProjection(float aspect) const;
 
-    /// Returns the view matrix multiplied by the perspective projection.
+    /// Returns the view matrix multiplied by the projection matrix.
     /// @param aspect Viewport width divided by height.
     /// @return View-projection matrix.
     DirectX::XMMATRIX GetViewProjection(float aspect) const;

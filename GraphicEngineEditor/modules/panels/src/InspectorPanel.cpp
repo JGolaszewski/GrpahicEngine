@@ -177,7 +177,7 @@ void InspectorPanel::DrawObjectInspector()
     DirectX::XMFLOAT3 currentPos = selectedEntity->transform.Position;
     float position[3] = {currentPos.x, currentPos.y, currentPos.z};
 
-    if (ImGui::DragFloat3("Position", position, 0.05f))
+    if (ImGui::DragFloat3("Local Position", position, 0.05f))
     {
         selectedEntity->transform.SetPosition(position[0], position[1], position[2]);
     }
@@ -200,7 +200,7 @@ void InspectorPanel::DrawObjectInspector()
 
     float scale[3] = {selectedEntity->transform.Scale.x, selectedEntity->transform.Scale.y,
                       selectedEntity->transform.Scale.z};
-    if (ImGui::DragFloat3("Scale", scale, 0.05f, 0.01f, 100.0f))
+    if (ImGui::DragFloat3("Local Scale", scale, 0.05f, 0.01f, 100.0f))
     {
         selectedEntity->transform.SetScale(scale[0], scale[1], scale[2]);
         sceneChanged = true;
@@ -215,6 +215,18 @@ void InspectorPanel::DrawObjectInspector()
         const float yawRad = DirectX::XMConvertToRadians(rotationDegrees[2]);
         selectedEntity->transform.SetRotation(pitchRad, yawRad, rollRad);
         sceneChanged = true;
+    }
+
+    if (ImGui::TreeNode("World Transform (read only)"))
+    {
+        DirectX::XMFLOAT4X4 world{};
+        DirectX::XMStoreFloat4x4(&world, selectedEntity->transform.GetWorldMat());
+        for (size_t row = 0; row < 4; ++row)
+        {
+            ImGui::Text("%.3f  %.3f  %.3f  %.3f", world.m[row][0], world.m[row][1], world.m[row][2],
+                        world.m[row][3]);
+        }
+        ImGui::TreePop();
     }
 
     sceneChanged |= ImGui::Checkbox("Wireframe", &selectedEntity->ForceWireframe);
@@ -470,6 +482,14 @@ void InspectorPanel::DrawLightInspector()
     ImGui::Separator();
     bool sceneChanged = false;
 
+    int lightType = static_cast<int>(selectedLight->GetType());
+    constexpr const char *lightTypeNames[] = {"Directional", "Point", "Spot"};
+    if (ImGui::Combo("Type", &lightType, lightTypeNames, 3))
+    {
+        selectedLight->SetType(static_cast<::Engine::Renderer::LightType>(lightType));
+        sceneChanged = true;
+    }
+
     DirectX::XMFLOAT3 pos = selectedLight->GetPosition();
     float position[3] = {pos.x, pos.y, pos.z};
     if (ImGui::DragFloat3("Position", position, 0.05f))
@@ -489,7 +509,8 @@ void InspectorPanel::DrawLightInspector()
     float innerAngle = selectedLight->GetInnerAngleDegrees();
     float outerAngle = selectedLight->GetOuterAngleDegrees();
     float coneAngles[2] = {innerAngle, outerAngle};
-    if (ImGui::DragFloat2("Angles", coneAngles, 0.05f))
+    if (selectedLight->GetType() == ::Engine::Renderer::LightType::Spot &&
+        ImGui::DragFloat2("Angles", coneAngles, 0.05f))
     {
         selectedLight->SetConeAngles(coneAngles[0], coneAngles[1]);
         sceneChanged = true;
@@ -538,11 +559,11 @@ void InspectorPanel::DrawCameraInspector()
     ImGui::Text("Camera %d", m_SelectedCameraIndex);
     ImGui::Separator();
 
-    float position[3] = {selectedCamera->m_Transform.Position.x, selectedCamera->m_Transform.Position.y,
-                         selectedCamera->m_Transform.Position.z};
+    float position[3] = {selectedCamera->transform.Position.x, selectedCamera->transform.Position.y,
+                         selectedCamera->transform.Position.z};
     if (ImGui::DragFloat3("Position", position, 0.05f))
     {
-        selectedCamera->m_Transform.SetPosition(position[0], position[1], position[2]);
+        selectedCamera->transform.SetPosition(position[0], position[1], position[2]);
         EmitEvent(std::make_unique<SceneModifiedEvent>());
     }
 

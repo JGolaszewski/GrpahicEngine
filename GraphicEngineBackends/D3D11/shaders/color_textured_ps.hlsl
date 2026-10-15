@@ -52,6 +52,12 @@ cbuffer CameraCB : register(b4)
 
 Texture2DArray<float>  g_ShadowMaps    : register(t6);
 SamplerComparisonState g_ShadowSampler : register(s6);
+Texture2D<float4> g_IrradianceMap : register(t7);
+SamplerState g_IrradianceSampler : register(s7);
+Texture2D<float4> g_PrefilteredEnvironment : register(t8);
+SamplerState g_PrefilteredEnvironmentSampler : register(s8);
+Texture2D<float2> g_BrdfIntegrationLut : register(t9);
+SamplerState g_BrdfIntegrationSampler : register(s9);
 
 Texture2D<float4> g_BaseColorMap : register(t0);
 SamplerState g_BaseColorSampler : register(s0);
@@ -235,11 +241,25 @@ float4 main_ps(VS_OUTPUT input) : SV_TARGET
         float  intensity  = g_Lights[i].DirectionIntensity.w;
         float3 lightColor = g_Lights[i].ColorUsePosition.rgb;
         float  usePosition = g_Lights[i].ColorUsePosition.w;
+        float  lightType = g_Lights[i].ConeParams.z;
 
         float3 L            = normalize(-lightDir);
         float  attenuation  = 1.0f;
 
-        if (usePosition > 0.5f)
+        if (lightType == 1.0f)
+        {
+            const float3 lightPosition = g_Lights[i].PositionRange.xyz;
+            const float range = max(g_Lights[i].PositionRange.w, 0.001f);
+            const float3 toLight = lightPosition - input.worldPos;
+            const float distance = length(toLight);
+            attenuation = BrdfInverseSquareRangeAttenuation(distance, range);
+            if (attenuation <= 0.0f)
+            {
+                continue;
+            }
+            L = toLight / max(distance, 0.0001f);
+        }
+        else if (usePosition > 0.5f)
         {
             float3 lightPosition = g_Lights[i].PositionRange.xyz;
             float  range         = max(g_Lights[i].PositionRange.w, 0.001f);
@@ -286,7 +306,26 @@ float4 main_ps(VS_OUTPUT input) : SV_TARGET
     }
 
     const float occlusion = lerp(1.0f, occlusionSample, saturate(g_TextureParams.y));
-    const float3 ambient = 0.04f * legacyDiffuseColor * occlusion;
+    float3 ambient = isLegacy ? 0.04f * legacyDiffuseColor * occlusion : 0.0f;
+    if (!isLegacy && g_LightPadding.x > 0.5f)
+    {
+        const float3 viewDirection = BrdfNormalizeOr(V, N);
+        const float3 reflectionDirection = reflect(-viewDirection, N);
+        const float3 irradiance = g_IrradianceMap.SampleLevel(g_IrradianceSampler,
+            BrdfEnvironmentUv(N), 0.0f).rgb;
+        uint environmentWidth;
+        uint environmentHeight;
+        uint environmentMipLevels;
+        g_PrefilteredEnvironment.GetDimensions(0, environmentWidth, environmentHeight, environmentMipLevels);
+        const float environmentMip = saturate(roughness) * float(max(environmentMipLevels, 1u) - 1u);
+        const float3 prefiltered = g_PrefilteredEnvironment.SampleLevel(g_PrefilteredEnvironmentSampler,
+            BrdfEnvironmentUv(reflectionDirection), environmentMip).rgb;
+        const float2 brdfIntegration = g_BrdfIntegrationLut.Sample(g_BrdfIntegrationSampler,
+            float2(saturate(dot(N, viewDirection)), saturate(roughness)));
+        const float3 iblF0 = isSpecularGlossiness ? specularF0 : lerp(dielectricF0, baseColor, metallic);
+        ambient = EvaluateSplitSumIbl(irradiance, prefiltered, brdfIntegration, N, viewDirection,
+            diffuseColor, iblF0, saturate(roughness), occlusion);
+    }
     float3 emissive = g_EmissiveMetallic.rgb * emissiveSample;
 
     const float3 directLighting = isLegacy ? diffuseAccum + specAccum : brdfAccum;

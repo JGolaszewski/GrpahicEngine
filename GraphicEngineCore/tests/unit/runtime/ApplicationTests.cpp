@@ -4,6 +4,7 @@
 #include "rendering/include/RenderBackend.h"
 #include "rendering/include/renderer/Camera.h"
 #include "rendering/include/renderer/Entity.h"
+#include "rendering/include/renderer/Light.h"
 #include "runtime/include/Window.h"
 #include "scene/include/Scene.h"
 #include "scene/include/SceneDocument.h"
@@ -12,6 +13,7 @@
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cstdint>
@@ -275,10 +277,28 @@ TEST(ApplicationTests, RunsWarpFrameLoadsAndSavesSceneDocuments)
 
     Engine::SceneDocument document;
     document.unitsPerMeter = 0.5f;
+    Engine::SceneEntityDocument rootEntity;
+    rootEntity.id = 15;
+    rootEntity.name = "scene root child";
+    rootEntity.primitiveType = "cube";
+    document.entities.push_back(rootEntity);
+    Engine::SceneEntityDocument parentEntity;
+    parentEntity.id = 16;
+    parentEntity.name = "parent cube";
+    parentEntity.primitiveType = "cube";
+    parentEntity.parent = Engine::SceneNodeParentDocument{"entity", 15, 0};
+    Engine::SceneMaterialDocument maskedMaterial;
+    maskedMaterial.brdfModel = "ggx";
+    maskedMaterial.specularMode = "explicitF0";
+    maskedMaterial.alphaMode = "mask";
+    parentEntity.material = maskedMaterial;
+    document.entities.push_back(parentEntity);
     Engine::SceneEntityDocument entity;
     entity.id = 17;
     entity.name = "saved cone";
     entity.primitiveType = "cone";
+    entity.parentId = 16;
+    entity.parent = Engine::SceneNodeParentDocument{"entity", 16, 0};
     entity.position = {1.0f, 2.0f, 3.0f};
     entity.forceWireframe = true;
     Engine::SceneMaterialDocument material;
@@ -287,9 +307,22 @@ TEST(ApplicationTests, RunsWarpFrameLoadsAndSavesSceneDocuments)
     material.alphaMode = "blend";
     entity.material = material;
     document.entities.push_back(entity);
+    Engine::SceneEntityDocument cameraChild;
+    cameraChild.id = 18;
+    cameraChild.name = "camera child";
+    cameraChild.primitiveType = "sphere";
+    cameraChild.parent = Engine::SceneNodeParentDocument{"camera", 31, 0};
+    document.entities.push_back(cameraChild);
+    Engine::SceneEntityDocument legacyParentChild;
+    legacyParentChild.id = 19;
+    legacyParentChild.name = "legacy parent child";
+    legacyParentChild.primitiveType = "plane";
+    legacyParentChild.parentId = 15;
+    document.entities.push_back(legacyParentChild);
 
     Engine::SceneLightDocument light;
     light.id = 23;
+    light.parent = Engine::SceneNodeParentDocument{"entity", 16, 1};
     light.usePosition = true;
     light.position = {3.0f, 4.0f, 5.0f};
     light.castShadows = false;
@@ -297,6 +330,7 @@ TEST(ApplicationTests, RunsWarpFrameLoadsAndSavesSceneDocuments)
 
     Engine::SceneCameraDocument camera;
     camera.id = 31;
+    camera.parent = Engine::SceneNodeParentDocument{"light", 23, 0};
     camera.position = {0.0f, 1.0f, 5.0f};
     camera.nearPlane = 0.25f;
     camera.farPlane = 250.0f;
@@ -306,20 +340,67 @@ TEST(ApplicationTests, RunsWarpFrameLoadsAndSavesSceneDocuments)
     std::vector<std::string> warnings;
     ASSERT_TRUE(application.LoadSceneDocument(document, error, warnings)) << error;
     EXPECT_TRUE(error.empty());
-    EXPECT_TRUE(warnings.empty());
+    EXPECT_TRUE(warnings.empty()) << (warnings.empty() ? std::string{} : warnings.front());
     ASSERT_EQ(application.GetScenes().size(), 1U);
     auto loadedScene = application.GetScenes().front();
-    ASSERT_EQ(loadedScene->GetEntityCount(), 1U);
+    ASSERT_EQ(loadedScene->GetEntityCount(), 5U);
     ASSERT_EQ(loadedScene->GetLights().size(), 1U);
     ASSERT_EQ(loadedScene->GetCameras().size(), 1U);
     EXPECT_FLOAT_EQ(loadedScene->GetUnitsPerMeter(), 0.5f);
+    const auto loadedParentEntity = loadedScene->FindEntity(16);
+    const auto loadedRootEntity = loadedScene->FindEntity(15);
+    const auto loadedChildEntity = loadedScene->FindEntity(17);
+    const auto loadedCameraChild = loadedScene->FindEntity(18);
+    const auto loadedLegacyChild = loadedScene->FindEntity(19);
+    const auto loadedLight = loadedScene->FindLight(23);
+    const auto loadedCamera = loadedScene->FindCamera(31);
+    ASSERT_NE(loadedRootEntity, nullptr);
+    ASSERT_NE(loadedParentEntity, nullptr);
+    ASSERT_NE(loadedChildEntity, nullptr);
+    ASSERT_NE(loadedCameraChild, nullptr);
+    ASSERT_NE(loadedLegacyChild, nullptr);
+    ASSERT_NE(loadedLight, nullptr);
+    ASSERT_NE(loadedCamera, nullptr);
+    EXPECT_EQ(loadedParentEntity->GetParent(), loadedRootEntity.get());
+    EXPECT_EQ(loadedChildEntity->GetParent(), loadedParentEntity.get());
+    EXPECT_EQ(loadedCameraChild->GetParent(), loadedCamera.get());
+    EXPECT_EQ(loadedLegacyChild->GetParent(), loadedRootEntity.get());
+    EXPECT_EQ(loadedLight->GetParent(), loadedParentEntity.get());
+    EXPECT_EQ(loadedCamera->GetParent(), loadedLight.get());
 
     Engine::SceneDocument snapshot = application.CreateSceneDocument(*loadedScene);
-    ASSERT_EQ(snapshot.entities.size(), 1U);
-    EXPECT_EQ(snapshot.entities[0].name, "saved cone");
-    EXPECT_EQ(snapshot.entities[0].primitiveType, std::optional<std::string>("cone"));
-    EXPECT_TRUE(snapshot.entities[0].material.has_value());
-    EXPECT_EQ(snapshot.entities[0].material.value_or(Engine::SceneMaterialDocument{}).brdfModel, "gtr");
+    ASSERT_EQ(snapshot.entities.size(), 5U);
+    const auto childSnapshot = std::find_if(snapshot.entities.begin(), snapshot.entities.end(),
+                                            [](const auto &item) { return item.id == 17; });
+    ASSERT_NE(childSnapshot, snapshot.entities.end());
+    EXPECT_EQ(childSnapshot->name, "saved cone");
+    EXPECT_EQ(childSnapshot->primitiveType, std::optional<std::string>("cone"));
+    ASSERT_TRUE(childSnapshot->material.has_value());
+    EXPECT_EQ(childSnapshot->material.value_or(Engine::SceneMaterialDocument{}).brdfModel, "gtr");
+    ASSERT_TRUE(childSnapshot->parentId.has_value());
+    EXPECT_EQ(childSnapshot->parentId.value_or(0), 16U);
+    ASSERT_TRUE(childSnapshot->parent.has_value());
+    const auto childParent = childSnapshot->parent.value_or(Engine::SceneNodeParentDocument{});
+    EXPECT_EQ(childParent.type, "entity");
+    EXPECT_EQ(childParent.id, 16U);
+    const auto cameraChildSnapshot = std::find_if(snapshot.entities.begin(), snapshot.entities.end(),
+                                                  [](const auto &item) { return item.id == 18; });
+    ASSERT_NE(cameraChildSnapshot, snapshot.entities.end());
+    ASSERT_TRUE(cameraChildSnapshot->parent.has_value());
+    EXPECT_EQ(cameraChildSnapshot->parent.value_or(Engine::SceneNodeParentDocument{}).type, "camera");
+    const auto legacyChildSnapshot = std::find_if(snapshot.entities.begin(), snapshot.entities.end(),
+                                                  [](const auto &item) { return item.id == 19; });
+    ASSERT_NE(legacyChildSnapshot, snapshot.entities.end());
+    ASSERT_TRUE(legacyChildSnapshot->parentId.has_value());
+    EXPECT_EQ(legacyChildSnapshot->parentId.value_or(0), 15U);
+    ASSERT_TRUE(snapshot.lights[0].parent.has_value());
+    const auto lightParent = snapshot.lights[0].parent.value_or(Engine::SceneNodeParentDocument{});
+    EXPECT_EQ(lightParent.type, "entity");
+    EXPECT_EQ(lightParent.id, 16U);
+    ASSERT_TRUE(snapshot.cameras[0].parent.has_value());
+    const auto cameraParent = snapshot.cameras[0].parent.value_or(Engine::SceneNodeParentDocument{});
+    EXPECT_EQ(cameraParent.type, "light");
+    EXPECT_EQ(cameraParent.id, 23U);
     EXPECT_EQ(snapshot.lights.size(), 1U);
     EXPECT_EQ(snapshot.cameras.size(), 1U);
 
@@ -354,8 +435,14 @@ TEST(ApplicationTests, RunsWarpFrameLoadsAndSavesSceneDocuments)
 
     warnings.clear();
     ASSERT_TRUE(application.LoadScene(scenePath, error, warnings)) << error;
-    EXPECT_TRUE(warnings.empty());
+    EXPECT_TRUE(warnings.empty()) << (warnings.empty() ? std::string{} : warnings.front());
     loadedScene = application.GetScenes().front();
+    EXPECT_EQ(loadedScene->FindEntity(16)->GetParent(), loadedScene->FindEntity(15).get());
+    EXPECT_EQ(loadedScene->FindEntity(17)->GetParent(), loadedScene->FindEntity(16).get());
+    EXPECT_EQ(loadedScene->FindEntity(18)->GetParent(), loadedScene->FindCamera(31).get());
+    EXPECT_EQ(loadedScene->FindEntity(19)->GetParent(), loadedScene->FindEntity(15).get());
+    EXPECT_EQ(loadedScene->FindLight(23)->GetParent(), loadedScene->FindEntity(16).get());
+    EXPECT_EQ(loadedScene->FindCamera(31)->GetParent(), loadedScene->FindLight(23).get());
 
     Engine::SceneDocument invalid = document;
     invalid.entities[0].primitiveType = "not-a-primitive";

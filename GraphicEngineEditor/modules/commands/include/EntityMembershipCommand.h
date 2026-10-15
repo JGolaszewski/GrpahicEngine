@@ -18,7 +18,7 @@ class EntityMembershipCommand final : public ICommand
 
     EntityMembershipCommand(std::shared_ptr<Engine::Scene> scene,
                             std::shared_ptr<::Engine::Renderer::Entity> entity, Engine::EntityId id,
-                            bool addOnExecute, ChangeCallback callback);
+                            bool addOnExecute, ChangeCallback callback, bool alreadyPresent = false);
     void Execute() override;
     void Undo() override;
 
@@ -28,5 +28,6 @@ class EntityMembershipCommand final : public ICommand
     std::shared_ptr<::Engine::Renderer::Entity> m_Entity;
     Engine::EntityId m_Id;
     bool m_AddOnExecute;
+    bool m_InitialPresenceAlreadyApplied = false;
     ChangeCallback m_OnChange;
 };

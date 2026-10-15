@@ -666,11 +666,23 @@ bool Application::LoadSceneDocument(const SceneDocument &document, std::string &
         }
     }
 
+    for (const auto &source : document.entities)
+    {
+        if (!source.parentId || source.parent)
+            continue;
+        const auto child = stagedScene->FindEntity(source.id);
+        const auto parent = stagedScene->FindEntity(*source.parentId);
+        if (!child || !parent || !child->SetParent(parent.get(), Object::ParentTransformMode::KeepLocal))
+            warnings.push_back("entity " + std::to_string(source.id) +
+                               " could not be attached to its saved parent and remains at the scene root");
+    }
+
     for (const auto &source : document.lights)
     {
         auto light = std::make_shared<::Engine::Renderer::SpotLight>(
             DirectX::XMFLOAT3(source.direction[0], source.direction[1], source.direction[2]),
             DirectX::XMFLOAT3(source.color[0], source.color[1], source.color[2]), source.intensity);
+        light->SetType(static_cast<::Engine::Renderer::LightType>(source.type));
         light->SetUsePosition(source.usePosition);
         light->SetPosition({source.position[0], source.position[1], source.position[2]});
         light->SetRange(source.range);
@@ -688,13 +700,62 @@ bool Application::LoadSceneDocument(const SceneDocument &document, std::string &
     {
         auto camera = std::make_shared<::Engine::Renderer::Camera>(source.fovRadians, source.nearPlane,
                                                                    source.farPlane);
-        camera->m_Transform.SetPosition(source.position[0], source.position[1], source.position[2]);
-        camera->m_Transform.Rotation = {source.rotation[0], source.rotation[1], source.rotation[2],
-                                        source.rotation[3]};
+        camera->transform.SetPosition(source.position[0], source.position[1], source.position[2]);
+        camera->transform.Rotation = {source.rotation[0], source.rotation[1], source.rotation[2],
+                                      source.rotation[3]};
         if (stagedScene->AddCamera(std::move(camera), source.id) == InvalidCameraId)
         {
             return fail("scene contains a duplicate or unsupported camera ID " + std::to_string(source.id));
         }
+    }
+
+    struct PendingParent
+    {
+        Object *Child = nullptr;
+        SceneNodeParentDocument Parent;
+        std::string Description;
+    };
+    std::vector<PendingParent> pendingParents;
+    pendingParents.reserve(document.entities.size() + document.lights.size() + document.cameras.size());
+    for (const auto &source : document.entities)
+        if (source.parent)
+            pendingParents.push_back({stagedScene->FindEntity(source.id).get(), *source.parent,
+                                      "entity " + std::to_string(source.id)});
+    for (const auto &source : document.lights)
+        if (source.parent)
+            pendingParents.push_back({stagedScene->FindLight(source.id).get(), *source.parent,
+                                      "light " + std::to_string(source.id)});
+    for (const auto &source : document.cameras)
+        if (source.parent)
+            pendingParents.push_back({stagedScene->FindCamera(source.id).get(), *source.parent,
+                                      "camera " + std::to_string(source.id)});
+    std::stable_sort(pendingParents.begin(), pendingParents.end(), [](const auto &left, const auto &right) {
+        if (left.Parent.type != right.Parent.type)
+            return left.Parent.type < right.Parent.type;
+        if (left.Parent.id != right.Parent.id)
+            return left.Parent.id < right.Parent.id;
+        return left.Parent.siblingOrder < right.Parent.siblingOrder;
+    });
+    const auto resolveParent = [&stagedScene](const SceneNodeParentDocument &parent) -> Object * {
+        if (parent.type == "entity")
+            return stagedScene->FindEntity(parent.id).get();
+        if (parent.type == "light")
+            return stagedScene->FindLight(parent.id).get();
+        if (parent.type == "camera")
+            return stagedScene->FindCamera(parent.id).get();
+        return nullptr;
+    };
+    for (const auto &pending : pendingParents)
+    {
+        Object *parent = resolveParent(pending.Parent);
+        if (!pending.Child || !parent)
+        {
+            warnings.push_back(pending.Description + " references a missing parent; placed at scene root");
+            continue;
+        }
+        if (!pending.Child->SetParent(parent, Object::ParentTransformMode::KeepLocal))
+            warnings.push_back(pending.Description +
+                               " has an invalid or cyclic parent; placed at scene root");
     }
 
     m_ActiveViews.clear();
@@ -720,12 +781,33 @@ SceneDocument Application::CreateSceneDocument(const Scene &scene) const
 {
     SceneDocument document;
     document.unitsPerMeter = scene.GetUnitsPerMeter();
+    const auto makeParentDocument = [&scene](const Object &child) -> std::optional<SceneNodeParentDocument> {
+        const Object *parent = child.GetParent();
+        if (!parent || parent == &scene.GetRoot())
+            return std::nullopt;
+        const auto children = parent->GetChildren();
+        const auto sibling = std::find_if(children.begin(), children.end(), [&child](const auto &candidate) {
+            return candidate.get() == &child;
+        });
+        const uint32_t siblingOrder =
+            sibling == children.end() ? 0u : static_cast<uint32_t>(sibling - children.begin());
+        if (const auto *entity = dynamic_cast<const ::Engine::Renderer::Entity *>(parent))
+            return SceneNodeParentDocument{"entity", scene.GetEntityId(entity), siblingOrder};
+        if (const auto *light = dynamic_cast<const ::Engine::Renderer::SpotLight *>(parent))
+            return SceneNodeParentDocument{"light", scene.GetLightId(light), siblingOrder};
+        if (const auto *camera = dynamic_cast<const ::Engine::Renderer::Camera *>(parent))
+            return SceneNodeParentDocument{"camera", scene.GetCameraId(camera), siblingOrder};
+        return std::nullopt;
+    };
     for (const auto &entity : scene.GetEntities())
     {
         if (!entity)
             continue;
         SceneEntityDocument item;
         item.id = scene.GetEntityId(entity.get());
+        if (const auto *parentEntity = dynamic_cast<const ::Engine::Renderer::Entity *>(entity->GetParent()))
+            item.parentId = scene.GetEntityId(parentEntity);
+        item.parent = makeParentDocument(*entity);
         item.name = entity->Name;
         item.modelGuid = entity->ModelGuid;
         item.materialGuid = entity->MaterialGuid;
@@ -770,6 +852,7 @@ SceneDocument Application::CreateSceneDocument(const Scene &scene) const
             continue;
         SceneLightDocument item;
         item.id = scene.GetLightIdAt(i);
+        item.parent = makeParentDocument(*light);
         const auto direction = light->GetDirection();
         const auto position = light->GetPosition();
         const auto color = light->GetColor();
@@ -782,6 +865,7 @@ SceneDocument Application::CreateSceneDocument(const Scene &scene) const
         item.outerAngleDegrees = light->GetOuterAngleDegrees();
         item.shadowBias = light->GetShadowBias();
         item.shadowNormalBias = light->GetShadowNormalBias();
+        item.type = static_cast<uint32_t>(light->GetType());
         item.usePosition = light->GetUsePosition();
         item.castShadows = light->GetCastShadows();
         document.lights.push_back(item);
@@ -794,7 +878,8 @@ SceneDocument Application::CreateSceneDocument(const Scene &scene) const
             continue;
         SceneCameraDocument item;
         item.id = scene.GetCameraIdAt(i);
-        const auto &transform = camera->m_Transform;
+        item.parent = makeParentDocument(*camera);
+        const auto &transform = camera->transform;
         item.position = {transform.Position.x, transform.Position.y, transform.Position.z};
         item.rotation = {transform.Rotation.x, transform.Rotation.y, transform.Rotation.z,
                          transform.Rotation.w};

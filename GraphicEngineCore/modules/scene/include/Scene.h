@@ -1,6 +1,7 @@
 #pragma once
 
 #include "runtime/include/CoreExport.h"
+#include "scene/include/Object.h"
 #include "scene/include/SceneIds.h"
 
 #include <DirectXMath.h>
@@ -30,6 +31,19 @@ class ENGINE_API Scene
   public:
     /// Creates an empty scene with default units and no contained objects.
     Scene() = default;
+
+    /// Returns the root object that owns all top-level scene nodes.
+    /// @return Mutable reference to the scene root.
+    Object &GetRoot() noexcept
+    {
+        return m_Root;
+    }
+    /// Returns the root object that owns all top-level scene nodes.
+    /// @return Const reference to the scene root.
+    const Object &GetRoot() const noexcept
+    {
+        return m_Root;
+    }
 
     /// Returns the scene's unit-to-meter scale.
     /// @return Number of engine units per meter.
@@ -184,6 +198,7 @@ class ENGINE_API Scene
     ::Engine::Renderer::Camera *GetCamera(uint32_t index) const;
 
   private:
+    Object m_Root;
     std::vector<std::shared_ptr<::Engine::Renderer::Entity>> m_Entities;
     std::vector<EntityId> m_EntityIds;
     std::unordered_map<EntityId, size_t> m_EntityIndices;

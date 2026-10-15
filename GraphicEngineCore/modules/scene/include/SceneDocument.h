@@ -35,11 +35,21 @@ struct SceneMaterialDocument
     std::optional<std::string> normalTextureGuid;    ///< Optional tangent-space normal texture identifier.
 };
 
+/// Typed identity and child ordering for a node's scene parent.
+struct SceneNodeParentDocument
+{
+    std::string type;          ///< Parent node kind: entity, light, or camera.
+    uint64_t id = 0;           ///< Persistent identifier of the parent node.
+    uint32_t siblingOrder = 0; ///< Child position in the parent's ordered child list.
+};
+
 /// Serializable identity, source, transform, and render flags for one entity.
 struct SceneEntityDocument
 {
-    uint64_t id = 0;                      ///< Stable scene-local entity identifier.
-    std::string name;                     ///< User-facing entity name.
+    uint64_t id = 0;                               ///< Stable scene-local entity identifier.
+    std::optional<uint64_t> parentId;              ///< Legacy entity-parent identifier, when present.
+    std::string name;                              ///< User-facing entity name.
+    std::optional<SceneNodeParentDocument> parent; ///< Typed entity, light, or camera parent.
     std::optional<std::string> modelGuid; ///< Model asset identifier, when the entity uses an imported model.
     std::optional<std::string> materialGuid;       ///< Reserved standalone material asset identifier.
     std::optional<std::string> primitiveType;      ///< Primitive shape name, when the entity is procedural.
@@ -59,6 +69,8 @@ struct SceneEntityDocument
 struct SceneLightDocument
 {
     uint64_t id = 0;                                      ///< Stable scene-local light identifier.
+    std::string name;                                     ///< User-facing light name.
+    std::optional<SceneNodeParentDocument> parent;        ///< Typed entity, light, or camera parent.
     std::array<float, 3> direction = {0.0f, -1.0f, 0.0f}; ///< Spotlight direction in world space.
     std::array<float, 3> position = {0.0f, 3.0f, 0.0f};   ///< Spotlight position in world space.
     std::array<float, 3> color = {1.0f, 1.0f, 1.0f};      ///< Linear RGB light color.
@@ -68,6 +80,7 @@ struct SceneLightDocument
     float outerAngleDegrees = 25.0f;                      ///< Cone cutoff angle in degrees.
     float shadowBias = 0.0015f;                           ///< Constant depth bias for shadow comparison.
     float shadowNormalBias = 0.0015f; ///< Surface-normal offset used for shadow comparison.
+    uint32_t type = 0;                ///< Light type: directional, point, or spot.
     bool usePosition = false;         ///< Whether shading uses the positional-light path.
     bool castShadows = true;          ///< Whether this light produces a shadow map.
 };
@@ -76,6 +89,8 @@ struct SceneLightDocument
 struct SceneCameraDocument
 {
     uint64_t id = 0;                                          ///< Stable scene-local camera identifier.
+    std::string name;                                         ///< User-facing camera name.
+    std::optional<SceneNodeParentDocument> parent;            ///< Typed entity, light, or camera parent.
     std::array<float, 3> position{};                          ///< Camera position in world space.
     std::array<float, 4> rotation = {0.0f, 0.0f, 0.0f, 1.0f}; ///< Camera quaternion in XYZW order.
     float fovRadians = 0.785398163f;                          ///< Vertical field of view in radians.

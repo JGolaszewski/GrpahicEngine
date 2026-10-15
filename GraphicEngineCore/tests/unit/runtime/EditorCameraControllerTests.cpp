@@ -57,13 +57,13 @@ TEST(EditorCameraControllerTests, MovementRequiresHoveredViewportWithoutTextInpu
     input.MoveForward = true;
     controller.SetInput(input);
     controller.Update(1.0f);
-    EXPECT_FLOAT_EQ(camera.m_Transform.Position.z, 0.0f);
+    EXPECT_FLOAT_EQ(camera.transform.Position.z, 0.0f);
 
     input.ViewportHovered = true;
     input.TextInputActive = true;
     controller.SetInput(input);
     controller.Update(1.0f);
-    EXPECT_FLOAT_EQ(camera.m_Transform.Position.z, 0.0f);
+    EXPECT_FLOAT_EQ(camera.transform.Position.z, 0.0f);
 }
 
 TEST(EditorCameraControllerTests, MovesCameraAlongLocalAxesAndRotatesWhileDragging)
@@ -82,9 +82,9 @@ TEST(EditorCameraControllerTests, MovesCameraAlongLocalAxesAndRotatesWhileDraggi
 
     controller.Update(0.5f);
 
-    EXPECT_GT(camera.m_Transform.Position.x, 0.0f);
-    EXPECT_FLOAT_EQ(camera.m_Transform.Position.y, 4.0f);
-    EXPECT_GT(camera.m_Transform.Position.z, 0.0f);
+    EXPECT_GT(camera.transform.Position.x, 0.0f);
+    EXPECT_FLOAT_EQ(camera.transform.Position.y, 4.0f);
+    EXPECT_GT(camera.transform.Position.z, 0.0f);
 }
 
 } // namespace

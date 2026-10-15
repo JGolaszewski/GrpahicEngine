@@ -1,6 +1,6 @@
 #pragma once
 #include "runtime/include/CoreExport.h"
-#include "scene/include/components/Transform.h"
+#include "scene/include/Object.h"
 #include "rendering/include/renderer/RenderState.h"
 #include <DirectXMath.h>
 #include <memory>
@@ -38,7 +38,7 @@ struct Submesh
 };
 
 /// Renderable object composed of one mesh or multiple imported submeshes.
-class ENGINE_API Entity
+class ENGINE_API Entity : public ::Engine::Object
 {
   public:
     /// Creates an entity with its primary mesh and material.
@@ -49,14 +49,12 @@ class ENGINE_API Entity
     {
     }
 
-    ::Engine::Components::Transform transform; ///< Entity world transform.
-    std::shared_ptr<Mesh> mesh;                ///< Primary mesh for single-mesh entities.
-    std::shared_ptr<Material> material;        ///< Primary material for single-mesh entities.
-    std::vector<Submesh> Submeshes;            ///< Imported mesh parts with independent materials and bounds.
-    std::string Name;                          ///< User-facing scene object name.
-    std::optional<std::string> ModelGuid;      ///< Source model asset identifier, when imported.
-    std::optional<std::string> MaterialGuid;   ///< Standalone material asset identifier, when assigned.
-    std::optional<std::string> PrimitiveType;  ///< Primitive shape name for procedural entities.
+    std::shared_ptr<Mesh> mesh;               ///< Primary mesh for single-mesh entities.
+    std::shared_ptr<Material> material;       ///< Primary material for single-mesh entities.
+    std::vector<Submesh> Submeshes;           ///< Imported mesh parts with independent materials and bounds.
+    std::optional<std::string> ModelGuid;     ///< Source model asset identifier, when imported.
+    std::optional<std::string> MaterialGuid;  ///< Standalone material asset identifier, when assigned.
+    std::optional<std::string> PrimitiveType; ///< Primitive shape name for procedural entities.
 
     bool ForceWireframe = false;   ///< Whether polygon fill is forced to wireframe.
     bool DisableDepthTest = false; ///< Whether depth testing is disabled for this entity.

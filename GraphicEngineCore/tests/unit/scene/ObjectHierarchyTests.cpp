@@ -76,6 +76,47 @@ TEST(ObjectHierarchyTests, ReparentsThroughParentApiAndKeepsSingleOwnership)
     EXPECT_EQ(child->transform.GetParent(), &second.transform);
 }
 
+TEST(ObjectHierarchyTests, KeepsWorldTransformWhenReparenting)
+{
+    auto first = std::make_shared<Engine::Object>();
+    auto second = std::make_shared<Engine::Object>();
+    auto child = std::make_shared<Engine::Object>();
+    first->transform.SetPosition(3.0F, -2.0F, 1.0F);
+    second->transform.SetPosition(-5.0F, 4.0F, 2.0F);
+    child->transform.SetPosition(1.0F, 2.0F, 3.0F);
+    ASSERT_TRUE(first->AddChild(child));
+
+    const DirectX::XMVECTOR origin = DirectX::XMVectorSet(0.0F, 0.0F, 0.0F, 1.0F);
+    DirectX::XMFLOAT3 before{};
+    DirectX::XMStoreFloat3(&before, DirectX::XMVector3TransformCoord(origin, child->transform.GetWorldMat()));
+
+    ASSERT_TRUE(child->SetParent(second.get(), Engine::Object::ParentTransformMode::KeepWorld));
+
+    DirectX::XMFLOAT3 after{};
+    DirectX::XMStoreFloat3(&after, DirectX::XMVector3TransformCoord(origin, child->transform.GetWorldMat()));
+    EXPECT_NEAR(after.x, before.x, 1.0e-5F);
+    EXPECT_NEAR(after.y, before.y, 1.0e-5F);
+    EXPECT_NEAR(after.z, before.z, 1.0e-5F);
+    EXPECT_TRUE(first->GetChildren().empty());
+    ASSERT_EQ(second->GetChildren().size(), 1U);
+    EXPECT_EQ(second->GetChildren().front().get(), child.get());
+}
+
+TEST(ObjectHierarchyTests, RejectsKeepWorldReparentingToSingularParent)
+{
+    auto first = std::make_shared<Engine::Object>();
+    auto singular = std::make_shared<Engine::Object>();
+    auto child = std::make_shared<Engine::Object>();
+    singular->transform.SetScale(0.0F, 1.0F, 1.0F);
+    ASSERT_TRUE(first->AddChild(child));
+
+    EXPECT_FALSE(child->SetParent(singular.get(), Engine::Object::ParentTransformMode::KeepWorld));
+    EXPECT_EQ(child->GetParent(), first.get());
+    ASSERT_EQ(first->GetChildren().size(), 1U);
+    EXPECT_EQ(first->GetChildren().front().get(), child.get());
+    EXPECT_TRUE(singular->GetChildren().empty());
+}
+
 TEST(ObjectHierarchyTests, SetParentHandlesNoOpSelfAndDetachCases)
 {
     auto parent = std::make_shared<Engine::Object>();

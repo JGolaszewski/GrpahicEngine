@@ -1,0 +1,67 @@
+{
+  "generated_at": "2026-10-15T12:01:07.3006825+02:00",
+  "build_configuration": "x64 Debug",
+  "branch_test_note": "Intermediate branch builds used a no-op clang-tidy executable to isolate correctness tests from the legacy lint target in those commit states. Final main clang-tidy was run with the real tool and passed.",
+  "branches": [
+    {
+      "branch": "codex/scene-hierarchy",
+      "commit": "f4b7f8c592adf3198a18fb7ee0f3960e925d7bdc",
+      "prerequisite": "672764d08c58330db988f39069c3a183035c277d",
+      "build_pass": true,
+      "tests_pass": true,
+      "tests_total": 3,
+      "build_log": "scene-hierarchy-build.log",
+      "ctest_log": "scene-hierarchy-ctest.log"
+    },
+    {
+      "branch": "codex/transactional-scene-creation",
+      "commit": "4df1b3e21e150d0e22a89d684f7d7763ee5032fb",
+      "prerequisite": "f4b7f8c592adf3198a18fb7ee0f3960e925d7bdc",
+      "build_pass": true,
+      "tests_pass": true,
+      "tests_total": 3,
+      "build_log": "transactional-scene-creation-build.log",
+      "ctest_log": "transactional-scene-creation-ctest.log"
+    },
+    {
+      "branch": "codex/clang-tidy-target",
+      "commit": "a6a7e542ab7871b1adb728e34e61c70e0c1947fd",
+      "prerequisite": "4df1b3e21e150d0e22a89d684f7d7763ee5032fb",
+      "build_pass": true,
+      "tests_pass": true,
+      "tests_total": 3,
+      "build_log": "clang-tidy-target-build.log",
+      "ctest_log": "clang-tidy-target-ctest.log"
+    },
+    {
+      "branch": "codex/engine-suite-benchmarks",
+      "commit": "a5ef8c2bf7f75d2381303044ca5383c3c9f762ac",
+      "prerequisite": "a6a7e542ab7871b1adb728e34e61c70e0c1947fd",
+      "build_pass": true,
+      "tests_pass": true,
+      "tests_total": 20,
+      "build_log": "engine-suite-benchmarks-build.log",
+      "ctest_log": "engine-suite-benchmarks-ctest.log"
+    },
+    {
+      "branch": "codex/deferred-pbr",
+      "commit": "4c9974d314e4b4719c4034f47759a1d5223a8b28",
+      "prerequisite": "a5ef8c2bf7f75d2381303044ca5383c3c9f762ac",
+      "build_pass": true,
+      "tests_pass": true,
+      "tests_total": 20,
+      "build_log": "deferred-pbr-build.log",
+      "ctest_log": "deferred-pbr-ctest.log"
+    },
+    {
+      "branch": "codex/core-boundaries",
+      "commit": "616a68c948d980399c59edf6f91a844a4d956a1a",
+      "prerequisite": "4c9974d314e4b4719c4034f47759a1d5223a8b28",
+      "build_pass": true,
+      "tests_pass": true,
+      "tests_total": 82,
+      "build_log": "core-boundaries-build.log",
+      "ctest_log": "core-boundaries-ctest.log"
+    }
+  ]
+}

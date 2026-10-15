@@ -17,7 +17,7 @@ void RenderView::Initialize(const ::Engine::Renderer::Camera *camera, const Engi
 
     TargetFramebuffer = static_cast<nvrhi::IFramebuffer *>(viewport->GetFramebufferHandle());
     DirectX::XMStoreFloat3(&CameraPosition, DirectX::XMVector3TransformCoord(
-                                                DirectX::XMVectorZero(), camera->m_Transform.GetWorldMat()));
+                                                DirectX::XMVectorZero(), camera->transform.GetWorldMat()));
 
     float aspect = 1.0f;
     if (ViewportHeight > 0)

@@ -180,7 +180,7 @@ void TestMaterialPropertiesRoundTrip()
 void TestRenderViewCameraWorldPosition()
 {
     ::Engine::Renderer::Camera camera(0.7853982f, 0.1f, 100.0f);
-    camera.m_Transform.SetPosition(3.0f, 4.0f, 5.0f);
+    camera.transform.SetPosition(3.0f, 4.0f, 5.0f);
     Engine::Viewport viewport(320, 200, nullptr);
     ::Engine::Renderer::RenderView view;
     view.Initialize(&camera, &viewport);

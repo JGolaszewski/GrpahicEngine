@@ -15,6 +15,7 @@
 #include "rendering/include/renderer/DebugGeometry.h"
 #include "rendering/include/renderer/Entity.h"
 #include "rendering/include/renderer/Light.h"
+#include "rendering/include/renderer/TextureResource.h"
 #include "MaterialSystem.h"
 #include "rendering/src/RenderPacket.h"
 #include "rendering/src/render_graph/FrameBlackboard.h"
@@ -85,6 +86,10 @@ class ENGINE_API SceneRenderer
                                                nvrhi::SamplerHandle shadowSampler,
                                                nvrhi::BufferHandle cameraBuffer,
                                                ::Engine::Renderer::FrameDiagnostics &diagnostics);
+    bool SetEnvironmentLighting(std::shared_ptr<::Engine::Renderer::TextureResource> irradiance,
+                                std::shared_ptr<::Engine::Renderer::TextureResource> prefilteredEnvironment,
+                                std::shared_ptr<::Engine::Renderer::TextureResource> brdfIntegrationLut);
+    bool HasEnvironmentLighting() const noexcept;
     inline nvrhi::BufferHandle GetPerObjectBuffer() const
     {
         return m_PerObjectBuffer;
@@ -158,6 +163,9 @@ class ENGINE_API SceneRenderer
     uint64_t m_DebugTriangleBufferCapacity = 0;
 
     ::Engine::Renderer::MaterialSystem *m_MaterialSystem = nullptr;
+    std::shared_ptr<::Engine::Renderer::TextureResource> m_EnvironmentIrradiance;
+    std::shared_ptr<::Engine::Renderer::TextureResource> m_PrefilteredEnvironment;
+    std::shared_ptr<::Engine::Renderer::TextureResource> m_BrdfIntegrationLut;
     SubmissionStats m_SubmissionStats;
 };
 

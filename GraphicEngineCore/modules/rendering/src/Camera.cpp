@@ -36,14 +36,14 @@ bool Camera::SetProjection(float fovRadians, float znear, float zfar)
     return true;
 }
 
-void Camera::SetPosition(::Engine::Components::Transform transform)
+void Camera::SetPosition(::Engine::Components::Transform newTransform)
 {
-    m_Transform = transform;
+    transform = std::move(newTransform);
 }
 
 DirectX::XMMATRIX Camera::GetView() const
 {
-    return DirectX::XMMatrixInverse(nullptr, m_Transform.GetWorldMat());
+    return DirectX::XMMatrixInverse(nullptr, transform.GetWorldMat());
 }
 
 DirectX::XMMATRIX Camera::GetProjection(float aspect) const

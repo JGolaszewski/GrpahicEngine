@@ -1,0 +1,8 @@
+# Architecture boundary scan
+
+Date: 2026-10-15
+Scope: 38 public core headers under GraphicEngineCore/modules/**/include; 65 editor C++ files.
+
+Checks: core public headers for NVRHI, D3D11, Windows, GLFW, or ImGui includes and native API types; editor modules for backend downcasts, native graphics resource types/accessors, and NVRHI access.
+
+Results: 0 prohibited public-header matches; 0 editor backend/native graphics matches. Platform export macros (_WIN32) appear in CoreExport.h and EnvironmentVariable.h; they do not include Win32 headers or expose Win32 types.

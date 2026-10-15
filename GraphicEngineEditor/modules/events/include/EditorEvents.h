@@ -16,6 +16,7 @@
 #include "events/include/DebugRenderToggledEvent.h"
 #include "events/include/EntityDeselectedEvent.h"
 #include "events/include/EntitySelectedEvent.h"
+#include "events/include/EntityReparentRequestedEvent.h"
 #include "events/include/MaterialChangedEvent.h"
 #include "events/include/MaterialTextureAssignmentRequestedEvent.h"
 #include "events/include/ModelReassignmentRequestedEvent.h"

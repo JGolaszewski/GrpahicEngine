@@ -1,0 +1,59 @@
+2026-10-15T11:43:03+02:00
+Running C:\Users\jgolasz\.codex\worktrees\refactor-integration\GrpahicEngine\out\build\x64-release\bin\GraphicEngineBenchmarks.exe
+Run on (24 X 3686 MHz CPU s)
+CPU Caches:
+  L1 Data 48 KiB (x24)
+  L1 Instruction 64 KiB (x24)
+  L2 Unified 3072 KiB (x24)
+  L3 Unified 36864 KiB (x1)
+-------------------------------------------------------------------------------------------------------
+Benchmark                                             Time             CPU   Iterations UserCounters...
+-------------------------------------------------------------------------------------------------------
+BM_TransformWorldMatrixCacheHit_mean               4.20 ns         4.01 ns            3 items_per_second=250.311M/s
+BM_TransformWorldMatrixCacheHit_median             4.22 ns         4.19 ns            3 items_per_second=238.933M/s
+BM_TransformWorldMatrixCacheHit_stddev            0.059 ns        0.302 ns            3 items_per_second=19.7069M/s
+BM_TransformWorldMatrixCacheHit_cv                 1.41 %          7.53 %             3 items_per_second=7.87%
+BM_TransformWorldMatrixParentDepth/1_mean          4.64 ns         4.71 ns            3 items_per_second=212.385M/s
+BM_TransformWorldMatrixParentDepth/1_median        4.65 ns         4.71 ns            3 items_per_second=212.385M/s
+BM_TransformWorldMatrixParentDepth/1_stddev       0.034 ns        0.000 ns            3 items_per_second=4.89898/s
+BM_TransformWorldMatrixParentDepth/1_cv            0.72 %          0.00 %             3 items_per_second=0.00%
+BM_TransformWorldMatrixParentDepth/8_mean          35.2 ns         33.7 ns            3 items_per_second=29.927M/s
+BM_TransformWorldMatrixParentDepth/8_median        35.2 ns         31.4 ns            3 items_per_second=31.8578M/s
+BM_TransformWorldMatrixParentDepth/8_stddev       0.089 ns         4.03 ns            3 items_per_second=3.3442M/s
+BM_TransformWorldMatrixParentDepth/8_cv            0.25 %         11.95 %             3 items_per_second=11.17%
+BM_TransformWorldMatrixParentDepth/32_mean          137 ns          141 ns            3 items_per_second=7.17037M/s
+BM_TransformWorldMatrixParentDepth/32_median        137 ns          141 ns            3 items_per_second=7.11111M/s
+BM_TransformWorldMatrixParentDepth/32_stddev       5.97 ns         15.6 ns            3 items_per_second=801.644k/s
+BM_TransformWorldMatrixParentDepth/32_cv           4.34 %         11.11 %             3 items_per_second=11.18%
+BM_SceneTraversal/100_mean                          968 ns          908 ns            3 items_per_second=111.324M/s
+BM_SceneTraversal/100_median                        973 ns          973 ns            3 items_per_second=102.76M/s
+BM_SceneTraversal/100_stddev                       16.9 ns          112 ns            3 items_per_second=14.8322M/s
+BM_SceneTraversal/100_cv                           1.74 %         12.37 %             3 items_per_second=13.32%
+BM_SceneTraversal/1000_mean                       12820 ns        12456 ns            3 items_per_second=80.8747M/s
+BM_SceneTraversal/1000_median                     12794 ns        11678 ns            3 items_per_second=85.632M/s
+BM_SceneTraversal/1000_stddev                      79.1 ns         1348 ns            3 items_per_second=8.23994M/s
+BM_SceneTraversal/1000_cv                          0.62 %         10.83 %             3 items_per_second=10.19%
+BM_SceneTraversal/10000_mean                     213403 ns       220889 ns            3 items_per_second=45.3361M/s
+BM_SceneTraversal/10000_median                   212164 ns       226702 ns            3 items_per_second=44.1108M/s
+BM_SceneTraversal/10000_stddev                     8388 ns        10068 ns            3 items_per_second=2.12228M/s
+BM_SceneTraversal/10000_cv                         3.93 %          4.56 %             3 items_per_second=4.68%
+BM_SceneDocumentSave/100_mean                   3418261 ns      2291667 ns            3 items_per_second=43.9658k/s
+BM_SceneDocumentSave/100_median                 3782862 ns      2343750 ns            3 items_per_second=42.6667k/s
+BM_SceneDocumentSave/100_stddev                  757357 ns       238676 ns            3 items_per_second=4.75054k/s
+BM_SceneDocumentSave/100_cv                       22.16 %         10.41 %             3 items_per_second=10.81%
+BM_SceneDocumentSave/1000_mean                 13163867 ns     10416667 ns            3 items_per_second=97.8286k/s
+BM_SceneDocumentSave/1000_median               13070978 ns     10416667 ns            3 items_per_second=96k/s
+BM_SceneDocumentSave/1000_stddev                 349409 ns      1736111 ns            3 items_per_second=16.5332k/s
+BM_SceneDocumentSave/1000_cv                       2.65 %         16.67 %             3 items_per_second=16.90%
+BM_RenderGraphBuildAndCompile/8_mean               2427 ns         2441 ns            3 items_per_second=3.2768M/s
+BM_RenderGraphBuildAndCompile/8_median             2427 ns         2441 ns            3 items_per_second=3.2768M/s
+BM_RenderGraphBuildAndCompile/8_stddev             1.16 ns        0.000 ns            3 items_per_second=0/s
+BM_RenderGraphBuildAndCompile/8_cv                 0.05 %          0.00 %             3 items_per_second=0.00%
+BM_RenderGraphBuildAndCompile/32_mean              9063 ns         9083 ns            3 items_per_second=3.53184M/s
+BM_RenderGraphBuildAndCompile/32_median            9061 ns         8758 ns            3 items_per_second=3.65363M/s
+BM_RenderGraphBuildAndCompile/32_stddev            60.7 ns          562 ns            3 items_per_second=210.943k/s
+BM_RenderGraphBuildAndCompile/32_cv                0.67 %          6.19 %             3 items_per_second=5.97%
+BM_RenderGraphBuildAndCompile/128_mean            37900 ns        36617 ns            3 items_per_second=3.49564M/s
+BM_RenderGraphBuildAndCompile/128_median          37614 ns        36617 ns            3 items_per_second=3.49564M/s
+BM_RenderGraphBuildAndCompile/128_stddev            496 ns        0.000 ns            3 items_per_second=0.0765466/s
+BM_RenderGraphBuildAndCompile/128_cv               1.31 %          0.00 %             3 items_per_second=0.00%

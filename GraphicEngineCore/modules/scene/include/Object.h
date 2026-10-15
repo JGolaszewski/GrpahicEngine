@@ -6,6 +6,7 @@
 #include <concepts>
 #include <memory>
 #include <span>
+#include <string>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -23,8 +24,8 @@ class ENGINE_API Object : public std::enable_shared_from_this<Object>
     /// Creates an unparented object with no children or components.
     Object() = default;
 
-    /// Releases owned children and components.
-    virtual ~Object() = default;
+    /// Releases owned children and detaches descendants from this object.
+    virtual ~Object();
 
     /// Objects have unique ownership identity and cannot be copied.
     Object(const Object &) = delete;
@@ -44,10 +45,18 @@ class ENGINE_API Object : public std::enable_shared_from_this<Object>
     /// @return True when the object was a direct child.
     auto RemoveChild(const Object *child) -> bool;
 
+    /// Selects how a transform behaves when its object is reparented.
+    enum class ParentTransformMode
+    {
+        KeepLocal,
+        KeepWorld
+    };
+
     /// Reparents this object while rejecting cycles.
     /// @param parent New parent, or null to detach.
+    /// @param mode Whether to preserve the local transform or the current world transform.
     /// @return True when the parent relationship changed successfully.
-    auto SetParent(Object *parent) -> bool;
+    auto SetParent(Object *parent, ParentTransformMode mode = ParentTransformMode::KeepLocal) -> bool;
 
     /// Returns the owned direct children.
     /// @return Read-only span of child shared pointers.
@@ -103,6 +112,7 @@ class ENGINE_API Object : public std::enable_shared_from_this<Object>
     }
 
     Components::Transform transform; ///< Local transform composed with the object's parent hierarchy.
+    std::string Name;                ///< User-facing scene object name.
 
   private:
     Object *m_Parent = nullptr;
