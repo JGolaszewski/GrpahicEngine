@@ -1,0 +1,48 @@
+Test project C:/Users/jgolasz/.codex/worktrees/refactor-branch-audit/out/build/x64-debug
+      Start  1: BrdfReferenceTests
+      Start 18: TransformTests.ComposesLocalTranslationWithParentWorldTransform
+      Start 13: ObjectHierarchyTests.RejectsDuplicateParentingAndCycles
+      Start  2: AssetManagerTests
+      Start  3: SceneGraphTests
+      Start 11: EventDispatcherTests.DoesNotClearAlreadyHandledEvent
+      Start  4: ScenePersistenceTests.RoundTripsFieldsAndRejectsTraversalWithoutOverwritingValidFile
+      Start 12: ResultTests.CarriesSuccessfulValueAndErrorMessage
+      Start  5: ScenePersistenceTests.MalformedInputReturnsDiagnostic
+      Start  6: CommandHistoryTests.ExecutesUndoesAndRedoesInOrder
+      Start  7: CommandHistoryTests.NewCommandInvalidatesRedoAndClearReleasesOwnedCommands
+      Start 14: ObjectHierarchyTests.DetachesChildAndClearsTransformParent
+ 1/20 Test  #3: SceneGraphTests ........................................................................   Passed    0.05 sec
+      Start  8: CommandHistoryTests.EmptyCallsAndNullCommandsLeaveHistoryUnchanged
+ 2/20 Test #18: TransformTests.ComposesLocalTranslationWithParentWorldTransform ........................   Passed    0.15 sec
+ 3/20 Test #13: ObjectHierarchyTests.RejectsDuplicateParentingAndCycles ................................   Passed    0.15 sec
+ 4/20 Test  #2: AssetManagerTests ......................................................................   Passed    0.11 sec
+ 5/20 Test  #4: ScenePersistenceTests.RoundTripsFieldsAndRejectsTraversalWithoutOverwritingValidFile ...   Passed    0.03 sec
+ 6/20 Test #12: ResultTests.CarriesSuccessfulValueAndErrorMessage ......................................   Passed    0.02 sec
+ 7/20 Test  #5: ScenePersistenceTests.MalformedInputReturnsDiagnostic ..................................   Passed    0.02 sec
+      Start 15: ObjectHierarchyTests.ReparentsThroughParentApiAndKeepsSingleOwnership
+      Start  9: EventDispatcherTests.DispatchesMatchingTypeAndPropagatesHandledState
+      Start 16: SceneIdentityTests.RestoresIdsAndKeepsIndexConsistentAfterRemovalAndReplacement
+      Start 10: EventDispatcherTests.IgnoresNonmatchingTypeWithoutCallingCallback
+      Start 17: SceneIdentityTests.InvalidIndexReturnsInvalidId
+      Start 19: TransformTests.RejectsAncestorCycleAndKeepsPreviousParent
+ 8/20 Test #14: ObjectHierarchyTests.DetachesChildAndClearsTransformParent .............................   Passed    0.03 sec
+      Start 20: TransformTests.SingularNormalMatrixRemainsFinite
+ 9/20 Test  #8: CommandHistoryTests.EmptyCallsAndNullCommandsLeaveHistoryUnchanged .....................   Passed    0.03 sec
+10/20 Test  #9: EventDispatcherTests.DispatchesMatchingTypeAndPropagatesHandledState ...................   Passed    0.02 sec
+11/20 Test #16: SceneIdentityTests.RestoresIdsAndKeepsIndexConsistentAfterRemovalAndReplacement ........   Passed    0.02 sec
+12/20 Test  #1: BrdfReferenceTests .....................................................................   Passed    0.20 sec
+13/20 Test #10: EventDispatcherTests.IgnoresNonmatchingTypeWithoutCallingCallback ......................   Passed    0.02 sec
+14/20 Test #17: SceneIdentityTests.InvalidIndexReturnsInvalidId ........................................   Passed    0.01 sec
+15/20 Test #20: TransformTests.SingularNormalMatrixRemainsFinite .......................................   Passed    0.01 sec
+16/20 Test #11: EventDispatcherTests.DoesNotClearAlreadyHandledEvent ...................................   Passed    0.12 sec
+17/20 Test  #7: CommandHistoryTests.NewCommandInvalidatesRedoAndClearReleasesOwnedCommands .............   Passed    0.12 sec
+18/20 Test  #6: CommandHistoryTests.ExecutesUndoesAndRedoesInOrder .....................................   Passed    0.12 sec
+19/20 Test #15: ObjectHierarchyTests.ReparentsThroughParentApiAndKeepsSingleOwnership ..................   Passed    0.13 sec
+20/20 Test #19: TransformTests.RejectsAncestorCycleAndKeepsPreviousParent ..............................   Passed    0.12 sec
+
+100% tests passed, 0 tests failed out of 20
+
+Label Time Summary:
+unit    =   1.13 sec*proc (17 tests)
+
+Total Test time (real) =   0.54 sec

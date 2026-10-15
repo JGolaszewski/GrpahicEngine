@@ -1,0 +1,70 @@
+**********************************************************************
+** Visual Studio 2026 Developer Command Prompt v18.9.1
+** Copyright (c) 2026 Microsoft Corporation
+**********************************************************************
+[0/2] Re-checking globbed directories...
+[1/60] Building CXX object GraphicEngineCore\modules\rendering\CMakeFiles\EngineRendering.dir\src\Light.cpp.obj
+[2/60] Building CXX object GraphicEngineCore\modules\rendering\CMakeFiles\EngineRendering.dir\src\DebugGeometry.cpp.obj
+[3/60] Building CXX object GraphicEngineCore\modules\rendering\CMakeFiles\EngineRendering.dir\src\render_graph\RenderContext.cpp.obj
+[4/60] Building CXX object GraphicEngineCore\modules\scene\CMakeFiles\EngineScene.dir\src\Scene.cpp.obj
+[5/60] Generating ../../bin/shaders/color_ps.dxbc
+compilation object save succeeded; see C:\Users\jgolasz\.codex\worktrees\refactor-branch-audit\out\build\x64-debug\bin\shaders\color_ps.dxbc
+[6/60] Generating ../../bin/shaders/color_vs.dxbc
+compilation object save succeeded; see C:\Users\jgolasz\.codex\worktrees\refactor-branch-audit\out\build\x64-debug\bin\shaders\color_vs.dxbc
+[7/60] Generating ../../bin/shaders/color_textured_ps.dxbc
+compilation object save succeeded; see C:\Users\jgolasz\.codex\worktrees\refactor-branch-audit\out\build\x64-debug\bin\shaders\color_textured_ps.dxbc
+[8/60] Generating ../../bin/shaders/debug_ps.dxbc
+compilation object save succeeded; see C:\Users\jgolasz\.codex\worktrees\refactor-branch-audit\out\build\x64-debug\bin\shaders\debug_ps.dxbc
+[9/60] Generating ../../bin/shaders/debug_vs.dxbc
+compilation object save succeeded; see C:\Users\jgolasz\.codex\worktrees\refactor-branch-audit\out\build\x64-debug\bin\shaders\debug_vs.dxbc
+[10/60] Generating ../../bin/shaders/shadow_mask_ps.dxbc
+compilation object save succeeded; see C:\Users\jgolasz\.codex\worktrees\refactor-branch-audit\out\build\x64-debug\bin\shaders\shadow_mask_ps.dxbc
+[11/60] Building CXX object GraphicEngineCore\modules\rendering\CMakeFiles\EngineRendering.dir\src\render_graph\RenderGraph.cpp.obj
+[12/60] Building CXX object GraphicEngineCore\modules\rendering\CMakeFiles\EngineRendering.dir\src\MaterialSystem.cpp.obj
+[13/60] Building CXX object GraphicEngineCore\modules\rendering\CMakeFiles\EngineRendering.dir\src\render_graph\RenderView.cpp.obj
+[14/60] Building CXX object GraphicEngineCore\modules\rendering\CMakeFiles\EngineRendering.dir\src\render_graph\FrameContext.cpp.obj
+[15/60] Building CXX object GraphicEngineCore\modules\rendering\CMakeFiles\EngineRendering.dir\src\SceneRenderer.cpp.obj
+[16/60] Building CXX object GraphicEngineCore\CMakeFiles\BrdfReferenceTests.dir\tests\BrdfReferenceTests.cpp.obj
+[17/60] Building CXX object GraphicEngineCore\modules\rendering\CMakeFiles\EngineRendering.dir\src\RenderSystem.cpp.obj
+[18/60] Building CXX object GraphicEngineCore\modules\rendering\CMakeFiles\EngineRendering.dir\src\render_graph\RenderPass.cpp.obj
+[19/60] Building CXX object GraphicEngineCore\modules\runtime\CMakeFiles\EngineRuntime.dir\src\Application.cpp.obj
+[20/60] Building CXX object GraphicEngineCore\modules\scene\CMakeFiles\EngineScene.dir\src\SceneDocument.cpp.obj
+[21/60] Building CXX object GraphicEngineCore\modules\assets\CMakeFiles\EngineAssets.dir\src\AssetManager.cpp.obj
+[22/60] Building CXX object GraphicEngineCore\CMakeFiles\SceneGraphTests.dir\tests\SceneGraphTests.cpp.obj
+[23/60] Building CXX object GraphicEngineCore\CMakeFiles\AssetManagerTests.dir\tests\AssetManagerTests.cpp.obj
+[24/60] Building CXX object GraphicEngineEditor\modules\panels\CMakeFiles\EditorPanels.dir\src\AssetBrowserPanel.cpp.obj
+[25/60] Building CXX object GraphicEngineEditor\modules\panels\CMakeFiles\EditorPanels.dir\src\EngineSettingsPanel.cpp.obj
+[26/60] Building CXX object GraphicEngineEditor\modules\panels\CMakeFiles\EditorPanels.dir\src\HierarchyPanel.cpp.obj
+[27/60] Building CXX object GraphicEngineEditor\modules\panels\CMakeFiles\EditorPanels.dir\src\InspectorPanel.cpp.obj
+[28/60] Building CXX object GraphicEngineEditor\modules\panels\CMakeFiles\EditorPanels.dir\src\ScenePanel.cpp.obj
+[29/60] Building CXX object GraphicEngineCore\CMakeFiles\CorePublicHeaderChecks.dir\public_header_checks\renderer_Light.h.cpp.obj
+[30/60] Building CXX object GraphicEngineEditor\modules\application\CMakeFiles\EditorApplication.dir\src\EditorSceneDocument.cpp.obj
+[31/60] Linking CXX shared library bin\GraphicEngineCore.dll
+[32/60] Building CXX object GraphicEngineCore\CMakeFiles\CorePublicHeaderChecks.dir\public_header_checks\AssetManager.h.cpp.obj
+[33/60] Building CXX object GraphicEngineCore\CMakeFiles\CorePublicHeaderChecks.dir\public_header_checks\renderer_render_graph_FrameBlackboard.h.cpp.obj
+[34/60] Building CXX object GraphicEngineCore\tests\CMakeFiles\GraphicEngineUnitTests.dir\unit\assets\ScenePersistenceTests.cpp.obj
+[35/60] Building CXX object GraphicEngineCore\CMakeFiles\CorePublicHeaderChecks.dir\public_header_checks\renderer_render_graph_FrameContext.h.cpp.obj
+[36/60] Building CXX object GraphicEngineCore\CMakeFiles\CorePublicHeaderChecks.dir\public_header_checks\RenderSystem.h.cpp.obj
+[37/60] Building CXX object GraphicEngineEditor\modules\application\CMakeFiles\EditorApplication.dir\src\main.cpp.obj
+[38/60] Building CXX object GraphicEngineCore\CMakeFiles\CorePublicHeaderChecks.dir\public_header_checks\renderer_render_graph_RenderPass.h.cpp.obj
+[39/60] Building CXX object GraphicEngineCore\CMakeFiles\CorePublicHeaderChecks.dir\public_header_checks\renderer_render_graph_RenderGraph.h.cpp.obj
+[40/60] Building CXX object SandboxApp\CMakeFiles\Sandbox.dir\main.cpp.obj
+[41/60] Building CXX object GraphicEngineCore\CMakeFiles\CorePublicHeaderChecks.dir\public_header_checks\renderer_render_graph_RenderView.h.cpp.obj
+[42/60] Building CXX object GraphicEngineCore\CMakeFiles\CorePublicHeaderChecks.dir\public_header_checks\SceneRenderer.h.cpp.obj
+[43/60] Building CXX object GraphicEngineCore\CMakeFiles\CorePublicHeaderChecks.dir\public_header_checks\renderer_MaterialSystem.h.cpp.obj
+[44/60] Linking CXX executable bin\SceneGraphTests.exe
+[45/60] Linking CXX executable bin\BrdfReferenceTests.exe
+[46/60] Linking CXX executable bin\AssetManagerTests.exe
+[47/60] Building CXX object GraphicEngineCore\CMakeFiles\CorePublicHeaderChecks.dir\public_header_checks\SceneDocument.h.cpp.obj
+[48/60] Building CXX object GraphicEngineEditor\CMakeFiles\EditorPublicHeaderChecks.dir\public_header_checks\EditorSceneDocument.h.cpp.obj
+[49/60] Linking CXX executable bin\GraphicEngineUnitTests.exe
+[50/60] Linking CXX executable bin\Sandbox.exe
+[51/60] Building CXX object GraphicEngineEditor\modules\application\CMakeFiles\EditorApplication.dir\src\Editor.cpp.obj
+[52/60] Building CXX object GraphicEngineEditor\CMakeFiles\EditorPublicHeaderChecks.dir\public_header_checks\AssetRegistryChangedEvent.h.cpp.obj
+[53/60] Building CXX object GraphicEngineEditor\CMakeFiles\EditorPublicHeaderChecks.dir\public_header_checks\Editor.h.cpp.obj
+[54/60] Building CXX object GraphicEngineEditor\CMakeFiles\EditorPublicHeaderChecks.dir\public_header_checks\AssetBrowserPanel.h.cpp.obj
+[55/60] Building CXX object GraphicEngineEditor\CMakeFiles\EditorPublicHeaderChecks.dir\public_header_checks\EditorEvents.h.cpp.obj
+[56/60] Building CXX object GraphicEngineEditor\CMakeFiles\EditorPublicHeaderChecks.dir\public_header_checks\HierarchyPanel.h.cpp.obj
+[57/60] Building CXX object GraphicEngineEditor\CMakeFiles\EditorPublicHeaderChecks.dir\public_header_checks\InspectorPanel.h.cpp.obj
+[58/60] Building CXX object GraphicEngineEditor\CMakeFiles\EditorPublicHeaderChecks.dir\public_header_checks\ScenePanel.h.cpp.obj
+[59/60] Linking CXX executable bin\Editor.exe
