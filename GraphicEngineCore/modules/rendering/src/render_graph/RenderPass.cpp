@@ -293,6 +293,7 @@ bool ForwardPass::Execute(nvrhi::ICommandList *cmd, const ::Engine::Renderer::Re
         for (uint32_t i = 0; i < lightCount; ++i)
             lightData.Lights[i] = view->Lights[i];
         lightData.LightCount = lightCount;
+        lightData.Padding[0] = m_SceneRenderer != nullptr && m_SceneRenderer->HasEnvironmentLighting() ? 1.0f : 0.0f;
         cmd->writeBuffer(view->LightBuffer, &lightData, sizeof(lightData));
         ctx.GetFrameContext().GetDiagnostics().UploadBytes += sizeof(lightData);
         nvrhi::BindingSetHandle sceneBindings =

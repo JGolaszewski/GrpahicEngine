@@ -47,6 +47,10 @@ class ENGINE_API MaterialSystem
 
     void UpdateDirtyMaterials(nvrhi::ICommandList *commandList);
     nvrhi::BindingLayoutHandle GetStandardMaterialLayout() const;
+    std::shared_ptr<TextureResource> GetFallbackColorTexture() const
+    {
+        return m_FallbackColor;
+    }
 
     inline nvrhi::ShaderHandle GetStandardVS() const
     {

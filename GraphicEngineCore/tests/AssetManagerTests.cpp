@@ -173,6 +173,8 @@ namespace {
 		light.name = "test light";
 		light.parent = Engine::SceneNodeParentDocument{"entity", 23, 1};
 		light.position = {3.0f, 4.0f, 5.0f};
+		light.type = static_cast<uint32_t>(::Engine::Renderer::LightType::Point);
+		light.usePosition = true;
 		document.lights.push_back(light);
 		Engine::SceneCameraDocument camera;
 		camera.id = 41;
@@ -183,7 +185,7 @@ namespace {
 
 		std::string error;
 		const bool saved = assets.SaveScene("roundtrip.scene.json", document, error);
-		Require(saved, "scene save failed");
+		Require(saved, error.c_str());
 		const auto loaded = assets.LoadScene("roundtrip.scene.json");
 		Require(static_cast<bool>(loaded), "scene load failed");
 		Require(loaded.document.entities.size() == 2, "scene round-trip lost an entity");
@@ -211,7 +213,8 @@ namespace {
 			"scene round-trip changed a nested entity parent");
 		Require(loaded.document.lights.size() == 1 && loaded.document.lights[0].id == light.id &&
 			loaded.document.lights[0].position == light.position && loaded.document.lights[0].name == light.name &&
-			loaded.document.lights[0].parent && loaded.document.lights[0].parent->id == 23,
+			loaded.document.lights[0].parent && loaded.document.lights[0].parent->id == 23 &&
+			loaded.document.lights[0].type == light.type,
 			"scene round-trip changed light state or parent");
 		Require(loaded.document.cameras.size() == 1 && loaded.document.cameras[0].id == camera.id &&
 			loaded.document.cameras[0].position == camera.position && loaded.document.cameras[0].name == camera.name &&

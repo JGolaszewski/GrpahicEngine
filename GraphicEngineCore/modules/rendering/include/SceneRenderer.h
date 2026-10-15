@@ -65,6 +65,12 @@ class ENGINE_API SceneRenderer
                                              float viewportY) const;
     void BuildLighting(Engine::Scene *scene, const std::vector<::Engine::Renderer::RenderView *> &shadowViews,
                        std::vector<::Engine::Renderer::DirectionalLightData> &lights);
+    // Inputs are linear equirectangular irradiance and GGX-prefiltered maps plus a split-sum BRDF LUT.
+    // Pass three empty handles to disable IBL.
+    bool SetEnvironmentLighting(std::shared_ptr<::Engine::Renderer::TextureResource> irradiance,
+                                std::shared_ptr<::Engine::Renderer::TextureResource> prefilteredEnvironment,
+                                std::shared_ptr<::Engine::Renderer::TextureResource> brdfIntegrationLut);
+    bool HasEnvironmentLighting() const noexcept;
     void BuildShadowData(Engine::Scene *scene, const std::vector<::Engine::Renderer::RenderView *> &shadowViews,
                          uint32_t firstShadowSlot, uint32_t maxShadowedLights);
     uint32_t CountShadowCasters(const Engine::Scene *scene, uint32_t limit) const;
@@ -152,6 +158,9 @@ class ENGINE_API SceneRenderer
     uint64_t m_DebugTriangleBufferCapacity = 0;
 
     ::Engine::Renderer::MaterialSystem *m_MaterialSystem = nullptr;
+    std::shared_ptr<::Engine::Renderer::TextureResource> m_EnvironmentIrradiance;
+    std::shared_ptr<::Engine::Renderer::TextureResource> m_PrefilteredEnvironment;
+    std::shared_ptr<::Engine::Renderer::TextureResource> m_BrdfIntegrationLut;
     SubmissionStats m_SubmissionStats;
 };
 

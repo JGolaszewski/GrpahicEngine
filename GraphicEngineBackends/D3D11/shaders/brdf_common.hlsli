@@ -45,6 +45,31 @@ float3 BrdfFresnelSchlick(float3 f0, float voH)
     return f0 + (1.0f - f0) * fresnelWeight;
 }
 
+float3 BrdfFresnelSchlickRoughness(float3 f0, float noV, float roughness)
+{
+    const float3 grazing = max(1.0f - roughness, f0);
+    const float fresnelWeight = pow(1.0f - saturate(noV), 5.0f);
+    return f0 + (grazing - f0) * fresnelWeight;
+}
+
+float2 BrdfEnvironmentUv(float3 direction)
+{
+    const float3 safeDirection = BrdfNormalizeOr(direction, float3(0.0f, 1.0f, 0.0f));
+    const float longitude = atan2(safeDirection.z, safeDirection.x) / (2.0f * BRDF_PI) + 0.5f;
+    const float latitude = acos(clamp(safeDirection.y, -1.0f, 1.0f)) / BRDF_PI;
+    return float2(frac(longitude), latitude);
+}
+
+float3 EvaluateSplitSumIbl(float3 diffuseIrradiance, float3 prefilteredRadiance, float2 brdfIntegration,
+    float3 normal, float3 view, float3 diffuseColor, float3 f0, float roughness, float occlusion)
+{
+    const float noV = saturate(dot(normal, view));
+    const float3 fresnel = BrdfFresnelSchlickRoughness(f0, noV, roughness);
+    const float3 diffuse = diffuseIrradiance * diffuseColor * (1.0f - fresnel) / BRDF_PI;
+    const float3 specular = prefilteredRadiance * (fresnel * brdfIntegration.x + brdfIntegration.y);
+    return (diffuse + specular) * saturate(occlusion);
+}
+
 float BrdfSmithGgxCorrelated(float noV, float noL, float alpha)
 {
     const float safeNoV = saturate(noV);
@@ -60,6 +85,17 @@ float BrdfSmithGgxCorrelated(float noV, float noL, float alpha)
 float3 BrdfLambert(float3 diffuseColor)
 {
     return diffuseColor / BRDF_PI;
+}
+
+float BrdfInverseSquareRangeAttenuation(float distance, float range)
+{
+    const float safeRange = max(range, BRDF_EPSILON);
+    const float normalizedDistance = saturate(distance / safeRange);
+    const float rangeFade = saturate(1.0f - normalizedDistance * normalizedDistance *
+        normalizedDistance * normalizedDistance);
+    return distance < safeRange
+        ? rangeFade * rangeFade / max(distance * distance, 1.0e-4f)
+        : 0.0f;
 }
 
 float BrdfGgxNdf(float noH, float alpha)

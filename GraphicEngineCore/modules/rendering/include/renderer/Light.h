@@ -15,6 +15,13 @@
 namespace Engine::Renderer
 {
 
+enum class LightType : uint32_t
+{
+    Directional = 0,
+    Point = 1,
+    Spot = 2
+};
+
 #ifndef ENGINE_MAX_LIGHTS
 #define ENGINE_MAX_LIGHTS 8
 #endif
@@ -54,6 +61,9 @@ class ENGINE_API SpotLight : public ::Engine::Object
     SpotLight() = default;
     SpotLight(const DirectX::XMFLOAT3 &direction, const DirectX::XMFLOAT3 &color, float intensity);
 
+    void SetType(LightType type);
+    LightType GetType() const;
+
     void SetDirection(const DirectX::XMFLOAT3 &direction);
     void LookAt(const DirectX::XMFLOAT3 &target);
     void SetPosition(const DirectX::XMFLOAT3 &position);
@@ -82,6 +92,7 @@ class ENGINE_API SpotLight : public ::Engine::Object
 
   private:
     DirectX::XMFLOAT3 m_Direction = {0.0f, -1.0f, 0.0f};
+    LightType m_Type = LightType::Directional;
     DirectX::XMFLOAT3 m_Position = {0.0f, 3.0f, 0.0f};
     bool m_UsePosition = false;
     DirectX::XMFLOAT3 m_Color = {1.0f, 1.0f, 1.0f};

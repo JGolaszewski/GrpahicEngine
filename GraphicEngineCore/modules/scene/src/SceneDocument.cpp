@@ -481,6 +481,7 @@ Json ToJson(const SceneDocument &document)
                                     {"outerAngleDegrees", light.outerAngleDegrees},
                                     {"shadowBias", light.shadowBias},
                                     {"shadowNormalBias", light.shadowNormalBias},
+                                    {"type", light.type},
                                     {"usePosition", light.usePosition},
                                     {"castShadows", light.castShadows}});
     }
@@ -778,7 +779,7 @@ SceneDocumentResult SceneSerializer::Load(const std::filesystem::path &path) con
             }
             KnownKeys(item,
                       {"id", "name", "parent", "direction", "position", "color", "intensity", "range", "innerAngleDegrees",
-                       "outerAngleDegrees", "shadowBias", "shadowNormalBias", "usePosition", "castShadows"},
+                       "outerAngleDegrees", "shadowBias", "shadowNormalBias", "type", "usePosition", "castShadows"},
                       result.warnings, context);
             SceneLightDocument light;
             if (!ReadId(item, light.id, fieldError) || !lightIds.insert(light.id).second ||
@@ -807,6 +808,18 @@ SceneDocumentResult SceneSerializer::Load(const std::filesystem::path &path) con
                     return result;
                 }
                 light.name = item.at("name").get<std::string>();
+            }
+            if (item.contains("type"))
+            {
+                if (!ReadNumber(item, "type", light.type, fieldError) || light.type > 2)
+                {
+                    result.error = FileContext(path, context + ": light type must be between 0 and 2");
+                    return result;
+                }
+            }
+            else
+            {
+                light.type = light.usePosition ? 2U : 0U;
             }
             const float directionLengthSquared = light.direction[0] * light.direction[0] +
                                                  light.direction[1] * light.direction[1] +
@@ -960,7 +973,8 @@ bool SceneSerializer::SaveAtomic(const std::filesystem::path &path, const SceneD
                                 light.color[0],          light.color[1],     light.color[2],
                                 light.intensity,         light.range,        light.innerAngleDegrees,
                                 light.outerAngleDegrees, light.shadowBias,   light.shadowNormalBias};
-        if (light.id == 0 || !lightIds.insert(light.id).second ||
+        if (light.id == 0 || !lightIds.insert(light.id).second || light.type > 2 ||
+            light.usePosition != (light.type != 0) ||
             !std::all_of(std::begin(values), std::end(values),
                          [](float value) { return std::isfinite(value); }) ||
             light.intensity < 0.0f || light.range <= 0.0f || light.innerAngleDegrees < 0.0f ||

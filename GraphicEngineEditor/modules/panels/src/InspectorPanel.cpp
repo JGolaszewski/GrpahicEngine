@@ -482,6 +482,14 @@ void InspectorPanel::DrawLightInspector()
     ImGui::Separator();
     bool sceneChanged = false;
 
+    int lightType = static_cast<int>(selectedLight->GetType());
+    constexpr const char* lightTypeNames[] = {"Directional", "Point", "Spot"};
+    if (ImGui::Combo("Type", &lightType, lightTypeNames, 3))
+    {
+        selectedLight->SetType(static_cast<::Engine::Renderer::LightType>(lightType));
+        sceneChanged = true;
+    }
+
     DirectX::XMFLOAT3 pos = selectedLight->GetPosition();
     float position[3] = {pos.x, pos.y, pos.z};
     if (ImGui::DragFloat3("Position", position, 0.05f))
@@ -501,7 +509,8 @@ void InspectorPanel::DrawLightInspector()
     float innerAngle = selectedLight->GetInnerAngleDegrees();
     float outerAngle = selectedLight->GetOuterAngleDegrees();
     float coneAngles[2] = {innerAngle, outerAngle};
-    if (ImGui::DragFloat2("Angles", coneAngles, 0.05f))
+    if (selectedLight->GetType() == ::Engine::Renderer::LightType::Spot &&
+        ImGui::DragFloat2("Angles", coneAngles, 0.05f))
     {
         selectedLight->SetConeAngles(coneAngles[0], coneAngles[1]);
         sceneChanged = true;

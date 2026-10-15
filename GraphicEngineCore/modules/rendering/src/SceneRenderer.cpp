@@ -99,7 +99,10 @@ void Engine::SceneRenderer::Init(nvrhi::IDevice *device, ::Engine::Renderer::Mat
     sceneLayoutDesc.visibility = nvrhi::ShaderType::All;
     sceneLayoutDesc.bindings = {
         nvrhi::BindingLayoutItem::ConstantBuffer(2), nvrhi::BindingLayoutItem::Texture_SRV(6),
-        nvrhi::BindingLayoutItem::Sampler(6), nvrhi::BindingLayoutItem::ConstantBuffer(4)};
+        nvrhi::BindingLayoutItem::Sampler(6), nvrhi::BindingLayoutItem::ConstantBuffer(4),
+        nvrhi::BindingLayoutItem::Texture_SRV(7), nvrhi::BindingLayoutItem::Sampler(7),
+        nvrhi::BindingLayoutItem::Texture_SRV(8), nvrhi::BindingLayoutItem::Sampler(8),
+        nvrhi::BindingLayoutItem::Texture_SRV(9), nvrhi::BindingLayoutItem::Sampler(9)};
     m_SceneBindingLayout = device->createBindingLayout(sceneLayoutDesc);
 
     nvrhi::BindingLayoutDesc debugLayoutDesc;
@@ -459,11 +462,27 @@ nvrhi::BindingSetHandle Engine::SceneRenderer::GetSceneBindingSet(size_t viewInd
         return cache.Bindings;
     }
 
+    const std::shared_ptr<::Engine::Renderer::TextureResource> fallbackEnvironment =
+        m_MaterialSystem != nullptr ? m_MaterialSystem->GetFallbackColorTexture() : nullptr;
+    const auto &irradiance = m_EnvironmentIrradiance != nullptr ? m_EnvironmentIrradiance : fallbackEnvironment;
+    const auto &prefiltered = m_PrefilteredEnvironment != nullptr ? m_PrefilteredEnvironment : fallbackEnvironment;
+    const auto &integrationLut = m_BrdfIntegrationLut != nullptr ? m_BrdfIntegrationLut : fallbackEnvironment;
+    if (irradiance == nullptr || prefiltered == nullptr || integrationLut == nullptr ||
+        irradiance->Texture == nullptr || irradiance->Sampler == nullptr || prefiltered->Texture == nullptr ||
+        prefiltered->Sampler == nullptr || integrationLut->Texture == nullptr || integrationLut->Sampler == nullptr)
+        return nullptr;
+
     nvrhi::BindingSetDesc desc;
     desc.addItem(nvrhi::BindingSetItem::ConstantBuffer(2, lightBuffer));
     desc.addItem(nvrhi::BindingSetItem::Texture_SRV(6, shadowMap));
     desc.addItem(nvrhi::BindingSetItem::Sampler(6, shadowSampler));
     desc.addItem(nvrhi::BindingSetItem::ConstantBuffer(4, cameraBuffer));
+    desc.addItem(nvrhi::BindingSetItem::Texture_SRV(7, irradiance->Texture));
+    desc.addItem(nvrhi::BindingSetItem::Sampler(7, irradiance->Sampler));
+    desc.addItem(nvrhi::BindingSetItem::Texture_SRV(8, prefiltered->Texture));
+    desc.addItem(nvrhi::BindingSetItem::Sampler(8, prefiltered->Sampler));
+    desc.addItem(nvrhi::BindingSetItem::Texture_SRV(9, integrationLut->Texture));
+    desc.addItem(nvrhi::BindingSetItem::Sampler(9, integrationLut->Sampler));
     nvrhi::BindingSetHandle bindings = m_Device->createBindingSet(desc, m_SceneBindingLayout);
     if (!bindings)
         return nullptr;
@@ -475,6 +494,33 @@ nvrhi::BindingSetHandle Engine::SceneRenderer::GetSceneBindingSet(size_t viewInd
     cache.Bindings = std::move(bindings);
     ++diagnostics.BindingSetAllocations;
     return cache.Bindings;
+}
+
+
+bool Engine::SceneRenderer::SetEnvironmentLighting(
+    std::shared_ptr<::Engine::Renderer::TextureResource> irradiance,
+    std::shared_ptr<::Engine::Renderer::TextureResource> prefilteredEnvironment,
+    std::shared_ptr<::Engine::Renderer::TextureResource> brdfIntegrationLut)
+{
+    const bool disable = irradiance == nullptr && prefilteredEnvironment == nullptr && brdfIntegrationLut == nullptr;
+    const bool complete = irradiance != nullptr && prefilteredEnvironment != nullptr && brdfIntegrationLut != nullptr &&
+                          irradiance->Texture != nullptr && irradiance->Sampler != nullptr &&
+                          prefilteredEnvironment->Texture != nullptr && prefilteredEnvironment->Sampler != nullptr &&
+                          brdfIntegrationLut->Texture != nullptr && brdfIntegrationLut->Sampler != nullptr;
+    if (!disable && !complete)
+        return false;
+
+    m_EnvironmentIrradiance = std::move(irradiance);
+    m_PrefilteredEnvironment = std::move(prefilteredEnvironment);
+    m_BrdfIntegrationLut = std::move(brdfIntegrationLut);
+    m_SceneBindingCaches.clear();
+    return true;
+}
+
+bool Engine::SceneRenderer::HasEnvironmentLighting() const noexcept
+{
+    return m_EnvironmentIrradiance != nullptr && m_PrefilteredEnvironment != nullptr &&
+           m_BrdfIntegrationLut != nullptr;
 }
 
 bool Engine::SceneRenderer::EnsurePerObjectResources(size_t maxDrawCount,
@@ -842,9 +888,9 @@ void Engine::SceneRenderer::BuildShadowData(Engine::Scene *scene,
             break;
 
         auto lightData = scene->GetLights()[idx]->GetDirectionalLightData();
-        const bool usePosition = lightData.ColorUsePosition.w > 0.5f;
+        const bool isSpot = lightData.ConeParams.z == static_cast<float>(::Engine::Renderer::LightType::Spot);
         const bool castShadows = lightData.ShadowParams.w > 0.5f;
-        if (!usePosition || !castShadows)
+        if (!isSpot || !castShadows)
             continue;
 
         const DirectX::XMMATRIX lightViewProj = ComputeSpotLightViewProj(lightData);
@@ -869,7 +915,8 @@ uint32_t Engine::SceneRenderer::CountShadowCasters(const Engine::Scene *scene, u
         if (!light || count == limit || count == MaxShadowedLights)
             break;
         const ::Engine::Renderer::DirectionalLightData lightData = light->GetDirectionalLightData();
-        if (lightData.ColorUsePosition.w > 0.5f && lightData.ShadowParams.w > 0.5f)
+        if (lightData.ConeParams.z == static_cast<float>(::Engine::Renderer::LightType::Spot) &&
+            lightData.ShadowParams.w > 0.5f)
         {
             ++count;
         }
@@ -897,10 +944,9 @@ void Engine::SceneRenderer::BuildLighting(Engine::Scene *scene,
 
         auto lightData = light->GetDirectionalLightData();
 
-        const bool usePosition = lightData.ColorUsePosition.w > 0.5f;
         const bool castShadows = lightData.ShadowParams.w > 0.5f;
 
-        if (usePosition && castShadows)
+        if (lightData.ConeParams.z == static_cast<float>(::Engine::Renderer::LightType::Spot) && castShadows)
         {
             for (uint32_t shadowIdx = shadowSearchStart; shadowIdx < shadowViews.size(); ++shadowIdx)
             {

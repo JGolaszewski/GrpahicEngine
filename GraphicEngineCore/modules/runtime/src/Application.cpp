@@ -685,7 +685,7 @@ bool Application::LoadSceneDocument(const SceneDocument &document, std::string &
             DirectX::XMFLOAT3(source.direction[0], source.direction[1], source.direction[2]),
             DirectX::XMFLOAT3(source.color[0], source.color[1], source.color[2]), source.intensity);
         light->Name = source.name;
-        light->SetUsePosition(source.usePosition);
+        light->SetType(static_cast<::Engine::Renderer::LightType>(source.type));
         light->SetPosition({source.position[0], source.position[1], source.position[2]});
         light->SetRange(source.range);
         light->SetConeAngles(source.innerAngleDegrees, source.outerAngleDegrees);
@@ -882,6 +882,7 @@ SceneDocument Application::CreateSceneDocument(const Scene &scene) const
         item.outerAngleDegrees = light->GetOuterAngleDegrees();
         item.shadowBias = light->GetShadowBias();
         item.shadowNormalBias = light->GetShadowNormalBias();
+        item.type = static_cast<uint32_t>(light->GetType());
         item.usePosition = light->GetUsePosition();
         item.castShadows = light->GetCastShadows();
         document.lights.push_back(std::move(item));

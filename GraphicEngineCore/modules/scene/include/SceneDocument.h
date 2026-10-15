@@ -73,6 +73,7 @@ struct SceneLightDocument
     float outerAngleDegrees = 25.0f;
     float shadowBias = 0.0015f;
     float shadowNormalBias = 0.0015f;
+    uint32_t type = 0;
     bool usePosition = false;
     bool castShadows = true;
 };
