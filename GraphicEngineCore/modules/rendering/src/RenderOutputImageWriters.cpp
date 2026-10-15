@@ -1,6 +1,13 @@
 #include "RenderOutputExporterInternal.h"
 
+#ifdef _MSC_VER
+#  pragma warning(push)
+#  pragma warning(disable : 4702) // OpenImageIO's template code triggers MSVC's unreachable-code warning.
+#endif
 #include <OpenImageIO/imageio.h>
+#ifdef _MSC_VER
+#  pragma warning(pop)
+#endif
 
 #include <array>
 #include <cctype>
@@ -123,8 +130,7 @@ auto ValidatePlane(uint32_t width, uint32_t height, const RenderOutputPlane& pla
   return {};
 }
 
-auto MakeExrSpec(uint32_t width, uint32_t height, const RenderOutputPlane& plane, const RenderAovDescriptor& descriptor)
-    -> OIIO::ImageSpec {
+auto MakeExrSpec(uint32_t width, uint32_t height, const RenderAovDescriptor& descriptor) -> OIIO::ImageSpec {
   OIIO::ImageSpec spec(static_cast<int>(width), static_cast<int>(height), static_cast<int>(descriptor.ChannelCount),
                        OIIO::TypeDesc::FLOAT);
   spec.channelnames.clear();
@@ -231,7 +237,7 @@ auto WriteMultilayerExrFile(uint32_t width, uint32_t height, std::span<const Ren
       return status;
     }
     selectedPlanes.push_back(plane);
-    specs.push_back(MakeExrSpec(width, height, *plane, descriptor));
+    specs.push_back(MakeExrSpec(width, height, descriptor));
   }
 
   auto output = OIIO::ImageOutput::create(FormatFor(path));
@@ -243,13 +249,10 @@ auto WriteMultilayerExrFile(uint32_t width, uint32_t height, std::span<const Ren
         IoError("Cannot write EXR", path, "OpenImageIO EXR plugin does not support multipart output"));
   }
 
-  const auto filename = path.wstring();
-  const bool appendSubimages = output->supports("appendsubimage") != 0;
-  if (appendSubimages) {
-    if (!output->open(filename, specs.front(), OIIO::ImageOutput::Create)) {
-      return std::unexpected(IoError("Cannot open EXR destination", path, output->geterror()));
-    }
-  } else if (!output->open(filename, static_cast<int>(specs.size()), specs.data())) {
+  // The UTF-16 multi-image overload falls back to a single-image open in OIIO,
+  // so use the UTF-8 virtual overload to predeclare every EXR part.
+  const auto filename = path.string();
+  if (!output->open(filename, static_cast<int>(specs.size()), specs.data())) {
     return std::unexpected(IoError("Cannot open EXR destination", path, output->geterror()));
   }
 

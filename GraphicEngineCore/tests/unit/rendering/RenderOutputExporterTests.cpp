@@ -1,6 +1,13 @@
 #include "RenderOutputExporterInternal.h"
 
+#ifdef _MSC_VER
+#  pragma warning(push)
+#  pragma warning(disable : 4702) // OpenImageIO's template code triggers MSVC's unreachable-code warning.
+#endif
 #include <OpenImageIO/imageio.h>
+#ifdef _MSC_VER
+#  pragma warning(pop)
+#endif
 
 #include <gtest/gtest.h>
 
@@ -43,28 +50,29 @@ auto ReadInput(const std::filesystem::path& path) -> OIIO::ImageInput::unique_pt
 
 TEST(RenderOutputExporterTests, WritesToneMappedSrgbPngWithDimensionsAndDecodablePixels) {
   TemporaryOutputDirectory directory;
-  const std::array<float, 8> finalColor{0.0F, 0.18F, 1.0F, 0.5F, 4.0F, 0.0F, 0.0F, 1.0F};
+  const std::array<float, 12> finalColor{0.0F, 0.18F, 1.0F, 1.0F, 4.0F, 0.0F, 0.0F, 1.0F, 0.0F, 0.0F, 0.0F, 0.5F};
   const auto path = directory.File("final.png");
 
-  const auto status = Engine::Rendering::Detail::WritePngFile(2, 1, finalColor, path);
+  const auto status = Engine::Rendering::Detail::WritePngFile(3, 1, finalColor, path);
   ASSERT_TRUE(status) << (status ? "" : status.error().Message);
 
   auto input = ReadInput(path);
   ASSERT_NE(input, nullptr) << OIIO::geterror();
   const auto& spec = input->spec();
-  EXPECT_EQ(spec.width, 2);
+  EXPECT_EQ(spec.width, 3);
   EXPECT_EQ(spec.height, 1);
   EXPECT_EQ(spec.nchannels, 4);
   EXPECT_EQ(spec.channelnames, (std::vector<std::string>{"R", "G", "B", "A"}));
 
-  std::array<uint8_t, 8> decoded{};
-  ASSERT_TRUE(input->read_image(0, 0, 0, -1, OIIO::span<uint8_t>(decoded.data(), decoded.size()))) << input->geterror();
-  EXPECT_EQ(decoded[0], 0);
-  EXPECT_NEAR(decoded[1], 109, 1);
-  EXPECT_NEAR(decoded[2], 188, 1);
-  EXPECT_NEAR(decoded[3], 128, 1);
-  EXPECT_NEAR(decoded[4], 231, 1);
-  EXPECT_EQ(decoded[7], 255);
+  std::array<float, 12> decoded{};
+  ASSERT_TRUE(input->read_image(0, 0, 0, -1, OIIO::span<float>(decoded.data(), decoded.size()))) << input->geterror();
+  // OIIO decodes the byte samples as normalized sRGB code values for float.
+  EXPECT_NEAR(decoded[0], 0.0F, 1.0F / 255.0F);
+  EXPECT_NEAR(decoded[1], 109.0F / 255.0F, 2.0F / 255.0F);
+  EXPECT_NEAR(decoded[2], 188.0F / 255.0F, 2.0F / 255.0F);
+  EXPECT_NEAR(decoded[4], 231.0F / 255.0F, 2.0F / 255.0F);
+  EXPECT_NEAR(decoded[7], 1.0F, 1.0F / 255.0F);
+  EXPECT_NEAR(decoded[11], 128.0F / 255.0F, 1.0F / 255.0F);
 }
 
 TEST(RenderOutputExporterTests, WritesSelectedAovsAsNamedFloat32ExrParts) {

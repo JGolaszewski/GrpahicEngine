@@ -14,6 +14,11 @@ if(BUILD_TESTING)
         "${CMAKE_CURRENT_SOURCE_DIR}/unit/*.cpp"
     )
     add_executable(GraphicEngineUnitTests ${ENGINE_UNIT_TEST_SOURCES})
+    # Compile the private encoding helpers into the test binary so tests can
+    # exercise them without exporting implementation details from the engine DLL.
+    target_sources(GraphicEngineUnitTests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/../modules/rendering/src/RenderOutputImageWriters.cpp"
+    )
     target_link_libraries(GraphicEngineUnitTests PRIVATE
         GraphicEngineCore
         EditorCommands
