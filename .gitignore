@@ -13,6 +13,7 @@ vendor/
 # Markdown files are ignored outside docs/.
 *.md
 !AGENTS.md
+!README.md
 !docs/*.md
 !docs/**/*.md
 !.codex/skills/**/SKILL.md
