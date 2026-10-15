@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <vector>
 
 #ifdef _MSC_VER
 #  pragma warning(push)
@@ -50,9 +51,10 @@ public:
 private:
   struct Impl;
 
-  ViewportTarget(void* device, uint32_t width, uint32_t height);
+  ViewportTarget(void* device, uint32_t width, uint32_t height, bool finalOutput = false);
   void* GetColorTextureHandle() const noexcept;
   void* GetFramebufferHandle() const noexcept;
+  void* GetOutputTextureHandle(uint32_t index) const noexcept;
 
   std::unique_ptr<Impl> m_Impl;
 

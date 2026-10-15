@@ -39,6 +39,7 @@ nav:
       - Logging: logging.md
       - Rendering:
           - Shadows: rendering/shadows.md
+          - Final rendering: rendering/final-render.md
   - Workflows:
       - Development workflow: development-workflow.md
       - Testing: testing.md

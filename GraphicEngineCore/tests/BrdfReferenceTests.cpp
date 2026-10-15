@@ -158,26 +158,17 @@ void TestMaterialPropertiesRoundTrip() {
           "Material must retain authored BRDF model parameters");
 }
 
-void TestRenderViewCameraWorldPosition() {
+void TestRenderViewUsesExplicitCameraView() {
   ::Engine::Scene scene;
-  const uint64_t createSequence = scene.QueueCreate("Test camera");
-  const auto created = scene.sync();
-  Require(created.size() == 1 && created.front().Sequence == createSequence && created.front().Outcome.has_value(),
-          "Camera entities must be created at a scene synchronization point");
-  const auto cameraEntity = created.front().Entity;
-  Require(scene.QueueAdd(cameraEntity, ::Engine::Ecs::Camera{}) != 0,
-          "Camera components must be staged through the scene command queue");
-  auto transform = *scene.World().Get<::Engine::Ecs::LocalTransform>(cameraEntity);
-  transform.Position = {3.0F, 4.0F, 5.0F};
-  (void)scene.QueueSet(cameraEntity, transform);
-  (void)scene.sync();
-  Require(scene.Update(0.0F).has_value(), "Scene update must propagate camera transforms before render extraction");
   Engine::Viewport viewport(320, 200, nullptr);
+  ::Engine::Renderer::CameraView camera;
+  camera.Position = {3.0F, 4.0F, 5.0F};
   ::Engine::Renderer::RenderView view;
-  view.Initialize(&scene, cameraEntity, &viewport);
+  view.Initialize(&scene, camera, &viewport);
   Require(std::abs(view.CameraPosition.x - 3.0F) < 1.0e-6F && std::abs(view.CameraPosition.y - 4.0F) < 1.0e-6F &&
-              std::abs(view.CameraPosition.z - 5.0F) < 1.0e-6F,
-          "Render views must retain camera world position for the GPU camera buffer");
+              std::abs(view.CameraPosition.z - 5.0F) < 1.0e-6F && view.ViewportWidth == 320 &&
+              view.ViewportHeight == 200,
+          "Render views must use explicit camera pose without requiring a scene camera entity");
 }
 
 void TestEcsTransformComponentValidation() {
@@ -195,7 +186,7 @@ auto main() -> int {
     TestReciprocityAndWhiteFurnace();
     TestMaterialGpuAbiPacking();
     TestMaterialPropertiesRoundTrip();
-    TestRenderViewCameraWorldPosition();
+    TestRenderViewUsesExplicitCameraView();
     TestEcsTransformComponentValidation();
     std::cout << "BRDF reference tests passed\n";
     return EXIT_SUCCESS;

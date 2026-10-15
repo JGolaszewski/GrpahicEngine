@@ -829,7 +829,7 @@ void Engine::SceneRenderer::BuildViews(::Engine::Renderer::FrameBlackboard& blac
 
 void Engine::SceneRenderer::BuildDebugGeometry(::Engine::Renderer::RenderView* view) {
   if ((view == nullptr) || view->ViewType != ::Engine::Renderer::RenderView::Type::Main ||
-      (view->TargetScene == nullptr)) {
+      (view->TargetScene == nullptr) || view->FinalRender) {
     return;
   }
 
