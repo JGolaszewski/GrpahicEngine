@@ -14,23 +14,11 @@ The standard configure, build, and CTest commands are listed below. To remove ge
 
 ## Codex edit hooks
 
-After `apply_patch`, `Edit`, or `Write`, the Python hook filters changed C++ files
-to first-party files inside the repository. It exits without work when no eligible
-files changed or `out/build/x64-debug/CMakeCache.txt` is absent. It formats only
-those files when `clang-format` is available, incrementally builds the existing
-x64 Debug tree, invokes the CMake `lint` target for clang-tidy, and runs the
-`unit` and `integration` CTest labels while excluding `benchmark`. On Windows
-Ninja, `lint` is a separate target and analyzes the configured first-party
-source set. Build, lint, and test failures block the edit and include the tail
-of captured output; formatter errors and a missing formatter do not block.
-
-The hooks use the environment inherited from Codex and do not initialize the
-Visual Studio developer environment. Run Codex from an environment where the
-existing Ninja/MSVC build can compile. The edit hook has a 300-second timeout.
-
-After an explicit Bash command containing `ctest`, a separate hook configures,
-builds, and runs the complete `x64-asan` test tree. Commands already targeting
-`out/build/x64-asan` are ignored by that hook.
+Optional local Codex hooks may automate formatting, building, linting, and tests
+when their scripts are installed and registered in the user's Codex configuration.
+A fresh checkout does not register or activate them, so do not rely on hooks as a
+repository gate. Follow the explicit commands below and report the checks that
+actually ran.
 
 ## Correctness tests
 
@@ -66,12 +54,18 @@ for the integration subset. The `engine-unit-tests`,
 `engine-integration-tests`, and `engine-tests` build targets also build and run
 the corresponding CTest selections.
 
-Ninja builds also run the repository's `lint` target during compilation.
-`clang-tidy` is required and its configured findings can fail the build, so a
-successful build includes the clang-tidy gate. Fix applicable first-party
-findings rather than suppressing or bypassing the check. If the toolchain is
-unavailable, report which checks could not run. Makefile builds also run `lint`;
-other generators attach clang-tidy to first-party C++ compilation.
+The `lint` target runs clang-tidy on the configured first-party source set.
+On Windows Ninja and Makefile builds, `lint` is a separate target and is not
+part of the default build. Run it explicitly:
+
+```powershell
+cmake --build out/build/x64-debug --target lint --parallel $env:NUMBER_OF_PROCESSORS
+```
+
+On non-Windows Ninja and Makefile builds, `lint` is an `ALL` target and runs
+with the default build. Other generators do not declare this target. Fix
+applicable first-party findings rather than suppressing or bypassing the check.
+If the toolchain is unavailable, report which checks could not run.
 
 The default x64 Debug preset builds the asset and BRDF executables and the GoogleTest
 CPU unit suite. Tests use temporary project roots where they write scene or asset

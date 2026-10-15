@@ -25,7 +25,7 @@ Types and public engine/editor callable names use PascalCase. Private data membe
 
 Use the checked-in `.clang-format`. Format only touched first-party C++ files; never format vendor code. The CMake `format` target checks formatting without modifying files.
 
-First-party MSVC targets use `/W4 /WX /permissive- /analyze /w14242 /w14265`. `.clang-tidy` enables `bugprone-*`, `modernize-*`, `performance-*`, `cppcoreguidelines-*`, and `readability-*`; `bugprone-*` and `performance-*` diagnostics are errors. Do not suppress or bypass applicable findings. Third-party include directories must be marked `SYSTEM`; preserve existing SYSTEM treatment for ImGui, NVRHI, tinygltf, and stb.
+First-party MSVC targets use `/W4 /WX /EHsc /permissive- /Zc:preprocessor`. `.clang-tidy` enables `bugprone-*` and `performance-*`, excluding `bugprone-easily-swappable-parameters` and `bugprone-signed-bitwise`; enabled bugprone and performance diagnostics are errors. Do not suppress or bypass applicable findings. Third-party include directories must be marked `SYSTEM`; preserve existing SYSTEM treatment for ImGui, NVRHI, tinygltf, and stb.
 
 The repository clang-tidy header filter includes `GraphicEngineCore`, `GraphicEngineEditor`, `GraphicEngineBackends`, and `SandboxApp`; `vendor/`, `out/`, and `build/` are excluded.
 
