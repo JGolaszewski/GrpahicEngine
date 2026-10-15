@@ -119,6 +119,7 @@ endif()
 find_package(directxmath CONFIG REQUIRED)
 find_package(glfw3 CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
+find_package(OpenImageIO CONFIG REQUIRED)
 
 # tinygltf and stb are header-only vcpkg packages without CMake config targets.
 find_path(ENGINE_TINYGLTF_INCLUDE_DIR tiny_gltf.h)
