@@ -1,2 +1,3 @@
 # Raw LLVM coverage shards are temporary; keep merged profile and reports.
 *.profraw
+main-final-coverage-*.profraw

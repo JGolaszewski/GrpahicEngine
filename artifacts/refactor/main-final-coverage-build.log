@@ -1,0 +1,135 @@
+**********************************************************************
+** Visual Studio 2026 Developer Command Prompt v18.9.1
+** Copyright (c) 2026 Microsoft Corporation
+**********************************************************************
+[0/2] Re-checking globbed directories...
+[1/2] Re-running CMake...
+-- Running vcpkg install
+Detecting compiler hash for triplet x64-windows...
+Compiler found: C:/Program Files/Microsoft Visual Studio/18/Enterprise/VC/Tools/MSVC/14.51.36231/bin/Hostx64/x64/cl.exe
+The following packages are already installed:
+    directxmath:x64-windows@2026-03-12
+    glfw3:x64-windows@3.4#1
+    gtest:x64-windows@1.17.0#3
+    nlohmann-json:x64-windows@3.12.0#2
+    stb:x64-windows@2024-07-29#1
+    tinygltf:x64-windows@3.0.0#1
+  * vcpkg-cmake:x64-windows@2024-04-23
+  * vcpkg-cmake-config:x64-windows@2026-07-21
+The DirectXMath package provides CMake targets:
+
+    find_package(directxmath CONFIG REQUIRED)
+    target_link_libraries(main PRIVATE Microsoft::DirectXMath)
+
+glfw3 provides CMake targets:
+
+  # this is heuristically generated, and may not be correct
+  find_package(glfw3 CONFIG REQUIRED)
+  target_link_libraries(main PRIVATE glfw)
+
+glfw3 provides pkg-config modules:
+
+  # A multi-platform library for OpenGL, window and input
+  glfw3
+
+The package gtest is compatible with built-in CMake targets:
+
+    enable_testing()
+
+    find_package(GTest CONFIG REQUIRED)
+    target_link_libraries(main PRIVATE GTest::gtest GTest::gtest_main GTest::gmock GTest::gmock_main)
+
+    add_test(AllTestsInMain main)
+
+The package nlohmann-json provides CMake targets:
+
+    find_package(nlohmann_json CONFIG REQUIRED)
+    target_link_libraries(main PRIVATE nlohmann_json::nlohmann_json)
+
+The package nlohmann-json can be configured to not provide implicit conversions via a custom triplet file:
+
+    set(nlohmann-json_IMPLICIT_CONVERSIONS OFF)
+
+For more information, see the docs here:
+
+    https://json.nlohmann.me/api/macros/json_use_implicit_conversions/
+
+The package stb provides CMake targets:
+
+    find_package(Stb REQUIRED)
+    target_include_directories(main PRIVATE ${Stb_INCLUDE_DIR})
+tinygltf is header-only and can be used from CMake via:
+
+  find_path(TINYGLTF_INCLUDE_DIRS "tiny_gltf.h")
+  target_include_directories(main PRIVATE ${TINYGLTF_INCLUDE_DIRS})
+
+All requested installations completed successfully in: 455 us
+-- Running vcpkg install - done
+-- Configuring done (4.3s)
+-- Generating done (0.3s)
+-- Build files have been written to: C:/Users/jgolasz/.codex/worktrees/refactor-integration/GrpahicEngine/out/build/coverage
+[0/4] Re-checking globbed directories...
+[1/67] Building CXX object GraphicEngineCore\modules\scene\CMakeFiles\EngineScene.dir\src\components\Transform.cpp.obj
+[2/67] Building CXX object GraphicEngineCore\modules\runtime\CMakeFiles\EngineRuntime.dir\src\EditorCameraController.cpp.obj
+[3/67] Building CXX object GraphicEngineCore\modules\rendering\CMakeFiles\EngineRendering.dir\src\Camera.cpp.obj
+[4/67] Building CXX object GraphicEngineCore\modules\scene\CMakeFiles\EngineScene.dir\src\Object.cpp.obj
+[5/67] Building CXX object GraphicEngineCore\modules\rendering\CMakeFiles\EngineRendering.dir\src\DebugGeometry.cpp.obj
+[6/67] Building CXX object GraphicEngineCore\modules\scene\CMakeFiles\EngineScene.dir\src\Scene.cpp.obj
+[7/67] Building CXX object GraphicEngineCore\modules\rendering\CMakeFiles\EngineRendering.dir\src\Light.cpp.obj
+[8/67] Building CXX object GraphicEngineCore\modules\rendering\CMakeFiles\EngineRendering.dir\src\Material.cpp.obj
+[9/67] Building CXX object GraphicEngineCore\modules\rendering\CMakeFiles\EngineRendering.dir\src\Entity.cpp.obj
+[10/67] Building CXX object GraphicEngineCore\modules\rendering\CMakeFiles\EngineRendering.dir\src\MaterialSystem.cpp.obj
+[11/67] Building CXX object GraphicEngineCore\modules\rendering\CMakeFiles\EngineRendering.dir\src\Mesh.cpp.obj
+[12/67] Building CXX object GraphicEngineCore\modules\rendering\CMakeFiles\EngineRendering.dir\src\PrimitiveFactory.cpp.obj
+[13/67] Building CXX object GraphicEngineCore\modules\runtime\CMakeFiles\EngineRuntime.dir\src\Application.cpp.obj
+[14/67] Building CXX object GraphicEngineCore\modules\rendering\CMakeFiles\EngineRendering.dir\src\RenderDevice.cpp.obj
+[15/67] Building CXX object GraphicEngineCore\modules\rendering\CMakeFiles\EngineRendering.dir\src\TextureResource.cpp.obj
+[16/67] Building CXX object GraphicEngineCore\modules\rendering\CMakeFiles\EngineRendering.dir\src\PipelineCache.cpp.obj
+[17/67] Building CXX object GraphicEngineCore\modules\rendering\CMakeFiles\EngineRendering.dir\src\Viewport.cpp.obj
+[18/67] Building CXX object GraphicEngineCore\modules\runtime\CMakeFiles\EngineRuntime.dir\src\LogEngine.cpp.obj
+[19/67] Building CXX object GraphicEngineCore\modules\scene\CMakeFiles\EngineScene.dir\src\SceneDocument.cpp.obj
+[20/67] Building CXX object GraphicEngineCore\modules\assets\CMakeFiles\EngineAssets.dir\src\AssetManager.cpp.obj
+[21/67] Building CXX object GraphicEngineCore\modules\rendering\CMakeFiles\EngineRendering.dir\src\ViewportTarget.cpp.obj
+[22/67] Building CXX object GraphicEngineCore\modules\rendering\CMakeFiles\EngineRendering.dir\src\ShaderFactory.cpp.obj
+[23/67] Building CXX object GraphicEngineCore\modules\rendering\CMakeFiles\EngineRendering.dir\src\ResourceManager.cpp.obj
+[24/67] Building CXX object GraphicEngineCore\modules\rendering\CMakeFiles\EngineRendering.dir\src\render_graph\RGResources.cpp.obj
+[25/67] Building CXX object GraphicEngineCore\modules\rendering\CMakeFiles\EngineRendering.dir\src\render_graph\RGBuilder.cpp.obj
+[26/67] Building CXX object GraphicEngineCore\modules\rendering\CMakeFiles\EngineRendering.dir\src\render_graph\RGResourcePool.cpp.obj
+[27/67] Building CXX object GraphicEngineCore\modules\rendering\CMakeFiles\EngineRendering.dir\src\render_graph\RenderContext.cpp.obj
+[28/67] Building CXX object GraphicEngineCore\modules\rendering\CMakeFiles\EngineRendering.dir\src\SceneRenderer.cpp.obj
+[29/67] Building CXX object GraphicEngineCore\modules\rendering\CMakeFiles\EngineRendering.dir\src\RenderSystem.cpp.obj
+[30/67] Building CXX object GraphicEngineCore\modules\assets\CMakeFiles\EngineAssets.dir\src\AssetImporter.cpp.obj
+[31/67] Building CXX object GraphicEngineCore\modules\rendering\CMakeFiles\EngineRendering.dir\src\render_graph\RenderView.cpp.obj
+[32/67] Building CXX object GraphicEngineCore\modules\rendering\CMakeFiles\EngineRendering.dir\src\render_graph\FrameContext.cpp.obj
+[33/67] Building CXX object GraphicEngineEditor\modules\platform\CMakeFiles\EditorPlatform.dir\src\EditorUiIntegration.cpp.obj
+[34/67] Building CXX object GraphicEngineCore\modules\rendering\CMakeFiles\EngineRendering.dir\src\render_graph\RenderGraph.cpp.obj
+[35/67] Building CXX object GraphicEngineEditor\modules\commands\CMakeFiles\EditorCommands.dir\src\ChangeMaterialPropertiesCommand.cpp.obj
+[36/67] Building CXX object GraphicEngineCore\modules\rendering\CMakeFiles\EngineRendering.dir\src\render_graph\RenderPass.cpp.obj
+[37/67] Building CXX object GraphicEngineEditor\modules\commands\CMakeFiles\EditorCommands.dir\src\ChangeMaterialTextureCommand.cpp.obj
+[38/67] Building CXX object GraphicEngineEditor\modules\commands\CMakeFiles\EditorCommands.dir\src\EntityMembershipCommand.cpp.obj
+[39/67] Building CXX object GraphicEngineEditor\modules\commands\CMakeFiles\EditorCommands.dir\src\ReplaceEntityCommand.cpp.obj
+[40/67] Building CXX object GraphicEngineEditor\modules\commands\CMakeFiles\EditorCommands.dir\src\TransformEntityCommand.cpp.obj
+[41/67] Building CXX object GraphicEngineEditor\modules\platform\CMakeFiles\EditorPlatform.dir\src\EditorFileDialogs.cpp.obj
+[42/67] Building CXX object GraphicEngineBackends\D3D11\CMakeFiles\RenderBackendD3D11.dir\src\backends\D3D11Backend.cpp.obj
+[43/67] Building CXX object GraphicEngineBackends\D3D11\CMakeFiles\RenderBackendD3D11.dir\src\windows\GLFWWindow.cpp.obj
+[44/67] Building CXX object GraphicEngineCore\tests\CMakeFiles\GraphicEngineUnitTests.dir\unit\editor\CommandHistoryTests.cpp.obj
+[45/67] Linking CXX shared library bin\GraphicEngineCore.dll
+[46/67] Building CXX object GraphicEngineCore\tests\CMakeFiles\GraphicEngineUnitTests.dir\unit\rendering\DebugGeometryTests.cpp.obj
+[47/67] Building CXX object GraphicEngineCore\tests\CMakeFiles\GraphicEngineUnitTests.dir\unit\rendering\EditorUiIntegrationTests.cpp.obj
+[48/67] Building CXX object GraphicEngineCore\tests\CMakeFiles\GraphicEngineUnitTests.dir\unit\rendering\RenderingValueTests.cpp.obj
+[49/67] Linking CXX static library lib\RenderBackendD3D11.lib
+[50/67] Linking CXX static library lib\EditorPlatform.lib
+[51/67] Building CXX object GraphicEngineCore\tests\CMakeFiles\GraphicEngineUnitTests.dir\unit\rendering\ViewportTests.cpp.obj
+[52/67] Building CXX object GraphicEngineCore\tests\CMakeFiles\GraphicEngineUnitTests.dir\unit\assets\ScenePersistenceTests.cpp.obj
+[53/67] Building CXX object GraphicEngineCore\tests\CMakeFiles\GraphicEngineUnitTests.dir\unit\runtime\EditorCameraControllerTests.cpp.obj
+[54/67] Building CXX object GraphicEngineCore\tests\CMakeFiles\GraphicEngineUnitTests.dir\unit\rendering\RenderingCpuPathTests.cpp.obj
+[55/67] Building CXX object GraphicEngineCore\tests\CMakeFiles\GraphicEngineUnitTests.dir\unit\runtime\EventDispatcherTests.cpp.obj
+[56/67] Building CXX object GraphicEngineCore\tests\CMakeFiles\GraphicEngineUnitTests.dir\unit\assets\AssetImporterTests.cpp.obj
+[57/67] Building CXX object GraphicEngineCore\tests\CMakeFiles\GraphicEngineUnitTests.dir\unit\scene\ObjectHierarchyTests.cpp.obj
+[58/67] Building CXX object GraphicEngineCore\tests\CMakeFiles\GraphicEngineUnitTests.dir\unit\scene\TransformTests.cpp.obj
+[59/67] Building CXX object GraphicEngineCore\tests\CMakeFiles\GraphicEngineUnitTests.dir\unit\scene\SceneIdentityTests.cpp.obj
+[60/67] Building CXX object GraphicEngineCore\tests\CMakeFiles\GraphicEngineUnitTests.dir\unit\rendering\RenderSystemLifecycleTests.cpp.obj
+[61/67] Building CXX object GraphicEngineCore\tests\CMakeFiles\GraphicEngineUnitTests.dir\unit\scene\SceneLifecycleTests.cpp.obj
+[62/67] Building CXX object GraphicEngineCore\tests\CMakeFiles\GraphicEngineUnitTests.dir\unit\runtime\LogEngineTests.cpp.obj
+[63/67] Building CXX object GraphicEngineCore\tests\CMakeFiles\GraphicEngineUnitTests.dir\unit\runtime\ApplicationTests.cpp.obj
+[64/67] Linking CXX executable bin\GraphicEngineUnitTests.exe

@@ -1,0 +1,172 @@
+Test project C:/Users/jgolasz/.codex/worktrees/refactor-integration/GrpahicEngine/out/build/coverage
+      Start 66: LogEngineTests.RotatesFilesAndCountsBreadcrumbOverwritesAndCallbackFailures
+      Start 51: ApplicationTests.ClampsDelayedFramesAndRunsWhileSimulationIsPaused
+      Start  1: BrdfReferenceTests
+      Start  2: AssetManagerTests
+      Start 19: ScenePersistenceTests.RejectsMalformedEntityLightAndCameraFields
+      Start 21: ScenePersistenceTests.RejectsInvalidSchemaAndMaterialValues
+      Start  7: AssetImporterTests.ImportsBinaryGlbAndRejectsTruncatedContainer
+      Start 29: EditorUiIntegrationTests.RunsAndShutsDownACompleteUiFrame
+      Start 50: ApplicationTests.RunsWarpFrameLoadsAndSavesSceneDocuments
+      Start 13: ScenePersistenceTests.RoundTripsFieldsAndRejectsTraversalWithoutOverwritingValidFile
+      Start  6: AssetImporterTests.ImportsMaterialExtensionsTextureTransformsAndDecodedImages
+      Start 74: ObjectHierarchyTests.UpdatesComponentsAndDescendantsRecursively
+ 1/82 Test #74: ObjectHierarchyTests.UpdatesComponentsAndDescendantsRecursively .............................   Passed    0.08 sec
+      Start  8: AssetImporterTests.RejectsMalformedMaterialExtensionValues
+ 2/82 Test #29: EditorUiIntegrationTests.RunsAndShutsDownACompleteUiFrame ...................................   Passed    0.15 sec
+ 3/82 Test  #6: AssetImporterTests.ImportsMaterialExtensionsTextureTransformsAndDecodedImages ...............   Passed    0.14 sec
+ 4/82 Test  #7: AssetImporterTests.ImportsBinaryGlbAndRejectsTruncatedContainer .............................   Passed    0.15 sec
+      Start 69: ObjectHierarchyTests.DetachesChildAndClearsTransformParent
+      Start 10: AssetImporterTests.ReadsVertexAttributesAndRejectsInvalidAccessorLayouts
+      Start 73: ObjectHierarchyTests.SetParentHandlesNoOpSelfAndDetachCases
+ 5/82 Test #13: ScenePersistenceTests.RoundTripsFieldsAndRejectsTraversalWithoutOverwritingValidFile ........   Passed    0.16 sec
+      Start 32: RenderSystemLifecycleTests.InitializesOnWarpUploadsResourcesAndCompletesFrame
+ 6/82 Test #69: ObjectHierarchyTests.DetachesChildAndClearsTransformParent ..................................   Passed    0.09 sec
+      Start 35: RenderGraphCpuPathTests.KeepsOnlySideEffectsAndTheirResourceDependencies
+ 7/82 Test #50: ApplicationTests.RunsWarpFrameLoadsAndSavesSceneDocuments ...................................   Passed    0.24 sec
+ 8/82 Test  #1: BrdfReferenceTests ..........................................................................   Passed    0.26 sec
+ 9/82 Test #73: ObjectHierarchyTests.SetParentHandlesNoOpSelfAndDetachCases .................................   Passed    0.08 sec
+      Start 59: EventDispatcherTests.DoesNotClearAlreadyHandledEvent
+      Start 23: CommandHistoryTests.NewCommandInvalidatesRedoAndClearReleasesOwnedCommands
+      Start  9: AssetImporterTests.ImportsNodeTransformsAndRejectsInvalidSceneHierarchyData
+10/82 Test #35: RenderGraphCpuPathTests.KeepsOnlySideEffectsAndTheirResourceDependencies ....................   Passed    0.03 sec
+      Start 12: AssetImporterTests.ReportsUnsupportedAnimationDataAndRejectsInvalidTextureState
+11/82 Test #23: CommandHistoryTests.NewCommandInvalidatesRedoAndClearReleasesOwnedCommands ..................   Passed    0.02 sec
+12/82 Test #59: EventDispatcherTests.DoesNotClearAlreadyHandledEvent ........................................   Passed    0.03 sec
+      Start  5: AssetImporterTests.RejectsInvalidPrimitiveAndHierarchyData
+      Start 61: LogEngineTests.WritesStructuredEventsAndDispatchesCallbacks
+13/82 Test #61: LogEngineTests.WritesStructuredEventsAndDispatchesCallbacks .................................   Passed    0.05 sec
+      Start  4: AssetImporterTests.ConvertsPrimitiveTopologiesAndGeneratesMissingAttributes
+14/82 Test #21: ScenePersistenceTests.RejectsInvalidSchemaAndMaterialValues .................................   Passed    0.35 sec
+15/82 Test  #8: AssetImporterTests.RejectsMalformedMaterialExtensionValues ..................................   Passed    0.20 sec
+16/82 Test #32: RenderSystemLifecycleTests.InitializesOnWarpUploadsResourcesAndCompletesFrame ...............   Passed    0.11 sec
+17/82 Test #51: ApplicationTests.ClampsDelayedFramesAndRunsWhileSimulationIsPaused ..........................   Passed    0.36 sec
+18/82 Test #10: AssetImporterTests.ReadsVertexAttributesAndRejectsInvalidAccessorLayouts ....................   Passed    0.19 sec
+      Start  3: AssetImporterTests.RejectsUnsupportedPathsMalformedFilesAndExtensions
+      Start 46: ApplicationTests.StopsWhenBackendInitializationFails
+      Start 52: EditorCameraControllerTests.CursorCaptureRequiresRightMouseAndHoveredViewport
+      Start 11: AssetImporterTests.DecodesNormalizedSignedAndUnsignedVertexAttributes
+      Start 62: LogEngineTests.ReportsFileSinkInitializationFailure
+19/82 Test  #5: AssetImporterTests.RejectsInvalidPrimitiveAndHierarchyData ..................................   Passed    0.09 sec
+20/82 Test  #9: AssetImporterTests.ImportsNodeTransformsAndRejectsInvalidSceneHierarchyData .................   Passed    0.11 sec
+      Start 45: ApplicationTests.RejectsMissingWindowAndBackend
+      Start 27: DebugGeometryTests.BuildsSelectedAndUnselectedSpotlightGizmos
+21/82 Test #12: AssetImporterTests.ReportsUnsupportedAnimationDataAndRejectsInvalidTextureState .............   Passed    0.10 sec
+      Start 82: TransformTests.SingularNormalMatrixRemainsFinite
+22/82 Test #52: EditorCameraControllerTests.CursorCaptureRequiresRightMouseAndHoveredViewport ...............   Passed    0.03 sec
+23/82 Test #46: ApplicationTests.StopsWhenBackendInitializationFails ........................................   Passed    0.03 sec
+      Start 36: SceneRendererCpuPathTests.BuildsShadowDataAndLightingWithinCasterLimits
+      Start 20: ScenePersistenceTests.WarnsForUnknownFieldsAndNormalizesUnsupportedLegacyMaterial
+24/82 Test #62: LogEngineTests.ReportsFileSinkInitializationFailure .........................................   Passed    0.04 sec
+25/82 Test #19: ScenePersistenceTests.RejectsMalformedEntityLightAndCameraFields ............................   Passed    0.41 sec
+      Start 14: ScenePersistenceTests.FailedAtomicReplacementPreservesDestinationAndRemovesTemporaryFile
+      Start 22: CommandHistoryTests.ExecutesUndoesAndRedoesInOrder
+26/82 Test #11: AssetImporterTests.DecodesNormalizedSignedAndUnsignedVertexAttributes .......................   Passed    0.06 sec
+27/82 Test  #3: AssetImporterTests.RejectsUnsupportedPathsMalformedFilesAndExtensions .......................   Passed    0.07 sec
+      Start 42: SpotLightTests.LeavesDirectionUnchangedForDegenerateLookAt
+      Start 55: EditorCameraControllerTests.MovementRequiresHoveredViewportWithoutTextInput
+28/82 Test #82: TransformTests.SingularNormalMatrixRemainsFinite ............................................   Passed    0.05 sec
+29/82 Test #45: ApplicationTests.RejectsMissingWindowAndBackend .............................................   Passed    0.06 sec
+30/82 Test #36: SceneRendererCpuPathTests.BuildsShadowDataAndLightingWithinCasterLimits .....................   Passed    0.05 sec
+31/82 Test  #2: AssetManagerTests ...........................................................................   Passed    0.44 sec
+      Start 43: ViewportTests.ReturnsStableAspectRatioForValidDimensions
+      Start 76: SceneIdentityTests.InvalidIndexReturnsInvalidId
+      Start 30: RenderSystemLifecycleTests.NullDeviceIsRejectedAndFrameCallsRemainSafe
+      Start 33: RenderGraphCpuPathTests.CompilesOutputAndRejectsReadWithoutProducer
+32/82 Test #20: ScenePersistenceTests.WarnsForUnknownFieldsAndNormalizesUnsupportedLegacyMaterial ...........   Passed    0.05 sec
+33/82 Test #14: ScenePersistenceTests.FailedAtomicReplacementPreservesDestinationAndRemovesTemporaryFile ....   Passed    0.04 sec
+34/82 Test #22: CommandHistoryTests.ExecutesUndoesAndRedoesInOrder ..........................................   Passed    0.04 sec
+      Start 78: SceneLifecycleTests.RemovesLightsAndCamerasByIdAndPointer
+      Start 44: ViewportTests.UsesUnitAspectRatioWhenEitherDimensionIsZero
+      Start 57: EventDispatcherTests.DispatchesMatchingTypeAndPropagatesHandledState
+35/82 Test  #4: AssetImporterTests.ConvertsPrimitiveTopologiesAndGeneratesMissingAttributes .................   Passed    0.12 sec
+36/82 Test #42: SpotLightTests.LeavesDirectionUnchangedForDegenerateLookAt ..................................   Passed    0.04 sec
+37/82 Test #55: EditorCameraControllerTests.MovementRequiresHoveredViewportWithoutTextInput .................   Passed    0.04 sec
+38/82 Test #43: ViewportTests.ReturnsStableAspectRatioForValidDimensions ....................................   Passed    0.03 sec
+39/82 Test #76: SceneIdentityTests.InvalidIndexReturnsInvalidId .............................................   Passed    0.03 sec
+      Start 28: EditorUiIntegrationTests.RejectsMissingInputsAndBackendInitializationFailure
+      Start 40: CameraValueTests.BuildsFiniteViewProjectionAndClampsNonpositiveAspect
+      Start 68: ObjectHierarchyTests.RejectsSelfAndAncestorOwnershipCycles
+      Start 17: ScenePersistenceTests.MigratesLegacySpecularGlossinessBrdfToWorkflow
+      Start 47: ApplicationTests.RejectsRendererWithoutDevice
+40/82 Test #33: RenderGraphCpuPathTests.CompilesOutputAndRejectsReadWithoutProducer .........................   Passed    0.04 sec
+      Start 38: SceneRendererCpuPathTests.MatchesShadowViewsToTheirOwningSceneInOrder
+41/82 Test #78: SceneLifecycleTests.RemovesLightsAndCamerasByIdAndPointer ...................................   Passed    0.04 sec
+42/82 Test #44: ViewportTests.UsesUnitAspectRatioWhenEitherDimensionIsZero ..................................   Passed    0.04 sec
+43/82 Test #57: EventDispatcherTests.DispatchesMatchingTypeAndPropagatesHandledState ........................   Passed    0.03 sec
+44/82 Test #28: EditorUiIntegrationTests.RejectsMissingInputsAndBackendInitializationFailure ................   Passed    0.03 sec
+45/82 Test #40: CameraValueTests.BuildsFiniteViewProjectionAndClampsNonpositiveAspect .......................   Passed    0.02 sec
+46/82 Test #68: ObjectHierarchyTests.RejectsSelfAndAncestorOwnershipCycles ..................................   Passed    0.02 sec
+      Start 53: EditorCameraControllerTests.ZoomRejectsMissingCameraAndNonFiniteInput
+      Start 63: LogEngineTests.ResolvesValidAndInvalidEnvironmentOverrides
+      Start 64: LogEngineTests.FormatsAllArgumentKindsAndHandlesMalformedSpecifications
+      Start 25: DebugGeometryTests.StoresLinesTrianglesAndOnlyValidLightTargets
+      Start 79: SceneLifecycleTests.SearchesForwardForSpawnSpaceAndHonorsAttemptLimits
+      Start 31: RenderSystemLifecycleTests.AcceptsValidAndRejectsOutOfRangeShadowSettings
+47/82 Test #17: ScenePersistenceTests.MigratesLegacySpecularGlossinessBrdfToWorkflow ........................   Passed    0.04 sec
+48/82 Test #27: DebugGeometryTests.BuildsSelectedAndUnselectedSpotlightGizmos ...............................   Passed    0.15 sec
+49/82 Test #47: ApplicationTests.RejectsRendererWithoutDevice ...............................................   Passed    0.04 sec
+50/82 Test #38: SceneRendererCpuPathTests.MatchesShadowViewsToTheirOwningSceneInOrder .......................   Passed    0.03 sec
+51/82 Test #53: EditorCameraControllerTests.ZoomRejectsMissingCameraAndNonFiniteInput .......................   Passed    0.03 sec
+      Start 37: SceneRendererCpuPathTests.PicksLightConesAndRejectsInvalidOrOutOfRangeViewportCoordinates
+      Start 15: ScenePersistenceTests.MalformedInputReturnsDiagnostic
+      Start 77: SceneLifecycleTests.RemovesEntitiesByIdAndPointerAndKeepsStableIndices
+      Start 41: SpotLightTests.ClampsValuesAndProducesShaderCompatibleLightData
+      Start 48: ApplicationTests.RejectsSceneDocumentUntilRendererIsInitialized
+52/82 Test #25: DebugGeometryTests.StoresLinesTrianglesAndOnlyValidLightTargets .............................   Passed    0.04 sec
+      Start 18: ScenePersistenceTests.RejectsUnsupportedSchemaVersion
+53/82 Test #64: LogEngineTests.FormatsAllArgumentKindsAndHandlesMalformedSpecifications .....................   Passed    0.05 sec
+54/82 Test #79: SceneLifecycleTests.SearchesForwardForSpawnSpaceAndHonorsAttemptLimits ......................   Passed    0.04 sec
+55/82 Test #31: RenderSystemLifecycleTests.AcceptsValidAndRejectsOutOfRangeShadowSettings ...................   Passed    0.04 sec
+56/82 Test #37: SceneRendererCpuPathTests.PicksLightConesAndRejectsInvalidOrOutOfRangeViewportCoordinates ...   Passed    0.03 sec
+57/82 Test #15: ScenePersistenceTests.MalformedInputReturnsDiagnostic .......................................   Passed    0.02 sec
+58/82 Test #77: SceneLifecycleTests.RemovesEntitiesByIdAndPointerAndKeepsStableIndices ......................   Passed    0.02 sec
+      Start 34: RenderGraphCpuPathTests.HandlesEmptyGraphsAndRejectsInvalidPassSetup
+      Start 81: TransformTests.RejectsAncestorCycleAndKeepsPreviousParent
+      Start 65: LogEngineTests.AppliesGlobalAndCategoryThresholdsAndReportsInvalidValues
+      Start 16: ScenePersistenceTests.ReportsMissingAndOutOfProjectScenePaths
+      Start 24: CommandHistoryTests.EmptyCallsAndNullCommandsLeaveHistoryUnchanged
+      Start 26: DebugGeometryTests.BuildsConstructionPlaneWithoutLightGizmos
+59/82 Test #41: SpotLightTests.ClampsValuesAndProducesShaderCompatibleLightData .............................   Passed    0.04 sec
+      Start 80: TransformTests.ComposesLocalTranslationWithParentWorldTransform
+60/82 Test #48: ApplicationTests.RejectsSceneDocumentUntilRendererIsInitialized .............................   Passed    0.04 sec
+61/82 Test #30: RenderSystemLifecycleTests.NullDeviceIsRejectedAndFrameCallsRemainSafe ......................   Passed    0.14 sec
+62/82 Test #18: ScenePersistenceTests.RejectsUnsupportedSchemaVersion .......................................   Passed    0.04 sec
+63/82 Test #34: RenderGraphCpuPathTests.HandlesEmptyGraphsAndRejectsInvalidPassSetup ........................   Passed    0.03 sec
+64/82 Test #81: TransformTests.RejectsAncestorCycleAndKeepsPreviousParent ...................................   Passed    0.03 sec
+      Start 54: EditorCameraControllerTests.ZoomClampsProjectionToSupportedFieldOfView
+      Start 49: ApplicationTests.AddsAndRemovesScenesBySharedPointer
+      Start 39: CameraValueTests.RejectsInvalidProjectionAndKeepsConstructorFallback
+      Start 58: EventDispatcherTests.IgnoresNonmatchingTypeWithoutCallingCallback
+      Start 67: ObjectHierarchyTests.RejectsDuplicateParentingAndCycles
+65/82 Test #16: ScenePersistenceTests.ReportsMissingAndOutOfProjectScenePaths ...............................   Passed    0.04 sec
+66/82 Test #24: CommandHistoryTests.EmptyCallsAndNullCommandsLeaveHistoryUnchanged ..........................   Passed    0.04 sec
+      Start 60: ResultTests.CarriesSuccessfulValueAndErrorMessage
+      Start 75: SceneIdentityTests.RestoresIdsAndKeepsIndexConsistentAfterRemovalAndReplacement
+67/82 Test #26: DebugGeometryTests.BuildsConstructionPlaneWithoutLightGizmos ................................   Passed    0.04 sec
+68/82 Test #80: TransformTests.ComposesLocalTranslationWithParentWorldTransform .............................   Passed    0.04 sec
+69/82 Test #54: EditorCameraControllerTests.ZoomClampsProjectionToSupportedFieldOfView ......................   Passed    0.03 sec
+70/82 Test #49: ApplicationTests.AddsAndRemovesScenesBySharedPointer ........................................   Passed    0.03 sec
+71/82 Test #39: CameraValueTests.RejectsInvalidProjectionAndKeepsConstructorFallback ........................   Passed    0.02 sec
+      Start 56: EditorCameraControllerTests.MovesCameraAlongLocalAxesAndRotatesWhileDragging
+      Start 72: ObjectHierarchyTests.RejectsKeepWorldReparentingToSingularParent
+      Start 71: ObjectHierarchyTests.KeepsWorldTransformWhenReparenting
+      Start 70: ObjectHierarchyTests.ReparentsThroughParentApiAndKeepsSingleOwnership
+72/82 Test #58: EventDispatcherTests.IgnoresNonmatchingTypeWithoutCallingCallback ...........................   Passed    0.06 sec
+73/82 Test #67: ObjectHierarchyTests.RejectsDuplicateParentingAndCycles .....................................   Passed    0.06 sec
+74/82 Test #60: ResultTests.CarriesSuccessfulValueAndErrorMessage ...........................................   Passed    0.05 sec
+75/82 Test #63: LogEngineTests.ResolvesValidAndInvalidEnvironmentOverrides ..................................   Passed    0.16 sec
+76/82 Test #75: SceneIdentityTests.RestoresIdsAndKeepsIndexConsistentAfterRemovalAndReplacement .............   Passed    0.05 sec
+77/82 Test #56: EditorCameraControllerTests.MovesCameraAlongLocalAxesAndRotatesWhileDragging ................   Passed    0.04 sec
+78/82 Test #72: ObjectHierarchyTests.RejectsKeepWorldReparentingToSingularParent ............................   Passed    0.04 sec
+79/82 Test #71: ObjectHierarchyTests.KeepsWorldTransformWhenReparenting .....................................   Passed    0.04 sec
+80/82 Test #70: ObjectHierarchyTests.ReparentsThroughParentApiAndKeepsSingleOwnership .......................   Passed    0.02 sec
+81/82 Test #65: LogEngineTests.AppliesGlobalAndCategoryThresholdsAndReportsInvalidValues ....................   Passed    0.13 sec
+82/82 Test #66: LogEngineTests.RotatesFilesAndCountsBreadcrumbOverwritesAndCallbackFailures .................   Passed    1.43 sec
+
+100% tests passed, 0 tests failed out of 82
+
+Label Time Summary:
+unit    =   7.31 sec*proc (80 tests)
+
+Total Test time (real) =   2.06 sec
