@@ -3,6 +3,7 @@
 #include "events/include/EditorEvents.h"
 #include "panels/include/EditorPanel.h"
 #include <cstdint>
+#include <scene/include/ArchetypeWorld.h>
 #include <utility>
 
 // ================================================================================
@@ -23,6 +24,9 @@ public:
 
 private:
   void* m_TextureId = nullptr;
+  void* m_CameraPreviewTextureId = nullptr;
+  Engine::EntityHandle m_CameraPreviewEntity = Engine::InvalidEntityHandle;
+  std::pair<float, float> m_CameraPreviewSize = {0.0f, 0.0f};
   std::pair<float, float> m_ViewportSize = {0.0f, 0.0f};
   bool m_IsHovered = false;
 };
