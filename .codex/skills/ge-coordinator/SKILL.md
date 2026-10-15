@@ -1,21 +1,20 @@
 ---
 name: ge-coordinator
-description: Coordinate GraphicEngine implementation when work needs issue/project tracking, task breakdown, agent assignments, epic planning, or integrated handoff. Use for repository-level coordination; use ge-devops for detailed GitHub operations and ge-qa-reviewer for independent quality review.
+description: Coordinate GraphicEngine implementation when work needs issue/project tracking, task breakdown, agent assignments, epic planning, or integrated handoff.
 ---
 
 # GraphicEngine Coordinator
 
-Own task planning and integrated delivery. Follow the shared rules in `AGENTS.md` and the detailed process in `docs/development-workflow.md`.
+Own task planning and integrated delivery. This skill includes the repository's core coordination and review boundaries so it can be used in a fresh checkout.
 
 ## Coordination workflow
 
-1. Inspect the working tree and search for a repository issue that matches the task.
-2. Link the task to Graphics Engine (#1), set its current Status, and define scope and acceptance criteria.
-3. Decide whether the work is one task or an epic. For parallel work, assign each agent one issue, isolated worktree, narrow scope, acceptance criteria, and required handoff details.
-4. Track dependencies and project status while work progresses. Keep conflicting edits serialized.
-5. Review agent handoffs and the combined diff. Verify the integration against `docs/testing.md` and request an independent review when appropriate.
-6. Hand PR creation, Actions inspection, cleanup, and merge mechanics to `ge-devops`; retain ownership of task breakdown, board transitions, integration, and final verification.
+1. Inspect the working tree and search for a matching repository issue before creating one. Link implementation issues to the user-owned Graphics Engine project (#1), define scope and acceptance criteria, and keep Status current: Backlog before work, Ready when scoped, In progress during implementation, In review while a PR is open, and Done after merge. Stop before implementation if project access is unavailable.
+2. For one task, use a `feat/<issue>-<slug>` or `fix/<issue>-<slug>` branch from `main`. For at least two independent child tasks or parallel agents, create a parent issue and `epic/<issue>-<slug>` integration branch from `main`; each child gets an issue and branch from the epic, and its PR targets the epic. Open one integration PR from the epic to `main` after integration.
+3. Assign each agent one issue, an isolated worktree, narrow file/module scope, acceptance criteria, and handoff details. Track dependencies and project status; serialize conflicting edits.
+4. Review each handoff and the combined diff. Verify the integration against `docs/testing.md`; request independent review when useful and report missing checks accurately.
+5. Prepare a PR only when requested. Never commit or push directly to `main`. PRs targeting `main` require human approval and passing required checks; an agent must not approve or self-approve them. Merge only through an approved PR after explicit user authorization.
 
 ## Handoff
 
-Record the issue, branch/worktree, commits, changed areas, verification results, PR state, and unresolved risks. Report documentation impact or why documentation is unaffected.
+Record the issue, branch/worktree, commits, changed areas, verification results, PR state, and unresolved risks. Report documentation impact or why documentation is unaffected. The coordinator owns task breakdown, project transitions, branch integration, and final verification.

@@ -1,11 +1,11 @@
 ---
 name: ge-shader-engineer
-description: Create or modify first-party Direct3D 11 HLSL, shader build integration, or CPU/GPU data layouts owned by GraphicEngineBackends/D3D11. Use for shader and D3D11 GPU-layout tasks; use ge-cpp-coder for unrelated Core/Editor C++ work.
+description: Create or modify first-party Direct3D 11 HLSL, shader build integration, or CPU/GPU data layouts owned by GraphicEngineBackends/D3D11.
 ---
 
 # GraphicEngine D3D11 Shader Engineer
 
-Own first-party D3D11 shader changes and their consuming backend interface. Shared C++ quality and repository rules are in `docs/cpp-guidelines.md` and `AGENTS.md`; test procedures are in `docs/testing.md`.
+Own first-party D3D11 shader changes and their consuming backend interface. Shared C++ quality rules are in `docs/cpp-guidelines.md`; test procedures are in `docs/testing.md`. Keep `vendor/` read-only and use a repository issue linked to the Graphics Engine project (#1) for implementation work.
 
 ## Shader workflow
 
