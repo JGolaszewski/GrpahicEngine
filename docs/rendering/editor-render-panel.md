@@ -9,8 +9,20 @@ The editor's **Render** panel provides a camera-based preview and image export w
 
 The panel reports render, upload, and file-write errors inline. Cancelling a save dialog does not write a file. An empty EXR selection is rejected with a prompt to select at least one AOV.
 
+When the selected entity has a camera, the editor viewport shows a clickable
+low-resolution camera preview. Click it to open the **Camera Preview** viewer.
+The viewer renders the current scene at that camera's configured dimensions
+through the final-render path, which excludes editor debug geometry. Use
+**Refresh** after editing the scene, **Fit** to restore aspect-preserving fit,
+and **1:1** or the mouse wheel to change zoom. Scrollbars pan a zoomed image.
+Closing the viewer leaves the editor viewport available for scene navigation
+and editing.
+
 ## Manual acceptance
 
+- Select a camera entity in the hierarchy. Its viewport PiP opens the full viewer with the camera's configured output dimensions and without editor gizmos or debug geometry.
+- Change a scene object, click **Refresh**, and confirm the viewer updates while the editor viewport remains open and usable.
+- Resize the viewer and use **Fit**, **1:1**, mouse-wheel zoom, and scrollbars. The fitted image keeps its aspect ratio and an enlarged image can be panned in both directions.
 - With at least two visible cameras, changing **Scene camera** updates the displayed output dimensions; rendering shows the selected camera's framing.
 - **Render Preview** displays the image at the configured aspect ratio, including after resizing or docking the panel.
 - Toggle individual AOVs and save EXR; the resulting multipart file contains only the checked AOV parts. With no AOV selected, EXR save reports the selection requirement.

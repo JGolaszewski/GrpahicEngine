@@ -8,6 +8,8 @@
 #include "events/include/EcsEntitySelectedEvent.h"
 #include "events/include/EditorEvents.h"
 #include "panels/include/AssetBrowserPanel.h"
+#include "panels/include/CameraPreviewPanel.h"
+#include "panels/include/CameraPreviewRequest.h"
 #include "panels/include/EngineSettingsPanel.h"
 #include "panels/include/HierarchyPanel.h"
 #include "panels/include/InspectorPanel.h"
@@ -152,6 +154,25 @@ void Editor::OnInit() {
   });
   m_Panels.push_back(std::move(renderPanel));
 
+  auto cameraPreviewPanel = std::make_unique<CameraPreviewPanel>(
+      [this](Engine::EntityHandle entity) -> Engine::Result<Engine::RenderOutput> {
+        if (!m_ActiveScene || GetRenderSystem() == nullptr) {
+          return std::unexpected(Engine::MakeError("No active scene or render system is available"));
+        }
+        const auto request = ResolveCameraPreviewRequest(m_ActiveScene->World(), entity);
+        if (!request) {
+          return std::unexpected(request.error());
+        }
+        return GetRenderSystem()->RenderFinal(*m_ActiveScene, request->View, request->Width, request->Height);
+      },
+      [this](uint32_t width, uint32_t height, std::span<const uint8_t> pixels) -> bool {
+        return m_UiIntegration.SetCameraPreview(width, height, pixels);
+      },
+      [this]() -> void* { return m_UiIntegration.GetCameraPreviewTextureId(); },
+      [this]() -> void { m_UiIntegration.ClearCameraPreview(); });
+  m_CameraPreviewPanel = cameraPreviewPanel.get();
+  m_Panels.push_back(std::move(cameraPreviewPanel));
+
   m_PanelConnections.reserve(m_Panels.size());
   for (auto& panel : m_Panels) {
     m_PanelConnections.push_back(m_EventRouter.Subscribe(
@@ -164,6 +185,9 @@ void Editor::OnInit() {
 
 void Editor::OnSceneReplaced(const std::shared_ptr<Engine::Scene>& scene) {
   DestroyCameraPreview();
+  if (m_CameraPreviewPanel != nullptr) {
+    m_CameraPreviewPanel->Close();
+  }
   m_ActiveScene = scene;
   m_SelectedEntity = Engine::InvalidEntityHandle;
   if (m_RenderPanel != nullptr) {
@@ -360,6 +384,10 @@ void Editor::OnEndUIFrame() { m_UiIntegration.EndFrame(); }
 
 void Editor::OnShutdownUI() {
   DestroyCameraPreview();
+  if (m_CameraPreviewPanel != nullptr) {
+    m_CameraPreviewPanel->Close();
+    m_CameraPreviewPanel = nullptr;
+  }
   m_EditorConsole.DetachFromLogger();
   m_UiIntegration.Shutdown();
 }

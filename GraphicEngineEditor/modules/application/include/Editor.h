@@ -19,6 +19,7 @@ class Viewport;
 class ViewportTarget;
 } // namespace Engine
 class RenderPanel;
+class CameraPreviewPanel;
 
 class Editor final : public Engine::Application {
 public:
@@ -58,6 +59,7 @@ private:
   std::shared_ptr<Engine::ViewportTarget> m_CameraPreviewTarget;
   std::vector<std::unique_ptr<EditorPanel>> m_Panels;
   RenderPanel* m_RenderPanel = nullptr;
+  CameraPreviewPanel* m_CameraPreviewPanel = nullptr;
   EditorEventRouter m_EventRouter;
   std::vector<EditorEventRouter::Connection> m_PanelConnections;
   EditorUiIntegration m_UiIntegration;

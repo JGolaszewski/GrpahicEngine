@@ -32,6 +32,7 @@ if(BUILD_TESTING)
     )
     target_include_directories(GraphicEngineUnitTests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/../modules/rendering/src"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../../GraphicEngineEditor/modules"
     )
     target_compile_features(GraphicEngineUnitTests PRIVATE cxx_std_23)
     engine_configure_test_target(GraphicEngineUnitTests)
