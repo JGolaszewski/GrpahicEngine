@@ -10,16 +10,10 @@ vendor/
 *.srctrlprj
 *.srctrldb
 
-# Documents
+# Markdown files are ignored outside docs/.
 *.md
 !docs/*.md
 !docs/**/*.md
-!RESOURCE_MANAGER_IMPLEMENTATION_PLAN.md
-!ENGINE_REAUDIT_REPORT_V2.md
-!GLTF_IMPLEMENTATION_GAP_REPORT.md
-!LOGGING_DEBUGGING_IMPROVEMENT_PLAN.md
-!DOCUMENTATION_PIPELINE_PLAN.md
-!docs/logging.md
 
 # =========================
 # Build & CMake Artifacts
