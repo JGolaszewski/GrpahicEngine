@@ -62,6 +62,8 @@ compile_commands.json
 # =========================
 .codex/auth.json  # Codex auth tokens
 .codex/worktrees/ # Local Codex background worktrees
+# Generated Python bytecode for hook imports.
+.codex/hooks/__pycache__/
 .venv-docs/
 site/
 

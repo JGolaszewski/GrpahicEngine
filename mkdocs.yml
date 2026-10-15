@@ -40,6 +40,7 @@ nav:
       - Rendering:
           - Shadows: rendering/shadows.md
   - Workflows:
+      - Codex hooks: codex-hooks.md
       - Testing: testing.md
       - Windows validation: validation/windows.md
   - Core API: api-reference.md
