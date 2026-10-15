@@ -31,3 +31,7 @@ Validation commit: `616a68c948d980399c59edf6f91a844a4d956a1a` (`main`, 2026-10-1
 | `codex/core-boundaries` | `616a68c948d980399c59edf6f91a844a4d956a1a` | Core backend boundaries and verification | Full clean build, 82/82 tests, coverage, formatting, lint, and Doxygen pass. |
 
 The branch refs were merged in the listed order using `git merge --ff-only`. The test suite expanded as the feature branches added cases; final main validates all 82 registered cases. Original topic worktrees were left intact.
+
+## Pre-merge test evidence note
+
+Final main passed all 82 registered tests. Saved stage logs also show 3/3 tests for scene creation and 20/20 for the comprehensive-suite and deferred-PBR feature stages. A standalone pre-merge CTest log was not preserved for the hierarchy and clang-tidy-target integration commits. The final cumulative suite covers their resulting code, but the strict requirement to retain a pre-merge test result for every feature branch is not fully evidenced here. Keep that item open until those branch-stage results are recorded.
