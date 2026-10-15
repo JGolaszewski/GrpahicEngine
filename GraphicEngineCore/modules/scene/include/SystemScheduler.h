@@ -20,17 +20,21 @@ class SystemScheduler {
 public:
   /// Callback and declared component access for one scheduled system.
   struct System {
-    std::string Name;
-    std::vector<std::type_index> Reads;
-    std::vector<std::type_index> Writes;
-    bool WritesStructure = false;
-    std::function<void(ArchetypeWorld&)> Execute;
+    std::string Name; ///< Unique name used for registration and diagnostics.
+    std::vector<std::type_index> Reads; ///< Component types read by the callback.
+    std::vector<std::type_index> Writes; ///< Component types written by the callback.
+    bool WritesStructure = false; ///< Whether the callback requires exclusive structural synchronization.
+    std::function<void(ArchetypeWorld&)> Execute; ///< Callback executed with world access.
   };
 
+  /// Indices of systems that can share one scheduler batch.
   using Batch = std::vector<size_t>;
+  /// Callback that applies structural changes between systems.
   using Synchronize = std::function<Status()>;
 
   /// Register a system, returning an error for invalid or duplicate names.
+  /// @param system Name, component access declarations, and execution callback.
+  /// @return Success, or an error when registration is invalid or execution is active.
   auto AddSystem(System system) -> Status {
     if (m_Executing) {
       return std::unexpected(MakeError("Systems cannot be registered during scheduler execution"));
@@ -46,6 +50,8 @@ public:
     return {};
   }
 
+  /// Builds deterministic batches from declared component access.
+  /// @return System indices in registration order, grouped by conflict barriers.
   auto BuildBatches() const -> std::vector<Batch> {
     std::vector<Batch> batches;
     Batch current;
@@ -77,6 +83,9 @@ public:
   // Batches are emitted in registration order. Until a worker executor exists,
   // systems inside a batch also run serially in that order.
   /// Execute all registered systems and apply required synchronization barriers.
+  /// @param world World passed to each system callback.
+  /// @param synchronize Callback used after structural writers.
+  /// @return Success, or an error from a system or synchronization callback.
   auto Execute(ArchetypeWorld& world, Synchronize synchronize = {}) const -> Status {
     if (!synchronize && std::ranges::any_of(m_Systems, [](const System& system) { return system.WritesStructure; })) {
       return std::unexpected(MakeError("Structural systems require a synchronization barrier"));
@@ -117,6 +126,10 @@ public:
     return {};
   }
 
+  /// Checks whether two systems have conflicting component access.
+  /// @param left First system access declaration.
+  /// @param right Second system access declaration.
+  /// @return True when either system writes a component read or written by the other.
   static auto Conflicts(const System& left, const System& right) -> bool {
     return Intersects(left.Writes, right.Reads) || Intersects(left.Writes, right.Writes) ||
            Intersects(right.Writes, left.Reads);

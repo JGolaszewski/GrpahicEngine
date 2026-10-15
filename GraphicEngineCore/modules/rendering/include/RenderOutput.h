@@ -20,30 +20,31 @@ class RenderSystem;
 
 /// Stable render-output plane identifiers used by previews and image exporters.
 enum class RenderAov : uint8_t {
-  FinalColor,
-  Depth,
-  WorldNormal,
-  SpecularLighting,
-  DiffuseLighting,
+  FinalColor, ///< Post-processed color and opacity.
+  Depth, ///< Normalized device depth.
+  WorldNormal, ///< World-space shading normal.
+  SpecularLighting, ///< Direct and environment specular contribution.
+  DiffuseLighting, ///< Direct diffuse, ambient diffuse, and emissive contribution.
 };
 
 /// Scalar storage format used by all CPU render-output planes.
-enum class RenderOutputFormat : uint8_t { Float32 };
+enum class RenderOutputFormat : uint8_t { Float32 ///< 32-bit floating-point samples.
+};
 
 /// Describes a render-output plane's stable name and channel layout.
 struct ENGINE_API RenderAovDescriptor {
-  RenderAov Aov;
-  const char* Name;
-  RenderOutputFormat Format;
-  uint32_t ChannelCount;
-  std::array<const char*, 4> ChannelNames;
+  RenderAov Aov; ///< Stable plane identifier.
+  const char* Name; ///< Stable lower-case plane name.
+  RenderOutputFormat Format; ///< Scalar storage format.
+  uint32_t ChannelCount; ///< Number of scalar values per pixel.
+  std::array<const char*, 4> ChannelNames; ///< Names of populated channels, in storage order.
 };
 
 /// CPU-owned, tightly packed float32 image plane.
 struct ENGINE_API RenderOutputPlane {
-  RenderAov Aov;
-  uint32_t ChannelCount = 0;
-  std::vector<float> Pixels;
+  RenderAov Aov; ///< Stable plane identifier.
+  uint32_t ChannelCount = 0; ///< Number of scalar values per pixel.
+  std::vector<float> Pixels; ///< Tightly packed top-to-bottom pixel samples.
 };
 
 /// Owning CPU result of a completed final render.
@@ -61,16 +62,22 @@ struct ENGINE_API RenderOutputPlane {
 /// data.
 class ENGINE_API RenderOutput {
 public:
-  uint32_t Width = 0;
-  uint32_t Height = 0;
+  uint32_t Width = 0; ///< Image width in pixels.
+  uint32_t Height = 0; ///< Image height in pixels.
 
   /// Returns the available AOV planes in canonical order.
+  /// @return Read-only plane span, valid until destruction or move assignment.
   std::span<const RenderOutputPlane> GetPlanes() const noexcept { return m_Planes; }
   /// Returns the owned planes for a post-processing hook.
+  /// @return Mutable plane span, valid until destruction or move assignment.
   std::span<RenderOutputPlane> GetMutablePlanes() noexcept { return m_Planes; }
   /// Returns the requested plane, or an empty span if this output is malformed.
+  /// @param aov Stable plane identifier to look up.
+  /// @return Tightly packed plane samples, or an empty span when unavailable.
   std::span<const float> GetPixels(RenderAov aov) const noexcept;
   /// Returns the stable descriptor for a canonical AOV identifier.
+  /// @param aov Stable plane identifier to describe.
+  /// @return Static descriptor for the requested plane.
   static const RenderAovDescriptor& GetDescriptor(RenderAov aov) noexcept;
 
 private:

@@ -25,10 +25,13 @@ class SystemScheduler;
 
 /// Generation-checked handle identifying an entity in one scene world.
 struct EntityHandle {
-  uint32_t Index = UINT32_MAX;
-  uint32_t Generation = 0;
+  uint32_t Index = UINT32_MAX; ///< Slot index in the owning scene world.
+  uint32_t Generation = 0; ///< Generation used to reject stale handles.
 
-  auto operator==(const EntityHandle&) const noexcept -> bool = default;
+  /// Compares both the slot index and generation.
+  /// @param other Handle to compare with.
+  /// @return True when both handles identify the same generation of one slot.
+  auto operator==(const EntityHandle& other) const noexcept -> bool = default;
 };
 
 inline constexpr EntityHandle InvalidEntityHandle{};
@@ -47,7 +50,7 @@ private:
                                             std::is_nothrow_destructible_v<Component> && !std::is_array_v<Component>;
 
 public:
-  static constexpr size_t ChunkCapacity = 256;
+  static constexpr size_t ChunkCapacity = 256; ///< Maximum entities stored in one archetype chunk.
 
   ArchetypeWorld() = default;
   ArchetypeWorld(const ArchetypeWorld&) = delete;
@@ -55,6 +58,9 @@ public:
   ArchetypeWorld(ArchetypeWorld&&) = delete;
   auto operator=(ArchetypeWorld&&) -> ArchetypeWorld& = delete;
 
+  /// Creates an entity with one value for each component type.
+  /// @param components Initial component values; each type must be unique and nothrow-movable.
+  /// @return The new handle, or an error when creation is rejected or allocation fails.
   template <typename... Components>
     requires(sizeof...(Components) > 0 && (IsStoredComponent<Components> && ...))
   auto Create(Components... components) -> Result<EntityHandle> {
@@ -82,14 +88,24 @@ public:
     }
   }
 
+  /// Checks that a handle refers to a live entity in this world.
+  /// @param entity Handle to validate.
+  /// @return True when the slot is alive and its generation matches.
   auto IsAlive(EntityHandle entity) const noexcept -> bool {
     return entity.Index < m_Entities.size() && m_Entities[entity.Index].Alive &&
            m_Entities[entity.Index].Generation == entity.Generation;
   }
 
+  /// Gets the number of live entities.
+  /// @return Current live entity count.
   auto EntityCount() const noexcept -> size_t { return m_AliveCount; }
+  /// Checks whether systems are currently executing.
+  /// @return True while structural changes must be queued for synchronization.
   auto IsSystemPhase() const noexcept -> bool { return m_SystemPhase; }
 
+  /// Checks whether a live entity has a component of the requested type.
+  /// @param entity Entity to inspect.
+  /// @return True when the entity is live and has the component.
   template <typename Component>
     requires IsStoredComponent<Component>
   auto Has(EntityHandle entity) const noexcept -> bool {
@@ -100,13 +116,18 @@ public:
     return type.has_value() && Contains(m_Archetypes[m_Entities[entity.Index].Position.Archetype].Signature, *type);
   }
 
+  /// Gets a mutable component pointer, valid only until the next structural change.
+  /// @param entity Entity containing the component.
+  /// @return Component address, or null for a stale entity or missing component.
   template <typename Component>
     requires IsStoredComponent<Component>
-  /// Get a component pointer, valid only until the next structural change.
   auto Get(EntityHandle entity) noexcept -> Component* {
     return const_cast<Component*>(std::as_const(*this).Get<Component>(entity));
   }
 
+  /// Gets a read-only component pointer, valid only until the next structural change.
+  /// @param entity Entity containing the component.
+  /// @return Component address, or null for a stale entity or missing component.
   template <typename Component>
     requires IsStoredComponent<Component>
   auto Get(EntityHandle entity) const noexcept -> const Component* {
@@ -127,6 +148,10 @@ public:
            location.Row;
   }
 
+  /// Replaces an entity's existing component value.
+  /// @param entity Entity whose component is replaced.
+  /// @param component New component value.
+  /// @return Success, or an error when the entity is stale, lacks the component, or is being queried.
   template <typename Component>
     requires(IsStoredComponent<Component> && std::is_nothrow_move_assignable_v<Component>)
   auto Set(EntityHandle entity, Component component) -> Status {
@@ -141,6 +166,10 @@ public:
     return {};
   }
 
+  /// Adds a component by migrating the entity to its new archetype.
+  /// @param entity Entity receiving the component.
+  /// @param component New component value.
+  /// @return Success, or an error when the operation is disallowed or allocation fails.
   template <typename Component>
     requires IsStoredComponent<Component>
   auto Add(EntityHandle entity, Component component) -> Status {
@@ -189,6 +218,9 @@ public:
     }
   }
 
+  /// Removes a component by migrating the entity to its new archetype.
+  /// @param entity Entity from which to remove the component.
+  /// @return Success, or an error when the operation is disallowed or the component is absent.
   template <typename Component>
     requires IsStoredComponent<Component>
   auto Remove(EntityHandle entity) -> Status {
@@ -230,6 +262,9 @@ public:
     }
   }
 
+  /// Destroys an entity and invalidates its current handle generation.
+  /// @param entity Entity to destroy.
+  /// @return Success, or an error when destruction is disallowed or the handle is stale.
   auto Destroy(EntityHandle entity) -> Status {
     if (m_SystemPhase) {
       return std::unexpected(MakeError("Structural changes during system execution must be queued for sync"));
@@ -261,6 +296,8 @@ public:
     }
   }
 
+  /// Invokes a callback for each non-empty chunk matching the component set.
+  /// @param function Callback receiving entity handles and mutable component spans.
   template <typename... Components, typename Function>
     requires(sizeof...(Components) > 0 && (IsStoredComponent<Components> && ...) &&
              std::invocable<Function, std::span<const EntityHandle>, std::span<Components>...>)
@@ -285,6 +322,8 @@ public:
     }
   }
 
+  /// Invokes a callback for each non-empty chunk using read-only component spans.
+  /// @param function Callback receiving entity handles and const component spans.
   template <typename... Components, typename Function>
     requires(sizeof...(Components) > 0 && (IsStoredComponent<Components> && ...) &&
              std::invocable<Function, std::span<const EntityHandle>, std::span<const Components>...>)

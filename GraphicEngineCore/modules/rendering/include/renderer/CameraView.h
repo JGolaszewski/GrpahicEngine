@@ -14,11 +14,11 @@ namespace Engine::Renderer {
 /// belong to the render target, so the same camera can be previewed at editor
 /// viewport dimensions or rendered at an explicit output size.
 struct ENGINE_API CameraView {
-  std::array<float, 3> Position = {0.0F, 0.0F, 0.0F};
-  std::array<float, 4> Rotation = {0.0F, 0.0F, 0.0F, 1.0F};
-  float FieldOfViewDegrees = 60.0F;
-  float NearPlane = 0.1F;
-  float FarPlane = 1000.0F;
+  std::array<float, 3> Position = {0.0F, 0.0F, 0.0F}; ///< World-space camera position.
+  std::array<float, 4> Rotation = {0.0F, 0.0F, 0.0F, 1.0F}; ///< World-space XYZW rotation quaternion.
+  float FieldOfViewDegrees = 60.0F; ///< Vertical field of view in degrees.
+  float NearPlane = 0.1F; ///< Near clipping plane distance.
+  float FarPlane = 1000.0F; ///< Far clipping plane distance.
 };
 
 /// Resolves an authored scene camera and its world transform into renderer parameters.
