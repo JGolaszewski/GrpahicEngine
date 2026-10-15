@@ -3,7 +3,9 @@
 #include "rendering/include/PrimitiveFactory.h"
 #include "rendering/include/RenderBackend.h"
 #include "rendering/include/RenderLimits.h"
+#include "rendering/include/RenderOutput.h"
 #include "rendering/include/ViewportTarget.h"
+#include "rendering/include/renderer/CameraView.h"
 #include "rendering/include/renderer/Viewport.h"
 #include "rendering/include/renderer/ViewportBinding.h"
 #include "runtime/include/CoreExport.h"
@@ -60,6 +62,12 @@ public:
   const ShadowSettings& GetShadowSettings() const noexcept { return m_ShadowSettings; }
   std::optional<Engine::LightId> PickLight(float viewportX, float viewportY) const;
   std::shared_ptr<Engine::ViewportTarget> CreateViewportTarget(uint32_t width, uint32_t height);
+  /// Render the scene through its supplied scene camera into offscreen AOVs.
+  /// The call records and submits a complete frame and returns CPU-owned image
+  /// planes; it fails if another frame is active or any output cannot be read.
+  Engine::Result<Engine::RenderOutput> RenderFinal(Engine::Scene& scene, const ::Engine::Renderer::CameraView& camera,
+                                                   uint32_t width, uint32_t height,
+                                                   const Engine::FinalColorPostProcess& postProcess = {});
   bool CreatePrimitive(Engine::PrimitiveShape shape, std::shared_ptr<::Engine::Renderer::Material> material);
 
   std::shared_ptr<::Engine::Renderer::Mesh> GetOrCreateMesh(const std::string& guid, uint64_t generation,
@@ -104,6 +112,7 @@ public:
 
 private:
   struct CommandListHolder;
+  struct FinalReadbackCapture;
   struct PendingModelSubmesh {
     size_t MeshIndex = 0;
     size_t PrimitiveIndex = 0;
@@ -134,6 +143,7 @@ private:
 
   IRenderBackend* const m_RenderBackend;
   std::unique_ptr<CommandListHolder> m_CommandList;
+  std::unique_ptr<FinalReadbackCapture> m_FinalReadbackCapture;
   bool m_FrameActive = false;
   std::string m_LastUploadFailure;
   std::string m_LastRenderGraphFailure;

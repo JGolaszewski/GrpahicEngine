@@ -11,6 +11,9 @@
 #include "runtime/include/LogMacros.h"
 
 #include <algorithm>
+#include <cmath>
+#include <cstring>
+#include <limits>
 #include <nvrhi/nvrhi.h>
 #include <utility>
 
@@ -53,6 +56,12 @@ auto PrimitiveResourceKey(Engine::PrimitiveShape shape) -> const char* {
 
 struct RenderSystem::CommandListHolder {
   nvrhi::CommandListHandle Handle;
+};
+
+struct RenderSystem::FinalReadbackCapture {
+  std::vector<nvrhi::TextureHandle> Sources;
+  std::vector<nvrhi::StagingTextureHandle> Staging;
+  bool Completed = false;
 };
 
 namespace {
@@ -181,9 +190,12 @@ void RenderSystem::SubmitViews(const std::vector<Engine::ViewportBinding>& views
 
     auto view = std::make_unique<::Engine::Renderer::RenderView>();
     view->ViewType = ::Engine::Renderer::RenderView::Type::Main;
-    view->Initialize(binding.TargetScene, binding.CameraEntity, binding.TargetViewport);
+    view->Initialize(binding.TargetScene, binding.Camera, binding.TargetViewport);
     view->TargetScene = binding.TargetScene;
-    view->DebugSettings = binding.DebugSettings;
+    view->FinalRender = binding.RenderMode == Engine::ViewportBinding::Mode::Final;
+    if (!view->FinalRender) {
+      view->DebugSettings = binding.DebugSettings;
+    }
 
     sceneViews.push_back(view.get());
     m_FrameContext->GetViews().push_back(std::move(view));
@@ -645,6 +657,20 @@ void RenderSystem::EndFrame() {
     ClearSubmittedTargets();
   } else {
     m_LastRenderGraphFailure.clear();
+    if (m_FinalReadbackCapture != nullptr) {
+      if (m_FinalReadbackCapture->Sources.size() != m_FinalReadbackCapture->Staging.size()) {
+        m_LastRenderGraphFailure = "final output readback setup is incomplete";
+      } else {
+        for (size_t index = 0; index < m_FinalReadbackCapture->Sources.size(); ++index) {
+          nvrhi::TextureHandle& source = m_FinalReadbackCapture->Sources.at(index);
+          nvrhi::StagingTextureHandle& staging = m_FinalReadbackCapture->Staging.at(index);
+          m_CommandList->Handle->setTextureState(source, nvrhi::AllSubresources, nvrhi::ResourceStates::CopySource);
+          m_CommandList->Handle->commitBarriers();
+          m_CommandList->Handle->copyTexture(staging, nvrhi::TextureSlice(), source, nvrhi::TextureSlice());
+        }
+        m_FinalReadbackCapture->Completed = true;
+      }
+    }
   }
 
   m_FrameContext->EndGpuTiming(m_CommandList->Handle);
@@ -654,6 +680,135 @@ void RenderSystem::EndFrame() {
   m_FrameActive = false;
   m_FrameContext->MarkSubmitted();
   m_ResourceManager->AdvanceSubmittedFrame(m_FrameContext->GetSubmittedFrames(), m_FrameContext->GetCompletedFrames());
+}
+
+auto RenderSystem::RenderFinal(Engine::Scene& scene, const ::Engine::Renderer::CameraView& camera, uint32_t width,
+                               uint32_t height, const Engine::FinalColorPostProcess& postProcess)
+    -> Engine::Result<Engine::RenderOutput> {
+  if (m_FrameActive || (m_FinalReadbackCapture != nullptr)) {
+    return std::unexpected(Engine::MakeError("final rendering requires an idle render system"));
+  }
+  if (width == 0 || height == 0 ||
+      static_cast<uint64_t>(width) * static_cast<uint64_t>(height) >
+          static_cast<uint64_t>((std::numeric_limits<size_t>::max)() / 4U)) {
+    return std::unexpected(Engine::MakeError("final render dimensions are invalid or too large"));
+  }
+  const float quaternionLengthSquared =
+      camera.Rotation[0] * camera.Rotation[0] + camera.Rotation[1] * camera.Rotation[1] +
+      camera.Rotation[2] * camera.Rotation[2] + camera.Rotation[3] * camera.Rotation[3];
+  if (!std::ranges::all_of(camera.Position, [](float value) { return std::isfinite(value); }) ||
+      !std::ranges::all_of(camera.Rotation, [](float value) { return std::isfinite(value); }) ||
+      !std::isfinite(camera.FieldOfViewDegrees) || !std::isfinite(camera.NearPlane) ||
+      !std::isfinite(camera.FarPlane) || quaternionLengthSquared < 1.0e-8F || camera.FieldOfViewDegrees <= 0.0F ||
+      camera.FieldOfViewDegrees >= 180.0F || camera.NearPlane <= 0.0F || camera.FarPlane <= camera.NearPlane) {
+    return std::unexpected(Engine::MakeError("final render camera parameters are invalid"));
+  }
+  if (!IsValid() || m_RenderBackend == nullptr || GetNvrhiDevice(m_RenderBackend) == nullptr) {
+    return std::unexpected(Engine::MakeError("final rendering requires a valid graphics device"));
+  }
+
+  auto target = std::shared_ptr<Engine::ViewportTarget>(
+      new Engine::ViewportTarget(m_RenderBackend->GetDevice(), width, height, true));
+  if (!target->IsValid()) {
+    return std::unexpected(Engine::MakeError("failed to allocate final render targets"));
+  }
+
+  auto capture = std::make_unique<FinalReadbackCapture>();
+  constexpr uint32_t outputCount = 5;
+  capture->Sources.reserve(outputCount);
+  capture->Staging.reserve(outputCount);
+  for (uint32_t index = 0; index < outputCount; ++index) {
+    auto* texture = static_cast<nvrhi::ITexture*>(target->GetOutputTextureHandle(index));
+    if (texture == nullptr) {
+      return std::unexpected(Engine::MakeError("final render target is missing an AOV attachment"));
+    }
+    const nvrhi::TextureDesc sourceDesc = texture->getDesc();
+    nvrhi::TextureDesc stagingDesc;
+    stagingDesc.width = sourceDesc.width;
+    stagingDesc.height = sourceDesc.height;
+    stagingDesc.depth = sourceDesc.depth;
+    stagingDesc.arraySize = sourceDesc.arraySize;
+    stagingDesc.mipLevels = sourceDesc.mipLevels;
+    stagingDesc.format = sourceDesc.format;
+    stagingDesc.dimension = sourceDesc.dimension;
+    stagingDesc.debugName = "FinalRenderReadback";
+    auto staging = GetNvrhiDevice(m_RenderBackend)->createStagingTexture(stagingDesc, nvrhi::CpuAccessMode::Read);
+    if (staging == nullptr) {
+      return std::unexpected(Engine::MakeError("failed to allocate final render readback storage"));
+    }
+    capture->Sources.emplace_back(texture);
+    capture->Staging.push_back(std::move(staging));
+  }
+
+  Engine::Viewport viewport(target);
+  Engine::ViewportBinding binding;
+  binding.Camera = camera;
+  binding.RenderMode = Engine::ViewportBinding::Mode::Final;
+  binding.TargetViewport = &viewport;
+  binding.TargetScene = &scene;
+  binding.OutputWidth = width;
+  binding.OutputHeight = height;
+  m_FinalReadbackCapture = std::move(capture);
+  BeginFrame();
+  if (!m_FrameActive) {
+    m_FinalReadbackCapture.reset();
+    return std::unexpected(Engine::MakeError("failed to begin final render frame"));
+  }
+  SubmitViews({binding});
+  EndFrame();
+  if (m_FinalReadbackCapture == nullptr || !m_FinalReadbackCapture->Completed) {
+    m_FinalReadbackCapture.reset();
+    return std::unexpected(Engine::MakeError(
+        m_LastRenderGraphFailure.empty() ? "final rendering failed before output readback" : m_LastRenderGraphFailure));
+  }
+
+  Engine::RenderOutput output;
+  output.Width = width;
+  output.Height = height;
+  const std::array<Engine::RenderAov, outputCount> aovs = {
+      Engine::RenderAov::FinalColor, Engine::RenderAov::Depth, Engine::RenderAov::WorldNormal,
+      Engine::RenderAov::SpecularLighting, Engine::RenderAov::DiffuseLighting};
+  for (const Engine::RenderAov aov : aovs) {
+    const Engine::RenderAovDescriptor& descriptor = Engine::RenderOutput::GetDescriptor(aov);
+    Engine::RenderOutputPlane plane;
+    plane.Aov = aov;
+    plane.ChannelCount = descriptor.ChannelCount;
+    plane.Pixels.resize(static_cast<size_t>(width) * height * descriptor.ChannelCount);
+    output.m_Planes.push_back(std::move(plane));
+  }
+  for (size_t planeIndex = 0; planeIndex < m_FinalReadbackCapture->Staging.size(); ++planeIndex) {
+    auto& staging = m_FinalReadbackCapture->Staging.at(planeIndex);
+    size_t rowPitch = 0;
+    void* mapped = GetNvrhiDevice(m_RenderBackend)
+                       ->mapStagingTexture(staging, nvrhi::TextureSlice(), nvrhi::CpuAccessMode::Read, &rowPitch);
+    if (mapped == nullptr) {
+      m_FinalReadbackCapture.reset();
+      return std::unexpected(Engine::MakeError("failed to map a final render AOV for CPU readback"));
+    }
+    Engine::RenderOutputPlane& plane = output.m_Planes.at(planeIndex);
+    const uint32_t sourceChannels = planeIndex == 1 ? 1U : 4U;
+    const auto* sourceBytes = static_cast<const std::byte*>(mapped);
+    for (uint32_t row = 0; row < height; ++row) {
+      const auto* sourceRow = reinterpret_cast<const float*>(sourceBytes + (static_cast<size_t>(row) * rowPitch));
+      float* destinationRow = plane.Pixels.data() + (static_cast<size_t>(row) * width * plane.ChannelCount);
+      for (uint32_t column = 0; column < width; ++column) {
+        for (uint32_t channel = 0; channel < plane.ChannelCount; ++channel) {
+          destinationRow[static_cast<size_t>(column) * plane.ChannelCount + channel] =
+              sourceRow[static_cast<size_t>(column) * sourceChannels + channel];
+        }
+      }
+    }
+    GetNvrhiDevice(m_RenderBackend)->unmapStagingTexture(staging);
+  }
+  m_FinalReadbackCapture.reset();
+
+  if (postProcess) {
+    const Engine::Status status = postProcess(width, height, output.m_Planes.front().Pixels);
+    if (!status) {
+      return std::unexpected(Engine::MakeError("final-color post-processing failed: " + status.error().Message));
+    }
+  }
+  return output;
 }
 
 auto RenderSystem::PickLight(float viewportX, float viewportY) const -> std::optional<Engine::LightId> {

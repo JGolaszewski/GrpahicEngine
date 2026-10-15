@@ -2,6 +2,8 @@
 
 #include <nvrhi/nvrhi.h>
 
+#include <array>
+
 namespace Engine {
 
 struct ViewportTarget::Impl {
@@ -9,11 +11,13 @@ struct ViewportTarget::Impl {
   uint32_t Height = 0;
 
   nvrhi::TextureHandle ColorTexture;
+  std::vector<nvrhi::TextureHandle> OutputTextures;
   nvrhi::TextureHandle DepthTexture;
   nvrhi::FramebufferHandle Framebuffer;
 };
 
-ViewportTarget::ViewportTarget(void* device, uint32_t width, uint32_t height) : m_Impl(std::make_unique<Impl>()) {
+ViewportTarget::ViewportTarget(void* device, uint32_t width, uint32_t height, bool finalOutput)
+    : m_Impl(std::make_unique<Impl>()) {
   m_Impl->Width = width;
   m_Impl->Height = height;
 
@@ -23,18 +27,45 @@ ViewportTarget::ViewportTarget(void* device, uint32_t width, uint32_t height) : 
 
   auto* nvrhiDevice = static_cast<nvrhi::IDevice*>(device);
 
-  nvrhi::TextureDesc colorDesc;
-  colorDesc.width = width;
-  colorDesc.height = height;
-  colorDesc.format = nvrhi::Format::RGBA8_UNORM;
-  colorDesc.isRenderTarget = true;
-  colorDesc.isShaderResource = true;
-  colorDesc.initialState = nvrhi::ResourceStates::RenderTarget;
-  colorDesc.keepInitialState = true;
-  colorDesc.debugName = "ViewportColor";
-  m_Impl->ColorTexture = nvrhiDevice->createTexture(colorDesc);
-  if (m_Impl->ColorTexture == nullptr) {
-    return;
+  if (finalOutput) {
+    constexpr std::array<nvrhi::Format, 5> outputFormats = {nvrhi::Format::RGBA32_FLOAT, nvrhi::Format::R32_FLOAT,
+                                                            nvrhi::Format::RGBA32_FLOAT, nvrhi::Format::RGBA32_FLOAT,
+                                                            nvrhi::Format::RGBA32_FLOAT};
+    constexpr std::array<const char*, 5> outputNames = {"FinalColor", "Depth", "WorldNormal", "SpecularLighting",
+                                                        "DiffuseLighting"};
+    m_Impl->OutputTextures.reserve(outputFormats.size());
+    for (size_t index = 0; index < outputFormats.size(); ++index) {
+      nvrhi::TextureDesc outputDesc;
+      outputDesc.width = width;
+      outputDesc.height = height;
+      outputDesc.format = outputFormats.at(index);
+      outputDesc.isRenderTarget = true;
+      outputDesc.isShaderResource = true;
+      outputDesc.initialState = nvrhi::ResourceStates::RenderTarget;
+      outputDesc.keepInitialState = true;
+      outputDesc.debugName = outputNames.at(index);
+      auto texture = nvrhiDevice->createTexture(outputDesc);
+      if (texture == nullptr) {
+        return;
+      }
+      m_Impl->OutputTextures.push_back(std::move(texture));
+    }
+    m_Impl->ColorTexture = m_Impl->OutputTextures.front();
+  } else {
+    nvrhi::TextureDesc colorDesc;
+    colorDesc.width = width;
+    colorDesc.height = height;
+    colorDesc.format = nvrhi::Format::RGBA8_UNORM;
+    colorDesc.isRenderTarget = true;
+    colorDesc.isShaderResource = true;
+    colorDesc.initialState = nvrhi::ResourceStates::RenderTarget;
+    colorDesc.keepInitialState = true;
+    colorDesc.debugName = "ViewportColor";
+    m_Impl->ColorTexture = nvrhiDevice->createTexture(colorDesc);
+    if (m_Impl->ColorTexture == nullptr) {
+      return;
+    }
+    m_Impl->OutputTextures.push_back(m_Impl->ColorTexture);
   }
 
   nvrhi::TextureDesc depthDesc;
@@ -58,7 +89,9 @@ ViewportTarget::ViewportTarget(void* device, uint32_t width, uint32_t height) : 
   }
 
   nvrhi::FramebufferDesc framebufferDesc;
-  framebufferDesc.addColorAttachment(m_Impl->ColorTexture);
+  for (const auto& output : m_Impl->OutputTextures) {
+    framebufferDesc.addColorAttachment(output);
+  }
   framebufferDesc.setDepthAttachment(m_Impl->DepthTexture);
   m_Impl->Framebuffer = nvrhiDevice->createFramebuffer(framebufferDesc);
   if (m_Impl->Framebuffer == nullptr) {
@@ -85,5 +118,10 @@ auto ViewportTarget::GetColorTextureHandle() const noexcept -> void* {
 
 auto ViewportTarget::GetFramebufferHandle() const noexcept -> void* {
   return m_Impl ? static_cast<void*>(m_Impl->Framebuffer.Get()) : nullptr;
+}
+
+auto ViewportTarget::GetOutputTextureHandle(uint32_t index) const noexcept -> void* {
+  return m_Impl && index < m_Impl->OutputTextures.size() ? static_cast<void*>(m_Impl->OutputTextures.at(index).Get())
+                                                         : nullptr;
 }
 } // namespace Engine
