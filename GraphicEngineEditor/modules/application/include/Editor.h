@@ -4,6 +4,7 @@
 #include "panels/include/EditorConsole.h"
 #include "panels/include/EditorPanel.h"
 #include "platform/include/EditorUiIntegration.h"
+#include "rendering/include/renderer/CameraView.h"
 #include "runtime/include/Application.h"
 #include "scene/include/Scene.h"
 
@@ -43,6 +44,8 @@ private:
   void BroadcastSceneChanged();
   void CreateViewport(uint32_t width, uint32_t height);
   void DestroyViewport();
+  void UpdateCameraPreview();
+  void DestroyCameraPreview();
   void BuildDefaultDockLayoutIfNeeded(uint32_t dockspaceId);
   static void BuildDefaultDockLayout(uint32_t dockspaceId);
   void UpdateEditorCamera(float deltaTime);
@@ -51,6 +54,8 @@ private:
   std::shared_ptr<Engine::Scene> m_ActiveScene;
   std::shared_ptr<Engine::Viewport> m_EditorViewport;
   std::shared_ptr<Engine::ViewportTarget> m_EditorViewportTarget;
+  std::shared_ptr<Engine::Viewport> m_CameraPreviewViewport;
+  std::shared_ptr<Engine::ViewportTarget> m_CameraPreviewTarget;
   std::vector<std::unique_ptr<EditorPanel>> m_Panels;
   RenderPanel* m_RenderPanel = nullptr;
   EditorEventRouter m_EventRouter;
@@ -58,6 +63,9 @@ private:
   EditorUiIntegration m_UiIntegration;
   EditorConsole m_EditorConsole;
   Engine::EntityHandle m_SelectedEntity = Engine::InvalidEntityHandle;
+  Engine::EntityHandle m_CameraPreviewEntity = Engine::InvalidEntityHandle;
+  Engine::Renderer::CameraView m_CameraPreviewCamera;
+  std::pair<uint32_t, uint32_t> m_CameraPreviewResolution = {0, 0};
   Engine::Ecs::LocalTransform m_EditorCameraTransform{.Position = {0.0F, 0.0F, -5.0F}};
   Engine::Ecs::Camera m_EditorCameraSettings;
   std::pair<float, float> m_ViewportSize = {0.0F, 0.0F};
