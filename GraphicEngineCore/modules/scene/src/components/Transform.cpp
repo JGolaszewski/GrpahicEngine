@@ -2,13 +2,13 @@
 
 #include <cmath>
 
-void ::Engine::Scene::Components::Transform::SetPosition(float x, float y, float z)
+void Engine::Components::Transform::SetPosition(float x, float y, float z)
 {
     Position = {x, y, z};
     MarkDirty();
 }
 
-void ::Engine::Scene::Components::Transform::SetRotation(float pitch, float yaw, float roll)
+void Engine::Components::Transform::SetRotation(float pitch, float yaw, float roll)
 {
     DirectX::XMVECTOR quat = DirectX::XMQuaternionRotationRollPitchYaw(pitch, yaw, roll);
     quat = DirectX::XMQuaternionNormalize(quat);
@@ -16,13 +16,13 @@ void ::Engine::Scene::Components::Transform::SetRotation(float pitch, float yaw,
     MarkDirty();
 }
 
-void ::Engine::Scene::Components::Transform::SetScale(float x, float y, float z)
+void Engine::Components::Transform::SetScale(float x, float y, float z)
 {
     Scale = {x, y, z};
     MarkDirty();
 }
 
-void ::Engine::Scene::Components::Transform::Translate(float x, float y, float z)
+void Engine::Components::Transform::Translate(float x, float y, float z)
 {
     Position.x += x;
     Position.y += y;
@@ -30,7 +30,7 @@ void ::Engine::Scene::Components::Transform::Translate(float x, float y, float z
     MarkDirty();
 }
 
-void ::Engine::Scene::Components::Transform::ScaleBy(float x, float y, float z)
+void Engine::Components::Transform::ScaleBy(float x, float y, float z)
 {
     Scale.x *= x;
     Scale.y *= y;
@@ -38,7 +38,7 @@ void ::Engine::Scene::Components::Transform::ScaleBy(float x, float y, float z)
     MarkDirty();
 }
 
-void ::Engine::Scene::Components::Transform::Rotate(float pitch, float yaw, float roll)
+void Engine::Components::Transform::Rotate(float pitch, float yaw, float roll)
 {
     using namespace DirectX;
 
@@ -51,7 +51,7 @@ void ::Engine::Scene::Components::Transform::Rotate(float pitch, float yaw, floa
     MarkDirty();
 }
 
-void ::Engine::Scene::Components::Transform::LookAt(float targetX, float targetY, float targetZ)
+void Engine::Components::Transform::LookAt(float targetX, float targetY, float targetZ)
 {
     using namespace DirectX;
 
@@ -76,7 +76,7 @@ void ::Engine::Scene::Components::Transform::LookAt(float targetX, float targetY
     MarkDirty();
 }
 
-void ::Engine::Scene::Components::Transform::SetParent(Transform *parent)
+void Engine::Components::Transform::SetParent(Transform *parent)
 {
     if (parent == this)
         return;
@@ -91,7 +91,7 @@ void ::Engine::Scene::Components::Transform::SetParent(Transform *parent)
     MarkDirty();
 }
 
-DirectX::XMMATRIX ::Engine::Scene::Components::Transform::GetLocalMat() const
+DirectX::XMMATRIX Engine::Components::Transform::GetLocalMat() const
 {
     using namespace DirectX;
     const bool inputsChanged = Position.x != m_CachedPosition.x || Position.y != m_CachedPosition.y ||
@@ -116,13 +116,13 @@ DirectX::XMMATRIX ::Engine::Scene::Components::Transform::GetLocalMat() const
     return m_CachedLocalMatrix;
 }
 
-DirectX::XMMATRIX ::Engine::Scene::Components::Transform::GetWorldMat() const
+DirectX::XMMATRIX Engine::Components::Transform::GetWorldMat() const
 {
     const DirectX::XMMATRIX local = GetLocalMat();
     return m_Parent ? local * m_Parent->GetWorldMat() : local;
 }
 
-DirectX::XMMATRIX ::Engine::Scene::Components::Transform::GetNormalMat() const
+DirectX::XMMATRIX Engine::Components::Transform::GetNormalMat() const
 {
     using namespace DirectX;
     const XMMATRIX world = GetWorldMat();

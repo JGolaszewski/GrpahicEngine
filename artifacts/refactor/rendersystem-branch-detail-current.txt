@@ -1,0 +1,1140 @@
+    1|       |#include "rendering/include/RenderSystem.h"
+    2|       |#include "rendering/include/RenderBackend.h"
+    3|       |#include "rendering/src/render_graph/FrameContext.h"
+    4|       |#include "rendering/src/render_graph/RenderGraph.h"
+    5|       |#include "SceneRenderer.h"
+    6|       |#include "ResourceManager.h"
+    7|       |#include "ShaderFactory.h"
+    8|       |#include "assets/include/AssetManager.h"
+    9|       |#include "runtime/include/LogMacros.h"
+   10|       |#include "rendering/src/render_graph/RenderPass.h"
+   11|       |
+   12|       |#include <algorithm>
+   13|       |#include <utility>
+   14|       |
+   15|       |namespace Engine::Renderer
+   16|       |{
+   17|       |class Camera;
+   18|       |}
+   19|       |
+   20|       |namespace Engine
+   21|       |{
+   22|       |namespace
+   23|       |{
+   24|       |nvrhi::IDevice *BackendDevice(IRenderBackend *backend)
+   25|     47|{
+   26|     47|    return backend ? static_cast<nvrhi::IDevice *>(backend->GetDevice()) : nullptr;
+  ------------------
+  |  Branch (26:12): [True: 45, False: 2]
+  ------------------
+   27|     47|}
+   28|       |} // namespace
+   29|       |
+   30|       |nvrhi::CommandListHandle CreateImmediateCommandList(IRenderBackend *backend)
+   31|      6|{
+   32|      6|    auto *device = BackendDevice(backend);
+   33|      6|    if (!device)
+  ------------------
+  |  Branch (33:9): [True: 3, False: 3]
+  ------------------
+   34|      3|    {
+   35|      3|        return nullptr;
+   36|      3|    }
+   37|       |
+   38|      3|    nvrhi::CommandListParameters parameters;
+   39|      3|    parameters.setEnableImmediateExecution(true);
+   40|      3|    return device->createCommandList(parameters);
+   41|      6|}
+   42|       |
+   43|       |struct RenderSystem::Impl
+   44|       |{
+   45|       |    explicit Impl(IRenderBackend *backend)
+   46|      6|        : m_RenderBackend(backend), m_CommandList(CreateImmediateCommandList(backend)),
+   47|      6|          m_FrameContext(BackendDevice(backend))
+   48|      6|    {
+   49|      6|    }
+   50|       |
+   51|       |    IRenderBackend *const m_RenderBackend;
+   52|       |    nvrhi::CommandListHandle m_CommandList;
+   53|       |    bool m_FrameActive = false;
+   54|       |    std::string m_LastUploadFailure;
+   55|       |    std::string m_LastRenderGraphFailure;
+   56|       |    ShadowSettings m_ShadowSettings;
+   57|       |
+   58|       |    ::Engine::Renderer::FrameContext m_FrameContext;
+   59|       |    std::unique_ptr<::Engine::Renderer::RenderGraph> m_RenderGraph;
+   60|       |    std::unique_ptr<SceneRenderer> m_SceneRenderer;
+   61|       |    std::unique_ptr<::Engine::Renderer::MaterialSystem> m_MaterialSystem;
+   62|       |    std::unique_ptr<::Engine::Renderer::ResourceManager> m_ResourceManager;
+   63|       |    std::unique_ptr<::Engine::Renderer::ShaderFactory> m_ShaderFactory;
+   64|       |    std::unique_ptr<Engine::PrimitiveFactory> m_PrimitiveFactory;
+   65|       |};
+   66|       |
+   67|      6|RenderSystem::RenderSystem(IRenderBackend *backend) : m_Impl(std::make_unique<Impl>(backend))
+   68|      6|{
+   69|      6|    ENGINE_LOG_INFO("Render", "Render system initialization started | backend_valid: {} | device_valid: {}",
+   70|      6|                    backend != nullptr, backend && backend->GetDevice() != nullptr);
+   71|      6|    if (!m_Impl->m_RenderBackend || !BackendDevice(m_Impl->m_RenderBackend))
+  ------------------
+  |  Branch (71:9): [True: 1, False: 5]
+  |  Branch (71:37): [True: 2, False: 3]
+  ------------------
+   72|      3|    {
+   73|      3|        ENGINE_LOG_ERROR("Render", "Render system initialization failed | backend or device is null");
+   74|      3|        return;
+   75|      3|    }
+   76|      3|    if (!m_Impl->m_CommandList)
+  ------------------
+  |  Branch (76:9): [True: 0, False: 3]
+  ------------------
+   77|      0|    {
+   78|      0|        ENGINE_LOG_ERROR("Render", "Render system initialization failed | command_list_valid: false");
+   79|      0|        return;
+   80|      0|    }
+   81|       |
+   82|      3|    m_Impl->m_ShaderFactory =
+   83|      3|        std::make_unique<::Engine::Renderer::ShaderFactory>(BackendDevice(m_Impl->m_RenderBackend));
+   84|      3|    auto m_DefaultVS = m_Impl->m_ShaderFactory->GetShader("shaders/color_vs.dxbc", nvrhi::ShaderType::Vertex);
+   85|      3|    auto m_DefaultPS = m_Impl->m_ShaderFactory->GetShader("shaders/color_ps.dxbc", nvrhi::ShaderType::Pixel);
+   86|      3|    auto m_TexturedPS =
+   87|      3|        m_Impl->m_ShaderFactory->GetShader("shaders/color_textured_ps.dxbc", nvrhi::ShaderType::Pixel);
+   88|       |
+   89|      3|    m_Impl->m_ResourceManager =
+   90|      3|        std::make_unique<::Engine::Renderer::ResourceManager>(BackendDevice(m_Impl->m_RenderBackend));
+   91|      3|    m_Impl->m_MaterialSystem = std::make_unique<::Engine::Renderer::MaterialSystem>(
+   92|      3|        BackendDevice(m_Impl->m_RenderBackend), m_DefaultVS, m_DefaultPS,
+   93|      3|        m_Impl->m_ResourceManager->GetFallbackTexture(true),
+   94|      3|        m_Impl->m_ResourceManager->GetFallbackTexture(false));
+   95|      3|    m_Impl->m_MaterialSystem->SetTexturedPixelShader(m_TexturedPS);
+   96|      3|    m_Impl->m_SceneRenderer = std::make_unique<SceneRenderer>(BackendDevice(m_Impl->m_RenderBackend));
+   97|      3|    m_Impl->m_SceneRenderer->Init(BackendDevice(m_Impl->m_RenderBackend), m_Impl->m_MaterialSystem.get(),
+   98|      3|                                  m_Impl->m_ShaderFactory.get());
+   99|      3|    m_Impl->m_PrimitiveFactory = std::unique_ptr<Engine::PrimitiveFactory>(
+  100|      3|        new Engine::PrimitiveFactory(BackendDevice(m_Impl->m_RenderBackend)));
+  101|       |
+  102|      3|    m_Impl->m_RenderGraph = std::make_unique<::Engine::Renderer::RenderGraph>(
+  103|      3|        BackendDevice(m_Impl->m_RenderBackend), m_Impl->m_FrameContext);
+  104|      3|    ENGINE_LOG_INFO("Render",
+  105|      3|                    "Render system initialized | command_list_valid: {} | resource_manager_valid: {}",
+  106|      3|                    m_Impl->m_CommandList != nullptr, m_Impl->m_ResourceManager != nullptr);
+  107|      3|}
+  108|       |
+  109|      6|RenderSystem::~RenderSystem() = default;
+  110|       |
+  111|       |bool RenderSystem::IsValid() const noexcept
+  112|      5|{
+  113|      5|    return m_Impl->m_CommandList != nullptr;
+  114|      5|}
+  115|       |
+  116|       |bool RenderSystem::IsFrameActive() const noexcept
+  117|     19|{
+  118|     19|    return m_Impl->m_FrameActive;
+  119|     19|}
+  120|       |
+  121|       |const ShadowSettings &RenderSystem::GetShadowSettings() const noexcept
+  122|      5|{
+  123|      5|    return m_Impl->m_ShadowSettings;
+  124|      5|}
+  125|       |
+  126|       |const ::Engine::Renderer::FrameDiagnostics &RenderSystem::GetFrameDiagnostics() const noexcept
+  127|      4|{
+  128|      4|    return m_Impl->m_FrameContext.GetDiagnostics();
+  129|      4|}
+  130|       |
+  131|       |::Engine::Renderer::GpuFrameTiming RenderSystem::GetGpuFrameTiming() const noexcept
+  132|      4|{
+  133|      4|    return m_Impl->m_FrameContext.GetGpuFrameTiming();
+  134|      4|}
+  135|       |
+  136|       |uint32_t RenderSystem::GetSubmittedViewCount() const noexcept
+  137|      5|{
+  138|      5|    const auto &blackboard = m_Impl->m_FrameContext.GetBlackboard();
+  139|      5|    return static_cast<uint32_t>(blackboard.GetSceneViews().size() + blackboard.GetShadowViews().size());
+  140|      5|}
+  141|       |
+  142|       |RenderSubmissionStats RenderSystem::GetSubmissionStats() const noexcept
+  143|      3|{
+  144|      3|    RenderSubmissionStats stats;
+  145|      3|    if (!m_Impl->m_SceneRenderer)
+  ------------------
+  |  Branch (145:9): [True: 0, False: 3]
+  ------------------
+  146|      0|    {
+  147|      0|        return stats;
+  148|      0|    }
+  149|       |
+  150|      3|    const SceneRenderer::SubmissionStats &submission = m_Impl->m_SceneRenderer->GetSubmissionStats();
+  151|      3|    stats.ObjectsSubmitted = submission.ObjectsSubmitted;
+  152|      3|    stats.ObjectsCulled = submission.ObjectsCulled;
+  153|      3|    stats.PacketsBuilt = submission.PacketsBuilt;
+  154|      3|    stats.OpaquePackets = submission.OpaquePackets;
+  155|      3|    stats.MaskedPackets = submission.MaskedPackets;
+  156|      3|    stats.TransparentPackets = submission.TransparentPackets;
+  157|      3|    stats.PipelineCacheHits = submission.PipelineCacheHits;
+  158|      3|    stats.PipelineCacheMisses = submission.PipelineCacheMisses;
+  159|      3|    stats.PipelineCreations = submission.PipelineCreations;
+  160|      3|    stats.CullingTimeMs = submission.CullingTimeMs;
+  161|      3|    stats.PacketBuildTimeMs = submission.PacketBuildTimeMs;
+  162|      3|    return stats;
+  163|      3|}
+  164|       |
+  165|       |std::shared_ptr<Engine::ViewportTarget> RenderSystem::CreateViewportTarget(uint32_t width, uint32_t height)
+  166|      3|{
+  167|      3|    if (!m_Impl->m_RenderBackend || !BackendDevice(m_Impl->m_RenderBackend))
+  ------------------
+  |  Branch (167:9): [True: 0, False: 3]
+  |  Branch (167:37): [True: 1, False: 2]
+  ------------------
+  168|      1|    {
+  169|      1|        return nullptr;
+  170|      1|    }
+  171|       |
+  172|      2|    auto target = std::shared_ptr<Engine::ViewportTarget>(
+  173|      2|        new Engine::ViewportTarget(BackendDevice(m_Impl->m_RenderBackend), width, height));
+  174|      2|    return target->IsValid() ? target : nullptr;
+  ------------------
+  |  Branch (174:12): [True: 1, False: 1]
+  ------------------
+  175|      3|}
+  176|       |
+  177|       |std::shared_ptr<::Engine::Renderer::Entity> RenderSystem::CreatePrimitive(
+  178|       |    Engine::PrimitiveShape shape, std::shared_ptr<::Engine::Renderer::Material> material,
+  179|       |    const DirectX::XMFLOAT3 &position, const DirectX::XMFLOAT3 &scale)
+  180|     12|{
+  181|     12|    if (m_Impl->m_FrameActive || !m_Impl->m_PrimitiveFactory)
+  ------------------
+  |  Branch (181:9): [True: 1, False: 11]
+  |  Branch (181:34): [True: 0, False: 11]
+  ------------------
+  182|      1|    {
+  183|      1|        ENGINE_LOG_ERROR(
+  184|      1|            "ECS", "Primitive creation rejected | shape: {} | frame_active: {} | factory_valid: {}",
+  185|      1|            static_cast<uint32_t>(shape), m_Impl->m_FrameActive, m_Impl->m_PrimitiveFactory != nullptr);
+  186|      1|        return nullptr;
+  187|      1|    }
+  188|       |
+  189|     11|    return m_Impl->m_PrimitiveFactory->CreatePrimitive(shape, std::move(material), position, scale);
+  190|     12|}
+  191|       |
+  192|       |void RenderSystem::BeginFrame()
+  193|      5|{
+  194|      5|    if (!m_Impl->m_CommandList)
+  ------------------
+  |  Branch (194:9): [True: 1, False: 4]
+  ------------------
+  195|      1|    {
+  196|      1|        return;
+  197|      1|    }
+  198|      4|    m_Impl->m_FrameContext.BeginFrame();
+  199|      4|    std::string uploadError;
+  200|      4|    if (!m_Impl->m_ResourceManager->FlushUploads(uploadError))
+  ------------------
+  |  Branch (200:9): [True: 0, False: 4]
+  ------------------
+  201|      0|    {
+  202|      0|        if (uploadError != m_Impl->m_LastUploadFailure)
+  ------------------
+  |  Branch (202:13): [True: 0, False: 0]
+  ------------------
+  203|      0|            ENGINE_LOG_ERROR("Render", "Queued GPU uploads failed | error: {}", uploadError);
+  204|      0|        m_Impl->m_LastUploadFailure = uploadError;
+  205|      0|        return;
+  206|      0|    }
+  207|      4|    m_Impl->m_LastUploadFailure.clear();
+  208|       |
+  209|      4|    m_Impl->m_CommandList->open();
+  210|      4|    m_Impl->m_FrameActive = true;
+  211|      4|    m_Impl->m_RenderBackend->BeginGpuEvent(L"RenderFrame");
+  212|      4|    ClearFrameBuffer();
+  213|      4|    m_Impl->m_MaterialSystem->UpdateDirtyMaterials(m_Impl->m_CommandList);
+  214|       |
+  215|      4|    m_Impl->m_FrameContext.BeginGpuTiming(m_Impl->m_CommandList);
+  216|       |
+  217|      4|    m_Impl->m_RenderGraph->Reset();
+  218|      4|}
+  219|       |
+  220|       |void RenderSystem::SubmitViews(const std::vector<Engine::ViewportBinding> &views)
+  221|      5|{
+  222|      5|    if (!m_Impl->m_FrameActive)
+  ------------------
+  |  Branch (222:9): [True: 1, False: 4]
+  ------------------
+  223|      1|        return;
+  224|      4|    ::Engine::Renderer::FrameBlackboard &bb = m_Impl->m_RenderGraph->GetBlackboard();
+  225|       |
+  226|      4|    std::vector<::Engine::Renderer::RenderView *> sceneViews;
+  227|      4|    std::vector<Engine::Scene *> scenes;
+  228|       |
+  229|      4|    for (auto binding : views)
+  ------------------
+  |  Branch (229:23): [True: 3, False: 4]
+  ------------------
+  230|      3|    {
+  231|      3|        if (!binding.IsValid())
+  ------------------
+  |  Branch (231:13): [True: 1, False: 2]
+  ------------------
+  232|      1|            continue;
+  233|       |
+  234|      2|        auto view = std::make_unique<::Engine::Renderer::RenderView>();
+  235|      2|        view->ViewType = ::Engine::Renderer::RenderView::Type::Main;
+  236|      2|        view->Initialize(binding.SourceCamera, binding.TargetViewport);
+  237|      2|        view->TargetScene = binding.TargetScene;
+  238|      2|        view->DebugSettings = binding.DebugSettings;
+  239|       |
+  240|      2|        sceneViews.push_back(view.get());
+  241|      2|        m_Impl->m_FrameContext.GetViews().push_back(std::move(view));
+  242|       |
+  243|      2|        if (std::find(scenes.begin(), scenes.end(), binding.TargetScene) == scenes.end())
+  ------------------
+  |  Branch (243:13): [True: 2, False: 0]
+  ------------------
+  244|      2|            scenes.push_back(binding.TargetScene);
+  245|      2|    }
+  246|      4|    bb.SetSceneViews(std::move(sceneViews));
+  247|       |
+  248|      4|    std::vector<::Engine::Renderer::RenderView *> shadowViews;
+  249|      4|    shadowViews.reserve(scenes.size() * m_Impl->m_ShadowSettings.MaxShadowCastersPerScene);
+  250|      6|    for (size_t sceneIndex = 0; sceneIndex < scenes.size(); ++sceneIndex)
+  ------------------
+  |  Branch (250:33): [True: 2, False: 4]
+  ------------------
+  251|      2|    {
+  252|      2|        const uint32_t firstShadowSlot = static_cast<uint32_t>(shadowViews.size());
+  253|      2|        const uint32_t shadowCasterCount = m_Impl->m_SceneRenderer->CountShadowCasters(
+  254|      2|            scenes[sceneIndex], m_Impl->m_ShadowSettings.MaxShadowCastersPerScene);
+  255|      3|        for (uint32_t i = 0; i < shadowCasterCount; ++i)
+  ------------------
+  |  Branch (255:30): [True: 1, False: 2]
+  ------------------
+  256|      1|        {
+  257|      1|            auto view = std::make_unique<::Engine::Renderer::RenderView>();
+  258|      1|            view->ViewType = ::Engine::Renderer::RenderView::Type::Shadow;
+  259|      1|            shadowViews.push_back(view.get());
+  260|      1|            m_Impl->m_FrameContext.GetViews().push_back(std::move(view));
+  261|      1|        }
+  262|      2|        m_Impl->m_SceneRenderer->BuildShadowData(scenes[sceneIndex], shadowViews, firstShadowSlot,
+  263|      2|                                                 shadowCasterCount);
+  264|      2|    }
+  265|      4|    bb.SetShadowViews(std::move(shadowViews));
+  266|      4|    bb.Set<uint32_t>("ShadowMapSize", m_Impl->m_ShadowSettings.Resolution);
+  267|      4|    bb.Set<uint32_t>("MaxShadowedLights", (std::max)(1u, static_cast<uint32_t>(bb.GetShadowViews().size())));
+  268|       |
+  269|      4|    ::Engine::Renderer::FrameDiagnostics &diagnostics = m_Impl->m_FrameContext.GetDiagnostics();
+  270|      4|    m_Impl->m_SceneRenderer->BuildViews(bb, m_Impl->m_CommandList, m_Impl->m_FrameContext, diagnostics);
+  271|      4|    if (!m_Impl->m_SceneRenderer->EnsureLightBuffers(bb.GetSceneViews().size(), m_Impl->m_FrameContext))
+  ------------------
+  |  Branch (271:9): [True: 0, False: 4]
+  ------------------
+  272|      0|    {
+  273|      0|        ENGINE_LOG_ERROR("Render", "Per-view light buffer allocation failed | view_count: {}",
+  274|      0|                         bb.GetSceneViews().size());
+  275|      0|    }
+  276|      4|    bb.SetPerObjectBuffer(m_Impl->m_SceneRenderer->GetPerObjectBuffer());
+  277|      4|    bb.SetPerObjectBindingSet(m_Impl->m_SceneRenderer->GetPerObjectBindingSet());
+  278|      6|    for (size_t viewIndex = 0; viewIndex < bb.GetSceneViews().size(); ++viewIndex)
+  ------------------
+  |  Branch (278:32): [True: 2, False: 4]
+  ------------------
+  279|      2|    {
+  280|      2|        ::Engine::Renderer::RenderView *view = bb.GetSceneViews()[viewIndex];
+  281|      2|        if (view)
+  ------------------
+  |  Branch (281:13): [True: 2, False: 0]
+  ------------------
+  282|      2|            view->LightBuffer = m_Impl->m_SceneRenderer->GetLightBuffer(viewIndex, m_Impl->m_FrameContext);
+  283|      2|        if (view && view->TargetScene)
+  ------------------
+  |  Branch (283:13): [True: 2, False: 0]
+  |  Branch (283:21): [True: 2, False: 0]
+  ------------------
+  284|      2|            m_Impl->m_SceneRenderer->BuildLighting(view->TargetScene, bb.GetShadowViews(), view->Lights);
+  285|      2|    }
+  286|      4|    bb.SetShadowSampler(m_Impl->m_SceneRenderer->GetShadowSampler());
+  287|      4|    bb.SetPerObjectBindingLayout(m_Impl->m_SceneRenderer->GetPerObjectBindingLayout());
+  288|      4|    bb.SetSceneBindingLayout(m_Impl->m_SceneRenderer->GetSceneBindingLayout());
+  289|       |
+  290|      4|    m_Impl->m_RenderGraph->AddPass(std::make_unique<::Engine::Renderer::ShadowPass>());
+  291|      4|    m_Impl->m_RenderGraph->AddPass(
+  292|      4|        std::make_unique<::Engine::Renderer::ForwardPass>(m_Impl->m_SceneRenderer.get()));
+  293|      4|    m_Impl->m_RenderGraph->AddPass(
+  294|      4|        std::make_unique<::Engine::Renderer::DebugPass>(m_Impl->m_SceneRenderer.get()));
+  295|      4|}
+  296|       |
+  297|       |bool RenderSystem::SetShadowSettings(const ShadowSettings &settings) noexcept
+  298|      4|{
+  299|      4|    if (settings.Resolution < 128 || settings.Resolution > 8192 ||
+  ------------------
+  |  Branch (299:9): [True: 1, False: 3]
+  |  Branch (299:38): [True: 1, False: 2]
+  ------------------
+  300|      2|        settings.MaxShadowCastersPerScene > Engine::MaxShadowedLights)
+  ------------------
+  |  Branch (300:9): [True: 1, False: 1]
+  ------------------
+  301|      3|    {
+  302|      3|        ENGINE_LOG_ERROR("Render", "Shadow settings rejected | resolution: {} | max_shadow_casters: {}",
+  303|      3|                         settings.Resolution, settings.MaxShadowCastersPerScene);
+  304|      3|        return false;
+  305|      3|    }
+  306|       |
+  307|      1|    m_Impl->m_ShadowSettings = settings;
+  308|      1|    return true;
+  309|      4|}
+  310|       |
+  311|       |std::shared_ptr<::Engine::Renderer::Mesh> RenderSystem::GetOrCreateMesh(
+  312|       |    const std::string &guid, uint64_t generation, const std::vector<::Engine::Renderer::Vertex> &vertices,
+  313|       |    const std::vector<uint32_t> &indices, std::string &error)
+  314|      3|{
+  315|      3|    if (m_Impl->m_FrameActive || !m_Impl->m_ResourceManager)
+  ------------------
+  |  Branch (315:9): [True: 1, False: 2]
+  |  Branch (315:34): [True: 0, False: 2]
+  ------------------
+  316|      1|    {
+  317|      1|        error = "GPU mesh creation is only available outside an active frame";
+  318|      1|        ENGINE_LOG_ERROR("Render", "Mesh creation rejected | guid: {} | generation: {} | frame_active: {}",
+  319|      1|                         guid, generation, m_Impl->m_FrameActive);
+  320|      1|        return nullptr;
+  321|      1|    }
+  322|      2|    return m_Impl->m_ResourceManager->GetOrCreateMesh(guid, generation, vertices, indices, error);
+  323|      3|}
+  324|       |
+  325|       |std::shared_ptr<::Engine::Renderer::TextureResource> RenderSystem::GetOrCreateTexture(
+  326|       |    const std::string &identity, uint64_t generation, const ImportedImage &image, bool srgb,
+  327|       |    std::string &error, const ImportedTexture *sampler)
+  328|      3|{
+  329|      3|    if (m_Impl->m_FrameActive || !m_Impl->m_ResourceManager)
+  ------------------
+  |  Branch (329:9): [True: 1, False: 2]
+  |  Branch (329:34): [True: 0, False: 2]
+  ------------------
+  330|      1|    {
+  331|      1|        error = "texture upload requires an initialized renderer outside an active frame";
+  332|      1|        ENGINE_LOG_ERROR("Render",
+  333|      1|                         "Texture upload rejected | identity: {} | generation: {} | frame_active: {}",
+  334|      1|                         identity, generation, m_Impl->m_FrameActive);
+  335|      1|        return nullptr;
+  336|      1|    }
+  337|      2|    return m_Impl->m_ResourceManager->GetOrCreateTexture(identity, generation, image, srgb, error, sampler);
+  338|      3|}
+  339|       |
+  340|       |std::shared_ptr<::Engine::Renderer::Material> RenderSystem::CreateMaterial(
+  341|       |    const ::Engine::Renderer::MaterialProperties &properties)
+  342|      7|{
+  343|      7|    if (m_Impl->m_FrameActive || !m_Impl->m_MaterialSystem)
+  ------------------
+  |  Branch (343:9): [True: 1, False: 6]
+  |  Branch (343:34): [True: 0, False: 6]
+  ------------------
+  344|      1|    {
+  345|      1|        ENGINE_LOG_ERROR("Render",
+  346|      1|                         "Material creation rejected | frame_active: {} | material_system_valid: {}",
+  347|      1|                         m_Impl->m_FrameActive, m_Impl->m_MaterialSystem != nullptr);
+  348|      1|        return nullptr;
+  349|      1|    }
+  350|      6|    auto material = m_Impl->m_MaterialSystem->CreateMaterial(properties);
+  351|      6|    if (!material)
+  ------------------
+  |  Branch (351:9): [True: 0, False: 6]
+  ------------------
+  352|      6|        ENGINE_LOG_ERROR("Render", "Material allocation failed | roughness: {} | metallic: {} | workflow: {}",
+  353|      6|                         properties.Roughness, properties.Metallic,
+  354|      6|                         static_cast<uint32_t>(properties.Workflow));
+  355|      6|    return material;
+  356|      7|}
+  357|       |
+  358|       |void RenderSystem::UnregisterMaterial(const std::shared_ptr<::Engine::Renderer::Material> &material)
+  359|      2|{
+  360|      2|    if (!m_Impl->m_FrameActive && m_Impl->m_MaterialSystem)
+  ------------------
+  |  Branch (360:9): [True: 2, False: 0]
+  |  Branch (360:35): [True: 2, False: 0]
+  ------------------
+  361|      2|        m_Impl->m_MaterialSystem->UnregisterMaterial(material);
+  362|      2|}
+  363|       |
+  364|       |bool RenderSystem::SetMaterialTextures(const std::shared_ptr<::Engine::Renderer::Material> &material,
+  365|       |                                       std::shared_ptr<::Engine::Renderer::TextureResource> baseColor,
+  366|       |                                       std::shared_ptr<::Engine::Renderer::TextureResource> normal,
+  367|       |                                       std::optional<std::string> baseColorGuid,
+  368|       |                                       std::optional<std::string> normalGuid, bool setImportedDefaults)
+  369|      3|{
+  370|      3|    if (!m_Impl->m_FrameActive && m_Impl->m_MaterialSystem &&
+  ------------------
+  |  Branch (370:9): [True: 2, False: 1]
+  |  Branch (370:35): [True: 2, False: 0]
+  ------------------
+  371|      2|        m_Impl->m_MaterialSystem->SetTextureBindings(material, std::move(baseColor), std::move(normal),
+  ------------------
+  |  Branch (371:9): [True: 2, False: 0]
+  ------------------
+  372|      2|                                                     std::move(baseColorGuid), std::move(normalGuid),
+  373|      2|                                                     setImportedDefaults))
+  374|      2|        return true;
+  375|      1|    ENGINE_LOG_ERROR(
+  376|      1|        "Render",
+  377|      1|        "Material texture binding failed | material_valid: {} | frame_active: {} | material_system_valid: {}",
+  378|      1|        material != nullptr, m_Impl->m_FrameActive, m_Impl->m_MaterialSystem != nullptr);
+  379|      1|    return false;
+  380|      3|}
+  381|       |
+  382|       |bool RenderSystem::SetPbrMaterialTextures(
+  383|       |    const std::shared_ptr<::Engine::Renderer::Material> &material,
+  384|       |    std::shared_ptr<::Engine::Renderer::TextureResource> baseColor,
+  385|       |    std::shared_ptr<::Engine::Renderer::TextureResource> normal,
+  386|       |    std::shared_ptr<::Engine::Renderer::TextureResource> metallicRoughness,
+  387|       |    std::shared_ptr<::Engine::Renderer::TextureResource> occlusion,
+  388|       |    std::shared_ptr<::Engine::Renderer::TextureResource> emissive, bool setImportedDefaults)
+  389|      1|{
+  390|      1|    if (!m_Impl->m_FrameActive && m_Impl->m_MaterialSystem &&
+  ------------------
+  |  Branch (390:9): [True: 0, False: 1]
+  |  Branch (390:35): [True: 0, False: 0]
+  ------------------
+  391|      0|        m_Impl->m_MaterialSystem->SetPbrTextureBindings(material, std::move(baseColor), std::move(normal),
+  ------------------
+  |  Branch (391:9): [True: 0, False: 0]
+  ------------------
+  392|      0|                                                        std::move(metallicRoughness), std::move(occlusion),
+  393|      0|                                                        std::move(emissive), setImportedDefaults))
+  394|      0|        return true;
+  395|      1|    ENGINE_LOG_ERROR(
+  396|      1|        "Render",
+  397|      1|        "PBR texture binding failed | material_valid: {} | frame_active: {} | material_system_valid: {}",
+  398|      1|        material != nullptr, m_Impl->m_FrameActive, m_Impl->m_MaterialSystem != nullptr);
+  399|      1|    return false;
+  400|      1|}
+  401|       |
+  402|       |void RenderSystem::ReleaseResource(const std::string &guid)
+  403|      0|{
+  404|      0|    if (m_Impl->m_ResourceManager)
+  ------------------
+  |  Branch (404:9): [True: 0, False: 0]
+  ------------------
+  405|      0|        m_Impl->m_ResourceManager->Release(guid);
+  406|      0|}
+  407|       |
+  408|       |bool RenderSystem::UploadModel(const std::string &guid, uint64_t generation, const ImportedModel &model,
+  409|       |                               std::vector<std::vector<std::shared_ptr<::Engine::Renderer::Mesh>>> &meshes,
+  410|       |                               std::string &error)
+  411|      7|{
+  412|      7|    if (m_Impl->m_FrameActive || !m_Impl->m_ResourceManager)
+  ------------------
+  |  Branch (412:9): [True: 1, False: 6]
+  |  Branch (412:34): [True: 0, False: 6]
+  ------------------
+  413|      1|    {
+  414|      1|        error = "GPU model uploads are only available outside an active frame";
+  415|      1|        ENGINE_LOG_ERROR("Render", "Model upload rejected | guid: {} | generation: {} | frame_active: {}",
+  416|      1|                         guid, generation, m_Impl->m_FrameActive);
+  417|      1|        meshes.clear();
+  418|      1|        return false;
+  419|      1|    }
+  420|      6|    return m_Impl->m_ResourceManager->GetOrCreateModelMeshes(guid, generation, model, meshes, error);
+  421|      7|}
+  422|       |
+  423|       |std::shared_ptr<::Engine::Renderer::Entity> RenderSystem::CreateModelEntity(
+  424|       |    const std::string &guid, uint64_t generation, const ImportedModel &model,
+  425|       |    const std::vector<std::optional<::Engine::Renderer::MaterialProperties>> &materialOverrides,
+  426|       |    std::string &error, std::vector<std::string> &)
+  427|      8|{
+  428|      8|    using namespace DirectX;
+  429|      8|    struct PendingSubmesh
+  430|      8|    {
+  431|      8|        size_t MeshIndex;
+  432|      8|        size_t PrimitiveIndex;
+  433|      8|        int32_t MaterialIndex;
+  434|      8|        XMFLOAT4X4 LocalTransform;
+  435|      8|        XMFLOAT3 BoundsMin;
+  436|      8|        XMFLOAT3 BoundsMax;
+  437|      8|    };
+  438|      8|    std::vector<PendingSubmesh> pending;
+  439|      8|    std::vector<uint8_t> visited(model.nodes.size(), 0);
+  440|     14|    const auto visitNode = [&](const auto &self, uint32_t nodeIndex, FXMMATRIX parent) -> bool {
+  441|     14|        if (nodeIndex >= model.nodes.size() || visited[nodeIndex] != 0)
+  ------------------
+  |  Branch (441:13): [True: 0, False: 14]
+  |  Branch (441:48): [True: 1, False: 13]
+  ------------------
+  442|      1|            return false;
+  443|     13|        visited[nodeIndex] = 1;
+  444|     13|        const auto &node = model.nodes[nodeIndex];
+  445|     13|        XMMATRIX local;
+  446|     13|        if (node.hasMatrix)
+  ------------------
+  |  Branch (446:13): [True: 0, False: 13]
+  ------------------
+  447|      0|        {
+  448|      0|            local = XMLoadFloat4x4(&node.matrix);
+  449|      0|        }
+  450|     13|        else
+  451|     13|        {
+  452|     13|            local =
+  453|     13|                XMMatrixAffineTransformation(XMLoadFloat3(&node.scale), XMVectorZero(),
+  454|     13|                                             XMLoadFloat4(&node.rotation), XMLoadFloat3(&node.translation));
+  455|     13|        }
+  456|     13|        const XMMATRIX world = local * parent;
+  457|     13|        if (node.meshIndex >= 0)
+  ------------------
+  |  Branch (457:13): [True: 7, False: 6]
+  ------------------
+  458|      7|        {
+  459|      7|            if (static_cast<size_t>(node.meshIndex) >= model.meshes.size())
+  ------------------
+  |  Branch (459:17): [True: 0, False: 7]
+  ------------------
+  460|      0|                return false;
+  461|      7|            const auto &sourceMesh = model.meshes[static_cast<size_t>(node.meshIndex)];
+  462|     20|            for (size_t primitiveIndex = 0; primitiveIndex < sourceMesh.primitives.size(); ++primitiveIndex)
+  ------------------
+  |  Branch (462:45): [True: 13, False: 7]
+  ------------------
+  463|     13|            {
+  464|     13|                const auto &primitive = sourceMesh.primitives[primitiveIndex];
+  465|     13|                XMFLOAT4X4 localTransform;
+  466|     13|                XMStoreFloat4x4(&localTransform, world);
+  467|     13|                pending.push_back({static_cast<size_t>(node.meshIndex), primitiveIndex,
+  468|     13|                                   primitive.materialIndex, localTransform, primitive.boundsMin,
+  469|     13|                                   primitive.boundsMax});
+  470|     13|            }
+  471|      7|        }
+  472|     13|        for (const uint32_t child : node.children)
+  ------------------
+  |  Branch (472:35): [True: 7, False: 11]
+  ------------------
+  473|      7|        {
+  474|      7|            if (!self(self, child, world))
+  ------------------
+  |  Branch (474:17): [True: 2, False: 5]
+  ------------------
+  475|      2|                return false;
+  476|      7|        }
+  477|     11|        return true;
+  478|     13|    };
+  479|       |
+  480|      8|    std::vector<uint32_t> roots;
+  481|      8|    if (model.defaultScene >= 0)
+  ------------------
+  |  Branch (481:9): [True: 8, False: 0]
+  ------------------
+  482|      8|    {
+  483|      8|        if (static_cast<size_t>(model.defaultScene) >= model.scenes.size())
+  ------------------
+  |  Branch (483:13): [True: 1, False: 7]
+  ------------------
+  484|      1|        {
+  485|      1|            error = "model default scene index is invalid";
+  486|      1|            return nullptr;
+  487|      1|        }
+  488|      7|        roots = model.scenes[static_cast<size_t>(model.defaultScene)];
+  489|      7|    }
+  490|      0|    else if (!model.scenes.empty())
+  ------------------
+  |  Branch (490:14): [True: 0, False: 0]
+  ------------------
+  491|      0|    {
+  492|      0|        roots = model.scenes.front();
+  493|      0|    }
+  494|      0|    else
+  495|      0|    {
+  496|      0|        for (size_t i = 0; i < model.nodes.size(); ++i)
+  ------------------
+  |  Branch (496:28): [True: 0, False: 0]
+  ------------------
+  497|      0|        {
+  498|      0|            if (model.nodes[i].parentIndex < 0)
+  ------------------
+  |  Branch (498:17): [True: 0, False: 0]
+  ------------------
+  499|      0|                roots.push_back(static_cast<uint32_t>(i));
+  500|      0|        }
+  501|      0|    }
+  502|      7|    for (const uint32_t root : roots)
+  ------------------
+  |  Branch (502:30): [True: 7, False: 6]
+  ------------------
+  503|      7|    {
+  504|      7|        if (!visitNode(visitNode, root, XMMatrixIdentity()))
+  ------------------
+  |  Branch (504:13): [True: 1, False: 6]
+  ------------------
+  505|      1|        {
+  506|      1|            error = "model node hierarchy references invalid or repeated nodes";
+  507|      1|            return nullptr;
+  508|      1|        }
+  509|      7|    }
+  510|      6|    if (pending.empty())
+  ------------------
+  |  Branch (510:9): [True: 0, False: 6]
+  ------------------
+  511|      0|    {
+  512|      0|        error = "model's selected scene contains no renderable mesh primitives";
+  513|      0|        return nullptr;
+  514|      0|    }
+  515|       |
+  516|      6|    std::vector<std::vector<std::shared_ptr<::Engine::Renderer::Mesh>>> meshes;
+  517|      6|    if (!UploadModel(guid, generation, model, meshes, error))
+  ------------------
+  |  Branch (517:9): [True: 0, False: 6]
+  ------------------
+  518|      0|    {
+  519|      0|        ENGINE_LOG_ERROR("Render", "Model GPU upload failed | guid: {} | generation: {} | error: {}", guid,
+  520|      0|                         generation, error);
+  521|      0|        return nullptr;
+  522|      0|    }
+  523|       |
+  524|      6|    std::vector<std::shared_ptr<::Engine::Renderer::Material>> materials;
+  525|      6|    materials.reserve(model.materials.size() + 1);
+  526|     13|    for (size_t materialIndex = 0; materialIndex < model.materials.size(); ++materialIndex)
+  ------------------
+  |  Branch (526:36): [True: 9, False: 4]
+  ------------------
+  527|      9|    {
+  528|      9|        const auto &sourceMaterial = model.materials[materialIndex];
+  529|      9|        const bool hasMaterialOverride =
+  530|      9|            materialIndex < materialOverrides.size() && materialOverrides[materialIndex].has_value();
+  ------------------
+  |  Branch (530:13): [True: 2, False: 7]
+  |  Branch (530:57): [True: 2, False: 0]
+  ------------------
+  531|      9|        const ::Engine::Renderer::MaterialProperties materialOverride =
+  532|      9|            materialIndex < materialOverrides.size()
+  ------------------
+  |  Branch (532:13): [True: 2, False: 7]
+  ------------------
+  533|      9|                ? materialOverrides[materialIndex].value_or(::Engine::Renderer::MaterialProperties{})
+  534|      9|                : ::Engine::Renderer::MaterialProperties{};
+  535|      9|        ::Engine::Renderer::MaterialProperties properties;
+  536|      9|        if (hasMaterialOverride)
+  ------------------
+  |  Branch (536:13): [True: 2, False: 7]
+  ------------------
+  537|      2|        {
+  538|      2|            properties = materialOverride;
+  539|      2|        }
+  540|      7|        else
+  541|      7|        {
+  542|      7|            properties.BaseColor = sourceMaterial.baseColor;
+  543|      7|            properties.Emissive = sourceMaterial.emissive;
+  544|      7|            properties.Metallic = sourceMaterial.metallic;
+  545|      7|            properties.Roughness = sourceMaterial.specularGlossiness ? 1.0f - sourceMaterial.glossiness
+  ------------------
+  |  Branch (545:36): [True: 3, False: 4]
+  ------------------
+  546|      7|                                                                     : sourceMaterial.roughness;
+  547|      7|            properties.Model = ::Engine::Renderer::BrdfModel::GGX;
+  548|      7|            properties.Workflow = sourceMaterial.specularGlossiness
+  ------------------
+  |  Branch (548:35): [True: 3, False: 4]
+  ------------------
+  549|      7|                                      ? ::Engine::Renderer::MaterialWorkflow::SpecularGlossiness
+  550|      7|                                      : ::Engine::Renderer::MaterialWorkflow::MetallicRoughness;
+  551|      7|            if (sourceMaterial.specularGlossiness)
+  ------------------
+  |  Branch (551:17): [True: 3, False: 4]
+  ------------------
+  552|      3|                properties.SpecularF0 = sourceMaterial.specular;
+  553|      7|        }
+  554|      9|        if (!hasMaterialOverride)
+  ------------------
+  |  Branch (554:13): [True: 7, False: 2]
+  ------------------
+  555|      7|        {
+  556|      7|            properties.AlphaMode =
+  557|      7|                sourceMaterial.alphaMode == "MASK"    ? ::Engine::Renderer::MaterialAlphaMode::Mask
+  ------------------
+  |  Branch (557:17): [True: 4, False: 3]
+  ------------------
+  558|      7|                : sourceMaterial.alphaMode == "BLEND" ? ::Engine::Renderer::MaterialAlphaMode::Blend
+  ------------------
+  |  Branch (558:19): [True: 3, False: 0]
+  ------------------
+  559|      3|                                                      : ::Engine::Renderer::MaterialAlphaMode::Opaque;
+  560|      7|            properties.AlphaCutoff = sourceMaterial.alphaCutoff;
+  561|      7|            properties.DoubleSided = sourceMaterial.doubleSided;
+  562|      7|        }
+  563|      9|        properties.BaseColorTexCoord = sourceMaterial.baseColorTexCoord;
+  564|      9|        properties.MetallicRoughnessTexCoord = sourceMaterial.metallicRoughnessTexCoord;
+  565|      9|        properties.NormalTexCoord = sourceMaterial.normalTexCoord;
+  566|      9|        properties.OcclusionTexCoord = sourceMaterial.occlusionTexCoord;
+  567|      9|        properties.EmissiveTexCoord = sourceMaterial.emissiveTexCoord;
+  568|      9|        properties.NormalScale = sourceMaterial.normalScale;
+  569|      9|        properties.OcclusionStrength = sourceMaterial.occlusionStrength;
+  570|      9|        const auto setTransform = [](::Engine::Renderer::MaterialTextureTransform &target,
+  571|     45|                                     const ImportedTextureTransform &source) {
+  572|     45|            target.Offset = source.offset;
+  573|     45|            target.Scale = source.scale;
+  574|     45|            target.Rotation = source.rotation;
+  575|     45|        };
+  576|      9|        setTransform(properties.TextureTransforms[0], sourceMaterial.baseColorTransform);
+  577|      9|        setTransform(properties.TextureTransforms[1], sourceMaterial.normalTransform);
+  578|      9|        setTransform(properties.TextureTransforms[2], sourceMaterial.metallicRoughnessTransform);
+  579|      9|        setTransform(properties.TextureTransforms[3], sourceMaterial.occlusionTransform);
+  580|      9|        setTransform(properties.TextureTransforms[4], sourceMaterial.emissiveTransform);
+  581|      9|        auto material = m_Impl->m_MaterialSystem->CreateMaterial(properties);
+  582|      9|        if (!material)
+  ------------------
+  |  Branch (582:13): [True: 0, False: 9]
+  ------------------
+  583|      0|        {
+  584|      0|            for (const auto &registered : materials)
+  ------------------
+  |  Branch (584:41): [True: 0, False: 0]
+  ------------------
+  585|      0|                m_Impl->m_MaterialSystem->UnregisterMaterial(registered);
+  586|      0|            error = "renderer could not create a material for the imported model";
+  587|      0|            return nullptr;
+  588|      0|        }
+  589|      9|        auto baseColorTexture = m_Impl->m_ResourceManager->GetFallbackTexture(true);
+  590|      9|        auto normalTexture = m_Impl->m_ResourceManager->GetFallbackTexture(false);
+  591|      9|        auto metallicRoughnessTexture = m_Impl->m_ResourceManager->GetFallbackTexture(false);
+  592|      9|        auto occlusionTexture = m_Impl->m_ResourceManager->GetFallbackTexture(false);
+  593|      9|        auto emissiveTexture = m_Impl->m_ResourceManager->GetFallbackTexture(true);
+  594|      9|        const auto resolveTexture =
+  595|      9|            [&](int32_t textureIndex, bool srgb,
+  596|     37|                std::shared_ptr<::Engine::Renderer::TextureResource> &destination) -> bool {
+  597|     37|            if (textureIndex < 0)
+  ------------------
+  |  Branch (597:17): [True: 20, False: 17]
+  ------------------
+  598|     20|                return true;
+  599|     17|            if (static_cast<size_t>(textureIndex) >= model.textures.size())
+  ------------------
+  |  Branch (599:17): [True: 1, False: 16]
+  ------------------
+  600|      1|            {
+  601|      1|                error = "imported material references an invalid texture slot";
+  602|      1|                return false;
+  603|      1|            }
+  604|     16|            const auto &texture = model.textures[static_cast<size_t>(textureIndex)];
+  605|     16|            const int32_t imageIndex = texture.imageIndex;
+  606|     16|            if (imageIndex < 0 || static_cast<size_t>(imageIndex) >= model.images.size())
+  ------------------
+  |  Branch (606:17): [True: 0, False: 16]
+  |  Branch (606:35): [True: 1, False: 15]
+  ------------------
+  607|      1|            {
+  608|      1|                error = "imported texture references an invalid image slot";
+  609|      1|                return false;
+  610|      1|            }
+  611|     15|            const auto &image = model.images[static_cast<size_t>(imageIndex)];
+  612|     15|            destination = m_Impl->m_ResourceManager->GetOrCreateTexture(
+  613|     15|                guid + "/texture/" + std::to_string(textureIndex), generation, image, srgb, error, &texture);
+  614|     15|            return destination != nullptr;
+  615|     16|        };
+  616|      9|        if (!resolveTexture(sourceMaterial.baseColorTexture, true, baseColorTexture) ||
+  ------------------
+  |  Branch (616:13): [True: 2, False: 7]
+  ------------------
+  617|      7|            !resolveTexture(sourceMaterial.normalTexture, false, normalTexture) ||
+  ------------------
+  |  Branch (617:13): [True: 0, False: 7]
+  ------------------
+  618|      7|            !resolveTexture(sourceMaterial.metallicRoughnessTexture, sourceMaterial.specularGlossiness,
+  ------------------
+  |  Branch (618:13): [True: 0, False: 7]
+  ------------------
+  619|      7|                            metallicRoughnessTexture) ||
+  620|      7|            !resolveTexture(sourceMaterial.occlusionTexture, false, occlusionTexture) ||
+  ------------------
+  |  Branch (620:13): [True: 0, False: 7]
+  ------------------
+  621|      7|            !resolveTexture(sourceMaterial.emissiveTexture, true, emissiveTexture) ||
+  ------------------
+  |  Branch (621:13): [True: 0, False: 7]
+  ------------------
+  622|      7|            !m_Impl->m_MaterialSystem->SetPbrTextureBindings(material, baseColorTexture, normalTexture,
+  ------------------
+  |  Branch (622:13): [True: 0, False: 7]
+  ------------------
+  623|      7|                                                             metallicRoughnessTexture, occlusionTexture,
+  624|      7|                                                             emissiveTexture, true))
+  625|      2|        {
+  626|      2|            m_Impl->m_MaterialSystem->UnregisterMaterial(material);
+  627|      2|            for (const auto &registered : materials)
+  ------------------
+  |  Branch (627:41): [True: 0, False: 2]
+  ------------------
+  628|      0|                m_Impl->m_MaterialSystem->UnregisterMaterial(registered);
+  629|      2|            if (error.empty())
+  ------------------
+  |  Branch (629:17): [True: 0, False: 2]
+  ------------------
+  630|      0|                error = "renderer could not bind imported material textures";
+  631|      2|            return nullptr;
+  632|      2|        }
+  633|      7|        materials.push_back(std::move(material));
+  634|      7|    }
+  635|      4|    ::Engine::Renderer::MaterialProperties fallbackProperties;
+  636|      4|    fallbackProperties.Model = ::Engine::Renderer::BrdfModel::GGX;
+  637|      4|    auto fallback = m_Impl->m_MaterialSystem->CreateMaterial(fallbackProperties);
+  638|      4|    if (!fallback)
+  ------------------
+  |  Branch (638:9): [True: 0, False: 4]
+  ------------------
+  639|      0|    {
+  640|      0|        for (const auto &registered : materials)
+  ------------------
+  |  Branch (640:37): [True: 0, False: 0]
+  ------------------
+  641|      0|            m_Impl->m_MaterialSystem->UnregisterMaterial(registered);
+  642|      0|        error = "renderer could not create a fallback model material";
+  643|      0|        return nullptr;
+  644|      0|    }
+  645|      4|    materials.push_back(std::move(fallback));
+  646|       |
+  647|      4|    auto entity = std::make_shared<::Engine::Renderer::Entity>(nullptr, nullptr);
+  648|      4|    entity->ModelGuid = guid;
+  649|      4|    entity->Submeshes.reserve(pending.size());
+  650|      4|    for (const auto &source : pending)
+  ------------------
+  |  Branch (650:29): [True: 7, False: 3]
+  ------------------
+  651|      7|    {
+  652|      7|        if (source.MeshIndex >= meshes.size() || source.PrimitiveIndex >= meshes[source.MeshIndex].size())
+  ------------------
+  |  Branch (652:13): [True: 0, False: 7]
+  |  Branch (652:50): [True: 0, False: 7]
+  ------------------
+  653|      0|        {
+  654|      0|            for (const auto &registered : materials)
+  ------------------
+  |  Branch (654:41): [True: 0, False: 0]
+  ------------------
+  655|      0|                m_Impl->m_MaterialSystem->UnregisterMaterial(registered);
+  656|      0|            error = "uploaded mesh cache does not match imported model primitives";
+  657|      0|            return nullptr;
+  658|      0|        }
+  659|      7|        const size_t materialIndex =
+  660|      7|            source.MaterialIndex < 0 ? materials.size() - 1 : static_cast<size_t>(source.MaterialIndex);
+  ------------------
+  |  Branch (660:13): [True: 0, False: 7]
+  ------------------
+  661|      7|        if (materialIndex >= materials.size())
+  ------------------
+  |  Branch (661:13): [True: 1, False: 6]
+  ------------------
+  662|      1|        {
+  663|      1|            for (const auto &registered : materials)
+  ------------------
+  |  Branch (663:41): [True: 3, False: 1]
+  ------------------
+  664|      3|                m_Impl->m_MaterialSystem->UnregisterMaterial(registered);
+  665|      1|            error = "imported primitive references an invalid material slot";
+  666|      1|            return nullptr;
+  667|      1|        }
+  668|      6|        ::Engine::Renderer::Submesh submesh;
+  669|      6|        submesh.mesh = meshes[source.MeshIndex][source.PrimitiveIndex];
+  670|      6|        submesh.material = materials[materialIndex];
+  671|      6|        submesh.LocalTransform = source.LocalTransform;
+  672|      6|        submesh.BoundsMin = source.BoundsMin;
+  673|      6|        submesh.BoundsMax = source.BoundsMax;
+  674|      6|        submesh.MaterialSlot = source.MaterialIndex;
+  675|      6|        entity->Submeshes.push_back(std::move(submesh));
+  676|      6|    }
+  677|      3|    if (!entity->Submeshes.empty())
+  ------------------
+  |  Branch (677:9): [True: 3, False: 0]
+  ------------------
+  678|      3|        entity->material = entity->Submeshes.front().material;
+  679|      3|    return entity;
+  680|      4|}
+  681|       |
+  682|       |void RenderSystem::EndFrame()
+  683|      6|{
+  684|      6|    if (!m_Impl->m_CommandList || !m_Impl->m_FrameActive)
+  ------------------
+  |  Branch (684:9): [True: 1, False: 5]
+  |  Branch (684:35): [True: 1, False: 4]
+  ------------------
+  685|      2|    {
+  686|      2|        return;
+  687|      2|    }
+  688|       |
+  689|      4|    if (!m_Impl->m_RenderGraph->Compile())
+  ------------------
+  |  Branch (689:9): [True: 0, False: 4]
+  ------------------
+  690|      0|    {
+  691|      0|        const std::string failure = "compile: " + m_Impl->m_RenderGraph->GetLastError();
+  692|      0|        if (failure != m_Impl->m_LastRenderGraphFailure)
+  ------------------
+  |  Branch (692:13): [True: 0, False: 0]
+  ------------------
+  693|      0|            ENGINE_LOG_ERROR_CODE("Render", "render.graph.compile_failed",
+  694|      0|                                  "Render graph compilation failed | error: {}", failure);
+  695|      0|        m_Impl->m_LastRenderGraphFailure = failure;
+  696|      0|        ClearSubmittedTargets();
+  697|      0|        m_Impl->m_FrameContext.EndGpuTiming(m_Impl->m_CommandList);
+  698|      0|        m_Impl->m_CommandList->close();
+  699|      0|        BackendDevice(m_Impl->m_RenderBackend)->executeCommandList(m_Impl->m_CommandList);
+  700|      0|        m_Impl->m_RenderBackend->EndGpuEvent();
+  701|      0|        m_Impl->m_FrameActive = false;
+  702|      0|        m_Impl->m_FrameContext.MarkSubmitted();
+  703|      0|        m_Impl->m_ResourceManager->AdvanceSubmittedFrame(m_Impl->m_FrameContext.GetSubmittedFrames(),
+  704|      0|                                                         m_Impl->m_FrameContext.GetCompletedFrames());
+  705|      0|        return;
+  706|      0|    }
+  707|      4|    if (m_Impl->m_LastRenderGraphFailure.starts_with("compile: "))
+  ------------------
+  |  Branch (707:9): [True: 0, False: 4]
+  ------------------
+  708|      0|        m_Impl->m_LastRenderGraphFailure.clear();
+  709|      4|    if (!m_Impl->m_RenderGraph->Execute(m_Impl->m_CommandList))
+  ------------------
+  |  Branch (709:9): [True: 1, False: 3]
+  ------------------
+  710|      1|    {
+  711|      1|        const std::string failure = "execute: " + m_Impl->m_RenderGraph->GetLastError();
+  712|      1|        if (failure != m_Impl->m_LastRenderGraphFailure)
+  ------------------
+  |  Branch (712:13): [True: 1, False: 0]
+  ------------------
+  713|      1|            ENGINE_LOG_ERROR_CODE("Render", "render.graph.execute_failed",
+  714|      1|                                  "Render graph execution failed | error: {}", failure);
+  715|      1|        m_Impl->m_LastRenderGraphFailure = failure;
+  716|      1|        ClearSubmittedTargets();
+  717|      1|    }
+  718|      3|    else
+  719|      3|        m_Impl->m_LastRenderGraphFailure.clear();
+  720|       |
+  721|      4|    m_Impl->m_FrameContext.EndGpuTiming(m_Impl->m_CommandList);
+  722|      4|    m_Impl->m_CommandList->close();
+  723|      4|    BackendDevice(m_Impl->m_RenderBackend)->executeCommandList(m_Impl->m_CommandList);
+  724|      4|    m_Impl->m_RenderBackend->EndGpuEvent();
+  725|      4|    m_Impl->m_FrameActive = false;
+  726|      4|    m_Impl->m_FrameContext.MarkSubmitted();
+  727|      4|    m_Impl->m_ResourceManager->AdvanceSubmittedFrame(m_Impl->m_FrameContext.GetSubmittedFrames(),
+  728|      4|                                                     m_Impl->m_FrameContext.GetCompletedFrames());
+  729|      4|}
+  730|       |
+  731|       |std::optional<Engine::LightId> RenderSystem::PickLight(float viewportX, float viewportY) const
+  732|      0|{
+  733|      0|    if (!m_Impl->m_SceneRenderer)
+  ------------------
+  |  Branch (733:9): [True: 0, False: 0]
+  ------------------
+  734|      0|    {
+  735|      0|        return std::nullopt;
+  736|      0|    }
+  737|       |
+  738|      0|    for (const auto &view : m_Impl->m_FrameContext.GetViews())
+  ------------------
+  |  Branch (738:27): [True: 0, False: 0]
+  ------------------
+  739|      0|    {
+  740|      0|        if (view && view->ViewType == ::Engine::Renderer::RenderView::Type::Main)
+  ------------------
+  |  Branch (740:13): [True: 0, False: 0]
+  |  Branch (740:21): [True: 0, False: 0]
+  ------------------
+  741|      0|        {
+  742|      0|            if (const auto lightId = m_Impl->m_SceneRenderer->PickLight(*view, viewportX, viewportY))
+  ------------------
+  |  Branch (742:28): [True: 0, False: 0]
+  ------------------
+  743|      0|            {
+  744|      0|                return lightId;
+  745|      0|            }
+  746|      0|        }
+  747|      0|    }
+  748|       |
+  749|      0|    return std::nullopt;
+  750|      0|}
+  751|       |
+  752|       |void RenderSystem::ClearFrameBuffer()
+  753|      4|{
+  754|      4|    if (!m_Impl->m_CommandList)
+  ------------------
+  |  Branch (754:9): [True: 0, False: 4]
+  ------------------
+  755|      0|    {
+  756|      0|        return;
+  757|      0|    }
+  758|       |
+  759|      4|    auto *frameBuffer = static_cast<nvrhi::IFramebuffer *>(m_Impl->m_RenderBackend->GetDefaultFramebuffer());
+  760|       |
+  761|      4|    if (!frameBuffer)
+  ------------------
+  |  Branch (761:9): [True: 4, False: 0]
+  ------------------
+  762|      4|    {
+  763|      4|        return;
+  764|      4|    }
+  765|       |
+  766|      0|    nvrhi::ITexture *colorTex = frameBuffer->getDesc().colorAttachments[0].texture;
+  767|      0|    if (colorTex)
+  ------------------
+  |  Branch (767:9): [True: 0, False: 0]
+  ------------------
+  768|      0|    {
+  769|      0|        m_Impl->m_CommandList->clearTextureFloat(colorTex, nvrhi::AllSubresources,
+  770|      0|                                                 nvrhi::Color(0.1f, 0.1f, 0.1f, 1.0f));
+  771|      0|    }
+  772|       |
+  773|      0|    nvrhi::ITexture *depthTex = frameBuffer->getDesc().depthAttachment.texture;
+  774|      0|    if (depthTex)
+  ------------------
+  |  Branch (774:9): [True: 0, False: 0]
+  ------------------
+  775|      0|    {
+  776|      0|        m_Impl->m_CommandList->clearDepthStencilTexture(depthTex, nvrhi::AllSubresources, true, 1.0f, false,
+  777|      0|                                                        0);
+  778|      0|    }
+  779|      0|}
+  780|       |
+  781|       |void RenderSystem::ClearSubmittedTargets()
+  782|      1|{
+  783|      1|    if (!m_Impl->m_CommandList || !m_Impl->m_RenderGraph)
+  ------------------
+  |  Branch (783:9): [True: 0, False: 1]
+  |  Branch (783:35): [True: 0, False: 1]
+  ------------------
+  784|      0|        return;
+  785|       |
+  786|      1|    for (::Engine::Renderer::RenderView *view : m_Impl->m_RenderGraph->GetBlackboard().GetSceneViews())
+  ------------------
+  |  Branch (786:47): [True: 1, False: 1]
+  ------------------
+  787|      1|    {
+  788|      1|        if (!view || !view->TargetFramebuffer)
+  ------------------
+  |  Branch (788:13): [True: 0, False: 1]
+  |  Branch (788:22): [True: 1, False: 0]
+  ------------------
+  789|      1|            continue;
+  790|      0|        const nvrhi::FramebufferDesc &desc = view->TargetFramebuffer->getDesc();
+  791|      0|        for (const nvrhi::FramebufferAttachment &attachment : desc.colorAttachments)
+  ------------------
+  |  Branch (791:61): [True: 0, False: 0]
+  ------------------
+  792|      0|        {
+  793|      0|            if (!attachment.texture)
+  ------------------
+  |  Branch (793:17): [True: 0, False: 0]
+  ------------------
+  794|      0|                continue;
+  795|      0|            m_Impl->m_CommandList->setTextureState(attachment.texture, attachment.subresources,
+  796|      0|                                                   nvrhi::ResourceStates::RenderTarget);
+  797|      0|            m_Impl->m_CommandList->commitBarriers();
+  798|      0|            m_Impl->m_CommandList->clearTextureFloat(attachment.texture, attachment.subresources,
+  799|      0|                                                     nvrhi::Color(0.15f, 0.0f, 0.15f, 1.0f));
+  800|      0|        }
+  801|      0|        if (desc.depthAttachment.valid() && desc.depthAttachment.texture)
+  ------------------
+  |  Branch (801:13): [True: 0, False: 0]
+  |  Branch (801:45): [True: 0, False: 0]
+  ------------------
+  802|      0|        {
+  803|      0|            m_Impl->m_CommandList->setTextureState(desc.depthAttachment.texture,
+  804|      0|                                                   desc.depthAttachment.subresources,
+  805|      0|                                                   nvrhi::ResourceStates::DepthWrite);
+  806|      0|            m_Impl->m_CommandList->commitBarriers();
+  807|      0|            m_Impl->m_CommandList->clearDepthStencilTexture(
+  808|      0|                desc.depthAttachment.texture, desc.depthAttachment.subresources, true, 1.0f, false, 0);
+  809|      0|        }
+  810|      0|    }
+  811|      1|}
+  812|       |} // namespace Engine
+

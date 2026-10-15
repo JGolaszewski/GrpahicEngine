@@ -1,10 +1,13 @@
-#include "rendering/include/SceneRenderer.h"
+#include "SceneRenderer.h"
+#include "MaterialBackend.h"
+#include "MeshBackend.h"
+#include "PipelineCache.h"
+#include "ShaderFactory.h"
 #include "runtime/include/LogMacros.h"
 
 #include <algorithm>
 #include <chrono>
 #include <cmath>
-#include <cstring>
 #include <limits>
 
 #include "scene/include/Scene.h"
@@ -15,10 +18,60 @@
 
 namespace
 {
+nvrhi::PrimitiveType ToBackendPrimitiveType(::Engine::Renderer::PrimitiveTopology topology)
+{
+    switch (topology)
+    {
+    case ::Engine::Renderer::PrimitiveTopology::Triangles:
+        return nvrhi::PrimitiveType::TriangleList;
+    case ::Engine::Renderer::PrimitiveTopology::Lines:
+        return nvrhi::PrimitiveType::LineList;
+    case ::Engine::Renderer::PrimitiveTopology::LineStrip:
+        return nvrhi::PrimitiveType::LineStrip;
+    case ::Engine::Renderer::PrimitiveTopology::Points:
+        return nvrhi::PrimitiveType::PointList;
+    }
+    return nvrhi::PrimitiveType::TriangleList;
+}
+
 struct DebugViewData
 {
     DirectX::XMFLOAT4X4 ViewProjection;
 };
+
+bool Equal(const DirectX::XMFLOAT3 &left, const DirectX::XMFLOAT3 &right)
+{
+    return left.x == right.x && left.y == right.y && left.z == right.z;
+}
+
+bool Equal(const DirectX::XMFLOAT4X4 &left, const DirectX::XMFLOAT4X4 &right)
+{
+    for (size_t row = 0; row < 4; ++row)
+    {
+        for (size_t column = 0; column < 4; ++column)
+        {
+            if (left.m[row][column] != right.m[row][column])
+            {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+nvrhi::RasterCullMode ToBackendCullMode(::Engine::Renderer::FaceCullMode mode)
+{
+    switch (mode)
+    {
+    case ::Engine::Renderer::FaceCullMode::None:
+        return nvrhi::RasterCullMode::None;
+    case ::Engine::Renderer::FaceCullMode::Front:
+        return nvrhi::RasterCullMode::Front;
+    case ::Engine::Renderer::FaceCullMode::Back:
+        return nvrhi::RasterCullMode::Back;
+    }
+    return nvrhi::RasterCullMode::Back;
+}
 
 DirectX::XMVECTOR NormalizeOrDefault(const DirectX::XMFLOAT3 &value)
 {
@@ -31,7 +84,7 @@ DirectX::XMVECTOR NormalizeOrDefault(const DirectX::XMFLOAT3 &value)
     return DirectX::XMVector3Normalize(vector);
 }
 
-static_assert(sizeof(::Engine::Renderer::PerObjectGpuData) == Engine::Scene::Engine::Renderer::PerObjectDataStride);
+static_assert(sizeof(::Engine::Renderer::PerObjectGpuData) == Engine::PerObjectDataStride);
 
 DirectX::XMMATRIX ComputeSpotLightViewProj(const ::Engine::Renderer::DirectionalLightData &lightData)
 {
@@ -71,15 +124,17 @@ DirectX::XMMATRIX ComputeSpotLightViewProj(const ::Engine::Renderer::Directional
 
 // --- Initialization ---
 
-Engine::SceneRenderer::SceneRenderer(nvrhi::IDevice*)
+Engine::SceneRenderer::SceneRenderer(nvrhi::IDevice *) : m_PipelineCache(std::make_unique<PipelineCache>())
 {
 }
 
-void Engine::Scene::Engine::Renderer::Init(nvrhi::IDevice *device, ::Engine::Renderer::MaterialSystem *materialSystem,
+Engine::SceneRenderer::~SceneRenderer() = default;
+
+void Engine::SceneRenderer::Init(nvrhi::IDevice *device, ::Engine::Renderer::MaterialSystem *materialSystem,
                                  ::Engine::Renderer::ShaderFactory *shaderFactory)
 {
     m_MaterialSystem = materialSystem;
-    m_PipelineCache.Init(device);
+    m_PipelineCache->Init(device);
 
     m_Device = device;
 
@@ -127,7 +182,7 @@ void Engine::Scene::Engine::Renderer::Init(nvrhi::IDevice *device, ::Engine::Ren
     m_ShadowSampler = device->createSampler(shadowSamplerDesc);
 }
 
-void Engine::Scene::Engine::Renderer::EnsureDebugBuffer(nvrhi::BufferHandle &buffer, uint64_t &capacity,
+void Engine::SceneRenderer::EnsureDebugBuffer(nvrhi::BufferHandle &buffer, uint64_t &capacity,
                                               size_t vertexCount, const char *debugName)
 {
     if (vertexCount == 0)
@@ -135,7 +190,8 @@ void Engine::Scene::Engine::Renderer::EnsureDebugBuffer(nvrhi::BufferHandle &buf
         return;
     }
 
-    const uint64_t requiredBytes = static_cast<uint64_t>(vertexCount) * sizeof(::Engine::Renderer::DebugVertex);
+    const uint64_t requiredBytes =
+        static_cast<uint64_t>(vertexCount) * sizeof(::Engine::Renderer::DebugVertex);
     if (buffer && capacity >= requiredBytes)
     {
         return;
@@ -162,7 +218,7 @@ void Engine::Scene::Engine::Renderer::EnsureDebugBuffer(nvrhi::BufferHandle &buf
     }
 }
 
-nvrhi::GraphicsPipelineHandle Engine::Scene::Engine::Renderer::GetDebugPipeline(
+nvrhi::GraphicsPipelineHandle Engine::SceneRenderer::GetDebugPipeline(
     const nvrhi::FramebufferInfo &framebuffer, nvrhi::PrimitiveType primitiveType,
     ::Engine::Renderer::DebugDepthMode depthMode)
 {
@@ -200,14 +256,16 @@ nvrhi::GraphicsPipelineHandle Engine::Scene::Engine::Renderer::GetDebugPipeline(
         .setDestBlendAlpha(nvrhi::BlendFactor::InvSrcAlpha);
     key.BlendState.setRenderTarget(0, blendTarget);
 
-    return m_PipelineCache.GetOrCreatePipeline(key, framebuffer);
+    return m_PipelineCache->GetOrCreatePipeline(key, framebuffer);
 }
 
-void Engine::Scene::Engine::Renderer::RenderDebugGeometry(nvrhi::ICommandList *commandList,
+void Engine::SceneRenderer::RenderDebugGeometry(nvrhi::ICommandList *commandList,
                                                 const ::Engine::Renderer::RenderView &view)
 {
     if (!commandList || !view.TargetFramebuffer || view.DebugGeometryData.Empty() || !m_DebugViewBuffer ||
-        !m_DebugBindingLayout)
+        !m_DebugBindingLayout ||
+        view.ViewportWidth > static_cast<uint32_t>(std::numeric_limits<int>::max()) ||
+        view.ViewportHeight > static_cast<uint32_t>(std::numeric_limits<int>::max()))
     {
         return;
     }
@@ -239,10 +297,12 @@ void Engine::Scene::Engine::Renderer::RenderDebugGeometry(nvrhi::ICommandList *c
     const nvrhi::FramebufferInfo framebufferInfo = view.TargetFramebuffer->getFramebufferInfo();
     const nvrhi::Viewport viewport =
         nvrhi::Viewport(static_cast<float>(view.ViewportWidth), static_cast<float>(view.ViewportHeight));
-    const nvrhi::Rect scissor = nvrhi::Rect(view.ViewportWidth, view.ViewportHeight);
+    const nvrhi::Rect scissor =
+        nvrhi::Rect(static_cast<int>(view.ViewportWidth), static_cast<int>(view.ViewportHeight));
 
     const auto drawVertices = [&](const std::vector<::Engine::Renderer::DebugVertex> &vertices,
-                                  nvrhi::BufferHandle vertexBuffer, nvrhi::PrimitiveType primitiveType) {
+                                  const nvrhi::BufferHandle &vertexBuffer,
+                                  nvrhi::PrimitiveType primitiveType) {
         if (vertices.empty() || !vertexBuffer)
         {
             return;
@@ -276,7 +336,7 @@ void Engine::Scene::Engine::Renderer::RenderDebugGeometry(nvrhi::ICommandList *c
     drawVertices(geometry.GetLineVertices(), m_DebugLineBuffer, nvrhi::PrimitiveType::LineList);
 }
 
-std::optional<Engine::LightId> Engine::Scene::Engine::Renderer::PickLight(const ::Engine::Renderer::RenderView &view,
+std::optional<Engine::LightId> Engine::SceneRenderer::PickLight(const ::Engine::Renderer::RenderView &view,
                                                                 float viewportX, float viewportY) const
 {
     if (view.ViewportWidth == 0 || view.ViewportHeight == 0 || viewportX < 0.0f || viewportY < 0.0f ||
@@ -392,7 +452,7 @@ std::optional<Engine::LightId> Engine::Scene::Engine::Renderer::PickLight(const 
 
 // --- Uploads ---
 
-size_t Engine::Scene::Engine::Renderer::EstimateDrawCount(const ::Engine::Renderer::FrameBlackboard &blackboard) const
+size_t Engine::SceneRenderer::EstimateDrawCount(const ::Engine::Renderer::FrameBlackboard &blackboard) const
 {
     size_t count = 0;
     const auto accumulate = [&count](const std::vector<::Engine::Renderer::RenderView *> &views) {
@@ -419,7 +479,8 @@ size_t Engine::Scene::Engine::Renderer::EstimateDrawCount(const ::Engine::Render
     return count;
 }
 
-bool Engine::Scene::Engine::Renderer::EnsureLightBuffers(size_t viewCount, ::Engine::Renderer::FrameContext &frameContext)
+bool Engine::SceneRenderer::EnsureLightBuffers(size_t viewCount,
+                                               ::Engine::Renderer::FrameContext &frameContext)
 {
     for (size_t viewIndex = 0; viewIndex < viewCount; ++viewIndex)
     {
@@ -431,20 +492,18 @@ bool Engine::Scene::Engine::Renderer::EnsureLightBuffers(size_t viewCount, ::Eng
     return true;
 }
 
-nvrhi::BufferHandle Engine::Scene::Engine::Renderer::GetLightBuffer(size_t viewIndex,
-                                                          ::Engine::Renderer::FrameContext &frameContext) const
+nvrhi::BufferHandle Engine::SceneRenderer::GetLightBuffer(
+    size_t viewIndex, ::Engine::Renderer::FrameContext &frameContext) const
 {
     return frameContext.GetOrCreateUploadBuffer(
         "PerViewLights/" + std::to_string(viewIndex), sizeof(::Engine::Renderer::LightsCBData),
         static_cast<uint32_t>(::Engine::Renderer::FrameContext::FramesInFlight + 1));
 }
 
-nvrhi::BindingSetHandle Engine::Scene::Engine::Renderer::GetSceneBindingSet(size_t viewIndex,
-                                                                  nvrhi::BufferHandle lightBuffer,
-                                                                  nvrhi::TextureHandle shadowMap,
-                                                                  nvrhi::SamplerHandle shadowSampler,
-                                                                  nvrhi::BufferHandle cameraBuffer,
-                                                                  ::Engine::Renderer::FrameDiagnostics &diagnostics)
+nvrhi::BindingSetHandle Engine::SceneRenderer::GetSceneBindingSet(
+    size_t viewIndex, nvrhi::BufferHandle lightBuffer, nvrhi::TextureHandle shadowMap,
+    nvrhi::SamplerHandle shadowSampler, nvrhi::BufferHandle cameraBuffer,
+    ::Engine::Renderer::FrameDiagnostics &diagnostics)
 {
     if (!m_Device || !lightBuffer || !shadowMap || !shadowSampler || !cameraBuffer || !m_SceneBindingLayout)
         return nullptr;
@@ -476,7 +535,7 @@ nvrhi::BindingSetHandle Engine::Scene::Engine::Renderer::GetSceneBindingSet(size
     return cache.Bindings;
 }
 
-bool Engine::Scene::Engine::Renderer::EnsurePerObjectResources(size_t maxDrawCount,
+bool Engine::SceneRenderer::EnsurePerObjectResources(size_t maxDrawCount,
                                                      ::Engine::Renderer::FrameContext &frameContext,
                                                      ::Engine::Renderer::FrameDiagnostics &diagnostics)
 {
@@ -504,7 +563,7 @@ bool Engine::Scene::Engine::Renderer::EnsurePerObjectResources(size_t maxDrawCou
     return true;
 }
 
-void Engine::Scene::Engine::Renderer::CullAndFillView(::Engine::Renderer::RenderView *view)
+void Engine::SceneRenderer::CullAndFillView(::Engine::Renderer::RenderView *view)
 {
     if (!view || !view->TargetScene)
         return;
@@ -552,11 +611,10 @@ void Engine::Scene::Engine::Renderer::CullAndFillView(::Engine::Renderer::Render
             const DirectX::XMMATRIX world = local * entity->transform.GetWorldMat();
             DirectX::XMFLOAT4X4 worldTransform;
             DirectX::XMStoreFloat4x4(&worldTransform, world);
-            const bool boundsCacheMatches =
-                submesh.WorldBoundsCached &&
-                std::memcmp(&worldTransform, &submesh.CachedWorldTransform, sizeof(worldTransform)) == 0 &&
-                std::memcmp(&submesh.BoundsMin, &submesh.CachedBoundsMin, sizeof(submesh.BoundsMin)) == 0 &&
-                std::memcmp(&submesh.BoundsMax, &submesh.CachedBoundsMax, sizeof(submesh.BoundsMax)) == 0;
+            const bool boundsCacheMatches = submesh.WorldBoundsCached &&
+                                            Equal(worldTransform, submesh.CachedWorldTransform) &&
+                                            Equal(submesh.BoundsMin, submesh.CachedBoundsMin) &&
+                                            Equal(submesh.BoundsMax, submesh.CachedBoundsMax);
             if (!boundsCacheMatches)
             {
                 const DirectX::XMFLOAT3 localCenter = {(submesh.BoundsMin.x + submesh.BoundsMax.x) * 0.5f,
@@ -610,14 +668,16 @@ void Engine::Scene::Engine::Renderer::CullAndFillView(::Engine::Renderer::Render
 
             auto packet = CreateRenderPacket(submesh.mesh.get(), submesh.material.get());
             packet.PerObjectData = perObjectData;
-            const ::Engine::Renderer::MaterialProperties materialProperties = submesh.material->GetProperties();
+            const ::Engine::Renderer::MaterialProperties materialProperties =
+                submesh.material->GetProperties();
             if (view->ViewType == ::Engine::Renderer::RenderView::Type::Shadow &&
                 materialProperties.AlphaMode == ::Engine::Renderer::MaterialAlphaMode::Blend)
             {
                 return;
             }
-            packet.ShadowAlphaTest = view->ViewType == ::Engine::Renderer::RenderView::Type::Shadow &&
-                                     materialProperties.AlphaMode == ::Engine::Renderer::MaterialAlphaMode::Mask;
+            packet.ShadowAlphaTest =
+                view->ViewType == ::Engine::Renderer::RenderView::Type::Shadow &&
+                materialProperties.AlphaMode == ::Engine::Renderer::MaterialAlphaMode::Mask;
             packet.Queue = view->ViewType == ::Engine::Renderer::RenderView::Type::Shadow
                                ? ::Engine::Renderer::RenderQueueType::Opaque
                            : materialProperties.AlphaMode == ::Engine::Renderer::MaterialAlphaMode::Mask
@@ -631,7 +691,7 @@ void Engine::Scene::Engine::Renderer::CullAndFillView(::Engine::Renderer::Render
             m_SubmissionStats.PerObjectBytesUsed += PerObjectDataStride;
 
             Engine::PipelineKey key;
-            key.PrimType = submesh.mesh->GetPrimitiveType();
+            key.PrimType = ToBackendPrimitiveType(submesh.mesh->GetPrimitiveTopology());
             key.VS = m_MaterialSystem->GetStandardVS();
             key.PerObjectLayout = m_PerObjectBindingLayout;
             key.SceneLayout = m_SceneBindingLayout;
@@ -657,7 +717,7 @@ void Engine::Scene::Engine::Renderer::CullAndFillView(::Engine::Renderer::Render
                 key.DepthTest = !entity->DisableDepthTest;
                 key.CullMode = entity->ForceWireframe || materialProperties.DoubleSided
                                    ? nvrhi::RasterCullMode::None
-                                   : entity->CullMode;
+                                   : ToBackendCullMode(entity->CullMode);
                 if (packet.Queue == ::Engine::Renderer::RenderQueueType::Transparent)
                 {
                     nvrhi::BlendState::RenderTarget blendTarget;
@@ -671,7 +731,7 @@ void Engine::Scene::Engine::Renderer::CullAndFillView(::Engine::Renderer::Render
             }
             packet.Pipeline = packet.ShadowAlphaTest && !m_ShadowMaskPS
                                   ? nullptr
-                                  : m_PipelineCache.GetOrCreatePipeline(key, fbInfo);
+                                  : m_PipelineCache->GetOrCreatePipeline(key, fbInfo);
             switch (packet.Queue)
             {
             case ::Engine::Renderer::RenderQueueType::Masked:
@@ -712,22 +772,22 @@ void Engine::Scene::Engine::Renderer::CullAndFillView(::Engine::Renderer::Render
 
 // --- RenderPacket creation ---
 
-::Engine::Renderer::RenderPacket Engine::Scene::Engine::Renderer::CreateRenderPacket(const ::Engine::Renderer::Mesh *mesh,
-                                                                 const ::Engine::Renderer::Material *material)
+::Engine::Renderer::RenderPacket Engine::SceneRenderer::CreateRenderPacket(
+    const ::Engine::Renderer::Mesh *mesh, const ::Engine::Renderer::Material *material)
 {
     ::Engine::Renderer::RenderPacket packet;
-    packet.VertexBuffer = mesh->GetVertexBuffer();
-    packet.IndexBuffer = mesh->GetIndexBuffer();
+    packet.VertexBuffer = ::Engine::Renderer::MeshBackendAccess::GetVertexBuffer(*mesh);
+    packet.IndexBuffer = ::Engine::Renderer::MeshBackendAccess::GetIndexBuffer(*mesh);
     packet.VertexCount = mesh->GetVertexCount();
     packet.IndexCount = mesh->GetIndexCount();
-    packet.MaterialBindings = material->GetBindingSet();
+    packet.MaterialBindings = ::Engine::Renderer::MaterialBackendAccess::GetBindingSet(*material);
     packet.BaseVertexOffset = 0;
     packet.StartIndexLocation = 0;
 
     return packet;
 }
 
-void Engine::Scene::Engine::Renderer::SortViewQueues(::Engine::Renderer::RenderView *view)
+void Engine::SceneRenderer::SortViewQueues(::Engine::Renderer::RenderView *view)
 {
     if (!view)
         return;
@@ -745,16 +805,18 @@ void Engine::Scene::Engine::Renderer::SortViewQueues(::Engine::Renderer::RenderV
 
     std::stable_sort(view->Queues.Opaque.begin(), view->Queues.Opaque.end(), lessBySubmissionState);
     std::stable_sort(view->Queues.Masked.begin(), view->Queues.Masked.end(), lessBySubmissionState);
-    std::stable_sort(view->Queues.Transparent.begin(), view->Queues.Transparent.end(),
-                     [](const ::Engine::Renderer::RenderPacket &left, const ::Engine::Renderer::RenderPacket &right) {
-                         return left.CameraDepth > right.CameraDepth;
-                     });
+    std::stable_sort(
+        view->Queues.Transparent.begin(), view->Queues.Transparent.end(),
+        [](const ::Engine::Renderer::RenderPacket &left, const ::Engine::Renderer::RenderPacket &right) {
+            return left.CameraDepth > right.CameraDepth;
+        });
 }
 
 // --- View Building ---
 
-void Engine::Scene::Engine::Renderer::BuildViews(::Engine::Renderer::FrameBlackboard &blackboard,
-                                       nvrhi::ICommandList *commandList, ::Engine::Renderer::FrameContext &frameContext,
+void Engine::SceneRenderer::BuildViews(::Engine::Renderer::FrameBlackboard &blackboard,
+                                       nvrhi::ICommandList *commandList,
+                                       ::Engine::Renderer::FrameContext &frameContext,
                                        ::Engine::Renderer::FrameDiagnostics &diagnostics)
 {
     if (!commandList)
@@ -763,11 +825,12 @@ void Engine::Scene::Engine::Renderer::BuildViews(::Engine::Renderer::FrameBlackb
     }
 
     m_SubmissionStats = {};
-    m_PipelineCache.BeginFrame();
+    m_PipelineCache->BeginFrame();
     if (!EnsurePerObjectResources(EstimateDrawCount(blackboard), frameContext, diagnostics))
     {
-        ENGINE_LOG_ERROR("Render", "Per-object frame resources unavailable | estimated_draw_count: {} | frame_index: {}",
-                         EstimateDrawCount(blackboard), frameContext.GetFrameIndex());
+        ENGINE_LOG_ERROR(
+            "Render", "Per-object frame resources unavailable | estimated_draw_count: {} | frame_index: {}",
+            EstimateDrawCount(blackboard), frameContext.GetFrameIndex());
         return;
     }
 
@@ -805,13 +868,13 @@ void Engine::Scene::Engine::Renderer::BuildViews(::Engine::Renderer::FrameBlackb
             BuildDebugGeometry(view);
         }
     }
-    const PipelineCache::FrameStats &pipelineStats = m_PipelineCache.GetFrameStats();
+    const PipelineCache::FrameStats &pipelineStats = m_PipelineCache->GetFrameStats();
     m_SubmissionStats.PipelineCacheHits = pipelineStats.Hits;
     m_SubmissionStats.PipelineCacheMisses = pipelineStats.Misses;
     m_SubmissionStats.PipelineCreations = pipelineStats.Creations;
 }
 
-void Engine::Scene::Engine::Renderer::BuildDebugGeometry(::Engine::Renderer::RenderView *view)
+void Engine::SceneRenderer::BuildDebugGeometry(::Engine::Renderer::RenderView *view)
 {
     if (!view || view->ViewType != ::Engine::Renderer::RenderView::Type::Main || !view->TargetScene)
     {
@@ -819,10 +882,10 @@ void Engine::Scene::Engine::Renderer::BuildDebugGeometry(::Engine::Renderer::Ren
     }
 
     ::Engine::Renderer::DebugGeometryBuilder::BuildScene(*view->TargetScene, view->DebugSettings,
-                                               view->DebugGeometryData);
+                                                         view->DebugGeometryData);
 }
 
-void Engine::Scene::Engine::Renderer::BuildShadowData(Engine::Scene *scene,
+void Engine::SceneRenderer::BuildShadowData(Engine::Scene *scene,
                                             const std::vector<::Engine::Renderer::RenderView *> &shadowViews,
                                             uint32_t firstShadowSlot, uint32_t maxShadowedLights)
 {
@@ -853,7 +916,7 @@ void Engine::Scene::Engine::Renderer::BuildShadowData(Engine::Scene *scene,
     }
 }
 
-uint32_t Engine::Scene::Engine::Renderer::CountShadowCasters(const Engine::Scene *scene, uint32_t limit) const
+uint32_t Engine::SceneRenderer::CountShadowCasters(const Engine::Scene *scene, uint32_t limit) const
 {
     if (!scene || limit == 0)
         return 0;
@@ -872,7 +935,7 @@ uint32_t Engine::Scene::Engine::Renderer::CountShadowCasters(const Engine::Scene
     return count;
 }
 
-void Engine::Scene::Engine::Renderer::BuildLighting(Engine::Scene *scene,
+void Engine::SceneRenderer::BuildLighting(Engine::Scene *scene,
                                           const std::vector<::Engine::Renderer::RenderView *> &shadowViews,
                                           std::vector<::Engine::Renderer::DirectionalLightData> &lights)
 {

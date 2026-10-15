@@ -1,0 +1,3 @@
+[0/2] Re-checking globbed directories...
+[1/3] Building CXX object GraphicEngineCore\CMakeFiles\AssetManagerTests.dir\tests\AssetManagerTests.cpp.obj
+[2/3] Linking CXX executable bin\AssetManagerTests.exe

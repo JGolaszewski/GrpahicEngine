@@ -1,0 +1,1334 @@
+    1|       |#include "assets/include/AssetManager.h"
+    2|       |#include "runtime/include/LogEngine.h"
+    3|       |#include "runtime/include/LogMacros.h"
+    4|       |
+    5|       |#include <nlohmann/json.hpp>
+    6|       |
+    7|       |#include <array>
+    8|       |#include <cctype>
+    9|       |#include <fstream>
+   10|       |#include <limits>
+   11|       |#include <random>
+   12|       |#include <vector>
+   13|       |
+   14|       |namespace Engine
+   15|       |{
+   16|       |namespace
+   17|       |{
+   18|       |using Json = nlohmann::json;
+   19|       |constexpr uint32_t ModelImporterVersion = 1;
+   20|       |constexpr uint32_t TextureImporterVersion = 1;
+   21|       |
+   22|       |bool IsGuid(const std::string &guid)
+   23|     36|{
+   24|     36|    if (guid.size() != 36)
+  ------------------
+  |  Branch (24:9): [True: 7, False: 29]
+  ------------------
+   25|      7|        return false;
+   26|  1.07k|    for (size_t i = 0; i < guid.size(); ++i)
+  ------------------
+  |  Branch (26:24): [True: 1.04k, False: 29]
+  ------------------
+   27|  1.04k|    {
+   28|  1.04k|        if (i == 8 || i == 13 || i == 18 || i == 23)
+  ------------------
+  |  Branch (28:13): [True: 29, False: 1.01k]
+  |  Branch (28:23): [True: 29, False: 986]
+  |  Branch (28:34): [True: 29, False: 957]
+  |  Branch (28:45): [True: 29, False: 928]
+  ------------------
+   29|    116|        {
+   30|    116|            if (guid[i] != '-')
+  ------------------
+  |  Branch (30:17): [True: 0, False: 116]
+  ------------------
+   31|      0|                return false;
+   32|    116|        }
+   33|    928|        else if (!std::isxdigit(static_cast<unsigned char>(guid[i])))
+  ------------------
+  |  Branch (33:18): [True: 0, False: 928]
+  ------------------
+   34|      0|        {
+   35|      0|            return false;
+   36|      0|        }
+   37|  1.04k|    }
+   38|     29|    return true;
+   39|     29|}
+   40|       |
+   41|       |std::string NewGuid()
+   42|      9|{
+   43|      9|    std::array<uint8_t, 16> bytes{};
+   44|      9|    std::random_device random;
+   45|      9|    for (auto &byte : bytes)
+  ------------------
+  |  Branch (45:21): [True: 144, False: 9]
+  ------------------
+   46|    144|        byte = static_cast<uint8_t>(random());
+   47|      9|    bytes[6] = static_cast<uint8_t>((bytes[6] & 0x0f) | 0x40);
+   48|      9|    bytes[8] = static_cast<uint8_t>((bytes[8] & 0x3f) | 0x80);
+   49|      9|    constexpr char digits[] = "0123456789abcdef";
+   50|      9|    std::string result;
+   51|      9|    result.reserve(36);
+   52|    153|    for (size_t i = 0; i < bytes.size(); ++i)
+  ------------------
+  |  Branch (52:24): [True: 144, False: 9]
+  ------------------
+   53|    144|    {
+   54|    144|        if (i == 4 || i == 6 || i == 8 || i == 10)
+  ------------------
+  |  Branch (54:13): [True: 9, False: 135]
+  |  Branch (54:23): [True: 9, False: 126]
+  |  Branch (54:33): [True: 9, False: 117]
+  |  Branch (54:43): [True: 9, False: 108]
+  ------------------
+   55|     36|            result.push_back('-');
+   56|    144|        result.push_back(digits[bytes[i] >> 4]);
+   57|    144|        result.push_back(digits[bytes[i] & 0x0f]);
+   58|    144|    }
+   59|      9|    return result;
+   60|      9|}
+   61|       |
+   62|       |bool IsWithin(const std::filesystem::path &root, const std::filesystem::path &path)
+   63|    164|{
+   64|    164|    const auto relative = path.lexically_relative(root);
+   65|    164|    return !relative.empty() && *relative.begin() != "..";
+  ------------------
+  |  Branch (65:12): [True: 164, False: 0]
+  |  Branch (65:33): [True: 160, False: 4]
+  ------------------
+   66|    164|}
+   67|       |
+   68|       |std::optional<std::filesystem::path> ResolveProjectPath(const std::filesystem::path &root,
+   69|       |                                                        const std::filesystem::path &path, std::string &error)
+   70|     74|{
+   71|     74|    if (root.empty())
+  ------------------
+  |  Branch (71:9): [True: 0, False: 74]
+  ------------------
+   72|      0|    {
+   73|      0|        error = "project root must be set before accessing project files";
+   74|      0|        return std::nullopt;
+   75|      0|    }
+   76|     74|    std::error_code ec;
+   77|     74|    auto candidate = (path.is_absolute() ? path : root / path).lexically_normal();
+  ------------------
+  |  Branch (77:23): [True: 2, False: 72]
+  ------------------
+   78|     74|    if (!IsWithin(root, candidate))
+  ------------------
+  |  Branch (78:9): [True: 3, False: 71]
+  ------------------
+   79|      3|    {
+   80|      3|        error = path.generic_string() + ": path is outside the project root";
+   81|      3|        return std::nullopt;
+   82|      3|    }
+   83|       |
+   84|     71|    auto existingAncestor = candidate;
+   85|     71|    std::vector<std::filesystem::path> missingComponents;
+   86|     75|    while (!std::filesystem::exists(existingAncestor, ec) && !ec)
+  ------------------
+  |  Branch (86:12): [True: 4, False: 71]
+  |  Branch (86:62): [True: 4, False: 0]
+  ------------------
+   87|      4|    {
+   88|      4|        if (existingAncestor.empty() || existingAncestor == existingAncestor.root_path())
+  ------------------
+  |  Branch (88:13): [True: 0, False: 4]
+  |  Branch (88:41): [True: 0, False: 4]
+  ------------------
+   89|      0|            break;
+   90|      4|        missingComponents.push_back(existingAncestor.filename());
+   91|      4|        existingAncestor = existingAncestor.parent_path();
+   92|      4|    }
+   93|     71|    if (ec)
+  ------------------
+  |  Branch (93:9): [True: 0, False: 71]
+  ------------------
+   94|      0|    {
+   95|      0|        error = path.generic_string() + ": could not inspect path: " + ec.message();
+   96|      0|        return std::nullopt;
+   97|      0|    }
+   98|     71|    if (existingAncestor.empty() || !std::filesystem::exists(existingAncestor, ec) || ec)
+  ------------------
+  |  Branch (98:9): [True: 0, False: 71]
+  |  Branch (98:37): [True: 0, False: 71]
+  |  Branch (98:87): [True: 0, False: 71]
+  ------------------
+   99|      0|    {
+  100|      0|        error = path.generic_string() + ": no existing parent directory could be resolved";
+  101|      0|        return std::nullopt;
+  102|      0|    }
+  103|     71|    auto resolved = std::filesystem::weakly_canonical(existingAncestor, ec);
+  104|     71|    if (ec)
+  ------------------
+  |  Branch (104:9): [True: 0, False: 71]
+  ------------------
+  105|      0|    {
+  106|      0|        error = path.generic_string() + ": could not resolve parent path: " + ec.message();
+  107|      0|        return std::nullopt;
+  108|      0|    }
+  109|     75|    for (auto it = missingComponents.rbegin(); it != missingComponents.rend(); ++it)
+  ------------------
+  |  Branch (109:48): [True: 4, False: 71]
+  ------------------
+  110|      4|        resolved /= *it;
+  111|     71|    resolved = resolved.lexically_normal();
+  112|     71|    if (!IsWithin(root, resolved))
+  ------------------
+  |  Branch (112:9): [True: 0, False: 71]
+  ------------------
+  113|      0|    {
+  114|      0|        error = path.generic_string() + ": resolved path is outside the project root";
+  115|      0|        return std::nullopt;
+  116|      0|    }
+  117|     71|    return resolved;
+  118|     71|}
+  119|       |
+  120|       |bool ReadMetadata(const std::filesystem::path &path, std::string &guid, std::string &error,
+  121|       |                  const std::string &expectedType = "model")
+  122|     33|{
+  123|     33|    try
+  124|     33|    {
+  125|     33|        std::ifstream input(path, std::ios::binary);
+  126|     33|        if (!input)
+  ------------------
+  |  Branch (126:13): [True: 0, False: 33]
+  ------------------
+  127|      0|        {
+  128|      0|            error = path.generic_string() + ": could not open metadata";
+  129|      0|            return false;
+  130|      0|        }
+  131|     33|        const Json metadata = Json::parse(input);
+  132|     33|        const std::string importer = expectedType == "model" ? "tinygltf" : "stb_image";
+  ------------------
+  |  Branch (132:38): [True: 26, False: 7]
+  ------------------
+  133|     33|        const uint32_t importerVersion =
+  134|     33|            expectedType == "model" ? ModelImporterVersion : TextureImporterVersion;
+  ------------------
+  |  Branch (134:13): [True: 26, False: 7]
+  ------------------
+  135|     33|        if (!metadata.is_object() || metadata.value("assetType", std::string{}) != expectedType ||
+  ------------------
+  |  Branch (135:13): [True: 2, False: 31]
+  |  Branch (135:38): [True: 7, False: 24]
+  ------------------
+  136|     24|            metadata.value("schemaVersion", 0u) != 1 ||
+  ------------------
+  |  Branch (136:13): [True: 0, False: 24]
+  ------------------
+  137|     24|            metadata.value("importer", std::string{}) != importer ||
+  ------------------
+  |  Branch (137:13): [True: 0, False: 24]
+  ------------------
+  138|     24|            metadata.value("importerVersion", 0u) != importerVersion || !metadata.contains("guid") ||
+  ------------------
+  |  Branch (138:13): [True: 0, False: 24]
+  |  Branch (138:73): [True: 0, False: 24]
+  ------------------
+  139|     24|            !metadata["guid"].is_string())
+  ------------------
+  |  Branch (139:13): [True: 0, False: 24]
+  ------------------
+  140|      7|        {
+  141|      7|            error = path.generic_string() + ": expected model metadata with a GUID";
+  142|      7|            return false;
+  143|      7|        }
+  144|     26|        guid = metadata["guid"].get<std::string>();
+  145|     26|        if (!IsGuid(guid))
+  ------------------
+  |  Branch (145:13): [True: 2, False: 24]
+  ------------------
+  146|      2|        {
+  147|      2|            error = path.generic_string() + ": metadata contains an invalid GUID";
+  148|      2|            return false;
+  149|      2|        }
+  150|     24|        return true;
+  151|     26|    }
+  152|     33|    catch (const std::exception &exception)
+  153|     33|    {
+  154|      2|        error = path.generic_string() + ": invalid metadata: " + exception.what();
+  155|      2|        return false;
+  156|      2|    }
+  157|     33|}
+  158|       |
+  159|       |bool WriteMetadata(const std::filesystem::path &path, const std::string &guid, std::string &error,
+  160|       |                   const std::string &assetType = "model")
+  161|      3|{
+  162|      3|    const auto temporary = std::filesystem::path(path.generic_string() + ".tmp." + NewGuid());
+  163|      3|    try
+  164|      3|    {
+  165|      3|        {
+  166|      3|            std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
+  167|      3|            if (!output)
+  ------------------
+  |  Branch (167:17): [True: 0, False: 3]
+  ------------------
+  168|      0|            {
+  169|      0|                error = path.generic_string() + ": could not create metadata temporary file";
+  170|      0|                return false;
+  171|      0|            }
+  172|      3|            const std::string importer = assetType == "model" ? "tinygltf" : "stb_image";
+  ------------------
+  |  Branch (172:42): [True: 2, False: 1]
+  ------------------
+  173|      3|            const uint32_t importerVersion =
+  174|      3|                assetType == "model" ? ModelImporterVersion : TextureImporterVersion;
+  ------------------
+  |  Branch (174:17): [True: 2, False: 1]
+  ------------------
+  175|      3|            output << Json{{"schemaVersion", 1},
+  176|      3|                           {"assetType", assetType},
+  177|      3|                           {"guid", guid},
+  178|      3|                           {"importer", importer},
+  179|      3|                           {"importerVersion", importerVersion}}
+  180|      3|                          .dump(2)
+  181|      3|                   << '\n';
+  182|      3|            output.flush();
+  183|      3|            if (!output)
+  ------------------
+  |  Branch (183:17): [True: 0, False: 3]
+  ------------------
+  184|      0|            {
+  185|      0|                error = path.generic_string() + ": could not write metadata";
+  186|      0|                output.close();
+  187|      0|                std::filesystem::remove(temporary);
+  188|      0|                return false;
+  189|      0|            }
+  190|      3|        }
+  191|      3|        std::error_code ec;
+  192|      3|        std::filesystem::rename(temporary, path, ec);
+  193|      3|        if (ec)
+  ------------------
+  |  Branch (193:13): [True: 0, False: 3]
+  ------------------
+  194|      0|        {
+  195|      0|            std::filesystem::remove(temporary);
+  196|      0|            error = path.generic_string() + ": metadata replacement failed: " + ec.message();
+  197|      0|            return false;
+  198|      0|        }
+  199|      3|        return true;
+  200|      3|    }
+  201|      3|    catch (const std::exception &exception)
+  202|      3|    {
+  203|      0|        std::error_code ignored;
+  204|      0|        std::filesystem::remove(temporary, ignored);
+  205|      0|        error = path.generic_string() + ": metadata write failed: " + exception.what();
+  206|      0|        return false;
+  207|      0|    }
+  208|      3|}
+  209|       |
+  210|       |bool HasDuplicateGuid(const std::filesystem::path &root, const std::filesystem::path &ownMetadata,
+  211|       |                      const std::string &guid, std::string &error)
+  212|     11|{
+  213|     11|    std::error_code ec;
+  214|     83|    for (std::filesystem::recursive_directory_iterator it(root, ec), end; it != end && !ec; it.increment(ec))
+  ------------------
+  |  Branch (214:75): [True: 73, False: 10]
+  |  Branch (214:88): [True: 73, False: 0]
+  ------------------
+  215|     73|    {
+  216|     73|        if (!it->is_regular_file(ec) || it->path().extension() != ".meta" || it->path() == ownMetadata)
+  ------------------
+  |  Branch (216:13): [True: 0, False: 73]
+  |  Branch (216:41): [True: 51, False: 22]
+  |  Branch (216:78): [True: 4, False: 18]
+  ------------------
+  217|     55|            continue;
+  218|     18|        try
+  219|     18|        {
+  220|     18|            std::ifstream input(it->path(), std::ios::binary);
+  221|     18|            if (!input)
+  ------------------
+  |  Branch (221:17): [True: 0, False: 18]
+  ------------------
+  222|      0|            {
+  223|      0|                error = it->path().generic_string() +
+  224|      0|                        ": could not inspect metadata while checking GUID uniqueness";
+  225|      0|                return true;
+  226|      0|            }
+  227|     18|            const Json metadata = Json::parse(input);
+  228|     18|            if (metadata.is_object() && metadata.contains("guid") && metadata["guid"].is_string() &&
+  ------------------
+  |  Branch (228:17): [True: 18, False: 0]
+  |  Branch (228:41): [True: 18, False: 0]
+  |  Branch (228:70): [True: 18, False: 0]
+  ------------------
+  229|     18|                metadata["guid"].get<std::string>() == guid)
+  ------------------
+  |  Branch (229:17): [True: 1, False: 17]
+  ------------------
+  230|      1|            {
+  231|      1|                error = "duplicate asset GUID " + guid + " in " + it->path().generic_string();
+  232|      1|                return true;
+  233|      1|            }
+  234|     18|        }
+  235|     18|        catch (const std::exception &exception)
+  236|     18|        {
+  237|      0|            error = it->path().generic_string() +
+  238|      0|                    ": invalid metadata while checking GUID uniqueness: " + exception.what();
+  239|      0|            return true;
+  240|      0|        }
+  241|     18|    }
+  242|     10|    if (ec)
+  ------------------
+  |  Branch (242:9): [True: 0, False: 10]
+  ------------------
+  243|      0|    {
+  244|      0|        error = root.generic_string() + ": could not scan project metadata: " + ec.message();
+  245|      0|        return true;
+  246|      0|    }
+  247|     10|    return false;
+  248|     10|}
+  249|       |
+  250|       |bool DecodeUriPath(const std::string &uri, std::string &path, std::string &error)
+  251|      7|{
+  252|      7|    path.clear();
+  253|     99|    for (size_t i = 0; i < uri.size(); ++i)
+  ------------------
+  |  Branch (253:24): [True: 93, False: 6]
+  ------------------
+  254|     93|    {
+  255|     93|        if (uri[i] != '%')
+  ------------------
+  |  Branch (255:13): [True: 92, False: 1]
+  ------------------
+  256|     92|        {
+  257|     92|            path.push_back(uri[i]);
+  258|     92|            continue;
+  259|     92|        }
+  260|      1|        if (i + 2 >= uri.size())
+  ------------------
+  |  Branch (260:13): [True: 1, False: 0]
+  ------------------
+  261|      1|        {
+  262|      1|            error = "external glTF URI contains an incomplete percent escape";
+  263|      1|            return false;
+  264|      1|        }
+  265|      0|        const auto hex = [](char c) -> int {
+  266|      0|            if (c >= '0' && c <= '9')
+  ------------------
+  |  Branch (266:17): [True: 0, False: 0]
+  |  Branch (266:29): [True: 0, False: 0]
+  ------------------
+  267|      0|                return c - '0';
+  268|      0|            if (c >= 'a' && c <= 'f')
+  ------------------
+  |  Branch (268:17): [True: 0, False: 0]
+  |  Branch (268:29): [True: 0, False: 0]
+  ------------------
+  269|      0|                return c - 'a' + 10;
+  270|      0|            if (c >= 'A' && c <= 'F')
+  ------------------
+  |  Branch (270:17): [True: 0, False: 0]
+  |  Branch (270:29): [True: 0, False: 0]
+  ------------------
+  271|      0|                return c - 'A' + 10;
+  272|      0|            return -1;
+  273|      0|        };
+  274|      0|        const int high = hex(uri[i + 1]), low = hex(uri[i + 2]);
+  275|      0|        if (high < 0 || low < 0 || (high == 0 && low == 0))
+  ------------------
+  |  Branch (275:13): [True: 0, False: 0]
+  |  Branch (275:25): [True: 0, False: 0]
+  |  Branch (275:37): [True: 0, False: 0]
+  |  Branch (275:50): [True: 0, False: 0]
+  ------------------
+  276|      0|        {
+  277|      0|            error = "external glTF URI contains an invalid percent escape";
+  278|      0|            return false;
+  279|      0|        }
+  280|      0|        path.push_back(static_cast<char>((high << 4) | low));
+  281|      0|        i += 2;
+  282|      0|    }
+  283|      6|    return true;
+  284|      7|}
+  285|       |
+  286|       |bool ValidateModelUris(const std::filesystem::path &sourcePath, const std::filesystem::path &projectRoot,
+  287|       |                       std::string &error)
+  288|      8|{
+  289|      8|    Json document;
+  290|      8|    try
+  291|      8|    {
+  292|      8|        std::ifstream input(sourcePath, std::ios::binary);
+  293|      8|        if (sourcePath.extension() == ".glb")
+  ------------------
+  |  Branch (293:13): [True: 0, False: 8]
+  ------------------
+  294|      0|        {
+  295|      0|            std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(input)),
+  296|      0|                                       std::istreambuf_iterator<char>());
+  297|      0|            const auto read32 = [&bytes](size_t offset) -> uint32_t {
+  298|      0|                return static_cast<uint32_t>(bytes[offset]) |
+  299|      0|                       (static_cast<uint32_t>(bytes[offset + 1]) << 8) |
+  300|      0|                       (static_cast<uint32_t>(bytes[offset + 2]) << 16) |
+  301|      0|                       (static_cast<uint32_t>(bytes[offset + 3]) << 24);
+  302|      0|            };
+  303|      0|            if (bytes.size() < 20 || read32(0) != 0x46546c67 || read32(4) != 2 || read32(8) > bytes.size())
+  ------------------
+  |  Branch (303:17): [True: 0, False: 0]
+  |  Branch (303:38): [True: 0, False: 0]
+  |  Branch (303:65): [True: 0, False: 0]
+  |  Branch (303:83): [True: 0, False: 0]
+  ------------------
+  304|      0|            {
+  305|      0|                error = sourcePath.generic_string() + ": malformed GLB header";
+  306|      0|                return false;
+  307|      0|            }
+  308|      0|            size_t offset = 12;
+  309|      0|            bool foundJson = false;
+  310|      0|            while (offset + 8 <= read32(8))
+  ------------------
+  |  Branch (310:20): [True: 0, False: 0]
+  ------------------
+  311|      0|            {
+  312|      0|                const uint32_t length = read32(offset), type = read32(offset + 4);
+  313|      0|                offset += 8;
+  314|      0|                if (length > read32(8) - offset)
+  ------------------
+  |  Branch (314:21): [True: 0, False: 0]
+  ------------------
+  315|      0|                    break;
+  316|      0|                if (type == 0x4e4f534a)
+  ------------------
+  |  Branch (316:21): [True: 0, False: 0]
+  ------------------
+  317|      0|                {
+  318|      0|                    const std::string jsonBytes(reinterpret_cast<const char *>(bytes.data() + offset),
+  319|      0|                                                length);
+  320|      0|                    document = Json::parse(jsonBytes);
+  321|      0|                    foundJson = true;
+  322|      0|                    break;
+  323|      0|                }
+  324|      0|                offset += length;
+  325|      0|            }
+  326|      0|            if (!foundJson)
+  ------------------
+  |  Branch (326:17): [True: 0, False: 0]
+  ------------------
+  327|      0|            {
+  328|      0|                error = sourcePath.generic_string() + ": GLB contains no JSON chunk";
+  329|      0|                return false;
+  330|      0|            }
+  331|      0|        }
+  332|      8|        else
+  333|      8|        {
+  334|      8|            document = Json::parse(input);
+  335|      8|        }
+  336|      8|    }
+  337|      8|    catch (const std::exception &exception)
+  338|      8|    {
+  339|      1|        error = sourcePath.generic_string() + ": could not inspect glTF resource URIs: " + exception.what();
+  340|      1|        return false;
+  341|      1|    }
+  342|       |
+  343|      7|    for (const char *collection : {"buffers", "images"})
+  ------------------
+  |  Branch (343:33): [True: 12, False: 5]
+  ------------------
+  344|     12|    {
+  345|     12|        if (!document.is_object() || !document.contains(collection) || !document[collection].is_array())
+  ------------------
+  |  Branch (345:13): [True: 0, False: 12]
+  |  Branch (345:38): [True: 5, False: 7]
+  |  Branch (345:72): [True: 0, False: 7]
+  ------------------
+  346|      5|            continue;
+  347|      7|        for (const auto &item : document[collection])
+  ------------------
+  |  Branch (347:31): [True: 7, False: 5]
+  ------------------
+  348|      7|        {
+  349|      7|            if (!item.is_object() || !item.contains("uri") || !item["uri"].is_string())
+  ------------------
+  |  Branch (349:17): [True: 0, False: 7]
+  |  Branch (349:38): [True: 0, False: 7]
+  |  Branch (349:63): [True: 0, False: 7]
+  ------------------
+  350|      0|                continue;
+  351|      7|            const std::string uri = item["uri"].get<std::string>();
+  352|      7|            if (uri.starts_with("data:"))
+  ------------------
+  |  Branch (352:17): [True: 0, False: 7]
+  ------------------
+  353|      0|                continue;
+  354|      7|            std::string decoded;
+  355|      7|            if (!DecodeUriPath(uri, decoded, error))
+  ------------------
+  |  Branch (355:17): [True: 1, False: 6]
+  ------------------
+  356|      1|                return false;
+  357|      6|            const std::filesystem::path relative(decoded);
+  358|      6|            if (relative.is_absolute() || decoded.find(':') != std::string::npos)
+  ------------------
+  |  Branch (358:17): [True: 0, False: 6]
+  |  Branch (358:43): [True: 0, False: 6]
+  ------------------
+  359|      0|            {
+  360|      0|                error = sourcePath.generic_string() + ": external glTF URI must be project-relative: " + uri;
+  361|      0|                return false;
+  362|      0|            }
+  363|      6|            std::error_code ec;
+  364|      6|            const auto resolved = std::filesystem::weakly_canonical(sourcePath.parent_path() / relative, ec);
+  365|      6|            if (ec || !IsWithin(projectRoot, resolved))
+  ------------------
+  |  Branch (365:17): [True: 0, False: 6]
+  |  Branch (365:23): [True: 1, False: 5]
+  ------------------
+  366|      1|            {
+  367|      1|                error = sourcePath.generic_string() +
+  368|      1|                        ": external glTF URI resolves outside the project root: " + uri;
+  369|      1|                return false;
+  370|      1|            }
+  371|      6|        }
+  372|      7|    }
+  373|      5|    return true;
+  374|      7|}
+  375|       |} // namespace
+  376|       |
+  377|       |AssetManager::AssetManager(const std::filesystem::path &projectRoot)
+  378|     20|{
+  379|     20|    std::string ignored;
+  380|     20|    SetProjectRoot(projectRoot, ignored);
+  381|     20|}
+  382|       |
+  383|       |bool AssetManager::SetProjectRoot(const std::filesystem::path &projectRoot, std::string &error)
+  384|     22|{
+  385|     22|    Log::ScopedOperation operation;
+  386|     22|    ENGINE_LOG_INFO("Asset", "Project root update started | requested_path: {}",
+  387|     22|                    projectRoot.generic_string());
+  388|     22|    error.clear();
+  389|     22|    std::error_code ec;
+  390|     22|    auto root = std::filesystem::weakly_canonical(projectRoot, ec);
+  391|     22|    if (ec || !std::filesystem::is_directory(root, ec) || ec)
+  ------------------
+  |  Branch (391:9): [True: 0, False: 22]
+  |  Branch (391:15): [True: 1, False: 21]
+  |  Branch (391:59): [True: 0, False: 21]
+  ------------------
+  392|      1|    {
+  393|      1|        error = projectRoot.generic_string() + ": project root is not an accessible directory";
+  394|      1|        ENGINE_LOG_ERROR("Asset", "Project root update failed | requested_path: {} | error: {}",
+  395|      1|                         projectRoot.generic_string(), error);
+  396|      1|        return false;
+  397|      1|    }
+  398|     21|    m_ProjectRoot = std::move(root);
+  399|     21|    m_Models.clear();
+  400|     21|    m_Textures.clear();
+  401|     21|    ENGINE_LOG_INFO(
+  402|     21|        "Asset",
+  403|     21|        "Project root updated | canonical_path: {} | model_cache_cleared: true | texture_cache_cleared: true",
+  404|     21|        m_ProjectRoot.generic_string());
+  405|     21|    return true;
+  406|     22|}
+  407|       |
+  408|       |Result<std::string> AssetManager::ImportModel(const std::filesystem::path &sourcePath)
+  409|      1|{
+  410|      1|    Log::ScopedOperation operation;
+  411|      1|    ENGINE_LOG_INFO("Asset", "Model import started | path: {}", sourcePath.generic_string());
+  412|      1|    std::string guid;
+  413|      1|    std::string error;
+  414|      1|    if (!ImportModel(sourcePath, guid, error))
+  ------------------
+  |  Branch (414:9): [True: 0, False: 1]
+  ------------------
+  415|      0|    {
+  416|      0|        ENGINE_LOG_ERROR_CODE("Asset", "asset.model.import_failed",
+  417|      0|                              "Model import failed | path: {} | error: {}", sourcePath.generic_string(),
+  418|      0|                              error);
+  419|      0|        return std::unexpected(MakeError(std::move(error)));
+  420|      0|    }
+  421|      1|    ENGINE_LOG_INFO("Asset", "Model imported | path: {} | guid: {}", sourcePath.generic_string(), guid);
+  422|      1|    return guid;
+  423|      1|}
+  424|       |
+  425|       |Result<std::string> AssetManager::ImportTexture(const std::filesystem::path &sourcePath)
+  426|      0|{
+  427|      0|    Log::ScopedOperation operation;
+  428|      0|    ENGINE_LOG_INFO("Asset", "Texture import started | path: {}", sourcePath.generic_string());
+  429|      0|    std::string guid;
+  430|      0|    std::string error;
+  431|      0|    if (!ImportTexture(sourcePath, guid, error))
+  ------------------
+  |  Branch (431:9): [True: 0, False: 0]
+  ------------------
+  432|      0|    {
+  433|      0|        ENGINE_LOG_ERROR_CODE("Asset", "asset.texture.import_failed",
+  434|      0|                              "Texture import failed | path: {} | error: {}", sourcePath.generic_string(),
+  435|      0|                              error);
+  436|      0|        return std::unexpected(MakeError(std::move(error)));
+  437|      0|    }
+  438|      0|    ENGINE_LOG_INFO("Asset", "Texture imported | path: {} | guid: {}", sourcePath.generic_string(), guid);
+  439|      0|    return guid;
+  440|      0|}
+  441|       |
+  442|       |bool AssetManager::ImportModel(const std::filesystem::path &sourcePath, std::string &guid, std::string &error)
+  443|     12|{
+  444|     12|    guid.clear();
+  445|     12|    error.clear();
+  446|     12|    if (m_ProjectRoot.empty())
+  ------------------
+  |  Branch (446:9): [True: 0, False: 12]
+  ------------------
+  447|      0|    {
+  448|      0|        error = "project root must be set before importing assets";
+  449|      0|        return false;
+  450|      0|    }
+  451|     12|    std::error_code ec;
+  452|     12|    const auto candidate = sourcePath.is_absolute() ? sourcePath : m_ProjectRoot / sourcePath;
+  ------------------
+  |  Branch (452:28): [True: 5, False: 7]
+  ------------------
+  453|     12|    const auto canonicalSource = std::filesystem::weakly_canonical(candidate, ec);
+  454|     12|    if (ec || !std::filesystem::is_regular_file(canonicalSource, ec) || ec)
+  ------------------
+  |  Branch (454:9): [True: 0, False: 12]
+  |  Branch (454:15): [True: 2, False: 10]
+  |  Branch (454:73): [True: 0, False: 10]
+  ------------------
+  455|      2|    {
+  456|      2|        error = sourcePath.generic_string() + ": source file does not exist or is inaccessible";
+  457|      2|        return false;
+  458|      2|    }
+  459|     10|    if (!IsWithin(m_ProjectRoot, canonicalSource))
+  ------------------
+  |  Branch (459:9): [True: 0, False: 10]
+  ------------------
+  460|      0|    {
+  461|      0|        error = canonicalSource.generic_string() + ": source file is outside the project root";
+  462|      0|        return false;
+  463|      0|    }
+  464|     10|    const auto extension = canonicalSource.extension().string();
+  465|     10|    if (extension != ".gltf" && extension != ".glb")
+  ------------------
+  |  Branch (465:9): [True: 1, False: 9]
+  |  Branch (465:33): [True: 1, False: 0]
+  ------------------
+  466|      1|    {
+  467|      1|        error = canonicalSource.generic_string() + ": only .gltf and .glb model assets are supported";
+  468|      1|        return false;
+  469|      1|    }
+  470|       |
+  471|      9|    const auto metadataPath = std::filesystem::path(canonicalSource.generic_string() + ".meta");
+  472|      9|    std::string assetGuid;
+  473|      9|    const bool hasMetadata = std::filesystem::exists(metadataPath, ec);
+  474|      9|    if (ec)
+  ------------------
+  |  Branch (474:9): [True: 0, False: 9]
+  ------------------
+  475|      0|    {
+  476|      0|        error = metadataPath.generic_string() + ": could not inspect metadata: " + ec.message();
+  477|      0|        return false;
+  478|      0|    }
+  479|      9|    if (hasMetadata)
+  ------------------
+  |  Branch (479:9): [True: 4, False: 5]
+  ------------------
+  480|      4|    {
+  481|      4|        if (!ReadMetadata(metadataPath, assetGuid, error))
+  ------------------
+  |  Branch (481:13): [True: 1, False: 3]
+  ------------------
+  482|      1|            return false;
+  483|      4|    }
+  484|      5|    else
+  485|      5|    {
+  486|      5|        assetGuid = NewGuid();
+  487|      5|    }
+  488|       |
+  489|      8|    if (HasDuplicateGuid(m_ProjectRoot, metadataPath, assetGuid, error))
+  ------------------
+  |  Branch (489:9): [True: 0, False: 8]
+  ------------------
+  490|      0|        return false;
+  491|       |
+  492|      8|    if (!ValidateModelUris(canonicalSource, m_ProjectRoot, error))
+  ------------------
+  |  Branch (492:9): [True: 3, False: 5]
+  ------------------
+  493|      3|        return false;
+  494|      5|    auto imported = m_Importer.ImportGltf(canonicalSource);
+  495|      5|    if (!imported)
+  ------------------
+  |  Branch (495:9): [True: 0, False: 5]
+  ------------------
+  496|      0|    {
+  497|      0|        error = imported.error;
+  498|      0|        return false;
+  499|      0|    }
+  500|      5|    imported.model.importWarnings = std::move(imported.warnings);
+  501|      5|    if (!hasMetadata && !WriteMetadata(metadataPath, assetGuid, error))
+  ------------------
+  |  Branch (501:9): [True: 2, False: 3]
+  |  Branch (501:25): [True: 0, False: 2]
+  ------------------
+  502|      0|        return false;
+  503|       |
+  504|      5|    uint64_t generation = 1;
+  505|      5|    if (const auto existing = m_Models.find(assetGuid); existing != m_Models.end())
+  ------------------
+  |  Branch (505:57): [True: 0, False: 5]
+  ------------------
+  506|      0|    {
+  507|      0|        if (existing->second.generation == std::numeric_limits<uint64_t>::max())
+  ------------------
+  |  Branch (507:13): [True: 0, False: 0]
+  ------------------
+  508|      0|        {
+  509|      0|            error = "asset import generation is exhausted for GUID " + assetGuid;
+  510|      0|            return false;
+  511|      0|        }
+  512|      0|        generation = existing->second.generation + 1;
+  513|      0|    }
+  514|      5|    guid = std::move(assetGuid);
+  515|      5|    m_Models.insert_or_assign(
+  516|      5|        guid, ModelRecord{canonicalSource, std::make_shared<const ImportedModel>(std::move(imported.model)),
+  517|      5|                          generation});
+  518|      5|    return true;
+  519|      5|}
+  520|       |
+  521|       |bool AssetManager::ImportTexture(const std::filesystem::path &sourcePath, std::string &guid,
+  522|       |                                 std::string &error)
+  523|      3|{
+  524|      3|    guid.clear();
+  525|      3|    error.clear();
+  526|      3|    if (m_ProjectRoot.empty())
+  ------------------
+  |  Branch (526:9): [True: 0, False: 3]
+  ------------------
+  527|      0|    {
+  528|      0|        error = "project root must be set before importing assets";
+  529|      0|        return false;
+  530|      0|    }
+  531|      3|    std::error_code ec;
+  532|      3|    const auto candidate = sourcePath.is_absolute() ? sourcePath : m_ProjectRoot / sourcePath;
+  ------------------
+  |  Branch (532:28): [True: 1, False: 2]
+  ------------------
+  533|      3|    const auto canonicalSource = std::filesystem::weakly_canonical(candidate, ec);
+  534|      3|    if (ec || !std::filesystem::is_regular_file(canonicalSource, ec) || ec)
+  ------------------
+  |  Branch (534:9): [True: 0, False: 3]
+  |  Branch (534:15): [True: 0, False: 3]
+  |  Branch (534:73): [True: 0, False: 3]
+  ------------------
+  535|      0|    {
+  536|      0|        error = sourcePath.generic_string() + ": source file does not exist or is inaccessible";
+  537|      0|        return false;
+  538|      0|    }
+  539|      3|    if (!IsWithin(m_ProjectRoot, canonicalSource))
+  ------------------
+  |  Branch (539:9): [True: 0, False: 3]
+  ------------------
+  540|      0|    {
+  541|      0|        error = canonicalSource.generic_string() + ": source file is outside the project root";
+  542|      0|        return false;
+  543|      0|    }
+  544|      3|    auto imported = m_Importer.ImportImage(canonicalSource);
+  545|      3|    if (!imported)
+  ------------------
+  |  Branch (545:9): [True: 0, False: 3]
+  ------------------
+  546|      0|    {
+  547|      0|        error = imported.error;
+  548|      0|        return false;
+  549|      0|    }
+  550|      3|    const auto metadataPath = std::filesystem::path(canonicalSource.generic_string() + ".meta");
+  551|      3|    const bool hasMetadata = std::filesystem::exists(metadataPath, ec);
+  552|      3|    if (ec)
+  ------------------
+  |  Branch (552:9): [True: 0, False: 3]
+  ------------------
+  553|      0|    {
+  554|      0|        error = metadataPath.generic_string() + ": could not inspect metadata: " + ec.message();
+  555|      0|        return false;
+  556|      0|    }
+  557|      3|    std::string assetGuid;
+  558|      3|    if (hasMetadata)
+  ------------------
+  |  Branch (558:9): [True: 2, False: 1]
+  ------------------
+  559|      2|    {
+  560|      2|        if (!ReadMetadata(metadataPath, assetGuid, error, "texture"))
+  ------------------
+  |  Branch (560:13): [True: 0, False: 2]
+  ------------------
+  561|      0|            return false;
+  562|      2|    }
+  563|      1|    else
+  564|      1|    {
+  565|      1|        assetGuid = NewGuid();
+  566|      1|    }
+  567|      3|    if (HasDuplicateGuid(m_ProjectRoot, metadataPath, assetGuid, error))
+  ------------------
+  |  Branch (567:9): [True: 1, False: 2]
+  ------------------
+  568|      1|        return false;
+  569|      2|    if (!hasMetadata && !WriteMetadata(metadataPath, assetGuid, error, "texture"))
+  ------------------
+  |  Branch (569:9): [True: 1, False: 1]
+  |  Branch (569:25): [True: 0, False: 1]
+  ------------------
+  570|      0|        return false;
+  571|       |
+  572|      2|    uint64_t generation = 1;
+  573|      2|    if (const auto existing = m_Textures.find(assetGuid); existing != m_Textures.end())
+  ------------------
+  |  Branch (573:59): [True: 0, False: 2]
+  ------------------
+  574|      0|    {
+  575|      0|        if (existing->second.generation == std::numeric_limits<uint64_t>::max())
+  ------------------
+  |  Branch (575:13): [True: 0, False: 0]
+  ------------------
+  576|      0|        {
+  577|      0|            error = "asset import generation is exhausted for GUID " + assetGuid;
+  578|      0|            return false;
+  579|      0|        }
+  580|      0|        generation = existing->second.generation + 1;
+  581|      0|    }
+  582|      2|    guid = assetGuid;
+  583|      2|    m_Textures.insert_or_assign(
+  584|      2|        guid, TextureRecord{canonicalSource, std::make_shared<const ImportedImage>(std::move(imported.image)),
+  585|      2|                            generation});
+  586|      2|    return true;
+  587|      2|}
+  588|       |
+  589|       |bool AssetManager::LoadModel(const std::string &guid, std::string &error)
+  590|     11|{
+  591|     11|    Log::ScopedOperation operation;
+  592|     11|    error.clear();
+  593|     11|    if (m_Models.contains(guid))
+  ------------------
+  |  Branch (593:9): [True: 2, False: 9]
+  ------------------
+  594|      2|    {
+  595|      2|        ENGINE_LOG_TRACE("Asset", "Model cache hit | guid: {} | generation: {}", guid,
+  596|      2|                         m_Models.at(guid).generation);
+  597|      2|        return true;
+  598|      2|    }
+  599|      9|    ENGINE_LOG_DEBUG("Asset", "Model cache miss | guid: {} | project_root: {}", guid,
+  600|      9|                     m_ProjectRoot.generic_string());
+  601|      9|    const auto fail = [&]() {
+  602|      7|        ENGINE_LOG_ERROR_CODE("Asset", "asset.model.load_failed",
+  603|      7|                              "Model load failed | guid: {} | project_root: {} | error: {}", guid,
+  604|      7|                              m_ProjectRoot.generic_string(), error);
+  605|      7|        return false;
+  606|      7|    };
+  607|      9|    if (m_ProjectRoot.empty() || !IsGuid(guid))
+  ------------------
+  |  Branch (607:9): [True: 1, False: 8]
+  |  Branch (607:34): [True: 2, False: 6]
+  ------------------
+  608|      3|    {
+  609|      3|        error = m_ProjectRoot.empty() ? "project root must be set before loading assets"
+  ------------------
+  |  Branch (609:17): [True: 1, False: 2]
+  ------------------
+  610|      3|                                      : "asset GUID is invalid";
+  611|      3|        return fail();
+  612|      3|    }
+  613|       |
+  614|      6|    std::optional<std::filesystem::path> sourcePath;
+  615|      6|    std::error_code ec;
+  616|     46|    for (std::filesystem::recursive_directory_iterator it(m_ProjectRoot, ec), end; it != end && !ec;
+  ------------------
+  |  Branch (616:84): [True: 42, False: 4]
+  |  Branch (616:97): [True: 42, False: 0]
+  ------------------
+  617|     40|         it.increment(ec))
+  618|     42|    {
+  619|     42|        if (!it->is_regular_file(ec) || it->path().extension() != ".meta")
+  ------------------
+  |  Branch (619:13): [True: 0, False: 42]
+  |  Branch (619:41): [True: 23, False: 19]
+  ------------------
+  620|     23|            continue;
+  621|     19|        std::string metadataGuid;
+  622|     19|        std::string metadataError;
+  623|     19|        if (!ReadMetadata(it->path(), metadataGuid, metadataError) || metadataGuid != guid)
+  ------------------
+  |  Branch (623:13): [True: 8, False: 11]
+  |  Branch (623:71): [True: 4, False: 7]
+  ------------------
+  624|     12|            continue;
+  625|      7|        if (sourcePath)
+  ------------------
+  |  Branch (625:13): [True: 2, False: 5]
+  ------------------
+  626|      2|        {
+  627|      2|            error = "duplicate asset GUID " + guid + " in " + it->path().generic_string();
+  628|      2|            return fail();
+  629|      2|        }
+  630|      5|        auto source = it->path();
+  631|      5|        source.replace_extension();
+  632|      5|        sourcePath = std::move(source);
+  633|      5|    }
+  634|      4|    if (ec)
+  ------------------
+  |  Branch (634:9): [True: 0, False: 4]
+  ------------------
+  635|      0|    {
+  636|      0|        error = m_ProjectRoot.generic_string() + ": could not scan project metadata: " + ec.message();
+  637|      0|        return fail();
+  638|      0|    }
+  639|      4|    if (!sourcePath)
+  ------------------
+  |  Branch (639:9): [True: 1, False: 3]
+  ------------------
+  640|      1|    {
+  641|      1|        error = "asset GUID " + guid + " was not found in project metadata";
+  642|      1|        return fail();
+  643|      1|    }
+  644|       |
+  645|      3|    std::string loadedGuid;
+  646|      3|    if (!ImportModel(*sourcePath, loadedGuid, error))
+  ------------------
+  |  Branch (646:9): [True: 1, False: 2]
+  ------------------
+  647|      1|        return fail();
+  648|      2|    if (loadedGuid != guid)
+  ------------------
+  |  Branch (648:9): [True: 0, False: 2]
+  ------------------
+  649|      0|    {
+  650|      0|        m_Models.erase(loadedGuid);
+  651|      0|        error = sourcePath->generic_string() + ": resolved sidecar GUID changed during load";
+  652|      0|        return fail();
+  653|      0|    }
+  654|      2|    ENGINE_LOG_INFO("Asset", "Model loaded | guid: {} | source_path: {} | generation: {}", guid,
+  655|      2|                    sourcePath->generic_string(), m_Models.at(guid).generation);
+  656|      2|    return true;
+  657|      2|}
+  658|       |
+  659|       |bool AssetManager::LoadTexture(const std::string &guid, std::string &error)
+  660|      5|{
+  661|      5|    Log::ScopedOperation operation;
+  662|      5|    error.clear();
+  663|      5|    if (m_Textures.contains(guid))
+  ------------------
+  |  Branch (663:9): [True: 0, False: 5]
+  ------------------
+  664|      0|    {
+  665|      0|        ENGINE_LOG_TRACE("Asset", "Texture cache hit | guid: {} | generation: {}", guid,
+  666|      0|                         m_Textures.at(guid).generation);
+  667|      0|        return true;
+  668|      0|    }
+  669|      5|    ENGINE_LOG_DEBUG("Asset", "Texture cache miss | guid: {} | project_root: {}", guid,
+  670|      5|                     m_ProjectRoot.generic_string());
+  671|      5|    const auto fail = [&]() {
+  672|      4|        ENGINE_LOG_ERROR_CODE("Asset", "asset.texture.load_failed",
+  673|      4|                              "Texture load failed | guid: {} | project_root: {} | error: {}", guid,
+  674|      4|                              m_ProjectRoot.generic_string(), error);
+  675|      4|        return false;
+  676|      4|    };
+  677|      5|    if (m_ProjectRoot.empty() || !IsGuid(guid))
+  ------------------
+  |  Branch (677:9): [True: 1, False: 4]
+  |  Branch (677:34): [True: 3, False: 1]
+  ------------------
+  678|      4|    {
+  679|      4|        error = m_ProjectRoot.empty() ? "project root must be set before loading assets"
+  ------------------
+  |  Branch (679:17): [True: 1, False: 3]
+  ------------------
+  680|      4|                                      : "asset GUID is invalid";
+  681|      4|        return fail();
+  682|      4|    }
+  683|      1|    std::optional<std::filesystem::path> sourcePath;
+  684|      1|    std::error_code ec;
+  685|      6|    for (std::filesystem::recursive_directory_iterator it(m_ProjectRoot, ec), end; it != end && !ec;
+  ------------------
+  |  Branch (685:84): [True: 5, False: 1]
+  |  Branch (685:97): [True: 5, False: 0]
+  ------------------
+  686|      5|         it.increment(ec))
+  687|      5|    {
+  688|      5|        if (!it->is_regular_file(ec) || it->path().extension() != ".meta")
+  ------------------
+  |  Branch (688:13): [True: 0, False: 5]
+  |  Branch (688:41): [True: 3, False: 2]
+  ------------------
+  689|      3|            continue;
+  690|      2|        std::string metadataGuid;
+  691|      2|        std::string metadataError;
+  692|      2|        if (!ReadMetadata(it->path(), metadataGuid, metadataError, "texture") || metadataGuid != guid)
+  ------------------
+  |  Branch (692:13): [True: 1, False: 1]
+  |  Branch (692:82): [True: 0, False: 1]
+  ------------------
+  693|      1|            continue;
+  694|      1|        if (sourcePath)
+  ------------------
+  |  Branch (694:13): [True: 0, False: 1]
+  ------------------
+  695|      0|        {
+  696|      0|            error = "duplicate asset GUID " + guid + " in " + it->path().generic_string();
+  697|      0|            return fail();
+  698|      0|        }
+  699|      1|        auto source = it->path();
+  700|      1|        source.replace_extension();
+  701|      1|        sourcePath = std::move(source);
+  702|      1|    }
+  703|      1|    if (ec)
+  ------------------
+  |  Branch (703:9): [True: 0, False: 1]
+  ------------------
+  704|      0|    {
+  705|      0|        error = m_ProjectRoot.generic_string() + ": could not scan project metadata: " + ec.message();
+  706|      0|        return fail();
+  707|      0|    }
+  708|      1|    if (!sourcePath)
+  ------------------
+  |  Branch (708:9): [True: 0, False: 1]
+  ------------------
+  709|      0|    {
+  710|      0|        error = "texture GUID " + guid + " was not found in project metadata";
+  711|      0|        return fail();
+  712|      0|    }
+  713|      1|    std::string loadedGuid;
+  714|      1|    if (!ImportTexture(*sourcePath, loadedGuid, error))
+  ------------------
+  |  Branch (714:9): [True: 0, False: 1]
+  ------------------
+  715|      0|        return fail();
+  716|      1|    if (loadedGuid != guid)
+  ------------------
+  |  Branch (716:9): [True: 0, False: 1]
+  ------------------
+  717|      0|    {
+  718|      0|        m_Textures.erase(loadedGuid);
+  719|      0|        error = sourcePath->generic_string() + ": resolved sidecar GUID changed during load";
+  720|      0|        return fail();
+  721|      0|    }
+  722|      1|    ENGINE_LOG_INFO("Asset", "Texture loaded | guid: {} | source_path: {} | generation: {}", guid,
+  723|      1|                    sourcePath->generic_string(), m_Textures.at(guid).generation);
+  724|      1|    return true;
+  725|      1|}
+  726|       |
+  727|       |bool AssetManager::RefreshRegistry(std::vector<std::string> &warnings, std::string &error)
+  728|      3|{
+  729|      3|    Log::ScopedOperation operation;
+  730|      3|    warnings.clear();
+  731|      3|    error.clear();
+  732|      3|    ENGINE_LOG_INFO("Asset", "Asset registry refresh started | project_root: {}",
+  733|      3|                    m_ProjectRoot.generic_string());
+  734|      3|    if (m_ProjectRoot.empty())
+  ------------------
+  |  Branch (734:9): [True: 1, False: 2]
+  ------------------
+  735|      1|    {
+  736|      1|        error = "project root must be set before enumerating assets";
+  737|      1|        ENGINE_LOG_ERROR("Asset", "Asset registry refresh rejected | project_root_length: 0 | error: {}",
+  738|      1|                         error);
+  739|      1|        return false;
+  740|      1|    }
+  741|      2|    std::unordered_map<std::string, std::filesystem::path> seen;
+  742|      2|    std::error_code ec;
+  743|     16|    for (std::filesystem::recursive_directory_iterator it(m_ProjectRoot, ec), end; it != end && !ec;
+  ------------------
+  |  Branch (743:84): [True: 14, False: 2]
+  |  Branch (743:97): [True: 14, False: 0]
+  ------------------
+  744|     14|         it.increment(ec))
+  745|     14|    {
+  746|     14|        if (!it->is_regular_file(ec) || it->path().extension() != ".meta")
+  ------------------
+  |  Branch (746:13): [True: 0, False: 14]
+  |  Branch (746:41): [True: 6, False: 8]
+  ------------------
+  747|      6|            continue;
+  748|      8|        try
+  749|      8|        {
+  750|      8|            std::ifstream input(it->path(), std::ios::binary);
+  751|      8|            const Json metadata = Json::parse(input);
+  752|      8|            const std::string assetType = metadata.value("assetType", std::string{});
+  753|      8|            std::string guid;
+  754|      8|            std::string metadataError;
+  755|      8|            if ((assetType != "model" && assetType != "texture") ||
+  ------------------
+  |  Branch (755:18): [True: 2, False: 6]
+  |  Branch (755:42): [True: 1, False: 1]
+  ------------------
+  756|      6|                !ReadMetadata(it->path(), guid, metadataError, assetType))
+  ------------------
+  |  Branch (756:17): [True: 1, False: 5]
+  ------------------
+  757|      2|            {
+  758|      2|                warnings.push_back(
+  759|      2|                    it->path().generic_string() + ": " +
+  760|      2|                    (metadataError.empty() ? "unsupported asset metadata type" : metadataError));
+  ------------------
+  |  Branch (760:22): [True: 1, False: 1]
+  ------------------
+  761|      2|                continue;
+  762|      2|            }
+  763|      6|            if (const auto duplicate = seen.find(guid); duplicate != seen.end())
+  ------------------
+  |  Branch (763:57): [True: 1, False: 5]
+  ------------------
+  764|      1|            {
+  765|      1|                warnings.push_back("duplicate asset GUID " + guid + " in " +
+  766|      1|                                   duplicate->second.generic_string() + " and " +
+  767|      1|                                   it->path().generic_string());
+  768|      1|                continue;
+  769|      1|            }
+  770|      5|            seen.emplace(guid, it->path());
+  771|      5|            const bool loaded =
+  772|      5|                assetType == "model" ? LoadModel(guid, metadataError) : LoadTexture(guid, metadataError);
+  ------------------
+  |  Branch (772:17): [True: 3, False: 2]
+  ------------------
+  773|      5|            if (!loaded)
+  ------------------
+  |  Branch (773:17): [True: 2, False: 3]
+  ------------------
+  774|      2|                warnings.push_back(metadataError);
+  775|      5|        }
+  776|      8|        catch (const std::exception &exception)
+  777|      8|        {
+  778|      1|            warnings.push_back(it->path().generic_string() + ": invalid metadata: " + exception.what());
+  779|      1|        }
+  780|      8|    }
+  781|      2|    if (ec)
+  ------------------
+  |  Branch (781:9): [True: 0, False: 2]
+  ------------------
+  782|      0|    {
+  783|      0|        error = m_ProjectRoot.generic_string() + ": could not enumerate project assets: " + ec.message();
+  784|      0|        ENGINE_LOG_ERROR_CODE("Asset", "asset.registry.refresh_failed",
+  785|      0|                              "Asset registry refresh failed | project_root: {} | error: {}",
+  786|      0|                              m_ProjectRoot.generic_string(), error);
+  787|      0|        return false;
+  788|      0|    }
+  789|      2|    ENGINE_LOG_INFO("Asset",
+  790|      2|                    "Asset registry refreshed | project_root: {} | model_count: {} | texture_count: {} | "
+  791|      2|                    "warning_count: {}",
+  792|      2|                    m_ProjectRoot.generic_string(), m_Models.size(), m_Textures.size(), warnings.size());
+  793|      2|    return true;
+  794|      2|}
+  795|       |
+  796|       |std::shared_ptr<const ImportedModel> AssetManager::GetModel(const std::string &guid) const
+  797|      4|{
+  798|      4|    const auto it = m_Models.find(guid);
+  799|      4|    return it == m_Models.end() ? nullptr : it->second.model;
+  ------------------
+  |  Branch (799:12): [True: 0, False: 4]
+  ------------------
+  800|      4|}
+  801|       |
+  802|       |std::shared_ptr<const ImportedImage> AssetManager::GetTexture(const std::string &guid) const
+  803|      2|{
+  804|      2|    const auto it = m_Textures.find(guid);
+  805|      2|    return it == m_Textures.end() ? nullptr : it->second.image;
+  ------------------
+  |  Branch (805:12): [True: 0, False: 2]
+  ------------------
+  806|      2|}
+  807|       |
+  808|       |std::optional<uint64_t> AssetManager::GetGeneration(const std::string &guid) const
+  809|      1|{
+  810|      1|    const auto it = m_Models.find(guid);
+  811|      1|    if (it != m_Models.end())
+  ------------------
+  |  Branch (811:9): [True: 1, False: 0]
+  ------------------
+  812|      1|        return it->second.generation;
+  813|      0|    const auto texture = m_Textures.find(guid);
+  814|      0|    return texture == m_Textures.end() ? std::nullopt : std::optional(texture->second.generation);
+  ------------------
+  |  Branch (814:12): [True: 0, False: 0]
+  ------------------
+  815|      1|}
+  816|       |
+  817|       |std::optional<std::filesystem::path> AssetManager::GetSourcePath(const std::string &guid) const
+  818|      3|{
+  819|      3|    const auto it = m_Models.find(guid);
+  820|      3|    if (it != m_Models.end())
+  ------------------
+  |  Branch (820:9): [True: 3, False: 0]
+  ------------------
+  821|      3|        return it->second.sourcePath;
+  822|      0|    const auto texture = m_Textures.find(guid);
+  823|      0|    return texture == m_Textures.end() ? std::nullopt : std::optional(texture->second.sourcePath);
+  ------------------
+  |  Branch (823:12): [True: 0, False: 0]
+  ------------------
+  824|      3|}
+  825|       |
+  826|       |std::vector<AssetManager::ModelAssetInfo> AssetManager::GetKnownModels() const
+  827|      0|{
+  828|      0|    std::vector<ModelAssetInfo> result;
+  829|      0|    result.reserve(m_Models.size());
+  830|      0|    for (const auto &[guid, record] : m_Models)
+  ------------------
+  |  Branch (830:37): [True: 0, False: 0]
+  ------------------
+  831|      0|    {
+  832|      0|        result.push_back(
+  833|      0|            {guid, record.sourcePath.stem().string(), record.sourcePath.lexically_relative(m_ProjectRoot)});
+  834|      0|    }
+  835|      0|    std::sort(result.begin(), result.end(), [](const auto &left, const auto &right) {
+  836|      0|        return left.name == right.name ? left.guid < right.guid : left.name < right.name;
+  ------------------
+  |  Branch (836:16): [True: 0, False: 0]
+  ------------------
+  837|      0|    });
+  838|      0|    return result;
+  839|      0|}
+  840|       |
+  841|       |std::vector<AssetManager::TextureAssetInfo> AssetManager::GetKnownTextures() const
+  842|      1|{
+  843|      1|    std::vector<TextureAssetInfo> result;
+  844|      1|    result.reserve(m_Textures.size());
+  845|      1|    for (const auto &[guid, record] : m_Textures)
+  ------------------
+  |  Branch (845:37): [True: 1, False: 1]
+  ------------------
+  846|      1|    {
+  847|      1|        result.push_back(
+  848|      1|            {guid, record.sourcePath.stem().string(), record.sourcePath.lexically_relative(m_ProjectRoot)});
+  849|      1|    }
+  850|      1|    std::sort(result.begin(), result.end(), [](const auto &left, const auto &right) {
+  851|      0|        return left.name == right.name ? left.guid < right.guid : left.name < right.name;
+  ------------------
+  |  Branch (851:16): [True: 0, False: 0]
+  ------------------
+  852|      0|    });
+  853|      1|    return result;
+  854|      1|}
+  855|       |
+  856|       |std::string AssetManager::GetEmbeddedImageIdentity(const std::string &modelGuid, std::size_t imageIndex)
+  857|      0|{
+  858|      0|    return modelGuid + "/image/" + std::to_string(imageIndex);
+  859|      0|}
+  860|       |
+  861|       |SceneDocumentResult AssetManager::LoadScene(const std::filesystem::path &path) const
+  862|     69|{
+  863|     69|    std::string error;
+  864|     69|    const auto resolvedPath = ResolveProjectPath(m_ProjectRoot, path, error);
+  865|     69|    if (!resolvedPath)
+  ------------------
+  |  Branch (865:9): [True: 1, False: 68]
+  ------------------
+  866|      1|    {
+  867|      1|        SceneDocumentResult result;
+  868|      1|        result.error = std::move(error);
+  869|      1|        return result;
+  870|      1|    }
+  871|     68|    return m_SceneSerializer.Load(*resolvedPath);
+  872|     69|}
+  873|       |
+  874|       |bool AssetManager::SaveScene(const std::filesystem::path &path, const SceneDocument &document,
+  875|       |                             std::string &error) const
+  876|      5|{
+  877|      5|    const auto resolvedPath = ResolveProjectPath(m_ProjectRoot, path, error);
+  878|      5|    return resolvedPath && m_SceneSerializer.SaveAtomic(*resolvedPath, document, error);
+  ------------------
+  |  Branch (878:12): [True: 3, False: 2]
+  |  Branch (878:28): [True: 3, False: 0]
+  ------------------
+  879|      5|}
+  880|       |} // namespace Engine
+

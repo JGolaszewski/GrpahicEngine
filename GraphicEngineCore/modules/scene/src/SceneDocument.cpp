@@ -238,10 +238,11 @@ bool ReadMaterial(const Json &value, SceneMaterialDocument &material, std::vecto
         }
         material.brdfModel = "ggx";
         material.workflow = "specularGlossiness";
-        warnings.push_back(context + " migrated specularGlossiness from brdfModel to workflow with GGX shading");
+        warnings.push_back(context +
+                           " migrated specularGlossiness from brdfModel to workflow with GGX shading");
     }
-    const auto validBrdf = material.brdfModel == "legacy" || material.brdfModel == "ggx" ||
-                           material.brdfModel == "gtr";
+    const auto validBrdf =
+        material.brdfModel == "legacy" || material.brdfModel == "ggx" || material.brdfModel == "gtr";
     if (!validBrdf)
     {
         error = "brdfModel has an unsupported value";
@@ -302,11 +303,12 @@ bool IsValidPrimitiveType(const std::string &type)
 
 bool IsValidMaterial(const SceneMaterialDocument &material)
 {
-    const auto validBrdf = material.brdfModel == "legacy" || material.brdfModel == "ggx" ||
-                           material.brdfModel == "gtr";
-    const bool validWorkflow = material.workflow == "metallicRoughness" ||
-                               material.workflow == "specularGlossiness";
-    if (!validBrdf || !validWorkflow || (material.specularMode != "ior" && material.specularMode != "explicitF0") ||
+    const auto validBrdf =
+        material.brdfModel == "legacy" || material.brdfModel == "ggx" || material.brdfModel == "gtr";
+    const bool validWorkflow =
+        material.workflow == "metallicRoughness" || material.workflow == "specularGlossiness";
+    if (!validBrdf || !validWorkflow ||
+        (material.specularMode != "ior" && material.specularMode != "explicitF0") ||
         (material.alphaMode != "opaque" && material.alphaMode != "mask" && material.alphaMode != "blend") ||
         !std::isfinite(material.metallic) || !std::isfinite(material.roughness) ||
         !std::isfinite(material.gtrGamma) || !std::isfinite(material.ior) ||
@@ -549,7 +551,10 @@ SceneDocumentResult SceneSerializer::Load(const std::filesystem::path &path) con
             if (!ReadOptionalGuid(item, "modelGuid", entity.modelGuid, fieldError) ||
                 !ReadOptionalGuid(item, "materialGuid", entity.materialGuid, fieldError))
             {
-                result.error = FileContext(path, context + "." + fieldError);
+                std::string fieldContext = context;
+                fieldContext += '.';
+                fieldContext += fieldError;
+                result.error = FileContext(path, fieldContext);
                 return result;
             }
             if (item.contains("primitiveType") && !item["primitiveType"].is_null())
@@ -573,7 +578,10 @@ SceneDocumentResult SceneSerializer::Load(const std::filesystem::path &path) con
                 if (!ReadMaterial(item["material"], material, result.warnings, context + ".material",
                                   fieldError))
                 {
-                    result.error = FileContext(path, context + ".material: " + fieldError);
+                    std::string fieldContext = context;
+                    fieldContext += ".material: ";
+                    fieldContext += fieldError;
+                    result.error = FileContext(path, fieldContext);
                     return result;
                 }
                 entity.material = std::move(material);
@@ -598,9 +606,12 @@ SceneDocumentResult SceneSerializer::Load(const std::filesystem::path &path) con
                                       context + ".materialOverrides[" + std::to_string(materialIndex) + "]",
                                       fieldError))
                     {
-                        result.error =
-                            FileContext(path, context + ".materialOverrides[" +
-                                                  std::to_string(materialIndex) + "]: " + fieldError);
+                        std::string fieldContext = context;
+                        fieldContext += ".materialOverrides[";
+                        fieldContext += std::to_string(materialIndex);
+                        fieldContext += "]: ";
+                        fieldContext += fieldError;
+                        result.error = FileContext(path, fieldContext);
                         return result;
                     }
                     entity.materialOverrides.push_back(std::move(material));
@@ -653,7 +664,10 @@ SceneDocumentResult SceneSerializer::Load(const std::filesystem::path &path) con
                     !ReadBool(render, "castShadows", entity.castShadows, fieldError) ||
                     !ReadBool(render, "receiveShadows", entity.receiveShadows, fieldError))
                 {
-                    result.error = FileContext(path, context + ".render." + fieldError);
+                    std::string fieldContext = context;
+                    fieldContext += ".render.";
+                    fieldContext += fieldError;
+                    result.error = FileContext(path, fieldContext);
                     return result;
                 }
             }
@@ -711,7 +725,7 @@ SceneDocumentResult SceneSerializer::Load(const std::filesystem::path &path) con
                 result.error = FileContext(path, context + " contains out-of-range light settings");
                 return result;
             }
-            result.document.lights.push_back(std::move(light));
+            result.document.lights.push_back(light);
         }
     }
     std::set<uint64_t> cameraIds;
@@ -754,7 +768,7 @@ SceneDocumentResult SceneSerializer::Load(const std::filesystem::path &path) con
                 result.error = FileContext(path, context + " contains invalid projection or rotation values");
                 return result;
             }
-            result.document.cameras.push_back(std::move(camera));
+            result.document.cameras.push_back(camera);
         }
     }
     return result;

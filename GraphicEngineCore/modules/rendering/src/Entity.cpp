@@ -1,14 +1,16 @@
 #include "rendering/include/renderer/Entity.h"
+#include "MeshBackend.h"
 #include "rendering/src/EntityBuilder.h"
 #include "runtime/include/LogMacros.h"
 #include <algorithm>
 #include <cmath>
+#include <utility>
 
 namespace Engine::Renderer
 {
 
 EntityBuilder::EntityBuilder(nvrhi::DeviceHandle device, nvrhi::CommandListHandle commandList)
-    : m_Device(device), m_CommandList(commandList)
+    : m_Device(std::move(device)), m_CommandList(std::move(commandList))
 {
 }
 
@@ -39,9 +41,10 @@ EntityBuilder::EntityBuilder(nvrhi::DeviceHandle device, nvrhi::CommandListHandl
     return *this;
 }
 
-::Engine::Renderer::EntityBuilder &EntityBuilder::SetMaterial(std::shared_ptr<::Engine::Renderer::Material> material)
+::Engine::Renderer::EntityBuilder &EntityBuilder::SetMaterial(
+    std::shared_ptr<::Engine::Renderer::Material> material)
 {
-    m_Material = material;
+    m_Material = std::move(material);
     return *this;
 }
 
@@ -61,8 +64,10 @@ std::shared_ptr<::Engine::Renderer::Entity> EntityBuilder::Build()
 {
     if (!m_Device || !m_CommandList || !m_Material)
     {
-        ENGINE_LOG_ERROR("ECS", "Entity construction rejected | device_valid: {} | command_list_valid: {} | material_valid: {}",
-                         m_Device != nullptr, m_CommandList != nullptr, m_Material != nullptr);
+        ENGINE_LOG_ERROR(
+            "ECS",
+            "Entity construction rejected | device_valid: {} | command_list_valid: {} | material_valid: {}",
+            m_Device != nullptr, m_CommandList != nullptr, m_Material != nullptr);
         return nullptr;
     }
 
@@ -92,9 +97,10 @@ std::shared_ptr<::Engine::Renderer::Entity> EntityBuilder::Build()
         return nullptr;
     }
 
-    auto mesh = std::make_shared<::Engine::Renderer::Mesh>(m_Device, vertices, indices);
-
-    mesh->UploadData(m_CommandList, vertices, indices);
+    auto mesh = std::shared_ptr<::Engine::Renderer::Mesh>(new ::Engine::Renderer::Mesh());
+    MeshBackendAccess::Initialize(*mesh, m_Device.Get(), vertices, indices,
+                                  ::Engine::Renderer::PrimitiveTopology::Triangles);
+    MeshBackendAccess::UploadData(*mesh, m_CommandList, vertices, indices);
 
     // The caller owns command-list submission. Build only records mesh uploads
     // so multiple entities can share one immediate-upload batch.

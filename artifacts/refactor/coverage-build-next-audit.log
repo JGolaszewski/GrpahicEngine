@@ -1,0 +1,4 @@
+[0/2] Re-checking globbed directories...
+[1/4] Building CXX object GraphicEngineCore\tests\CMakeFiles\GraphicEngineUnitTests.dir\unit\runtime\ApplicationTests.cpp.obj
+[2/4] Building CXX object GraphicEngineCore\tests\CMakeFiles\GraphicEngineUnitTests.dir\unit\rendering\RenderSystemLifecycleTests.cpp.obj
+[3/4] Linking CXX executable bin\GraphicEngineUnitTests.exe

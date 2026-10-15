@@ -1,0 +1,114 @@
+Test project C:/Users/jgolasz/.codex/worktrees/19da/GrpahicEngine/out/build/refactor-x64-coverage
+      Start  1: BrdfReferenceTests
+ 1/53 Test  #1: BrdfReferenceTests .....................................................................   Passed    0.14 sec
+      Start  2: AssetManagerTests
+ 2/53 Test  #2: AssetManagerTests ......................................................................   Passed    0.05 sec
+      Start  3: AssetImporterTests.RejectsUnsupportedPathsMalformedFilesAndExtensions
+ 3/53 Test  #3: AssetImporterTests.RejectsUnsupportedPathsMalformedFilesAndExtensions ..................   Passed    0.02 sec
+      Start  4: AssetImporterTests.ConvertsPrimitiveTopologiesAndGeneratesMissingAttributes
+ 4/53 Test  #4: AssetImporterTests.ConvertsPrimitiveTopologiesAndGeneratesMissingAttributes ............   Passed    0.02 sec
+      Start  5: AssetImporterTests.RejectsInvalidPrimitiveAndHierarchyData
+ 5/53 Test  #5: AssetImporterTests.RejectsInvalidPrimitiveAndHierarchyData .............................   Passed    0.02 sec
+      Start  6: AssetImporterTests.ImportsMaterialExtensionsTextureTransformsAndDecodedImages
+ 6/53 Test  #6: AssetImporterTests.ImportsMaterialExtensionsTextureTransformsAndDecodedImages ..........   Passed    0.02 sec
+      Start  7: ScenePersistenceTests.RoundTripsFieldsAndRejectsTraversalWithoutOverwritingValidFile
+ 7/53 Test  #7: ScenePersistenceTests.RoundTripsFieldsAndRejectsTraversalWithoutOverwritingValidFile ...   Passed    0.02 sec
+      Start  8: ScenePersistenceTests.MalformedInputReturnsDiagnostic
+ 8/53 Test  #8: ScenePersistenceTests.MalformedInputReturnsDiagnostic ..................................   Passed    0.01 sec
+      Start  9: ScenePersistenceTests.MigratesLegacySpecularGlossinessBrdfToWorkflow
+ 9/53 Test  #9: ScenePersistenceTests.MigratesLegacySpecularGlossinessBrdfToWorkflow ...................   Passed    0.02 sec
+      Start 10: ScenePersistenceTests.RejectsUnsupportedSchemaVersion
+10/53 Test #10: ScenePersistenceTests.RejectsUnsupportedSchemaVersion ..................................   Passed    0.01 sec
+      Start 11: CommandHistoryTests.ExecutesUndoesAndRedoesInOrder
+11/53 Test #11: CommandHistoryTests.ExecutesUndoesAndRedoesInOrder .....................................   Passed    0.01 sec
+      Start 12: CommandHistoryTests.NewCommandInvalidatesRedoAndClearReleasesOwnedCommands
+12/53 Test #12: CommandHistoryTests.NewCommandInvalidatesRedoAndClearReleasesOwnedCommands .............   Passed    0.01 sec
+      Start 13: CommandHistoryTests.EmptyCallsAndNullCommandsLeaveHistoryUnchanged
+13/53 Test #13: CommandHistoryTests.EmptyCallsAndNullCommandsLeaveHistoryUnchanged .....................   Passed    0.01 sec
+      Start 14: DebugGeometryTests.StoresLinesTrianglesAndOnlyValidLightTargets
+14/53 Test #14: DebugGeometryTests.StoresLinesTrianglesAndOnlyValidLightTargets ........................   Passed    0.01 sec
+      Start 15: DebugGeometryTests.BuildsConstructionPlaneWithoutLightGizmos
+15/53 Test #15: DebugGeometryTests.BuildsConstructionPlaneWithoutLightGizmos ...........................   Passed    0.01 sec
+      Start 16: DebugGeometryTests.BuildsSelectedAndUnselectedSpotlightGizmos
+16/53 Test #16: DebugGeometryTests.BuildsSelectedAndUnselectedSpotlightGizmos ..........................   Passed    0.01 sec
+      Start 17: EditorUiIntegrationTests.RejectsMissingInputsAndBackendInitializationFailure
+17/53 Test #17: EditorUiIntegrationTests.RejectsMissingInputsAndBackendInitializationFailure ...........   Passed    0.01 sec
+      Start 18: EditorUiIntegrationTests.RunsAndShutsDownACompleteUiFrame
+18/53 Test #18: EditorUiIntegrationTests.RunsAndShutsDownACompleteUiFrame ..............................   Passed    0.01 sec
+      Start 19: RenderSystemLifecycleTests.NullDeviceIsRejectedAndFrameCallsRemainSafe
+19/53 Test #19: RenderSystemLifecycleTests.NullDeviceIsRejectedAndFrameCallsRemainSafe .................   Passed    0.12 sec
+      Start 20: RenderSystemLifecycleTests.AcceptsValidAndRejectsOutOfRangeShadowSettings
+20/53 Test #20: RenderSystemLifecycleTests.AcceptsValidAndRejectsOutOfRangeShadowSettings ..............   Passed    0.01 sec
+      Start 21: RenderSystemLifecycleTests.InitializesOnWarpUploadsResourcesAndCompletesFrame
+21/53 Test #21: RenderSystemLifecycleTests.InitializesOnWarpUploadsResourcesAndCompletesFrame ..........   Passed    0.06 sec
+      Start 22: RenderGraphCpuPathTests.CompilesOutputAndRejectsReadWithoutProducer
+22/53 Test #22: RenderGraphCpuPathTests.CompilesOutputAndRejectsReadWithoutProducer ....................   Passed    0.01 sec
+      Start 23: SceneRendererCpuPathTests.BuildsShadowDataAndLightingWithinCasterLimits
+23/53 Test #23: SceneRendererCpuPathTests.BuildsShadowDataAndLightingWithinCasterLimits ................   Passed    0.01 sec
+      Start 24: CameraValueTests.RejectsInvalidProjectionAndKeepsConstructorFallback
+24/53 Test #24: CameraValueTests.RejectsInvalidProjectionAndKeepsConstructorFallback ...................   Passed    0.01 sec
+      Start 25: CameraValueTests.BuildsFiniteViewProjectionAndClampsNonpositiveAspect
+25/53 Test #25: CameraValueTests.BuildsFiniteViewProjectionAndClampsNonpositiveAspect ..................   Passed    0.01 sec
+      Start 26: SpotLightTests.ClampsValuesAndProducesShaderCompatibleLightData
+26/53 Test #26: SpotLightTests.ClampsValuesAndProducesShaderCompatibleLightData ........................   Passed    0.01 sec
+      Start 27: SpotLightTests.LeavesDirectionUnchangedForDegenerateLookAt
+27/53 Test #27: SpotLightTests.LeavesDirectionUnchangedForDegenerateLookAt .............................   Passed    0.01 sec
+      Start 28: ApplicationTests.RejectsMissingWindowAndBackend
+28/53 Test #28: ApplicationTests.RejectsMissingWindowAndBackend ........................................   Passed    0.02 sec
+      Start 29: ApplicationTests.StopsWhenBackendInitializationFails
+29/53 Test #29: ApplicationTests.StopsWhenBackendInitializationFails ...................................   Passed    0.02 sec
+      Start 30: ApplicationTests.RejectsRendererWithoutDevice
+30/53 Test #30: ApplicationTests.RejectsRendererWithoutDevice ..........................................   Passed    0.02 sec
+      Start 31: ApplicationTests.RejectsSceneDocumentUntilRendererIsInitialized
+31/53 Test #31: ApplicationTests.RejectsSceneDocumentUntilRendererIsInitialized ........................   Passed    0.01 sec
+      Start 32: ApplicationTests.AddsAndRemovesScenesBySharedPointer
+32/53 Test #32: ApplicationTests.AddsAndRemovesScenesBySharedPointer ...................................   Passed    0.01 sec
+      Start 33: ApplicationTests.RunsWarpFrameLoadsAndSavesSceneDocuments
+33/53 Test #33: ApplicationTests.RunsWarpFrameLoadsAndSavesSceneDocuments ..............................   Passed    0.05 sec
+      Start 34: EditorCameraControllerTests.CursorCaptureRequiresRightMouseAndHoveredViewport
+34/53 Test #34: EditorCameraControllerTests.CursorCaptureRequiresRightMouseAndHoveredViewport ..........   Passed    0.01 sec
+      Start 35: EditorCameraControllerTests.ZoomRejectsMissingCameraAndNonFiniteInput
+35/53 Test #35: EditorCameraControllerTests.ZoomRejectsMissingCameraAndNonFiniteInput ..................   Passed    0.02 sec
+      Start 36: EditorCameraControllerTests.ZoomClampsProjectionToSupportedFieldOfView
+36/53 Test #36: EditorCameraControllerTests.ZoomClampsProjectionToSupportedFieldOfView .................   Passed    0.01 sec
+      Start 37: EditorCameraControllerTests.MovementRequiresHoveredViewportWithoutTextInput
+37/53 Test #37: EditorCameraControllerTests.MovementRequiresHoveredViewportWithoutTextInput ............   Passed    0.01 sec
+      Start 38: EditorCameraControllerTests.MovesCameraAlongLocalAxesAndRotatesWhileDragging
+38/53 Test #38: EditorCameraControllerTests.MovesCameraAlongLocalAxesAndRotatesWhileDragging ...........   Passed    0.01 sec
+      Start 39: EventDispatcherTests.DispatchesMatchingTypeAndPropagatesHandledState
+39/53 Test #39: EventDispatcherTests.DispatchesMatchingTypeAndPropagatesHandledState ...................   Passed    0.01 sec
+      Start 40: EventDispatcherTests.IgnoresNonmatchingTypeWithoutCallingCallback
+40/53 Test #40: EventDispatcherTests.IgnoresNonmatchingTypeWithoutCallingCallback ......................   Passed    0.01 sec
+      Start 41: EventDispatcherTests.DoesNotClearAlreadyHandledEvent
+41/53 Test #41: EventDispatcherTests.DoesNotClearAlreadyHandledEvent ...................................   Passed    0.01 sec
+      Start 42: ResultTests.CarriesSuccessfulValueAndErrorMessage
+42/53 Test #42: ResultTests.CarriesSuccessfulValueAndErrorMessage ......................................   Passed    0.01 sec
+      Start 43: LogEngineTests.WritesStructuredEventsAndDispatchesCallbacks
+43/53 Test #43: LogEngineTests.WritesStructuredEventsAndDispatchesCallbacks ............................   Passed    0.02 sec
+      Start 44: LogEngineTests.AppliesGlobalAndCategoryThresholdsAndReportsInvalidValues
+44/53 Test #44: LogEngineTests.AppliesGlobalAndCategoryThresholdsAndReportsInvalidValues ...............   Passed    0.02 sec
+      Start 45: LogEngineTests.RotatesFilesAndCountsBreadcrumbOverwritesAndCallbackFailures
+45/53 Test #45: LogEngineTests.RotatesFilesAndCountsBreadcrumbOverwritesAndCallbackFailures ............   Passed    0.83 sec
+      Start 46: ObjectHierarchyTests.RejectsDuplicateParentingAndCycles
+46/53 Test #46: ObjectHierarchyTests.RejectsDuplicateParentingAndCycles ................................   Passed    0.01 sec
+      Start 47: ObjectHierarchyTests.DetachesChildAndClearsTransformParent
+47/53 Test #47: ObjectHierarchyTests.DetachesChildAndClearsTransformParent .............................   Passed    0.01 sec
+      Start 48: ObjectHierarchyTests.ReparentsThroughParentApiAndKeepsSingleOwnership
+48/53 Test #48: ObjectHierarchyTests.ReparentsThroughParentApiAndKeepsSingleOwnership ..................   Passed    0.01 sec
+      Start 49: SceneIdentityTests.RestoresIdsAndKeepsIndexConsistentAfterRemovalAndReplacement
+49/53 Test #49: SceneIdentityTests.RestoresIdsAndKeepsIndexConsistentAfterRemovalAndReplacement ........   Passed    0.02 sec
+      Start 50: SceneIdentityTests.InvalidIndexReturnsInvalidId
+50/53 Test #50: SceneIdentityTests.InvalidIndexReturnsInvalidId ........................................   Passed    0.01 sec
+      Start 51: TransformTests.ComposesLocalTranslationWithParentWorldTransform
+51/53 Test #51: TransformTests.ComposesLocalTranslationWithParentWorldTransform ........................   Passed    0.01 sec
+      Start 52: TransformTests.RejectsAncestorCycleAndKeepsPreviousParent
+52/53 Test #52: TransformTests.RejectsAncestorCycleAndKeepsPreviousParent ..............................   Passed    0.01 sec
+      Start 53: TransformTests.SingularNormalMatrixRemainsFinite
+53/53 Test #53: TransformTests.SingularNormalMatrixRemainsFinite .......................................   Passed    0.01 sec
+
+100% tests passed, 0 tests failed out of 53
+
+Label Time Summary:
+unit    =   1.73 sec*proc (51 tests)
+
+Total Test time (real) =   2.05 sec

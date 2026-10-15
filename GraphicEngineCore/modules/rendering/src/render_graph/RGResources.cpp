@@ -1,4 +1,4 @@
-#include "rendering/include/renderer/render_graph/RGResources.h"
+#include "rendering/src/render_graph/RGResources.h"
 
 #include <utility>
 

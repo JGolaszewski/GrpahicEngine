@@ -1,0 +1,1747 @@
+    1|       |#include "scene/include/SceneDocument.h"
+    2|       |
+    3|       |#include <nlohmann/json.hpp>
+    4|       |
+    5|       |#include <algorithm>
+    6|       |#include <atomic>
+    7|       |#include <cctype>
+    8|       |#include <cmath>
+    9|       |#include <fstream>
+   10|       |#include <iterator>
+   11|       |#include <limits>
+   12|       |#include <set>
+   13|       |#include <type_traits>
+   14|       |
+   15|       |#if defined(_WIN32)
+   16|       |#define WIN32_LEAN_AND_MEAN
+   17|       |#define NOMINMAX
+   18|       |#include <Windows.h>
+   19|       |#endif
+   20|       |
+   21|       |namespace Engine
+   22|       |{
+   23|       |namespace
+   24|       |{
+   25|       |using Json = nlohmann::json;
+   26|       |std::atomic<uint64_t> temporaryFileSequence = 0;
+   27|       |
+   28|       |std::string FileContext(const std::filesystem::path &path, const std::string &message)
+   29|     55|{
+   30|     55|    return path.generic_string() + ": " + message;
+   31|     55|}
+   32|       |
+   33|       |bool IsGuid(const std::string &value)
+   34|     11|{
+   35|     11|    if (value.size() != 36)
+  ------------------
+  |  Branch (35:9): [True: 2, False: 9]
+  ------------------
+   36|      2|        return false;
+   37|    333|    for (size_t i = 0; i < value.size(); ++i)
+  ------------------
+  |  Branch (37:24): [True: 324, False: 9]
+  ------------------
+   38|    324|    {
+   39|    324|        if (i == 8 || i == 13 || i == 18 || i == 23)
+  ------------------
+  |  Branch (39:13): [True: 9, False: 315]
+  |  Branch (39:23): [True: 9, False: 306]
+  |  Branch (39:34): [True: 9, False: 297]
+  |  Branch (39:45): [True: 9, False: 288]
+  ------------------
+   40|     36|        {
+   41|     36|            if (value[i] != '-')
+  ------------------
+  |  Branch (41:17): [True: 0, False: 36]
+  ------------------
+   42|      0|                return false;
+   43|     36|        }
+   44|    288|        else if (!std::isxdigit(static_cast<unsigned char>(value[i])))
+  ------------------
+  |  Branch (44:18): [True: 0, False: 288]
+  ------------------
+   45|      0|        {
+   46|      0|            return false;
+   47|      0|        }
+   48|    324|    }
+   49|      9|    return true;
+   50|      9|}
+   51|       |
+   52|       |template <size_t N>
+   53|       |bool ReadFloatArray(const Json &value, std::array<float, N> &result, const std::string &field,
+   54|       |                    std::string &error)
+   55|     64|{
+   56|     64|    if (!value.is_array() || value.size() != N)
+  ------------------
+  |  Branch (56:9): [True: 0, False: 48]
+  |  Branch (56:30): [True: 1, False: 47]
+  ------------------
+  |  Branch (56:9): [True: 0, False: 16]
+  |  Branch (56:30): [True: 1, False: 15]
+  ------------------
+   57|      2|    {
+   58|      2|        error = field + " must be an array of " + std::to_string(N) + " numbers";
+   59|      2|        return false;
+   60|      2|    }
+   61|    261|    for (size_t i = 0; i < N; ++i)
+  ------------------
+  |  Branch (61:24): [True: 140, False: 46]
+  ------------------
+  |  Branch (61:24): [True: 60, False: 15]
+  ------------------
+   62|    200|    {
+   63|    200|        if (!value[i].is_number())
+  ------------------
+  |  Branch (63:13): [True: 1, False: 139]
+  ------------------
+  |  Branch (63:13): [True: 0, False: 60]
+  ------------------
+   64|      1|        {
+   65|      1|            error = field + " contains a non-numeric value";
+   66|      1|            return false;
+   67|      1|        }
+   68|    199|        const double number = value[i].get<double>();
+   69|    199|        if (!std::isfinite(number) || std::abs(number) > std::numeric_limits<float>::max())
+  ------------------
+  |  Branch (69:13): [True: 0, False: 139]
+  |  Branch (69:39): [True: 0, False: 139]
+  ------------------
+  |  Branch (69:13): [True: 0, False: 60]
+  |  Branch (69:39): [True: 0, False: 60]
+  ------------------
+   70|      0|        {
+   71|      0|            error = field + " contains a non-finite or unrepresentable value";
+   72|      0|            return false;
+   73|      0|        }
+   74|    199|        result[i] = static_cast<float>(number);
+   75|    199|    }
+   76|     61|    return true;
+   77|     62|}
+  ------------------
+  | SceneDocument.cpp:??$ReadFloatArray@$02@?A0x9117756F@Engine@@YA_NAEBV?$basic_json@Vmap@std@@Vvector@2@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@2@_N_J_KNVallocator@2@Uadl_serializer@json_abi_v3_12_0@nlohmann@@V?$vector@EV?$allocator@E@std@@@2@X@json_abi_v3_12_0@nlohmann@@AEAV?$array@M$02@std@@AEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@6@AEAV76@@Z:
+  |   55|     48|{
+  |   56|     48|    if (!value.is_array() || value.size() != N)
+  |  ------------------
+  |  |  Branch (56:9): [True: 0, False: 48]
+  |  |  Branch (56:30): [True: 1, False: 47]
+  |  ------------------
+  |   57|      1|    {
+  |   58|      1|        error = field + " must be an array of " + std::to_string(N) + " numbers";
+  |   59|      1|        return false;
+  |   60|      1|    }
+  |   61|    186|    for (size_t i = 0; i < N; ++i)
+  |  ------------------
+  |  |  Branch (61:24): [True: 140, False: 46]
+  |  ------------------
+  |   62|    140|    {
+  |   63|    140|        if (!value[i].is_number())
+  |  ------------------
+  |  |  Branch (63:13): [True: 1, False: 139]
+  |  ------------------
+  |   64|      1|        {
+  |   65|      1|            error = field + " contains a non-numeric value";
+  |   66|      1|            return false;
+  |   67|      1|        }
+  |   68|    139|        const double number = value[i].get<double>();
+  |   69|    139|        if (!std::isfinite(number) || std::abs(number) > std::numeric_limits<float>::max())
+  |  ------------------
+  |  |  Branch (69:13): [True: 0, False: 139]
+  |  |  Branch (69:39): [True: 0, False: 139]
+  |  ------------------
+  |   70|      0|        {
+  |   71|      0|            error = field + " contains a non-finite or unrepresentable value";
+  |   72|      0|            return false;
+  |   73|      0|        }
+  |   74|    139|        result[i] = static_cast<float>(number);
+  |   75|    139|    }
+  |   76|     46|    return true;
+  |   77|     47|}
+  ------------------
+  | SceneDocument.cpp:??$ReadFloatArray@$03@?A0x9117756F@Engine@@YA_NAEBV?$basic_json@Vmap@std@@Vvector@2@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@2@_N_J_KNVallocator@2@Uadl_serializer@json_abi_v3_12_0@nlohmann@@V?$vector@EV?$allocator@E@std@@@2@X@json_abi_v3_12_0@nlohmann@@AEAV?$array@M$03@std@@AEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@6@AEAV76@@Z:
+  |   55|     16|{
+  |   56|     16|    if (!value.is_array() || value.size() != N)
+  |  ------------------
+  |  |  Branch (56:9): [True: 0, False: 16]
+  |  |  Branch (56:30): [True: 1, False: 15]
+  |  ------------------
+  |   57|      1|    {
+  |   58|      1|        error = field + " must be an array of " + std::to_string(N) + " numbers";
+  |   59|      1|        return false;
+  |   60|      1|    }
+  |   61|     75|    for (size_t i = 0; i < N; ++i)
+  |  ------------------
+  |  |  Branch (61:24): [True: 60, False: 15]
+  |  ------------------
+  |   62|     60|    {
+  |   63|     60|        if (!value[i].is_number())
+  |  ------------------
+  |  |  Branch (63:13): [True: 0, False: 60]
+  |  ------------------
+  |   64|      0|        {
+  |   65|      0|            error = field + " contains a non-numeric value";
+  |   66|      0|            return false;
+  |   67|      0|        }
+  |   68|     60|        const double number = value[i].get<double>();
+  |   69|     60|        if (!std::isfinite(number) || std::abs(number) > std::numeric_limits<float>::max())
+  |  ------------------
+  |  |  Branch (69:13): [True: 0, False: 60]
+  |  |  Branch (69:39): [True: 0, False: 60]
+  |  ------------------
+  |   70|      0|        {
+  |   71|      0|            error = field + " contains a non-finite or unrepresentable value";
+  |   72|      0|            return false;
+  |   73|      0|        }
+  |   74|     60|        result[i] = static_cast<float>(number);
+  |   75|     60|    }
+  |   76|     15|    return true;
+  |   77|     15|}
+  ------------------
+   78|       |
+   79|       |template <typename T> bool ReadNumber(const Json &object, const char *key, T &result, std::string &error)
+   80|    186|{
+   81|    186|    if (!object.contains(key))
+  ------------------
+  |  Branch (81:9): [True: 51, False: 135]
+  ------------------
+   82|     51|        return true;
+   83|    135|    const Json &value = object.at(key);
+   84|    135|    if (!value.is_number())
+  ------------------
+  |  Branch (84:9): [True: 1, False: 134]
+  ------------------
+   85|      1|    {
+   86|      1|        error = std::string(key) + " must be numeric";
+   87|      1|        return false;
+   88|      1|    }
+   89|    134|    const double number = value.get<double>();
+   90|    134|    if (!std::isfinite(number) || number < -static_cast<double>(std::numeric_limits<T>::max()) ||
+  ------------------
+  |  Branch (90:9): [True: 0, False: 134]
+  |  Branch (90:35): [True: 0, False: 134]
+  ------------------
+   91|    134|        number > static_cast<double>(std::numeric_limits<T>::max()))
+  ------------------
+  |  Branch (91:9): [True: 0, False: 134]
+  ------------------
+   92|      0|    {
+   93|      0|        error = std::string(key) + " contains a non-finite or unrepresentable value";
+   94|      0|        return false;
+   95|      0|    }
+   96|    134|    result = static_cast<T>(number);
+   97|    134|    return true;
+   98|    134|}
+   99|       |
+  100|       |bool ReadBool(const Json &object, const char *key, bool &result, std::string &error)
+  101|     32|{
+  102|     32|    if (!object.contains(key))
+  ------------------
+  |  Branch (102:9): [True: 0, False: 32]
+  ------------------
+  103|      0|        return true;
+  104|     32|    if (!object.at(key).is_boolean())
+  ------------------
+  |  Branch (104:9): [True: 2, False: 30]
+  ------------------
+  105|      2|    {
+  106|      2|        error = std::string(key) + " must be boolean";
+  107|      2|        return false;
+  108|      2|    }
+  109|     30|    result = object.at(key).get<bool>();
+  110|     30|    return true;
+  111|     32|}
+  112|       |
+  113|       |bool ReadId(const Json &object, uint64_t &id, std::string &error)
+  114|     50|{
+  115|     50|    if (!object.contains("id") || !object["id"].is_number_unsigned())
+  ------------------
+  |  Branch (115:9): [True: 0, False: 50]
+  |  Branch (115:35): [True: 0, False: 50]
+  ------------------
+  116|      0|    {
+  117|      0|        error = "id must be an unsigned integer";
+  118|      0|        return false;
+  119|      0|    }
+  120|     50|    id = object["id"].get<uint64_t>();
+  121|     50|    if (id == 0)
+  ------------------
+  |  Branch (121:9): [True: 1, False: 49]
+  ------------------
+  122|      1|    {
+  123|      1|        error = "id must be positive";
+  124|      1|        return false;
+  125|      1|    }
+  126|     49|    return true;
+  127|     50|}
+  128|       |
+  129|       |template <size_t N>
+  130|       |bool ReadArrayField(const Json &object, const char *key, std::array<float, N> &result, std::string &error)
+  131|     87|{
+  132|     87|    return !object.contains(key) || ReadFloatArray(object.at(key), result, key, error);
+  ------------------
+  |  Branch (132:12): [True: 13, False: 11]
+  |  Branch (132:37): [True: 10, False: 1]
+  |  Branch (132:12): [True: 25, False: 38]
+  |  Branch (132:37): [True: 38, False: 0]
+  ------------------
+  133|     87|}
+  ------------------
+  | SceneDocument.cpp:??$ReadArrayField@$03@?A0x9117756F@Engine@@YA_NAEBV?$basic_json@Vmap@std@@Vvector@2@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@2@_N_J_KNVallocator@2@Uadl_serializer@json_abi_v3_12_0@nlohmann@@V?$vector@EV?$allocator@E@std@@@2@X@json_abi_v3_12_0@nlohmann@@PEBDAEAV?$array@M$03@std@@AEAV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@6@@Z:
+  |  131|     24|{
+  |  132|     24|    return !object.contains(key) || ReadFloatArray(object.at(key), result, key, error);
+  |  ------------------
+  |  |  Branch (132:12): [True: 13, False: 11]
+  |  |  Branch (132:37): [True: 10, False: 1]
+  |  ------------------
+  |  133|     24|}
+  ------------------
+  | SceneDocument.cpp:??$ReadArrayField@$02@?A0x9117756F@Engine@@YA_NAEBV?$basic_json@Vmap@std@@Vvector@2@V?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@2@_N_J_KNVallocator@2@Uadl_serializer@json_abi_v3_12_0@nlohmann@@V?$vector@EV?$allocator@E@std@@@2@X@json_abi_v3_12_0@nlohmann@@PEBDAEAV?$array@M$02@std@@AEAV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@6@@Z:
+  |  131|     63|{
+  |  132|     63|    return !object.contains(key) || ReadFloatArray(object.at(key), result, key, error);
+  |  ------------------
+  |  |  Branch (132:12): [True: 25, False: 38]
+  |  |  Branch (132:37): [True: 38, False: 0]
+  |  ------------------
+  |  133|     63|}
+  ------------------
+  134|       |
+  135|       |bool ReadOptionalGuid(const Json &object, const char *key, std::optional<std::string> &result,
+  136|       |                      std::string &error)
+  137|     96|{
+  138|     96|    if (!object.contains(key) || object.at(key).is_null())
+  ------------------
+  |  Branch (138:9): [True: 77, False: 19]
+  |  Branch (138:34): [True: 11, False: 8]
+  ------------------
+  139|     88|        return true;
+  140|      8|    if (!object.at(key).is_string())
+  ------------------
+  |  Branch (140:9): [True: 0, False: 8]
+  ------------------
+  141|      0|    {
+  142|      0|        error = std::string(key) + " must be a GUID string or null";
+  143|      0|        return false;
+  144|      0|    }
+  145|      8|    result = object.at(key).get<std::string>();
+  146|      8|    if (!IsGuid(*result))
+  ------------------
+  |  Branch (146:9): [True: 2, False: 6]
+  ------------------
+  147|      2|    {
+  148|      2|        error = std::string(key) + " is not a valid GUID";
+  149|      2|        return false;
+  150|      2|    }
+  151|      6|    return true;
+  152|      8|}
+  153|       |
+  154|       |bool KnownKeys(const Json &object, std::initializer_list<const char *> known,
+  155|       |               std::vector<std::string> &warnings, const std::string &context);
+  156|       |
+  157|       |bool ReadMaterial(const Json &value, SceneMaterialDocument &material, std::vector<std::string> &warnings,
+  158|       |                  const std::string &context, std::string &error)
+  159|     20|{
+  160|     20|    if (!value.is_object())
+  ------------------
+  |  Branch (160:9): [True: 2, False: 18]
+  ------------------
+  161|      2|    {
+  162|      2|        error = "material must be an object";
+  163|      2|        return false;
+  164|      2|    }
+  165|     18|    KnownKeys(value,
+  166|     18|              {"baseColor", "emissive", "metallic", "roughness", "gtrGamma", "ior", "specularF0", "brdfModel",
+  167|     18|               "workflow", "specularMode", "alphaMode", "alphaCutoff", "doubleSided", "baseColorTextureGuid",
+  168|     18|               "normalTextureGuid"},
+  169|     18|              warnings, context);
+  170|     18|    if (!ReadArrayField(value, "baseColor", material.baseColor, error) ||
+  ------------------
+  |  Branch (170:9): [True: 1, False: 17]
+  ------------------
+  171|     17|        !ReadArrayField(value, "emissive", material.emissive, error) ||
+  ------------------
+  |  Branch (171:9): [True: 0, False: 17]
+  ------------------
+  172|     17|        !ReadNumber(value, "metallic", material.metallic, error) ||
+  ------------------
+  |  Branch (172:9): [True: 1, False: 16]
+  ------------------
+  173|     16|        !ReadNumber(value, "roughness", material.roughness, error) ||
+  ------------------
+  |  Branch (173:9): [True: 0, False: 16]
+  ------------------
+  174|     16|        !ReadNumber(value, "gtrGamma", material.gtrGamma, error) ||
+  ------------------
+  |  Branch (174:9): [True: 0, False: 16]
+  ------------------
+  175|     16|        !ReadNumber(value, "ior", material.ior, error) ||
+  ------------------
+  |  Branch (175:9): [True: 0, False: 16]
+  ------------------
+  176|     16|        !ReadArrayField(value, "specularF0", material.specularF0, error) ||
+  ------------------
+  |  Branch (176:9): [True: 0, False: 16]
+  ------------------
+  177|     16|        !ReadOptionalGuid(value, "baseColorTextureGuid", material.baseColorTextureGuid, error) ||
+  ------------------
+  |  Branch (177:9): [True: 1, False: 15]
+  ------------------
+  178|     15|        !ReadOptionalGuid(value, "normalTextureGuid", material.normalTextureGuid, error))
+  ------------------
+  |  Branch (178:9): [True: 0, False: 15]
+  ------------------
+  179|      3|        return false;
+  180|     15|    if (value.contains("brdfModel"))
+  ------------------
+  |  Branch (180:9): [True: 7, False: 8]
+  ------------------
+  181|      7|    {
+  182|      7|        if (!value["brdfModel"].is_string())
+  ------------------
+  |  Branch (182:13): [True: 1, False: 6]
+  ------------------
+  183|      1|        {
+  184|      1|            error = "brdfModel must be a string";
+  185|      1|            return false;
+  186|      1|        }
+  187|      6|        material.brdfModel = value["brdfModel"].get<std::string>();
+  188|      6|    }
+  189|     14|    if (value.contains("workflow"))
+  ------------------
+  |  Branch (189:9): [True: 4, False: 10]
+  ------------------
+  190|      4|    {
+  191|      4|        if (!value["workflow"].is_string())
+  ------------------
+  |  Branch (191:13): [True: 0, False: 4]
+  ------------------
+  192|      0|        {
+  193|      0|            error = "workflow must be a string";
+  194|      0|            return false;
+  195|      0|        }
+  196|      4|        material.workflow = value["workflow"].get<std::string>();
+  197|      4|    }
+  198|     14|    if (value.contains("specularMode"))
+  ------------------
+  |  Branch (198:9): [True: 4, False: 10]
+  ------------------
+  199|      4|    {
+  200|      4|        if (!value["specularMode"].is_string())
+  ------------------
+  |  Branch (200:13): [True: 0, False: 4]
+  ------------------
+  201|      0|        {
+  202|      0|            error = "specularMode must be a string";
+  203|      0|            return false;
+  204|      0|        }
+  205|      4|        material.specularMode = value["specularMode"].get<std::string>();
+  206|      4|    }
+  207|     14|    if (value.contains("alphaMode"))
+  ------------------
+  |  Branch (207:9): [True: 4, False: 10]
+  ------------------
+  208|      4|    {
+  209|      4|        if (!value["alphaMode"].is_string())
+  ------------------
+  |  Branch (209:13): [True: 0, False: 4]
+  ------------------
+  210|      0|        {
+  211|      0|            error = "alphaMode must be a string";
+  212|      0|            return false;
+  213|      0|        }
+  214|      4|        material.alphaMode = value["alphaMode"].get<std::string>();
+  215|      4|    }
+  216|     14|    if (value.contains("alphaCutoff") && !ReadNumber(value, "alphaCutoff", material.alphaCutoff, error))
+  ------------------
+  |  Branch (216:9): [True: 4, False: 10]
+  |  Branch (216:42): [True: 0, False: 4]
+  ------------------
+  217|      0|        return false;
+  218|     14|    if (value.contains("doubleSided"))
+  ------------------
+  |  Branch (218:9): [True: 3, False: 11]
+  ------------------
+  219|      3|    {
+  220|      3|        if (!value["doubleSided"].is_boolean())
+  ------------------
+  |  Branch (220:13): [True: 0, False: 3]
+  ------------------
+  221|      0|        {
+  222|      0|            error = "doubleSided must be a boolean";
+  223|      0|            return false;
+  224|      0|        }
+  225|      3|        material.doubleSided = value["doubleSided"].get<bool>();
+  226|      3|    }
+  227|     14|    if (material.brdfModel == "neural")
+  ------------------
+  |  Branch (227:9): [True: 1, False: 13]
+  ------------------
+  228|      1|    {
+  229|      1|        warnings.push_back(context + " uses the unsupported neural BRDF; GGX will be used instead");
+  230|      1|        material.brdfModel = "ggx";
+  231|      1|    }
+  232|     14|    if (material.brdfModel == "specularGlossiness")
+  ------------------
+  |  Branch (232:9): [True: 1, False: 13]
+  ------------------
+  233|      1|    {
+  234|      1|        if (value.contains("workflow"))
+  ------------------
+  |  Branch (234:13): [True: 0, False: 1]
+  ------------------
+  235|      0|        {
+  236|      0|            error = "specularGlossiness is a workflow, not a brdfModel";
+  237|      0|            return false;
+  238|      0|        }
+  239|      1|        material.brdfModel = "ggx";
+  240|      1|        material.workflow = "specularGlossiness";
+  241|      1|        warnings.push_back(context +
+  242|      1|                           " migrated specularGlossiness from brdfModel to workflow with GGX shading");
+  243|      1|    }
+  244|     14|    const auto validBrdf =
+  245|     14|        material.brdfModel == "legacy" || material.brdfModel == "ggx" || material.brdfModel == "gtr";
+  ------------------
+  |  Branch (245:9): [True: 9, False: 5]
+  |  Branch (245:43): [True: 3, False: 2]
+  |  Branch (245:74): [True: 1, False: 1]
+  ------------------
+  246|     14|    if (!validBrdf)
+  ------------------
+  |  Branch (246:9): [True: 1, False: 13]
+  ------------------
+  247|      1|    {
+  248|      1|        error = "brdfModel has an unsupported value";
+  249|      1|        return false;
+  250|      1|    }
+  251|     13|    if (material.workflow != "metallicRoughness" && material.workflow != "specularGlossiness")
+  ------------------
+  |  Branch (251:9): [True: 3, False: 10]
+  |  Branch (251:53): [True: 1, False: 2]
+  ------------------
+  252|      1|    {
+  253|      1|        error = "workflow has an unsupported value";
+  254|      1|        return false;
+  255|      1|    }
+  256|     12|    if (material.specularMode != "ior" && material.specularMode != "explicitF0")
+  ------------------
+  |  Branch (256:9): [True: 1, False: 11]
+  |  Branch (256:43): [True: 1, False: 0]
+  ------------------
+  257|      1|    {
+  258|      1|        error = "specularMode has an unsupported value";
+  259|      1|        return false;
+  260|      1|    }
+  261|     11|    if (material.alphaMode != "opaque" && material.alphaMode != "mask" && material.alphaMode != "blend")
+  ------------------
+  |  Branch (261:9): [True: 2, False: 9]
+  |  Branch (261:43): [True: 2, False: 0]
+  |  Branch (261:75): [True: 1, False: 1]
+  ------------------
+  262|      1|    {
+  263|      1|        error = "alphaMode has an unsupported value";
+  264|      1|        return false;
+  265|      1|    }
+  266|     10|    if (!std::isfinite(material.alphaCutoff) || material.alphaCutoff < 0.0f || material.alphaCutoff > 1.0f)
+  ------------------
+  |  Branch (266:9): [True: 0, False: 10]
+  |  Branch (266:49): [True: 0, False: 10]
+  |  Branch (266:80): [True: 1, False: 9]
+  ------------------
+  267|      1|    {
+  268|      1|        error = "alphaCutoff must be within [0, 1]";
+  269|      1|        return false;
+  270|      1|    }
+  271|      9|    if (material.metallic < 0.0f || material.metallic > 1.0f || material.roughness < 0.0f ||
+  ------------------
+  |  Branch (271:9): [True: 0, False: 9]
+  |  Branch (271:37): [True: 1, False: 8]
+  |  Branch (271:65): [True: 0, False: 8]
+  ------------------
+  272|      8|        material.roughness > 1.0f || material.gtrGamma < 1.0f || material.gtrGamma > 8.0f ||
+  ------------------
+  |  Branch (272:9): [True: 0, False: 8]
+  |  Branch (272:38): [True: 0, False: 8]
+  |  Branch (272:66): [True: 0, False: 8]
+  ------------------
+  273|      8|        material.ior < 1.0f || material.ior > 3.0f)
+  ------------------
+  |  Branch (273:9): [True: 0, False: 8]
+  |  Branch (273:32): [True: 0, False: 8]
+  ------------------
+  274|      1|    {
+  275|      1|        error = "material contains out-of-range BRDF settings";
+  276|      1|        return false;
+  277|      1|    }
+  278|      8|    for (float component : material.baseColor)
+  ------------------
+  |  Branch (278:26): [True: 29, False: 7]
+  ------------------
+  279|     29|        if (component < 0.0f || component > 1.0f)
+  ------------------
+  |  Branch (279:13): [True: 0, False: 29]
+  |  Branch (279:33): [True: 1, False: 28]
+  ------------------
+  280|      1|        {
+  281|      1|            error = "baseColor values must be within [0, 1]";
+  282|      1|            return false;
+  283|      1|        }
+  284|      7|    for (float component : material.emissive)
+  ------------------
+  |  Branch (284:26): [True: 20, False: 6]
+  ------------------
+  285|     20|        if (component < 0.0f)
+  ------------------
+  |  Branch (285:13): [True: 1, False: 19]
+  ------------------
+  286|      1|        {
+  287|      1|            error = "emissive values must be non-negative";
+  288|      1|            return false;
+  289|      1|        }
+  290|      6|    for (float component : material.specularF0)
+  ------------------
+  |  Branch (290:26): [True: 17, False: 5]
+  ------------------
+  291|     17|        if (component < 0.0f || component > 1.0f)
+  ------------------
+  |  Branch (291:13): [True: 0, False: 17]
+  |  Branch (291:33): [True: 1, False: 16]
+  ------------------
+  292|      1|        {
+  293|      1|            error = "specularF0 values must be within [0, 1]";
+  294|      1|            return false;
+  295|      1|        }
+  296|      5|    return true;
+  297|      6|}
+  298|       |
+  299|       |bool IsValidPrimitiveType(const std::string &type)
+  300|      3|{
+  301|      3|    return type == "cube" || type == "sphere" || type == "plane" || type == "cone";
+  ------------------
+  |  Branch (301:12): [True: 1, False: 2]
+  |  Branch (301:30): [True: 1, False: 1]
+  |  Branch (301:50): [True: 0, False: 1]
+  |  Branch (301:69): [True: 1, False: 0]
+  ------------------
+  302|      3|}
+  303|       |
+  304|       |bool IsValidMaterial(const SceneMaterialDocument &material)
+  305|      3|{
+  306|      3|    const auto validBrdf =
+  307|      3|        material.brdfModel == "legacy" || material.brdfModel == "ggx" || material.brdfModel == "gtr";
+  ------------------
+  |  Branch (307:9): [True: 1, False: 2]
+  |  Branch (307:43): [True: 1, False: 1]
+  |  Branch (307:74): [True: 1, False: 0]
+  ------------------
+  308|      3|    const bool validWorkflow =
+  309|      3|        material.workflow == "metallicRoughness" || material.workflow == "specularGlossiness";
+  ------------------
+  |  Branch (309:9): [True: 2, False: 1]
+  |  Branch (309:53): [True: 1, False: 0]
+  ------------------
+  310|      3|    if (!validBrdf || !validWorkflow ||
+  ------------------
+  |  Branch (310:9): [True: 0, False: 3]
+  |  Branch (310:23): [True: 0, False: 3]
+  ------------------
+  311|      3|        (material.specularMode != "ior" && material.specularMode != "explicitF0") ||
+  ------------------
+  |  Branch (311:10): [True: 0, False: 3]
+  |  Branch (311:44): [True: 0, False: 0]
+  ------------------
+  312|      3|        (material.alphaMode != "opaque" && material.alphaMode != "mask" && material.alphaMode != "blend") ||
+  ------------------
+  |  Branch (312:10): [True: 1, False: 2]
+  |  Branch (312:44): [True: 1, False: 0]
+  |  Branch (312:76): [True: 0, False: 1]
+  ------------------
+  313|      3|        !std::isfinite(material.metallic) || !std::isfinite(material.roughness) ||
+  ------------------
+  |  Branch (313:9): [True: 0, False: 3]
+  |  Branch (313:46): [True: 0, False: 3]
+  ------------------
+  314|      3|        !std::isfinite(material.gtrGamma) || !std::isfinite(material.ior) ||
+  ------------------
+  |  Branch (314:9): [True: 0, False: 3]
+  |  Branch (314:46): [True: 0, False: 3]
+  ------------------
+  315|      3|        !std::isfinite(material.alphaCutoff) || material.metallic < 0.0f || material.metallic > 1.0f ||
+  ------------------
+  |  Branch (315:9): [True: 0, False: 3]
+  |  Branch (315:49): [True: 0, False: 3]
+  |  Branch (315:77): [True: 0, False: 3]
+  ------------------
+  316|      3|        material.roughness < 0.0f || material.roughness > 1.0f || material.gtrGamma < 1.0f ||
+  ------------------
+  |  Branch (316:9): [True: 0, False: 3]
+  |  Branch (316:38): [True: 0, False: 3]
+  |  Branch (316:67): [True: 0, False: 3]
+  ------------------
+  317|      3|        material.gtrGamma > 8.0f || material.ior < 1.0f || material.ior > 3.0f ||
+  ------------------
+  |  Branch (317:9): [True: 0, False: 3]
+  |  Branch (317:37): [True: 0, False: 3]
+  |  Branch (317:60): [True: 0, False: 3]
+  ------------------
+  318|      3|        material.alphaCutoff < 0.0f || material.alphaCutoff > 1.0f)
+  ------------------
+  |  Branch (318:9): [True: 0, False: 3]
+  |  Branch (318:40): [True: 0, False: 3]
+  ------------------
+  319|      0|        return false;
+  320|      3|    if ((material.baseColorTextureGuid && !IsGuid(*material.baseColorTextureGuid)) ||
+  ------------------
+  |  Branch (320:10): [True: 1, False: 2]
+  |  Branch (320:43): [True: 0, False: 1]
+  ------------------
+  321|      3|        (material.normalTextureGuid && !IsGuid(*material.normalTextureGuid)))
+  ------------------
+  |  Branch (321:10): [True: 1, False: 2]
+  |  Branch (321:40): [True: 0, False: 1]
+  ------------------
+  322|      0|        return false;
+  323|      3|    for (float value : material.baseColor)
+  ------------------
+  |  Branch (323:22): [True: 12, False: 3]
+  ------------------
+  324|     12|        if (!std::isfinite(value) || value < 0.0f || value > 1.0f)
+  ------------------
+  |  Branch (324:13): [True: 0, False: 12]
+  |  Branch (324:38): [True: 0, False: 12]
+  |  Branch (324:54): [True: 0, False: 12]
+  ------------------
+  325|      0|            return false;
+  326|      3|    for (float value : material.emissive)
+  ------------------
+  |  Branch (326:22): [True: 9, False: 3]
+  ------------------
+  327|      9|        if (!std::isfinite(value) || value < 0.0f)
+  ------------------
+  |  Branch (327:13): [True: 0, False: 9]
+  |  Branch (327:38): [True: 0, False: 9]
+  ------------------
+  328|      0|            return false;
+  329|      3|    for (float value : material.specularF0)
+  ------------------
+  |  Branch (329:22): [True: 9, False: 3]
+  ------------------
+  330|      9|        if (!std::isfinite(value) || value < 0.0f || value > 1.0f)
+  ------------------
+  |  Branch (330:13): [True: 0, False: 9]
+  |  Branch (330:38): [True: 0, False: 9]
+  |  Branch (330:54): [True: 0, False: 9]
+  ------------------
+  331|      0|            return false;
+  332|      3|    return true;
+  333|      3|}
+  334|       |
+  335|       |bool KnownKeys(const Json &object, std::initializer_list<const char *> known,
+  336|       |               std::vector<std::string> &warnings, const std::string &context)
+  337|    129|{
+  338|    129|    if (!object.is_object())
+  ------------------
+  |  Branch (338:9): [True: 0, False: 129]
+  ------------------
+  339|      0|        return true;
+  340|    637|    for (auto it = object.begin(); it != object.end(); ++it)
+  ------------------
+  |  Branch (340:36): [True: 508, False: 129]
+  ------------------
+  341|    508|    {
+  342|    508|        const bool found =
+  343|  2.34k|            std::any_of(known.begin(), known.end(), [&](const char *key) { return it.key() == key; });
+  344|    508|        if (!found)
+  ------------------
+  |  Branch (344:13): [True: 3, False: 505]
+  ------------------
+  345|      3|            warnings.push_back(context + " contains unknown field '" + it.key() + "' (ignored)");
+  346|    508|    }
+  347|    129|    return true;
+  348|    129|}
+  349|       |
+  350|       |Json ToJson(const SceneDocument &document)
+  351|      3|{
+  352|      3|    Json result;
+  353|      3|    result["schemaVersion"] = document.schemaVersion;
+  354|      3|    result["unitsPerMeter"] = document.unitsPerMeter;
+  355|      3|    result["coordinateSystem"] = "right-handed-y-up";
+  356|      3|    result["entities"] = Json::array();
+  357|      3|    for (const auto &entity : document.entities)
+  ------------------
+  |  Branch (357:29): [True: 4, False: 3]
+  ------------------
+  358|      4|    {
+  359|      4|        Json item = {{"id", entity.id},
+  360|      4|                     {"name", entity.name},
+  361|      4|                     {"modelGuid", entity.modelGuid ? Json(*entity.modelGuid) : Json(nullptr)},
+  ------------------
+  |  Branch (361:36): [True: 1, False: 3]
+  ------------------
+  362|      4|                     {"materialGuid", entity.materialGuid ? Json(*entity.materialGuid) : Json(nullptr)},
+  ------------------
+  |  Branch (362:39): [True: 0, False: 4]
+  ------------------
+  363|      4|                     {"primitiveType", entity.primitiveType ? Json(*entity.primitiveType) : Json(nullptr)},
+  ------------------
+  |  Branch (363:40): [True: 3, False: 1]
+  ------------------
+  364|      4|                     {"position", entity.position},
+  365|      4|                     {"rotation", entity.rotation},
+  366|      4|                     {"scale", entity.scale},
+  367|      4|                     {"render",
+  368|      4|                      {{"forceWireframe", entity.forceWireframe},
+  369|      4|                       {"disableDepthTest", entity.disableDepthTest},
+  370|      4|                       {"castShadows", entity.castShadows},
+  371|      4|                       {"receiveShadows", entity.receiveShadows}}}};
+  372|      4|        if (entity.material)
+  ------------------
+  |  Branch (372:13): [True: 2, False: 2]
+  ------------------
+  373|      2|        {
+  374|      2|            const auto &material = *entity.material;
+  375|      2|            item["material"] = {
+  376|      2|                {"baseColor", material.baseColor},
+  377|      2|                {"emissive", material.emissive},
+  378|      2|                {"metallic", material.metallic},
+  379|      2|                {"roughness", material.roughness},
+  380|      2|                {"gtrGamma", material.gtrGamma},
+  381|      2|                {"ior", material.ior},
+  382|      2|                {"specularF0", material.specularF0},
+  383|      2|                {"brdfModel", material.brdfModel},
+  384|      2|                {"workflow", material.workflow},
+  385|      2|                {"specularMode", material.specularMode},
+  386|      2|                {"alphaMode", material.alphaMode},
+  387|      2|                {"alphaCutoff", material.alphaCutoff},
+  388|      2|                {"doubleSided", material.doubleSided},
+  389|      2|                {"baseColorTextureGuid",
+  390|      2|                 material.baseColorTextureGuid ? Json(*material.baseColorTextureGuid) : Json(nullptr)},
+  ------------------
+  |  Branch (390:18): [True: 0, False: 2]
+  ------------------
+  391|      2|                {"normalTextureGuid",
+  392|      2|                 material.normalTextureGuid ? Json(*material.normalTextureGuid) : Json(nullptr)}};
+  ------------------
+  |  Branch (392:18): [True: 0, False: 2]
+  ------------------
+  393|      2|        }
+  394|      4|        if (!entity.materialOverrides.empty())
+  ------------------
+  |  Branch (394:13): [True: 1, False: 3]
+  ------------------
+  395|      1|        {
+  396|      1|            item["materialOverrides"] = Json::array();
+  397|      1|            for (const auto &override : entity.materialOverrides)
+  ------------------
+  |  Branch (397:39): [True: 1, False: 1]
+  ------------------
+  398|      1|            {
+  399|      1|                if (!override)
+  ------------------
+  |  Branch (399:21): [True: 0, False: 1]
+  ------------------
+  400|      0|                {
+  401|      0|                    item["materialOverrides"].push_back(nullptr);
+  402|      0|                    continue;
+  403|      0|                }
+  404|      1|                const auto &material = *override;
+  405|      1|                item["materialOverrides"].push_back(
+  406|      1|                    {{"baseColor", material.baseColor},
+  407|      1|                     {"emissive", material.emissive},
+  408|      1|                     {"metallic", material.metallic},
+  409|      1|                     {"roughness", material.roughness},
+  410|      1|                     {"gtrGamma", material.gtrGamma},
+  411|      1|                     {"ior", material.ior},
+  412|      1|                     {"specularF0", material.specularF0},
+  413|      1|                     {"brdfModel", material.brdfModel},
+  414|      1|                     {"workflow", material.workflow},
+  415|      1|                     {"specularMode", material.specularMode},
+  416|      1|                     {"alphaMode", material.alphaMode},
+  417|      1|                     {"alphaCutoff", material.alphaCutoff},
+  418|      1|                     {"doubleSided", material.doubleSided},
+  419|      1|                     {"baseColorTextureGuid",
+  420|      1|                      material.baseColorTextureGuid ? Json(*material.baseColorTextureGuid) : Json(nullptr)},
+  ------------------
+  |  Branch (420:23): [True: 1, False: 0]
+  ------------------
+  421|      1|                     {"normalTextureGuid",
+  422|      1|                      material.normalTextureGuid ? Json(*material.normalTextureGuid) : Json(nullptr)}});
+  ------------------
+  |  Branch (422:23): [True: 1, False: 0]
+  ------------------
+  423|      1|            }
+  424|      1|        }
+  425|      4|        result["entities"].push_back(std::move(item));
+  426|      4|    }
+  427|      3|    result["lights"] = Json::array();
+  428|      3|    for (const auto &light : document.lights)
+  ------------------
+  |  Branch (428:28): [True: 2, False: 3]
+  ------------------
+  429|      2|    {
+  430|      2|        result["lights"].push_back({{"id", light.id},
+  431|      2|                                    {"direction", light.direction},
+  432|      2|                                    {"position", light.position},
+  433|      2|                                    {"color", light.color},
+  434|      2|                                    {"intensity", light.intensity},
+  435|      2|                                    {"range", light.range},
+  436|      2|                                    {"innerAngleDegrees", light.innerAngleDegrees},
+  437|      2|                                    {"outerAngleDegrees", light.outerAngleDegrees},
+  438|      2|                                    {"shadowBias", light.shadowBias},
+  439|      2|                                    {"shadowNormalBias", light.shadowNormalBias},
+  440|      2|                                    {"usePosition", light.usePosition},
+  441|      2|                                    {"castShadows", light.castShadows}});
+  442|      2|    }
+  443|      3|    result["cameras"] = Json::array();
+  444|      3|    for (const auto &camera : document.cameras)
+  ------------------
+  |  Branch (444:29): [True: 2, False: 3]
+  ------------------
+  445|      2|    {
+  446|      2|        result["cameras"].push_back({{"id", camera.id},
+  447|      2|                                     {"position", camera.position},
+  448|      2|                                     {"rotation", camera.rotation},
+  449|      2|                                     {"fovRadians", camera.fovRadians},
+  450|      2|                                     {"nearPlane", camera.nearPlane},
+  451|      2|                                     {"farPlane", camera.farPlane}});
+  452|      2|    }
+  453|      3|    return result;
+  454|      3|}
+  455|       |} // namespace
+  456|       |
+  457|       |SceneDocumentResult SceneSerializer::Load(const std::filesystem::path &path) const
+  458|     60|{
+  459|     60|    SceneDocumentResult result;
+  460|     60|    Json root;
+  461|     60|    try
+  462|     60|    {
+  463|     60|        std::ifstream input(path, std::ios::binary);
+  464|     60|        if (!input)
+  ------------------
+  |  Branch (464:13): [True: 1, False: 59]
+  ------------------
+  465|      1|        {
+  466|      1|            result.error = FileContext(path, "could not open scene file");
+  467|      1|            return result;
+  468|      1|        }
+  469|     59|        input >> root;
+  470|     59|    }
+  471|     60|    catch (const Json::exception &exception)
+  472|     60|    {
+  473|      2|        result.error = FileContext(path, std::string("invalid JSON: ") + exception.what());
+  474|      2|        return result;
+  475|      2|    }
+  476|     60|    catch (const std::ios_base::failure &exception)
+  477|     60|    {
+  478|      0|        result.error = FileContext(path, std::string("could not read scene file: ") + exception.what());
+  479|      0|        return result;
+  480|      0|    }
+  481|     57|    if (!root.is_object())
+  ------------------
+  |  Branch (481:9): [True: 1, False: 56]
+  ------------------
+  482|      1|    {
+  483|      1|        result.error = FileContext(path, "scene root must be an object");
+  484|      1|        return result;
+  485|      1|    }
+  486|     56|    KnownKeys(
+  487|     56|        root,
+  488|     56|        {"schemaVersion", "coordinateSystem", "unitsPerMeter", "entities", "lights", "cameras", "editor"},
+  489|     56|        result.warnings, "scene");
+  490|     56|    if (!root.contains("schemaVersion") || !root["schemaVersion"].is_number_unsigned())
+  ------------------
+  |  Branch (490:9): [True: 1, False: 55]
+  |  Branch (490:44): [True: 1, False: 54]
+  ------------------
+  491|      2|    {
+  492|      2|        result.error = FileContext(path, "schemaVersion must be an unsigned integer");
+  493|      2|        return result;
+  494|      2|    }
+  495|     54|    result.document.schemaVersion = root["schemaVersion"].get<uint32_t>();
+  496|     54|    if (result.document.schemaVersion != CurrentSceneSchemaVersion)
+  ------------------
+  |  Branch (496:9): [True: 2, False: 52]
+  ------------------
+  497|      2|    {
+  498|      2|        result.error = FileContext(path, "unsupported scene schema version " +
+  499|      2|                                             std::to_string(result.document.schemaVersion));
+  500|      2|        return result;
+  501|      2|    }
+  502|     52|    if (root.contains("coordinateSystem") &&
+  ------------------
+  |  Branch (502:9): [True: 4, False: 48]
+  ------------------
+  503|      4|        (!root["coordinateSystem"].is_string() || root["coordinateSystem"] != "right-handed-y-up"))
+  ------------------
+  |  Branch (503:10): [True: 0, False: 4]
+  |  Branch (503:51): [True: 1, False: 3]
+  ------------------
+  504|      1|    {
+  505|      1|        result.error = FileContext(path, "coordinateSystem must be 'right-handed-y-up'");
+  506|      1|        return result;
+  507|      1|    }
+  508|     51|    std::string fieldError;
+  509|     51|    if (!ReadNumber(root, "unitsPerMeter", result.document.unitsPerMeter, fieldError) ||
+  ------------------
+  |  Branch (509:9): [True: 0, False: 51]
+  ------------------
+  510|     51|        result.document.unitsPerMeter <= 0.0f)
+  ------------------
+  |  Branch (510:9): [True: 1, False: 50]
+  ------------------
+  511|      1|    {
+  512|      1|        result.error = FileContext(path, fieldError.empty() ? "unitsPerMeter must be positive" : fieldError);
+  ------------------
+  |  Branch (512:42): [True: 1, False: 0]
+  ------------------
+  513|      1|        return result;
+  514|      1|    }
+  515|     50|    std::set<uint64_t> entityIds;
+  516|     50|    if (root.contains("entities"))
+  ------------------
+  |  Branch (516:9): [True: 36, False: 14]
+  ------------------
+  517|     36|    {
+  518|     36|        if (!root["entities"].is_array())
+  ------------------
+  |  Branch (518:13): [True: 1, False: 35]
+  ------------------
+  519|      1|        {
+  520|      1|            result.error = FileContext(path, "entities must be an array");
+  521|      1|            return result;
+  522|      1|        }
+  523|     42|        for (size_t index = 0; index < root["entities"].size(); ++index)
+  ------------------
+  |  Branch (523:32): [True: 37, False: 5]
+  ------------------
+  524|     37|        {
+  525|     37|            const Json &item = root["entities"][index];
+  526|     37|            const std::string context = "entities[" + std::to_string(index) + "]";
+  527|     37|            if (!item.is_object())
+  ------------------
+  |  Branch (527:17): [True: 1, False: 36]
+  ------------------
+  528|      1|            {
+  529|      1|                result.error = FileContext(path, context + " must be an object");
+  530|      1|                return result;
+  531|      1|            }
+  532|     36|            KnownKeys(item,
+  533|     36|                      {"id", "name", "modelGuid", "materialGuid", "primitiveType", "material",
+  534|     36|                       "materialOverrides", "position", "rotation", "scale", "render"},
+  535|     36|                      result.warnings, context);
+  536|     36|            SceneEntityDocument entity;
+  537|     36|            if (!ReadId(item, entity.id, fieldError) || !entityIds.insert(entity.id).second)
+  ------------------
+  |  Branch (537:17): [True: 1, False: 35]
+  |  Branch (537:57): [True: 1, False: 34]
+  ------------------
+  538|      2|            {
+  539|      2|                result.error = FileContext(path, context + ".id must be a unique positive integer");
+  540|      2|                return result;
+  541|      2|            }
+  542|     34|            if (item.contains("name"))
+  ------------------
+  |  Branch (542:17): [True: 5, False: 29]
+  ------------------
+  543|      5|            {
+  544|      5|                if (!item["name"].is_string())
+  ------------------
+  |  Branch (544:21): [True: 1, False: 4]
+  ------------------
+  545|      1|                {
+  546|      1|                    result.error = FileContext(path, context + ".name must be a string");
+  547|      1|                    return result;
+  548|      1|                }
+  549|      4|                entity.name = item["name"].get<std::string>();
+  550|      4|            }
+  551|     33|            if (!ReadOptionalGuid(item, "modelGuid", entity.modelGuid, fieldError) ||
+  ------------------
+  |  Branch (551:17): [True: 1, False: 32]
+  ------------------
+  552|     32|                !ReadOptionalGuid(item, "materialGuid", entity.materialGuid, fieldError))
+  ------------------
+  |  Branch (552:17): [True: 0, False: 32]
+  ------------------
+  553|      1|            {
+  554|      1|                std::string fieldContext = context;
+  555|      1|                fieldContext += '.';
+  556|      1|                fieldContext += fieldError;
+  557|      1|                result.error = FileContext(path, fieldContext);
+  558|      1|                return result;
+  559|      1|            }
+  560|     32|            if (item.contains("primitiveType") && !item["primitiveType"].is_null())
+  ------------------
+  |  Branch (560:17): [True: 29, False: 3]
+  |  Branch (560:51): [True: 28, False: 1]
+  ------------------
+  561|     28|            {
+  562|     28|                if (!item["primitiveType"].is_string())
+  ------------------
+  |  Branch (562:21): [True: 1, False: 27]
+  ------------------
+  563|      1|                {
+  564|      1|                    result.error = FileContext(path, context + ".primitiveType must be a string or null");
+  565|      1|                    return result;
+  566|      1|                }
+  567|     27|                entity.primitiveType = item["primitiveType"].get<std::string>();
+  568|     27|                if (*entity.primitiveType != "cube" && *entity.primitiveType != "sphere" &&
+  ------------------
+  |  Branch (568:21): [True: 3, False: 24]
+  |  Branch (568:56): [True: 2, False: 1]
+  ------------------
+  569|      2|                    *entity.primitiveType != "plane" && *entity.primitiveType != "cone")
+  ------------------
+  |  Branch (569:21): [True: 2, False: 0]
+  |  Branch (569:57): [True: 1, False: 1]
+  ------------------
+  570|      1|                {
+  571|      1|                    result.error = FileContext(path, context + ".primitiveType is unsupported");
+  572|      1|                    return result;
+  573|      1|                }
+  574|     27|            }
+  575|     30|            if (item.contains("material") && !item["material"].is_null())
+  ------------------
+  |  Branch (575:17): [True: 18, False: 12]
+  |  Branch (575:46): [True: 18, False: 0]
+  ------------------
+  576|     18|            {
+  577|     18|                SceneMaterialDocument material;
+  578|     18|                if (!ReadMaterial(item["material"], material, result.warnings, context + ".material",
+  ------------------
+  |  Branch (578:21): [True: 14, False: 4]
+  ------------------
+  579|     18|                                  fieldError))
+  580|     14|                {
+  581|     14|                    std::string fieldContext = context;
+  582|     14|                    fieldContext += ".material: ";
+  583|     14|                    fieldContext += fieldError;
+  584|     14|                    result.error = FileContext(path, fieldContext);
+  585|     14|                    return result;
+  586|     14|                }
+  587|      4|                entity.material = std::move(material);
+  588|      4|            }
+  589|     16|            if (item.contains("materialOverrides"))
+  ------------------
+  |  Branch (589:17): [True: 3, False: 13]
+  ------------------
+  590|      3|            {
+  591|      3|                if (!item["materialOverrides"].is_array())
+  ------------------
+  |  Branch (591:21): [True: 1, False: 2]
+  ------------------
+  592|      1|                {
+  593|      1|                    result.error = FileContext(path, context + ".materialOverrides must be an array");
+  594|      1|                    return result;
+  595|      1|                }
+  596|      3|                for (size_t materialIndex = 0; materialIndex < item["materialOverrides"].size();
+  ------------------
+  |  Branch (596:48): [True: 2, False: 1]
+  ------------------
+  597|      2|                     ++materialIndex)
+  598|      2|                {
+  599|      2|                    if (item["materialOverrides"][materialIndex].is_null())
+  ------------------
+  |  Branch (599:25): [True: 0, False: 2]
+  ------------------
+  600|      0|                    {
+  601|      0|                        entity.materialOverrides.push_back(std::nullopt);
+  602|      0|                        continue;
+  603|      0|                    }
+  604|      2|                    SceneMaterialDocument material;
+  605|      2|                    if (!ReadMaterial(item["materialOverrides"][materialIndex], material, result.warnings,
+  ------------------
+  |  Branch (605:25): [True: 1, False: 1]
+  ------------------
+  606|      2|                                      context + ".materialOverrides[" + std::to_string(materialIndex) + "]",
+  607|      2|                                      fieldError))
+  608|      1|                    {
+  609|      1|                        std::string fieldContext = context;
+  610|      1|                        fieldContext += ".materialOverrides[";
+  611|      1|                        fieldContext += std::to_string(materialIndex);
+  612|      1|                        fieldContext += "]: ";
+  613|      1|                        fieldContext += fieldError;
+  614|      1|                        result.error = FileContext(path, fieldContext);
+  615|      1|                        return result;
+  616|      1|                    }
+  617|      1|                    entity.materialOverrides.push_back(std::move(material));
+  618|      1|                }
+  619|      2|            }
+  620|     14|            if (entity.modelGuid.has_value() == entity.primitiveType.has_value())
+  ------------------
+  |  Branch (620:17): [True: 2, False: 12]
+  ------------------
+  621|      2|            {
+  622|      2|                result.error =
+  623|      2|                    FileContext(path, context + " must specify exactly one of modelGuid or primitiveType");
+  624|      2|                return result;
+  625|      2|            }
+  626|     12|            if (item.contains("position") &&
+  ------------------
+  |  Branch (626:17): [True: 5, False: 7]
+  ------------------
+  627|      5|                !ReadFloatArray(item["position"], entity.position, context + ".position", fieldError))
+  ------------------
+  |  Branch (627:17): [True: 1, False: 4]
+  ------------------
+  628|      1|            {
+  629|      1|                result.error = FileContext(path, fieldError);
+  630|      1|                return result;
+  631|      1|            }
+  632|     11|            if (item.contains("rotation") &&
+  ------------------
+  |  Branch (632:17): [True: 5, False: 6]
+  ------------------
+  633|      5|                !ReadFloatArray(item["rotation"], entity.rotation, context + ".rotation", fieldError))
+  ------------------
+  |  Branch (633:17): [True: 0, False: 5]
+  ------------------
+  634|      0|            {
+  635|      0|                result.error = FileContext(path, fieldError);
+  636|      0|                return result;
+  637|      0|            }
+  638|     11|            if (item.contains("scale") &&
+  ------------------
+  |  Branch (638:17): [True: 5, False: 6]
+  ------------------
+  639|      5|                !ReadFloatArray(item["scale"], entity.scale, context + ".scale", fieldError))
+  ------------------
+  |  Branch (639:17): [True: 1, False: 4]
+  ------------------
+  640|      1|            {
+  641|      1|                result.error = FileContext(path, fieldError);
+  642|      1|                return result;
+  643|      1|            }
+  644|     10|            const float rotationLengthSquared =
+  645|     10|                entity.rotation[0] * entity.rotation[0] + entity.rotation[1] * entity.rotation[1] +
+  646|     10|                entity.rotation[2] * entity.rotation[2] + entity.rotation[3] * entity.rotation[3];
+  647|     10|            if (!std::isfinite(rotationLengthSquared) || rotationLengthSquared <= 1.0e-12f)
+  ------------------
+  |  Branch (647:17): [True: 0, False: 10]
+  |  Branch (647:58): [True: 1, False: 9]
+  ------------------
+  648|      1|            {
+  649|      1|                result.error = FileContext(path, context + ".rotation must be a non-zero quaternion");
+  650|      1|                return result;
+  651|      1|            }
+  652|      9|            if (item.contains("render"))
+  ------------------
+  |  Branch (652:17): [True: 6, False: 3]
+  ------------------
+  653|      6|            {
+  654|      6|                const Json &render = item["render"];
+  655|      6|                if (!render.is_object())
+  ------------------
+  |  Branch (655:21): [True: 1, False: 5]
+  ------------------
+  656|      1|                {
+  657|      1|                    result.error = FileContext(path, context + ".render must be an object");
+  658|      1|                    return result;
+  659|      1|                }
+  660|      5|                KnownKeys(render, {"forceWireframe", "disableDepthTest", "castShadows", "receiveShadows"},
+  661|      5|                          result.warnings, context + ".render");
+  662|      5|                if (!ReadBool(render, "forceWireframe", entity.forceWireframe, fieldError) ||
+  ------------------
+  |  Branch (662:21): [True: 1, False: 4]
+  ------------------
+  663|      4|                    !ReadBool(render, "disableDepthTest", entity.disableDepthTest, fieldError) ||
+  ------------------
+  |  Branch (663:21): [True: 0, False: 4]
+  ------------------
+  664|      4|                    !ReadBool(render, "castShadows", entity.castShadows, fieldError) ||
+  ------------------
+  |  Branch (664:21): [True: 0, False: 4]
+  ------------------
+  665|      4|                    !ReadBool(render, "receiveShadows", entity.receiveShadows, fieldError))
+  ------------------
+  |  Branch (665:21): [True: 0, False: 4]
+  ------------------
+  666|      1|                {
+  667|      1|                    std::string fieldContext = context;
+  668|      1|                    fieldContext += ".render.";
+  669|      1|                    fieldContext += fieldError;
+  670|      1|                    result.error = FileContext(path, fieldContext);
+  671|      1|                    return result;
+  672|      1|                }
+  673|      5|            }
+  674|      7|            result.document.entities.push_back(std::move(entity));
+  675|      7|        }
+  676|     35|    }
+  677|     19|    std::set<uint64_t> lightIds;
+  678|     19|    if (root.contains("lights"))
+  ------------------
+  |  Branch (678:9): [True: 11, False: 8]
+  ------------------
+  679|     11|    {
+  680|     11|        if (!root["lights"].is_array())
+  ------------------
+  |  Branch (680:13): [True: 1, False: 10]
+  ------------------
+  681|      1|        {
+  682|      1|            result.error = FileContext(path, "lights must be an array");
+  683|      1|            return result;
+  684|      1|        }
+  685|     12|        for (size_t index = 0; index < root["lights"].size(); ++index)
+  ------------------
+  |  Branch (685:32): [True: 9, False: 3]
+  ------------------
+  686|      9|        {
+  687|      9|            const Json &item = root["lights"][index];
+  688|      9|            const std::string context = "lights[" + std::to_string(index) + "]";
+  689|      9|            if (!item.is_object())
+  ------------------
+  |  Branch (689:17): [True: 1, False: 8]
+  ------------------
+  690|      1|            {
+  691|      1|                result.error = FileContext(path, context + " must be an object");
+  692|      1|                return result;
+  693|      1|            }
+  694|      8|            KnownKeys(item,
+  695|      8|                      {"id", "direction", "position", "color", "intensity", "range", "innerAngleDegrees",
+  696|      8|                       "outerAngleDegrees", "shadowBias", "shadowNormalBias", "usePosition", "castShadows"},
+  697|      8|                      result.warnings, context);
+  698|      8|            SceneLightDocument light;
+  699|      8|            if (!ReadId(item, light.id, fieldError) || !lightIds.insert(light.id).second ||
+  ------------------
+  |  Branch (699:17): [True: 0, False: 8]
+  |  Branch (699:56): [True: 0, False: 8]
+  ------------------
+  700|      8|                !ReadArrayField(item, "direction", light.direction, fieldError) ||
+  ------------------
+  |  Branch (700:17): [True: 0, False: 8]
+  ------------------
+  701|      8|                !ReadArrayField(item, "position", light.position, fieldError) ||
+  ------------------
+  |  Branch (701:17): [True: 0, False: 8]
+  ------------------
+  702|      8|                !ReadArrayField(item, "color", light.color, fieldError) ||
+  ------------------
+  |  Branch (702:17): [True: 0, False: 8]
+  ------------------
+  703|      8|                !ReadNumber(item, "intensity", light.intensity, fieldError) ||
+  ------------------
+  |  Branch (703:17): [True: 0, False: 8]
+  ------------------
+  704|      8|                !ReadNumber(item, "range", light.range, fieldError) ||
+  ------------------
+  |  Branch (704:17): [True: 0, False: 8]
+  ------------------
+  705|      8|                !ReadNumber(item, "innerAngleDegrees", light.innerAngleDegrees, fieldError) ||
+  ------------------
+  |  Branch (705:17): [True: 0, False: 8]
+  ------------------
+  706|      8|                !ReadNumber(item, "outerAngleDegrees", light.outerAngleDegrees, fieldError) ||
+  ------------------
+  |  Branch (706:17): [True: 0, False: 8]
+  ------------------
+  707|      8|                !ReadNumber(item, "shadowBias", light.shadowBias, fieldError) ||
+  ------------------
+  |  Branch (707:17): [True: 0, False: 8]
+  ------------------
+  708|      8|                !ReadNumber(item, "shadowNormalBias", light.shadowNormalBias, fieldError) ||
+  ------------------
+  |  Branch (708:17): [True: 0, False: 8]
+  ------------------
+  709|      8|                !ReadBool(item, "usePosition", light.usePosition, fieldError) ||
+  ------------------
+  |  Branch (709:17): [True: 1, False: 7]
+  ------------------
+  710|      7|                !ReadBool(item, "castShadows", light.castShadows, fieldError))
+  ------------------
+  |  Branch (710:17): [True: 0, False: 7]
+  ------------------
+  711|      1|            {
+  712|      1|                result.error = FileContext(
+  713|      1|                    path, context + ": " + (fieldError.empty() ? "duplicate light ID" : fieldError));
+  ------------------
+  |  Branch (713:45): [True: 0, False: 1]
+  ------------------
+  714|      1|                return result;
+  715|      1|            }
+  716|      7|            const float directionLengthSquared = light.direction[0] * light.direction[0] +
+  717|      7|                                                 light.direction[1] * light.direction[1] +
+  718|      7|                                                 light.direction[2] * light.direction[2];
+  719|      7|            if (!std::isfinite(directionLengthSquared) || directionLengthSquared <= 1.0e-12f ||
+  ------------------
+  |  Branch (719:17): [True: 0, False: 7]
+  |  Branch (719:59): [True: 1, False: 6]
+  ------------------
+  720|      6|                light.color[0] < 0.0f || light.color[1] < 0.0f || light.color[2] < 0.0f ||
+  ------------------
+  |  Branch (720:17): [True: 0, False: 6]
+  |  Branch (720:42): [True: 0, False: 6]
+  |  Branch (720:67): [True: 0, False: 6]
+  ------------------
+  721|      6|                light.intensity < 0.0f || light.range <= 0.0f || light.innerAngleDegrees < 0.0f ||
+  ------------------
+  |  Branch (721:17): [True: 1, False: 5]
+  |  Branch (721:43): [True: 1, False: 4]
+  |  Branch (721:66): [True: 0, False: 4]
+  ------------------
+  722|      4|                light.outerAngleDegrees < light.innerAngleDegrees || light.outerAngleDegrees > 89.5f ||
+  ------------------
+  |  Branch (722:17): [True: 1, False: 3]
+  |  Branch (722:70): [True: 0, False: 3]
+  ------------------
+  723|      3|                light.shadowBias < 0.0f || light.shadowNormalBias < 0.0f)
+  ------------------
+  |  Branch (723:17): [True: 1, False: 2]
+  |  Branch (723:44): [True: 0, False: 2]
+  ------------------
+  724|      5|            {
+  725|      5|                result.error = FileContext(path, context + " contains out-of-range light settings");
+  726|      5|                return result;
+  727|      5|            }
+  728|      2|            result.document.lights.push_back(light);
+  729|      2|        }
+  730|     10|    }
+  731|     11|    std::set<uint64_t> cameraIds;
+  732|     11|    if (root.contains("cameras"))
+  ------------------
+  |  Branch (732:9): [True: 9, False: 2]
+  ------------------
+  733|      9|    {
+  734|      9|        if (!root["cameras"].is_array())
+  ------------------
+  |  Branch (734:13): [True: 1, False: 8]
+  ------------------
+  735|      1|        {
+  736|      1|            result.error = FileContext(path, "cameras must be an array");
+  737|      1|            return result;
+  738|      1|        }
+  739|     10|        for (size_t index = 0; index < root["cameras"].size(); ++index)
+  ------------------
+  |  Branch (739:32): [True: 7, False: 3]
+  ------------------
+  740|      7|        {
+  741|      7|            const Json &item = root["cameras"][index];
+  742|      7|            const std::string context = "cameras[" + std::to_string(index) + "]";
+  743|      7|            if (!item.is_object())
+  ------------------
+  |  Branch (743:17): [True: 1, False: 6]
+  ------------------
+  744|      1|            {
+  745|      1|                result.error = FileContext(path, context + " must be an object");
+  746|      1|                return result;
+  747|      1|            }
+  748|      6|            KnownKeys(item, {"id", "position", "rotation", "fovRadians", "nearPlane", "farPlane"},
+  749|      6|                      result.warnings, context);
+  750|      6|            SceneCameraDocument camera;
+  751|      6|            if (!ReadId(item, camera.id, fieldError) || !cameraIds.insert(camera.id).second ||
+  ------------------
+  |  Branch (751:17): [True: 0, False: 6]
+  |  Branch (751:57): [True: 0, False: 6]
+  ------------------
+  752|      6|                !ReadArrayField(item, "position", camera.position, fieldError) ||
+  ------------------
+  |  Branch (752:17): [True: 0, False: 6]
+  ------------------
+  753|      6|                !ReadArrayField(item, "rotation", camera.rotation, fieldError) ||
+  ------------------
+  |  Branch (753:17): [True: 0, False: 6]
+  ------------------
+  754|      6|                !ReadNumber(item, "fovRadians", camera.fovRadians, fieldError) ||
+  ------------------
+  |  Branch (754:17): [True: 0, False: 6]
+  ------------------
+  755|      6|                !ReadNumber(item, "nearPlane", camera.nearPlane, fieldError) ||
+  ------------------
+  |  Branch (755:17): [True: 0, False: 6]
+  ------------------
+  756|      6|                !ReadNumber(item, "farPlane", camera.farPlane, fieldError))
+  ------------------
+  |  Branch (756:17): [True: 0, False: 6]
+  ------------------
+  757|      0|            {
+  758|      0|                result.error = FileContext(
+  759|      0|                    path, context + ": " + (fieldError.empty() ? "duplicate camera ID" : fieldError));
+  ------------------
+  |  Branch (759:45): [True: 0, False: 0]
+  ------------------
+  760|      0|                return result;
+  761|      0|            }
+  762|      6|            const float rotationLengthSquared =
+  763|      6|                camera.rotation[0] * camera.rotation[0] + camera.rotation[1] * camera.rotation[1] +
+  764|      6|                camera.rotation[2] * camera.rotation[2] + camera.rotation[3] * camera.rotation[3];
+  765|      6|            if (camera.fovRadians <= 0.0f || camera.fovRadians >= 3.141592654f || camera.nearPlane <= 0.0f ||
+  ------------------
+  |  Branch (765:17): [True: 1, False: 5]
+  |  Branch (765:46): [True: 0, False: 5]
+  |  Branch (765:83): [True: 1, False: 4]
+  ------------------
+  766|      4|                camera.farPlane <= camera.nearPlane || rotationLengthSquared <= 1.0e-12f)
+  ------------------
+  |  Branch (766:17): [True: 1, False: 3]
+  |  Branch (766:56): [True: 1, False: 2]
+  ------------------
+  767|      4|            {
+  768|      4|                result.error = FileContext(path, context + " contains invalid projection or rotation values");
+  769|      4|                return result;
+  770|      4|            }
+  771|      2|            result.document.cameras.push_back(camera);
+  772|      2|        }
+  773|      8|    }
+  774|      5|    return result;
+  775|     11|}
+  776|       |
+  777|       |bool SceneSerializer::SaveAtomic(const std::filesystem::path &path, const SceneDocument &document,
+  778|       |                                 std::string &error) const
+  779|      3|{
+  780|      3|    error.clear();
+  781|      3|    if (document.schemaVersion != CurrentSceneSchemaVersion || !std::isfinite(document.unitsPerMeter) ||
+  ------------------
+  |  Branch (781:9): [True: 0, False: 3]
+  |  Branch (781:64): [True: 0, False: 3]
+  ------------------
+  782|      3|        document.unitsPerMeter <= 0.0f)
+  ------------------
+  |  Branch (782:9): [True: 0, False: 3]
+  ------------------
+  783|      0|    {
+  784|      0|        error = FileContext(path, "document has an unsupported version or invalid unitsPerMeter");
+  785|      0|        return false;
+  786|      0|    }
+  787|      3|    std::set<uint64_t> entityIds;
+  788|      3|    for (const auto &entity : document.entities)
+  ------------------
+  |  Branch (788:29): [True: 4, False: 3]
+  ------------------
+  789|      4|    {
+  790|      4|        if (entity.id == 0 || !entityIds.insert(entity.id).second ||
+  ------------------
+  |  Branch (790:13): [True: 0, False: 4]
+  |  Branch (790:31): [True: 0, False: 4]
+  ------------------
+  791|      4|            (entity.modelGuid && !IsGuid(*entity.modelGuid)) ||
+  ------------------
+  |  Branch (791:14): [True: 1, False: 3]
+  |  Branch (791:34): [True: 0, False: 1]
+  ------------------
+  792|      4|            (entity.materialGuid && !IsGuid(*entity.materialGuid)))
+  ------------------
+  |  Branch (792:14): [True: 0, False: 4]
+  |  Branch (792:37): [True: 0, False: 0]
+  ------------------
+  793|      0|        {
+  794|      0|            error = FileContext(path, "document contains a duplicate/invalid entity ID or asset GUID");
+  795|      0|            return false;
+  796|      0|        }
+  797|      4|        if (entity.modelGuid.has_value() == entity.primitiveType.has_value() ||
+  ------------------
+  |  Branch (797:13): [True: 0, False: 4]
+  ------------------
+  798|      4|            (entity.primitiveType && !IsValidPrimitiveType(*entity.primitiveType)) ||
+  ------------------
+  |  Branch (798:14): [True: 3, False: 1]
+  |  Branch (798:38): [True: 0, False: 3]
+  ------------------
+  799|      4|            (entity.material && !IsValidMaterial(*entity.material)) ||
+  ------------------
+  |  Branch (799:14): [True: 2, False: 2]
+  |  Branch (799:33): [True: 0, False: 2]
+  ------------------
+  800|      4|            (!entity.materialOverrides.empty() && !entity.modelGuid))
+  ------------------
+  |  Branch (800:14): [True: 1, False: 3]
+  |  Branch (800:51): [True: 0, False: 1]
+  ------------------
+  801|      0|        {
+  802|      0|            error = FileContext(path, "document contains an invalid entity asset descriptor or material");
+  803|      0|            return false;
+  804|      0|        }
+  805|      4|        if (std::any_of(entity.materialOverrides.begin(), entity.materialOverrides.end(),
+  ------------------
+  |  Branch (805:13): [True: 0, False: 4]
+  ------------------
+  806|      4|                        [](const auto &material) { return material && !IsValidMaterial(*material); }))
+  ------------------
+  |  Branch (806:59): [True: 1, False: 0]
+  |  Branch (806:71): [True: 0, False: 1]
+  ------------------
+  807|      0|        {
+  808|      0|            error = FileContext(path, "document contains an invalid model material override");
+  809|      0|            return false;
+  810|      0|        }
+  811|      4|        const float values[] = {entity.position[0], entity.position[1], entity.position[2],
+  812|      4|                                entity.rotation[0], entity.rotation[1], entity.rotation[2],
+  813|      4|                                entity.rotation[3], entity.scale[0],    entity.scale[1],
+  814|      4|                                entity.scale[2]};
+  815|      4|        const float rotationLengthSquared =
+  816|      4|            entity.rotation[0] * entity.rotation[0] + entity.rotation[1] * entity.rotation[1] +
+  817|      4|            entity.rotation[2] * entity.rotation[2] + entity.rotation[3] * entity.rotation[3];
+  818|      4|        if (!std::all_of(std::begin(values), std::end(values),
+  ------------------
+  |  Branch (818:13): [True: 0, False: 4]
+  ------------------
+  819|     40|                         [](float value) { return std::isfinite(value); }) ||
+  820|      4|            !std::isfinite(rotationLengthSquared) || rotationLengthSquared <= 1.0e-12f)
+  ------------------
+  |  Branch (820:13): [True: 0, False: 4]
+  |  Branch (820:54): [True: 0, False: 4]
+  ------------------
+  821|      0|        {
+  822|      0|            error = FileContext(path, "document contains an invalid entity transform");
+  823|      0|            return false;
+  824|      0|        }
+  825|      4|    }
+  826|      3|    std::set<uint64_t> lightIds;
+  827|      3|    for (const auto &light : document.lights)
+  ------------------
+  |  Branch (827:28): [True: 2, False: 3]
+  ------------------
+  828|      2|    {
+  829|      2|        const float values[] = {light.direction[0],      light.direction[1], light.direction[2],
+  830|      2|                                light.position[0],       light.position[1],  light.position[2],
+  831|      2|                                light.color[0],          light.color[1],     light.color[2],
+  832|      2|                                light.intensity,         light.range,        light.innerAngleDegrees,
+  833|      2|                                light.outerAngleDegrees, light.shadowBias,   light.shadowNormalBias};
+  834|      2|        if (light.id == 0 || !lightIds.insert(light.id).second ||
+  ------------------
+  |  Branch (834:13): [True: 0, False: 2]
+  |  Branch (834:30): [True: 0, False: 2]
+  ------------------
+  835|      2|            !std::all_of(std::begin(values), std::end(values),
+  ------------------
+  |  Branch (835:13): [True: 0, False: 2]
+  ------------------
+  836|     30|                         [](float value) { return std::isfinite(value); }) ||
+  837|      2|            light.intensity < 0.0f || light.range <= 0.0f || light.innerAngleDegrees < 0.0f ||
+  ------------------
+  |  Branch (837:13): [True: 0, False: 2]
+  |  Branch (837:39): [True: 0, False: 2]
+  |  Branch (837:62): [True: 0, False: 2]
+  ------------------
+  838|      2|            light.outerAngleDegrees < light.innerAngleDegrees || light.outerAngleDegrees > 89.5f ||
+  ------------------
+  |  Branch (838:13): [True: 0, False: 2]
+  |  Branch (838:66): [True: 0, False: 2]
+  ------------------
+  839|      2|            light.shadowBias < 0.0f || light.shadowNormalBias < 0.0f)
+  ------------------
+  |  Branch (839:13): [True: 0, False: 2]
+  |  Branch (839:40): [True: 0, False: 2]
+  ------------------
+  840|      0|        {
+  841|      0|            error = FileContext(path, "document contains invalid light data");
+  842|      0|            return false;
+  843|      0|        }
+  844|      2|        const float directionLengthSquared = light.direction[0] * light.direction[0] +
+  845|      2|                                             light.direction[1] * light.direction[1] +
+  846|      2|                                             light.direction[2] * light.direction[2];
+  847|      2|        if (!std::isfinite(directionLengthSquared) || directionLengthSquared <= 1.0e-12f ||
+  ------------------
+  |  Branch (847:13): [True: 0, False: 2]
+  |  Branch (847:55): [True: 0, False: 2]
+  ------------------
+  848|      2|            light.color[0] < 0.0f || light.color[1] < 0.0f || light.color[2] < 0.0f)
+  ------------------
+  |  Branch (848:13): [True: 0, False: 2]
+  |  Branch (848:38): [True: 0, False: 2]
+  |  Branch (848:63): [True: 0, False: 2]
+  ------------------
+  849|      0|        {
+  850|      0|            error = FileContext(path, "document contains an invalid light direction or color");
+  851|      0|            return false;
+  852|      0|        }
+  853|      2|    }
+  854|      3|    std::set<uint64_t> cameraIds;
+  855|      3|    for (const auto &camera : document.cameras)
+  ------------------
+  |  Branch (855:29): [True: 2, False: 3]
+  ------------------
+  856|      2|    {
+  857|      2|        const float values[] = {camera.position[0], camera.position[1], camera.position[2],
+  858|      2|                                camera.rotation[0], camera.rotation[1], camera.rotation[2],
+  859|      2|                                camera.rotation[3], camera.fovRadians,  camera.nearPlane,
+  860|      2|                                camera.farPlane};
+  861|      2|        const float rotationLengthSquared =
+  862|      2|            camera.rotation[0] * camera.rotation[0] + camera.rotation[1] * camera.rotation[1] +
+  863|      2|            camera.rotation[2] * camera.rotation[2] + camera.rotation[3] * camera.rotation[3];
+  864|      2|        if (camera.id == 0 || !cameraIds.insert(camera.id).second ||
+  ------------------
+  |  Branch (864:13): [True: 0, False: 2]
+  |  Branch (864:31): [True: 0, False: 2]
+  ------------------
+  865|      2|            !std::all_of(std::begin(values), std::end(values),
+  ------------------
+  |  Branch (865:13): [True: 0, False: 2]
+  ------------------
+  866|     20|                         [](float value) { return std::isfinite(value); }) ||
+  867|      2|            camera.fovRadians <= 0.0f || camera.fovRadians >= 3.141592654f || camera.nearPlane <= 0.0f ||
+  ------------------
+  |  Branch (867:13): [True: 0, False: 2]
+  |  Branch (867:42): [True: 0, False: 2]
+  |  Branch (867:79): [True: 0, False: 2]
+  ------------------
+  868|      2|            camera.farPlane <= camera.nearPlane || !std::isfinite(rotationLengthSquared) ||
+  ------------------
+  |  Branch (868:13): [True: 0, False: 2]
+  |  Branch (868:52): [True: 0, False: 2]
+  ------------------
+  869|      2|            rotationLengthSquared <= 1.0e-12f)
+  ------------------
+  |  Branch (869:13): [True: 0, False: 2]
+  ------------------
+  870|      0|        {
+  871|      0|            error = FileContext(path, "document contains invalid camera data");
+  872|      0|            return false;
+  873|      0|        }
+  874|      2|    }
+  875|       |
+  876|      3|    std::filesystem::path temporaryPath = path;
+  877|      3|    temporaryPath += ".tmp." + std::to_string(temporaryFileSequence.fetch_add(1, std::memory_order_relaxed));
+  878|      3|    try
+  879|      3|    {
+  880|      3|        if (path.has_parent_path())
+  ------------------
+  |  Branch (880:13): [True: 3, False: 0]
+  ------------------
+  881|      3|            std::filesystem::create_directories(path.parent_path());
+  882|      3|        {
+  883|      3|            std::ofstream output(temporaryPath, std::ios::binary | std::ios::trunc);
+  884|      3|            if (!output)
+  ------------------
+  |  Branch (884:17): [True: 0, False: 3]
+  ------------------
+  885|      0|            {
+  886|      0|                error = FileContext(path, "could not create temporary scene file");
+  887|      0|                std::error_code ignored;
+  888|      0|                std::filesystem::remove(temporaryPath, ignored);
+  889|      0|                return false;
+  890|      0|            }
+  891|      3|            output << ToJson(document).dump(2) << '\n';
+  892|      3|            output.flush();
+  893|      3|            if (!output)
+  ------------------
+  |  Branch (893:17): [True: 0, False: 3]
+  ------------------
+  894|      0|            {
+  895|      0|                error = FileContext(path, "could not write temporary scene file");
+  896|      0|                output.close();
+  897|      0|                std::filesystem::remove(temporaryPath);
+  898|      0|                return false;
+  899|      0|            }
+  900|      3|        }
+  901|      3|#if defined(_WIN32)
+  902|      3|        if (!MoveFileExW(temporaryPath.c_str(), path.c_str(),
+  ------------------
+  |  Branch (902:13): [True: 0, False: 3]
+  ------------------
+  903|      3|                         MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
+  904|      0|        {
+  905|      0|            const DWORD code = GetLastError();
+  906|      0|            std::filesystem::remove(temporaryPath);
+  907|      0|            error = FileContext(path, "atomic replacement failed with Windows error " + std::to_string(code));
+  908|      0|            return false;
+  909|      0|        }
+  910|       |#else
+  911|       |        std::filesystem::rename(temporaryPath, path);
+  912|       |#endif
+  913|      3|        return true;
+  914|      3|    }
+  915|      3|    catch (const std::exception &exception)
+  916|      3|    {
+  917|      0|        std::error_code ignored;
+  918|      0|        std::filesystem::remove(temporaryPath, ignored);
+  919|      0|        error = FileContext(path, std::string("save failed: ") + exception.what());
+  920|      0|        return false;
+  921|      0|    }
+  922|      3|}
+  923|       |} // namespace Engine
+

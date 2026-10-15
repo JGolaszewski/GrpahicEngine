@@ -1,0 +1,15 @@
+LLVM source coverage artifact
+
+Instrumented build: out/build/refactor-x64-coverage (Debug, clang-cl, LLVM profile instrumentation and coverage mapping)
+Instrumented test run: artifacts/refactor/x64-coverage-current-ctest.log
+Merged profile: artifacts/refactor/core-coverage-current.profdata
+Text report: artifacts/refactor/core-coverage-current.txt
+Machine-readable export: artifacts/refactor/core-coverage-current.json
+
+llvm-cov filters:
+  -ignore-filename-regex=(vendor|out[/\\]build|tests|shaders|public_header_checks)
+  -include-filename-regex=GraphicEngineCore.*src.*\.cpp$
+
+Included scope: core production C++ source files only.
+Excluded scope: vendored code, build/generated output, tests, shaders, and public-header check translation units.
+Coverage metric: line coverage and branch coverage from the complete registered CTest suite.

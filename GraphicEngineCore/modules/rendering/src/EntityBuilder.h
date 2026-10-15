@@ -1,6 +1,11 @@
 #pragma once
 
 #include "rendering/include/renderer/Entity.h"
+#include "rendering/include/renderer/Material.h"
+#include "rendering/include/renderer/Mesh.h"
+#include "rendering/include/renderer/Vertex.h"
+
+#include <nvrhi/nvrhi.h>
 
 namespace Engine::Renderer
 {

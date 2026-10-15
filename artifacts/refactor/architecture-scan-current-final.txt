@@ -1,0 +1,7 @@
+Core public header boundary scan
+Public headers scanned: 38
+Prohibited API/type matches: 0
+
+Editor backend/native-graphics-access scan
+Editor files scanned: 63
+Downcast/native-resource matches: 0

@@ -24,8 +24,8 @@ PrimitiveFactory::PrimitiveFactory(PrimitiveFactory &&) noexcept = default;
 PrimitiveFactory &PrimitiveFactory::operator=(PrimitiveFactory &&) noexcept = default;
 
 std::shared_ptr<::Engine::Renderer::Entity> PrimitiveFactory::CreatePrimitive(
-    PrimitiveShape shape, std::shared_ptr<::Engine::Renderer::Material> material, const DirectX::XMFLOAT3 &position,
-    const DirectX::XMFLOAT3 &scale)
+    PrimitiveShape shape, std::shared_ptr<::Engine::Renderer::Material> material,
+    const DirectX::XMFLOAT3 &position, const DirectX::XMFLOAT3 &scale)
 {
     if (!m_Impl || !m_Impl->Device || !material)
     {

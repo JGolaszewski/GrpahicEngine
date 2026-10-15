@@ -1,0 +1,156 @@
+[0/2] Re-checking globbed directories...
+[1/120] Building CXX object GraphicEngineCore\modules\runtime\CMakeFiles\EngineRuntime.dir\src\EditorCameraController.cpp.obj
+[2/120] Building CXX object GraphicEngineCore\modules\scene\CMakeFiles\EngineScene.dir\src\Object.cpp.obj
+[3/120] Building CXX object GraphicEngineCore\modules\scene\CMakeFiles\EngineScene.dir\src\components\Transform.cpp.obj
+[4/120] Building CXX object GraphicEngineCore\modules\scene\CMakeFiles\EngineScene.dir\src\Scene.cpp.obj
+[5/120] Building CXX object GraphicEngineCore\modules\rendering\CMakeFiles\EngineRendering.dir\src\Camera.cpp.obj
+[6/120] Building CXX object GraphicEngineCore\modules\rendering\CMakeFiles\EngineRendering.dir\src\DebugGeometry.cpp.obj
+[7/120] Building CXX object GraphicEngineCore\modules\rendering\CMakeFiles\EngineRendering.dir\src\Material.cpp.obj
+[8/120] Building CXX object GraphicEngineCore\modules\rendering\CMakeFiles\EngineRendering.dir\src\Entity.cpp.obj
+[9/120] Building CXX object GraphicEngineCore\modules\runtime\CMakeFiles\EngineRuntime.dir\src\Application.cpp.obj
+[10/120] Building CXX object GraphicEngineCore\modules\rendering\CMakeFiles\EngineRendering.dir\src\MaterialSystem.cpp.obj
+[11/120] Building CXX object GraphicEngineCore\modules\rendering\CMakeFiles\EngineRendering.dir\src\Mesh.cpp.obj
+[12/120] Building CXX object GraphicEngineCore\modules\assets\CMakeFiles\EngineAssets.dir\src\AssetManager.cpp.obj
+[13/120] Building CXX object GraphicEngineCore\modules\rendering\CMakeFiles\EngineRendering.dir\src\PrimitiveFactory.cpp.obj
+[14/120] Building CXX object GraphicEngineCore\modules\scene\CMakeFiles\EngineScene.dir\src\SceneDocument.cpp.obj
+[15/120] Building CXX object GraphicEngineCore\modules\rendering\CMakeFiles\EngineRendering.dir\src\RenderDevice.cpp.obj
+[16/120] Building CXX object GraphicEngineCore\modules\rendering\CMakeFiles\EngineRendering.dir\src\PipelineCache.cpp.obj
+[17/120] Building CXX object GraphicEngineCore\modules\runtime\CMakeFiles\EngineRuntime.dir\src\LogEngine.cpp.obj
+[18/120] Building CXX object GraphicEngineCore\modules\rendering\CMakeFiles\EngineRendering.dir\src\Viewport.cpp.obj
+[19/120] Building CXX object GraphicEngineCore\modules\rendering\CMakeFiles\EngineRendering.dir\src\TextureResource.cpp.obj
+[20/120] Building CXX object GraphicEngineCore\modules\rendering\CMakeFiles\EngineRendering.dir\src\ViewportTarget.cpp.obj
+[21/120] Building CXX object GraphicEngineCore\modules\assets\CMakeFiles\EngineAssets.dir\src\AssetImporter.cpp.obj
+[22/120] Building CXX object GraphicEngineCore\modules\rendering\CMakeFiles\EngineRendering.dir\src\ResourceManager.cpp.obj
+[23/120] Building CXX object GraphicEngineCore\modules\rendering\CMakeFiles\EngineRendering.dir\src\ShaderFactory.cpp.obj
+[24/120] Building CXX object GraphicEngineCore\modules\rendering\CMakeFiles\EngineRendering.dir\src\render_graph\RenderContext.cpp.obj
+[25/120] Building CXX object GraphicEngineCore\modules\rendering\CMakeFiles\EngineRendering.dir\src\RenderSystem.cpp.obj
+In file included from C:\Users\jgolasz\.codex\worktrees\19da\GrpahicEngine\GraphicEngineCore\modules\rendering\src\RenderSystem.cpp:4:
+C:\Users\jgolasz\.codex\worktrees\19da\GrpahicEngine\GraphicEngineCore\modules\rendering/src/render_graph/RenderGraph.h(73,18): warning: explicitly defaulted move assignment operator is implicitly deleted [-Wdefaulted-function-deleted]
+   73 |     RenderGraph &operator=(RenderGraph &&) noexcept = default;
+      |                  ^
+C:\Users\jgolasz\.codex\worktrees\19da\GrpahicEngine\GraphicEngineCore\modules\rendering/src/render_graph/RenderGraph.h(45,19): note: move assignment operator of 'RenderGraph' is implicitly deleted because field 'm_FrameContext' is of reference type 'FrameContext &'
+   45 |     FrameContext &m_FrameContext;
+      |                   ^
+C:\Users\jgolasz\.codex\worktrees\19da\GrpahicEngine\GraphicEngineCore\modules\rendering/src/render_graph/RenderGraph.h(73,55): note: replace 'default' with 'delete'
+   73 |     RenderGraph &operator=(RenderGraph &&) noexcept = default;
+      |                                                       ^~~~~~~
+      |                                                       delete
+1 warning generated.
+[26/120] Building CXX object GraphicEngineCore\modules\rendering\CMakeFiles\EngineRendering.dir\src\SceneRenderer.cpp.obj
+[27/120] Building CXX object GraphicEngineCore\modules\rendering\CMakeFiles\EngineRendering.dir\src\render_graph\RenderView.cpp.obj
+[28/120] Building CXX object GraphicEngineEditor\modules\platform\CMakeFiles\EditorPlatform.dir\src\EditorUiIntegration.cpp.obj
+[29/120] Building CXX object GraphicEngineCore\modules\rendering\CMakeFiles\EngineRendering.dir\src\render_graph\FrameContext.cpp.obj
+[30/120] Building CXX object GraphicEngineCore\modules\rendering\CMakeFiles\EngineRendering.dir\src\render_graph\RenderGraph.cpp.obj
+In file included from C:\Users\jgolasz\.codex\worktrees\19da\GrpahicEngine\GraphicEngineCore\modules\rendering\src\render_graph\RenderGraph.cpp:1:
+C:\Users\jgolasz\.codex\worktrees\19da\GrpahicEngine\GraphicEngineCore\modules\rendering/src/render_graph/RenderGraph.h(73,18): warning: explicitly defaulted move assignment operator is implicitly deleted [-Wdefaulted-function-deleted]
+   73 |     RenderGraph &operator=(RenderGraph &&) noexcept = default;
+      |                  ^
+C:\Users\jgolasz\.codex\worktrees\19da\GrpahicEngine\GraphicEngineCore\modules\rendering/src/render_graph/RenderGraph.h(45,19): note: move assignment operator of 'RenderGraph' is implicitly deleted because field 'm_FrameContext' is of reference type 'FrameContext &'
+   45 |     FrameContext &m_FrameContext;
+      |                   ^
+C:\Users\jgolasz\.codex\worktrees\19da\GrpahicEngine\GraphicEngineCore\modules\rendering/src/render_graph/RenderGraph.h(73,55): note: replace 'default' with 'delete'
+   73 |     RenderGraph &operator=(RenderGraph &&) noexcept = default;
+      |                                                       ^~~~~~~
+      |                                                       delete
+1 warning generated.
+[31/120] Building CXX object GraphicEngineCore\modules\rendering\CMakeFiles\EngineRendering.dir\src\render_graph\RenderPass.cpp.obj
+[32/120] Building CXX object GraphicEngineCore\CMakeFiles\BrdfReferenceTests.dir\tests\BrdfReferenceTests.cpp.obj
+[33/120] Building CXX object GraphicEngineEditor\modules\commands\CMakeFiles\EditorCommands.dir\src\ChangeMaterialPropertiesCommand.cpp.obj
+[34/120] Building CXX object GraphicEngineEditor\modules\commands\CMakeFiles\EditorCommands.dir\src\ChangeMaterialTextureCommand.cpp.obj
+[35/120] Building CXX object GraphicEngineEditor\modules\commands\CMakeFiles\EditorCommands.dir\src\EntityMembershipCommand.cpp.obj
+[36/120] Building CXX object GraphicEngineBackends\D3D11\CMakeFiles\RenderBackendD3D11.dir\src\windows\GLFWWindow.cpp.obj
+[37/120] Building CXX object GraphicEngineEditor\modules\commands\CMakeFiles\EditorCommands.dir\src\TransformEntityCommand.cpp.obj
+[38/120] Building CXX object GraphicEngineEditor\modules\commands\CMakeFiles\EditorCommands.dir\src\ReplaceEntityCommand.cpp.obj
+[39/120] Building CXX object GraphicEngineBackends\D3D11\CMakeFiles\RenderBackendD3D11.dir\src\backends\D3D11Backend.cpp.obj
+[40/120] Building CXX object GraphicEngineCore\CMakeFiles\AssetManagerTests.dir\tests\AssetManagerTests.cpp.obj
+[41/120] Linking CXX shared library bin\GraphicEngineCore.dll
+[42/120] Linking CXX static library lib\RenderBackendD3D11.lib
+[43/120] Linking CXX static library lib\EditorPlatform.lib
+[44/120] Building CXX object GraphicEngineEditor\modules\panels\CMakeFiles\EditorPanels.dir\src\AssetBrowserPanel.cpp.obj
+[45/120] Building CXX object GraphicEngineEditor\modules\panels\CMakeFiles\EditorPanels.dir\src\EngineSettingsPanel.cpp.obj
+[46/120] Building CXX object GraphicEngineEditor\modules\panels\CMakeFiles\EditorPanels.dir\src\ScenePanel.cpp.obj
+[47/120] Building CXX object GraphicEngineEditor\modules\panels\CMakeFiles\EditorPanels.dir\src\HierarchyPanel.cpp.obj
+[48/120] Building CXX object GraphicEngineEditor\modules\panels\CMakeFiles\EditorPanels.dir\src\InspectorPanel.cpp.obj
+[49/120] Building CXX object GraphicEngineEditor\modules\panels\CMakeFiles\EditorPanels.dir\src\StatisticsPanel.cpp.obj
+[50/120] Building CXX object GraphicEngineEditor\modules\panels\CMakeFiles\EditorPanels.dir\src\EditorConsole.cpp.obj
+[51/120] Building CXX object GraphicEngineEditor\modules\application\CMakeFiles\EditorApplication.dir\src\EditorSceneDocument.cpp.obj
+[52/120] Building CXX object GraphicEngineCore\tests\CMakeFiles\GraphicEngineUnitTests.dir\unit\rendering\EditorUiIntegrationTests.cpp.obj
+[53/120] Building CXX object GraphicEngineEditor\modules\application\CMakeFiles\EditorApplication.dir\src\main.cpp.obj
+[54/120] Building CXX object GraphicEngineCore\tests\CMakeFiles\GraphicEngineUnitTests.dir\unit\rendering\RenderSystemLifecycleTests.cpp.obj
+[55/120] Building CXX object GraphicEngineCore\tests\CMakeFiles\GraphicEngineUnitTests.dir\unit\assets\ScenePersistenceTests.cpp.obj
+[56/120] Building CXX object GraphicEngineCore\tests\CMakeFiles\GraphicEngineUnitTests.dir\unit\rendering\RenderingCpuPathTests.cpp.obj
+In file included from C:\Users\jgolasz\.codex\worktrees\19da\GrpahicEngine\GraphicEngineCore\tests\unit\rendering\RenderingCpuPathTests.cpp:3:
+C:\Users\jgolasz\.codex\worktrees\19da\GrpahicEngine\GraphicEngineCore\modules\rendering/src/render_graph/RenderGraph.h(73,18): warning: explicitly defaulted move assignment operator is implicitly deleted [-Wdefaulted-function-deleted]
+   73 |     RenderGraph &operator=(RenderGraph &&) noexcept = default;
+      |                  ^
+C:\Users\jgolasz\.codex\worktrees\19da\GrpahicEngine\GraphicEngineCore\modules\rendering/src/render_graph/RenderGraph.h(45,19): note: move assignment operator of 'RenderGraph' is implicitly deleted because field 'm_FrameContext' is of reference type 'FrameContext &'
+   45 |     FrameContext &m_FrameContext;
+      |                   ^
+C:\Users\jgolasz\.codex\worktrees\19da\GrpahicEngine\GraphicEngineCore\modules\rendering/src/render_graph/RenderGraph.h(73,55): note: replace 'default' with 'delete'
+   73 |     RenderGraph &operator=(RenderGraph &&) noexcept = default;
+      |                                                       ^~~~~~~
+      |                                                       delete
+1 warning generated.
+[57/120] Building CXX object GraphicEngineCore\tests\CMakeFiles\GraphicEngineUnitTests.dir\unit\rendering\RenderingValueTests.cpp.obj
+[58/120] Building CXX object GraphicEngineEditor\modules\application\CMakeFiles\EditorApplication.dir\src\Editor.cpp.obj
+[59/120] Building CXX object GraphicEngineCore\tests\CMakeFiles\GraphicEngineUnitTests.dir\unit\runtime\EditorCameraControllerTests.cpp.obj
+[60/120] Building CXX object GraphicEngineCore\tests\CMakeFiles\GraphicEngineUnitTests.dir\unit\runtime\ApplicationTests.cpp.obj
+[61/120] Building CXX object GraphicEngineCore\tests\CMakeFiles\GraphicEngineUnitTests.dir\unit\runtime\EventDispatcherTests.cpp.obj
+[62/120] Building CXX object GraphicEngineCore\tests\CMakeFiles\GraphicEngineUnitTests.dir\unit\scene\ObjectHierarchyTests.cpp.obj
+[63/120] Building CXX object GraphicEngineCore\CMakeFiles\CorePublicHeaderChecks.dir\public_header_checks\RenderDiagnostics.h.cpp.obj
+[64/120] Building CXX object GraphicEngineCore\tests\CMakeFiles\GraphicEngineUnitTests.dir\unit\scene\TransformTests.cpp.obj
+[65/120] Building CXX object GraphicEngineCore\tests\CMakeFiles\GraphicEngineUnitTests.dir\unit\scene\SceneIdentityTests.cpp.obj
+[66/120] Building CXX object GraphicEngineCore\CMakeFiles\CorePublicHeaderChecks.dir\public_header_checks\PrimitiveFactory.h.cpp.obj
+[67/120] Building CXX object GraphicEngineCore\CMakeFiles\CorePublicHeaderChecks.dir\public_header_checks\RenderBackend.h.cpp.obj
+[68/120] Building CXX object GraphicEngineCore\CMakeFiles\CorePublicHeaderChecks.dir\public_header_checks\renderer_DebugRenderSettings.h.cpp.obj
+[69/120] Building CXX object GraphicEngineCore\CMakeFiles\CorePublicHeaderChecks.dir\public_header_checks\renderer_Camera.h.cpp.obj
+[70/120] Building CXX object GraphicEngineCore\CMakeFiles\CorePublicHeaderChecks.dir\public_header_checks\ViewportTarget.h.cpp.obj
+[71/120] Building CXX object GraphicEngineCore\CMakeFiles\CorePublicHeaderChecks.dir\public_header_checks\AssetImporter.h.cpp.obj
+[72/120] Building CXX object GraphicEngineCore\CMakeFiles\CorePublicHeaderChecks.dir\public_header_checks\renderer_DebugGeometry.h.cpp.obj
+[73/120] Building CXX object GraphicEngineCore\CMakeFiles\CorePublicHeaderChecks.dir\public_header_checks\AssetManager.h.cpp.obj
+[74/120] Building CXX object SandboxApp\CMakeFiles\Sandbox.dir\main.cpp.obj
+[75/120] Building CXX object GraphicEngineCore\CMakeFiles\CorePublicHeaderChecks.dir\public_header_checks\renderer_Entity.h.cpp.obj
+[76/120] Building CXX object GraphicEngineCore\CMakeFiles\CorePublicHeaderChecks.dir\public_header_checks\renderer_ViewportBinding.h.cpp.obj
+[77/120] Building CXX object GraphicEngineCore\CMakeFiles\CorePublicHeaderChecks.dir\public_header_checks\renderer_TextureResource.h.cpp.obj
+[78/120] Building CXX object GraphicEngineCore\CMakeFiles\CorePublicHeaderChecks.dir\public_header_checks\renderer_Vertex.h.cpp.obj
+[79/120] Building CXX object GraphicEngineCore\CMakeFiles\CorePublicHeaderChecks.dir\public_header_checks\EditorCameraController.h.cpp.obj
+[80/120] Building CXX object GraphicEngineCore\CMakeFiles\CorePublicHeaderChecks.dir\public_header_checks\renderer_Mesh.h.cpp.obj
+[81/120] Building CXX object GraphicEngineCore\CMakeFiles\CorePublicHeaderChecks.dir\public_header_checks\renderer_Material.h.cpp.obj
+[82/120] Building CXX object GraphicEngineCore\CMakeFiles\CorePublicHeaderChecks.dir\public_header_checks\renderer_Viewport.h.cpp.obj
+[83/120] Building CXX object GraphicEngineCore\CMakeFiles\CorePublicHeaderChecks.dir\public_header_checks\LogCommon.h.cpp.obj
+[84/120] Building CXX object GraphicEngineCore\CMakeFiles\CorePublicHeaderChecks.dir\public_header_checks\RenderSystem.h.cpp.obj
+[85/120] Building CXX object GraphicEngineCore\CMakeFiles\CorePublicHeaderChecks.dir\public_header_checks\Component.h.cpp.obj
+[86/120] Building CXX object GraphicEngineCore\CMakeFiles\CorePublicHeaderChecks.dir\public_header_checks\Result.h.cpp.obj
+[87/120] Building CXX object GraphicEngineCore\CMakeFiles\CorePublicHeaderChecks.dir\public_header_checks\Window.h.cpp.obj
+[88/120] Building CXX object GraphicEngineCore\CMakeFiles\CorePublicHeaderChecks.dir\public_header_checks\Object.h.cpp.obj
+[89/120] Building CXX object GraphicEngineCore\CMakeFiles\CorePublicHeaderChecks.dir\public_header_checks\Scene.h.cpp.obj
+[90/120] Building CXX object GraphicEngineCore\CMakeFiles\CorePublicHeaderChecks.dir\public_header_checks\components_Transform.h.cpp.obj
+[91/120] Building CXX object GraphicEngineCore\CMakeFiles\CorePublicHeaderChecks.dir\public_header_checks\Application.h.cpp.obj
+[92/120] Building CXX object GraphicEngineCore\CMakeFiles\CorePublicHeaderChecks.dir\public_header_checks\LogMacros.h.cpp.obj
+[93/120] Building CXX object GraphicEngineCore\CMakeFiles\CorePublicHeaderChecks.dir\public_header_checks\LogEngine.h.cpp.obj
+[94/120] Building CXX object GraphicEngineCore\CMakeFiles\CorePublicHeaderChecks.dir\public_header_checks\Logging.h.cpp.obj
+[95/120] Building CXX object GraphicEngineCore\CMakeFiles\CorePublicHeaderChecks.dir\public_header_checks\SceneDocument.h.cpp.obj
+[96/120] Building CXX object GraphicEngineEditor\CMakeFiles\EditorPublicHeaderChecks.dir\public_header_checks\ChangeMaterialPropertiesCommand.h.cpp.obj
+[97/120] Building CXX object GraphicEngineEditor\CMakeFiles\EditorPublicHeaderChecks.dir\public_header_checks\EntityMembershipCommand.h.cpp.obj
+[98/120] Building CXX object GraphicEngineEditor\CMakeFiles\EditorPublicHeaderChecks.dir\public_header_checks\ChangeMaterialTextureCommand.h.cpp.obj
+[99/120] Linking CXX executable bin\BrdfReferenceTests.exe
+[100/120] Linking CXX executable bin\AssetManagerTests.exe
+[101/120] Building CXX object GraphicEngineEditor\CMakeFiles\EditorPublicHeaderChecks.dir\public_header_checks\EditorSceneDocument.h.cpp.obj
+[102/120] Building CXX object GraphicEngineEditor\CMakeFiles\EditorPublicHeaderChecks.dir\public_header_checks\ReplaceEntityCommand.h.cpp.obj
+[103/120] Building CXX object GraphicEngineEditor\CMakeFiles\EditorPublicHeaderChecks.dir\public_header_checks\Editor.h.cpp.obj
+[104/120] Building CXX object GraphicEngineEditor\CMakeFiles\EditorPublicHeaderChecks.dir\public_header_checks\AssetImportRequestedEvent.h.cpp.obj
+[105/120] Building CXX object GraphicEngineEditor\CMakeFiles\EditorPublicHeaderChecks.dir\public_header_checks\EntitySelectedEvent.h.cpp.obj
+[106/120] Building CXX object GraphicEngineEditor\CMakeFiles\EditorPublicHeaderChecks.dir\public_header_checks\MaterialChangedEvent.h.cpp.obj
+[107/120] Building CXX object GraphicEngineEditor\CMakeFiles\EditorPublicHeaderChecks.dir\public_header_checks\MaterialTextureAssignmentRequestedEvent.h.cpp.obj
+[108/120] Building CXX object GraphicEngineEditor\CMakeFiles\EditorPublicHeaderChecks.dir\public_header_checks\RemoveEntityRequestedEvent.h.cpp.obj
+[109/120] Building CXX object GraphicEngineEditor\CMakeFiles\EditorPublicHeaderChecks.dir\public_header_checks\SceneChangedEvent.h.cpp.obj
+[110/120] Building CXX object GraphicEngineEditor\CMakeFiles\EditorPublicHeaderChecks.dir\public_header_checks\AssetRegistryChangedEvent.h.cpp.obj
+[111/120] Building CXX object GraphicEngineEditor\CMakeFiles\EditorPublicHeaderChecks.dir\public_header_checks\EditorEvents.h.cpp.obj
+[112/120] Building CXX object GraphicEngineEditor\CMakeFiles\EditorPublicHeaderChecks.dir\public_header_checks\AssetBrowserPanel.h.cpp.obj
+[113/120] Building CXX object GraphicEngineEditor\CMakeFiles\EditorPublicHeaderChecks.dir\public_header_checks\EditorConsole.h.cpp.obj
+[114/120] Building CXX object GraphicEngineEditor\CMakeFiles\EditorPublicHeaderChecks.dir\public_header_checks\HierarchyPanel.h.cpp.obj
+[115/120] Building CXX object GraphicEngineEditor\CMakeFiles\EditorPublicHeaderChecks.dir\public_header_checks\InspectorPanel.h.cpp.obj
+[116/120] Linking CXX executable bin\Editor.exe
+[117/120] Building CXX object GraphicEngineEditor\CMakeFiles\EditorPublicHeaderChecks.dir\public_header_checks\ScenePanel.h.cpp.obj
+[118/120] Linking CXX executable bin\GraphicEngineUnitTests.exe
+[119/120] Linking CXX executable bin\Sandbox.exe

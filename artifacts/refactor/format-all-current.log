@@ -1,0 +1,447 @@
+GraphicEngineCore\tests\unit\scene\ObjectHierarchyTests.cpp:1:34: error: code should be clang-formatted [-Wclang-format-violations]
+#include "scene/include/Object.h"
+                                 ^
+GraphicEngineCore\tests\unit\scene\ObjectHierarchyTests.cpp:24:2: error: code should be clang-formatted [-Wclang-format-violations]
+{
+ ^
+GraphicEngineCore\tests\unit\scene\ObjectHierarchyTests.cpp:25:25: error: code should be clang-formatted [-Wclang-format-violations]
+    Engine::Object root;
+                        ^
+GraphicEngineCore\tests\unit\scene\ObjectHierarchyTests.cpp:26:53: error: code should be clang-formatted [-Wclang-format-violations]
+    auto child = std::make_shared<Engine::Object>();
+                                                    ^
+GraphicEngineCore\tests\unit\scene\ObjectHierarchyTests.cpp:27:58: error: code should be clang-formatted [-Wclang-format-violations]
+    auto grandchild = std::make_shared<Engine::Object>();
+                                                         ^
+GraphicEngineCore\tests\unit\scene\ObjectHierarchyTests.cpp:29:39: error: code should be clang-formatted [-Wclang-format-violations]
+    ASSERT_TRUE(root.AddChild(child));
+                                      ^
+GraphicEngineCore\tests\unit\scene\ObjectHierarchyTests.cpp:30:46: error: code should be clang-formatted [-Wclang-format-violations]
+    ASSERT_TRUE(child->AddChild(grandchild));
+                                             ^
+GraphicEngineCore\tests\unit\scene\ObjectHierarchyTests.cpp:34:42: error: code should be clang-formatted [-Wclang-format-violations]
+    EXPECT_EQ(child->GetParent(), &root);
+                                         ^
+GraphicEngineCore\tests\unit\scene\ObjectHierarchyTests.cpp:50:2: error: code should be clang-formatted [-Wclang-format-violations]
+}
+ ^
+GraphicEngineCore\tests\unit\scene\ObjectHierarchyTests.cpp:52:66: error: code should be clang-formatted [-Wclang-format-violations]
+TEST(ObjectHierarchyTests, DetachesChildAndClearsTransformParent)
+                                                                 ^
+GraphicEngineCore\tests\unit\scene\ObjectHierarchyTests.cpp:53:2: error: code should be clang-formatted [-Wclang-format-violations]
+{
+ ^
+GraphicEngineCore\tests\unit\scene\ObjectHierarchyTests.cpp:54:25: error: code should be clang-formatted [-Wclang-format-violations]
+    Engine::Object root;
+                        ^
+GraphicEngineCore\tests\unit\scene\ObjectHierarchyTests.cpp:55:53: error: code should be clang-formatted [-Wclang-format-violations]
+    auto child = std::make_shared<Engine::Object>();
+                                                    ^
+GraphicEngineCore\tests\unit\scene\ObjectHierarchyTests.cpp:56:39: error: code should be clang-formatted [-Wclang-format-violations]
+    ASSERT_TRUE(root.AddChild(child));
+                                      ^
+GraphicEngineCore\tests\unit\scene\ObjectHierarchyTests.cpp:57:62: error: code should be clang-formatted [-Wclang-format-violations]
+    ASSERT_EQ(child->transform.GetParent(), &root.transform);
+                                                             ^
+GraphicEngineCore\tests\unit\scene\ObjectHierarchyTests.cpp:59:48: error: code should be clang-formatted [-Wclang-format-violations]
+    EXPECT_TRUE(root.RemoveChild(child.get()));
+                                               ^
+GraphicEngineCore\tests\unit\scene\ObjectHierarchyTests.cpp:60:44: error: code should be clang-formatted [-Wclang-format-violations]
+    EXPECT_EQ(child->GetParent(), nullptr);
+                                           ^
+GraphicEngineCore\tests\unit\scene\ObjectHierarchyTests.cpp:61:54: error: code should be clang-formatted [-Wclang-format-violations]
+    EXPECT_EQ(child->transform.GetParent(), nullptr);
+                                                     ^
+GraphicEngineCore\tests\unit\scene\ObjectHierarchyTests.cpp:62:49: error: code should be clang-formatted [-Wclang-format-violations]
+    EXPECT_FALSE(root.RemoveChild(child.get()));
+                                                ^
+GraphicEngineCore\tests\unit\scene\ObjectHierarchyTests.cpp:63:2: error: code should be clang-formatted [-Wclang-format-violations]
+}
+ ^
+GraphicEngineCore\tests\unit\scene\ObjectHierarchyTests.cpp:66:2: error: code should be clang-formatted [-Wclang-format-violations]
+{
+ ^
+GraphicEngineCore\tests\unit\scene\ObjectHierarchyTests.cpp:67:26: error: code should be clang-formatted [-Wclang-format-violations]
+    Engine::Object first;
+                         ^
+GraphicEngineCore\tests\unit\scene\ObjectHierarchyTests.cpp:68:27: error: code should be clang-formatted [-Wclang-format-violations]
+    Engine::Object second;
+                          ^
+GraphicEngineCore\tests\unit\scene\ObjectHierarchyTests.cpp:69:53: error: code should be clang-formatted [-Wclang-format-violations]
+    auto child = std::make_shared<Engine::Object>();
+                                                    ^
+GraphicEngineCore\tests\unit\scene\ObjectHierarchyTests.cpp:70:40: error: code should be clang-formatted [-Wclang-format-violations]
+    ASSERT_TRUE(first.AddChild(child));
+                                       ^
+GraphicEngineCore\tests\unit\scene\ObjectHierarchyTests.cpp:72:44: error: code should be clang-formatted [-Wclang-format-violations]
+    ASSERT_TRUE(child->SetParent(&second));
+                                           ^
+GraphicEngineCore\tests\unit\scene\ObjectHierarchyTests.cpp:73:46: error: code should be clang-formatted [-Wclang-format-violations]
+    EXPECT_TRUE(first.GetChildren().empty());
+                                             ^
+GraphicEngineCore\tests\unit\scene\ObjectHierarchyTests.cpp:74:48: error: code should be clang-formatted [-Wclang-format-violations]
+    ASSERT_EQ(second.GetChildren().size(), 1U);
+                                               ^
+GraphicEngineCore\tests\unit\scene\ObjectHierarchyTests.cpp:75:64: error: code should be clang-formatted [-Wclang-format-violations]
+    EXPECT_EQ(second.GetChildren().front().get(), child.get());
+                                                               ^
+GraphicEngineCore\tests\unit\runtime\LogEngineTests.cpp:234:38: error: code should be clang-formatted [-Wclang-format-violations]
+    const auto configuredBreadcrumb = session.GetConfiguration().jsonlPath.parent_path() / "override-crash.txt";
+                                     ^
+GraphicEngineCore\tests\unit\runtime\LogEngineTests.cpp:241:84: error: code should be clang-formatted [-Wclang-format-violations]
+    EXPECT_EQ(Engine::Log::GetCategoryMinimumLevel(Engine::Log::Category::Physics), Engine::Log::Level::Trace);
+                                                                                   ^
+GraphicEngineCore\tests\unit\runtime\LogEngineTests.cpp:243:84: error: code should be clang-formatted [-Wclang-format-violations]
+    EXPECT_EQ(Engine::Log::GetCategoryMinimumLevel(Engine::Log::Category::Backend), Engine::Log::Level::Debug);
+                                                                                   ^
+GraphicEngineCore\tests\unit\runtime\LogEngineTests.cpp:248:82: error: code should be clang-formatted [-Wclang-format-violations]
+    EXPECT_EQ(Engine::Log::GetCategoryMinimumLevel(Engine::Log::Category::Asset), Engine::Log::Level::Warning);
+                                                                                 ^
+GraphicEngineCore\tests\unit\runtime\LogEngineTests.cpp:249:88: error: code should be clang-formatted [-Wclang-format-violations]
+    EXPECT_EQ(Engine::Log::GetCategoryMinimumLevel(Engine::Log::Category::Diagnostics), Engine::Log::Level::Warning);
+                                                                                       ^
+GraphicEngineCore\tests\AssetManagerTests.cpp:369:48: error: code should be clang-formatted [-Wclang-format-violations]
+    withUri("incomplete-uri.gltf", "broken%2");
+                                               ^
+GraphicEngineCore\tests\AssetManagerTests.cpp:370:71: error: code should be clang-formatted [-Wclang-format-violations]
+    Require(!assets.ImportModel("incomplete-uri.gltf", guid, error) &&
+                                                                      ^
+GraphicEngineCore\tests\AssetManagerTests.cpp:371:78: error: code should be clang-formatted [-Wclang-format-violations]
+                error.find("incomplete percent escape") != std::string::npos,
+                                                                             ^
+GraphicEngineCore\tests\AssetManagerTests.cpp:372:60: error: code should be clang-formatted [-Wclang-format-violations]
+            "incomplete external URI escape was accepted");
+                                                           ^
+GraphicEngineCore\tests\AssetManagerTests.cpp:373:44: error: code should be clang-formatted [-Wclang-format-violations]
+    withUri("invalid-uri-hex.gltf", "%GG");
+                                           ^
+GraphicEngineCore\tests\AssetManagerTests.cpp:374:72: error: code should be clang-formatted [-Wclang-format-violations]
+    Require(!assets.ImportModel("invalid-uri-hex.gltf", guid, error) &&
+                                                                       ^
+GraphicEngineCore\tests\AssetManagerTests.cpp:375:75: error: code should be clang-formatted [-Wclang-format-violations]
+                error.find("invalid percent escape") != std::string::npos,
+                                                                          ^
+GraphicEngineCore\tests\AssetManagerTests.cpp:376:61: error: code should be clang-formatted [-Wclang-format-violations]
+            "invalid external URI hex escape was accepted");
+                                                            ^
+GraphicEngineCore\tests\AssetManagerTests.cpp:377:48: error: code should be clang-formatted [-Wclang-format-violations]
+    withUri("invalid-uri-low-hex.gltf", "%7G");
+                                               ^
+GraphicEngineCore\tests\AssetManagerTests.cpp:378:76: error: code should be clang-formatted [-Wclang-format-violations]
+    Require(!assets.ImportModel("invalid-uri-low-hex.gltf", guid, error) &&
+                                                                           ^
+GraphicEngineCore\tests\AssetManagerTests.cpp:379:75: error: code should be clang-formatted [-Wclang-format-violations]
+                error.find("invalid percent escape") != std::string::npos,
+                                                                          ^
+GraphicEngineCore\tests\AssetManagerTests.cpp:380:64: error: code should be clang-formatted [-Wclang-format-violations]
+            "invalid low external URI hex digit was accepted");
+                                                               ^
+GraphicEngineCore\tests\AssetManagerTests.cpp:381:44: error: code should be clang-formatted [-Wclang-format-violations]
+    withUri("zero-uri-escape.gltf", "%00");
+                                           ^
+GraphicEngineCore\tests\AssetManagerTests.cpp:382:72: error: code should be clang-formatted [-Wclang-format-violations]
+    Require(!assets.ImportModel("zero-uri-escape.gltf", guid, error) &&
+                                                                       ^
+GraphicEngineCore\tests\AssetManagerTests.cpp:383:75: error: code should be clang-formatted [-Wclang-format-violations]
+                error.find("invalid percent escape") != std::string::npos,
+                                                                          ^
+GraphicEngineCore\tests\AssetManagerTests.cpp:384:59: error: code should be clang-formatted [-Wclang-format-violations]
+            "external URI zero-byte escape was accepted");
+                                                          ^
+GraphicEngineCore\tests\AssetManagerTests.cpp:385:52: error: code should be clang-formatted [-Wclang-format-violations]
+    withUri("absolute-uri.gltf", "C:/outside.bin");
+                                                   ^
+GraphicEngineCore\tests\AssetManagerTests.cpp:386:69: error: code should be clang-formatted [-Wclang-format-violations]
+    Require(!assets.ImportModel("absolute-uri.gltf", guid, error) &&
+                                                                    ^
+GraphicEngineCore\tests\AssetManagerTests.cpp:387:77: error: code should be clang-formatted [-Wclang-format-violations]
+                error.find("must be project-relative") != std::string::npos,
+                                                                            ^
+GraphicEngineCore\tests\AssetManagerTests.cpp:388:51: error: code should be clang-formatted [-Wclang-format-violations]
+            "absolute external URI was accepted");
+                                                  ^
+GraphicEngineCore\tests\AssetManagerTests.cpp:389:60: error: code should be clang-formatted [-Wclang-format-violations]
+    withUri("encoded-escape-uri.gltf", "..%2Foutside.bin");
+                                                           ^
+GraphicEngineCore\tests\AssetManagerTests.cpp:390:75: error: code should be clang-formatted [-Wclang-format-violations]
+    Require(!assets.ImportModel("encoded-escape-uri.gltf", guid, error) &&
+                                                                          ^
+GraphicEngineCore\tests\AssetManagerTests.cpp:391:77: error: code should be clang-formatted [-Wclang-format-violations]
+                error.find("outside the project root") != std::string::npos,
+                                                                            ^
+GraphicEngineCore\tests\AssetManagerTests.cpp:392:68: error: code should be clang-formatted [-Wclang-format-violations]
+            "percent-encoded external URI traversal was accepted");
+                                                                   ^
+GraphicEngineCore\tests\AssetManagerTests.cpp:393:57: error: code should be clang-formatted [-Wclang-format-violations]
+    withUri("valid-escaped-uri.gltf", "%74riangle.bin");
+                                                        ^
+GraphicEngineCore\tests\AssetManagerTests.cpp:394:71: error: code should be clang-formatted [-Wclang-format-violations]
+    Require(assets.ImportModel("valid-escaped-uri.gltf", guid, error),
+                                                                      ^
+GraphicEngineCore\tests\AssetManagerTests.cpp:395:63: error: code should be clang-formatted [-Wclang-format-violations]
+            "valid external URI percent escape was rejected");
+                                                              ^
+GraphicEngineCore\tests\AssetManagerTests.cpp:396:85: error: code should be clang-formatted [-Wclang-format-violations]
+    std::filesystem::copy_file(project / "triangle.bin", project / "~-triangle.bin",
+                                                                                    ^
+GraphicEngineCore\tests\AssetManagerTests.cpp:397:83: error: code should be clang-formatted [-Wclang-format-violations]
+                               std::filesystem::copy_options::overwrite_existing);
+                                                                                  ^
+GraphicEngineCore\tests\AssetManagerTests.cpp:398:59: error: code should be clang-formatted [-Wclang-format-violations]
+    withUri("lowercase-hex-uri.gltf", "%7e-triangle.bin");
+                                                          ^
+GraphicEngineCore\tests\AssetManagerTests.cpp:399:71: error: code should be clang-formatted [-Wclang-format-violations]
+    Require(assets.ImportModel("lowercase-hex-uri.gltf", guid, error),
+                                                                      ^
+GraphicEngineCore\tests\AssetManagerTests.cpp:400:64: error: code should be clang-formatted [-Wclang-format-violations]
+            "lowercase external URI hex digits were rejected");
+                                                               ^
+GraphicEngineCore\tests\AssetManagerTests.cpp:401:59: error: code should be clang-formatted [-Wclang-format-violations]
+    withUri("uppercase-hex-uri.gltf", "%7E-triangle.bin");
+                                                          ^
+GraphicEngineCore\tests\AssetManagerTests.cpp:402:71: error: code should be clang-formatted [-Wclang-format-violations]
+    Require(assets.ImportModel("uppercase-hex-uri.gltf", guid, error),
+                                                                      ^
+GraphicEngineCore\tests\AssetManagerTests.cpp:403:64: error: code should be clang-formatted [-Wclang-format-violations]
+            "uppercase external URI hex digits were rejected");
+                                                               ^
+GraphicEngineCore\tests\AssetManagerTests.cpp:404:51: error: code should be clang-formatted [-Wclang-format-violations]
+    withUri("escaped-uri.gltf", "../outside.bin");
+                                                  ^
+GraphicEngineCore\tests\AssetManagerTests.cpp:405:68: error: code should be clang-formatted [-Wclang-format-violations]
+    Require(!assets.ImportModel("escaped-uri.gltf", guid, error) &&
+                                                                   ^
+GraphicEngineCore\tests\AssetManagerTests.cpp:406:77: error: code should be clang-formatted [-Wclang-format-violations]
+                error.find("outside the project root") != std::string::npos,
+                                                                            ^
+GraphicEngineCore\tests\AssetManagerTests.cpp:407:72: error: code should be clang-formatted [-Wclang-format-violations]
+            "external glTF URI outside the project root was accepted");
+                                                                       ^
+GraphicEngineCore\tests\AssetManagerTests.cpp:409:6: error: code should be clang-formatted [-Wclang-format-violations]
+    {
+     ^
+GraphicEngineCore\tests\AssetManagerTests.cpp:410:106: error: code should be clang-formatted [-Wclang-format-violations]
+        std::ofstream malformedGlb(project / "malformed-header.glb", std::ios::binary | std::ios::trunc);
+                                                                                                         ^
+GraphicEngineCore\tests\AssetManagerTests.cpp:411:66: error: code should be clang-formatted [-Wclang-format-violations]
+        const std::array<uint32_t, 3> invalidHeader = {0, 2, 12};
+                                                                 ^
+GraphicEngineCore\tests\AssetManagerTests.cpp:412:105: error: code should be clang-formatted [-Wclang-format-violations]
+        malformedGlb.write(reinterpret_cast<const char *>(invalidHeader.data()), sizeof(invalidHeader));
+                                                                                                        ^
+GraphicEngineCore\tests\AssetManagerTests.cpp:413:6: error: code should be clang-formatted [-Wclang-format-violations]
+    }
+     ^
+GraphicEngineCore\tests\AssetManagerTests.cpp:414:72: error: code should be clang-formatted [-Wclang-format-violations]
+    Require(!assets.ImportModel("malformed-header.glb", guid, error) && error.find("malformed GLB header") !=
+                                                                       ^
+GraphicEngineCore\tests\AssetManagerTests.cpp:414:110: error: code should be clang-formatted [-Wclang-format-violations]
+    Require(!assets.ImportModel("malformed-header.glb", guid, error) && error.find("malformed GLB header") !=
+                                                                                                             ^
+GraphicEngineCore\tests\AssetManagerTests.cpp:415:96: error: code should be clang-formatted [-Wclang-format-violations]
+                                                                             std::string::npos,
+                                                                                               ^
+GraphicEngineCore\tests\AssetManagerTests.cpp:416:74: error: code should be clang-formatted [-Wclang-format-violations]
+            "malformed GLB header was accepted by asset URI validation");
+                                                                         ^
+GraphicEngineCore\tests\AssetManagerTests.cpp:417:6: error: code should be clang-formatted [-Wclang-format-violations]
+    {
+     ^
+GraphicEngineCore\tests\AssetManagerTests.cpp:418:102: error: code should be clang-formatted [-Wclang-format-violations]
+        std::ofstream noJsonChunk(project / "no-json-chunk.glb", std::ios::binary | std::ios::trunc);
+                                                                                                     ^
+GraphicEngineCore\tests\AssetManagerTests.cpp:419:78: error: code should be clang-formatted [-Wclang-format-violations]
+        const std::array<uint32_t, 5> headerOnly = {0x46546c67, 2, 20, 0, 0};
+                                                                             ^
+GraphicEngineCore\tests\AssetManagerTests.cpp:420:98: error: code should be clang-formatted [-Wclang-format-violations]
+        noJsonChunk.write(reinterpret_cast<const char *>(headerOnly.data()), sizeof(headerOnly));
+                                                                                                 ^
+GraphicEngineCore\tests\AssetManagerTests.cpp:421:6: error: code should be clang-formatted [-Wclang-format-violations]
+    }
+     ^
+GraphicEngineCore\tests\AssetManagerTests.cpp:422:69: error: code should be clang-formatted [-Wclang-format-violations]
+    Require(!assets.ImportModel("no-json-chunk.glb", guid, error) && error.find("contains no JSON chunk") !=
+                                                                    ^
+GraphicEngineCore\tests\AssetManagerTests.cpp:422:109: error: code should be clang-formatted [-Wclang-format-violations]
+    Require(!assets.ImportModel("no-json-chunk.glb", guid, error) && error.find("contains no JSON chunk") !=
+                                                                                                            ^
+GraphicEngineCore\tests\AssetManagerTests.cpp:423:89: error: code should be clang-formatted [-Wclang-format-violations]
+                                                                      std::string::npos,
+                                                                                        ^
+GraphicEngineCore\tests\AssetManagerTests.cpp:424:78: error: code should be clang-formatted [-Wclang-format-violations]
+            "GLB without a JSON chunk was accepted by asset URI validation");
+                                                                             ^
+GraphicEngineCore\tests\unit\rendering\RenderSystemLifecycleTests.cpp:244:31: error: code should be clang-formatted [-Wclang-format-violations]
+    auto inferredSceneEntity = renderSystem.CreateModelEntity("warp-inferred-scene", 3, inferredSceneModel,
+                              ^
+GraphicEngineCore\tests\unit\rendering\RenderSystemLifecycleTests.cpp:244:108: error: code should be clang-formatted [-Wclang-format-violations]
+    auto inferredSceneEntity = renderSystem.CreateModelEntity("warp-inferred-scene", 3, inferredSceneModel,
+                                                                                                           ^
+GraphicEngineCore\tests\unit\rendering\RenderSystemLifecycleTests.cpp:251:102: error: code should be clang-formatted [-Wclang-format-violations]
+    EXPECT_EQ(renderSystem.CreateModelEntity("empty-scene", 1, emptySceneModel, {}, error, warnings), nullptr);
+                                                                                                     ^
+GraphicEngineCore\tests\unit\rendering\RenderSystemLifecycleTests.cpp:256:106: error: code should be clang-formatted [-Wclang-format-violations]
+    EXPECT_EQ(renderSystem.CreateModelEntity("repeated-root", 1, repeatedRootModel, {}, error, warnings), nullptr);
+                                                                                                         ^
+GraphicEngineCore\tests\unit\assets\ScenePersistenceTests.cpp:173:79: error: code should be clang-formatted [-Wclang-format-violations]
+    checkRejected("invalid-entity-id.json", root("\"entities\":[{\"id\":0}]"),
+                                                                              ^
+GraphicEngineCore\tests\unit\assets\ScenePersistenceTests.cpp:174:59: error: code should be clang-formatted [-Wclang-format-violations]
+                  "id must be a unique positive integer");
+                                                          ^
+GraphicEngineCore\tests\unit\assets\ScenePersistenceTests.cpp:175:97: error: code should be clang-formatted [-Wclang-format-violations]
+    checkRejected("missing-entity-id.json", root("\"entities\":[{\"primitiveType\":\"cube\"}]"),
+                                                                                                ^
+GraphicEngineCore\tests\unit\assets\ScenePersistenceTests.cpp:176:59: error: code should be clang-formatted [-Wclang-format-violations]
+                  "id must be a unique positive integer");
+                                                          ^
+GraphicEngineCore\tests\unit\assets\ScenePersistenceTests.cpp:177:109: error: code should be clang-formatted [-Wclang-format-violations]
+    checkRejected("string-entity-id.json", root("\"entities\":[{\"id\":\"1\",\"primitiveType\":\"cube\"}]"),
+                                                                                                            ^
+GraphicEngineCore\tests\unit\assets\ScenePersistenceTests.cpp:178:59: error: code should be clang-formatted [-Wclang-format-violations]
+                  "id must be a unique positive integer");
+                                                          ^
+GraphicEngineCore\tests\unit\assets\ScenePersistenceTests.cpp:197:102: error: code should be clang-formatted [-Wclang-format-violations]
+    checkRejected("invalid-model-guid.json", root("\"entities\":[{\"id\":1,\"modelGuid\":\"bad\"}]"),
+                                                                                                     ^
+GraphicEngineCore\tests\unit\assets\ScenePersistenceTests.cpp:198:52: error: code should be clang-formatted [-Wclang-format-violations]
+                  "modelGuid is not a valid GUID");
+                                                   ^
+GraphicEngineCore\tests\unit\assets\ScenePersistenceTests.cpp:199:46: error: code should be clang-formatted [-Wclang-format-violations]
+    checkRejected("invalid-guid-format.json",
+                                             ^
+GraphicEngineCore\tests\unit\assets\ScenePersistenceTests.cpp:200:108: error: code should be clang-formatted [-Wclang-format-violations]
+                  root("\"entities\":[{\"id\":1,\"modelGuid\":\"111111111111111111111111111111111111\"}]"),
+                                                                                                           ^
+GraphicEngineCore\tests\unit\assets\ScenePersistenceTests.cpp:201:52: error: code should be clang-formatted [-Wclang-format-violations]
+                  "modelGuid is not a valid GUID");
+                                                   ^
+GraphicEngineCore\tests\unit\assets\ScenePersistenceTests.cpp:340:89: error: code should be clang-formatted [-Wclang-format-violations]
+    checkRejected("bad-material-array.json", sceneWithMaterial("{\"baseColor\":[1,2]}"),
+                                                                                        ^
+GraphicEngineCore\tests\unit\assets\ScenePersistenceTests.cpp:341:62: error: code should be clang-formatted [-Wclang-format-violations]
+                  "baseColor must be an array of 4 numbers");
+                                                             ^
+GraphicEngineCore\tests\unit\assets\ScenePersistenceTests.cpp:342:96: error: code should be clang-formatted [-Wclang-format-violations]
+    checkRejected("bad-material-array-type.json", sceneWithMaterial("{\"baseColor\":\"red\"}"),
+                                                                                               ^
+GraphicEngineCore\tests\unit\assets\ScenePersistenceTests.cpp:343:62: error: code should be clang-formatted [-Wclang-format-violations]
+                  "baseColor must be an array of 4 numbers");
+                                                             ^
+GraphicEngineCore\tests\unit\assets\ScenePersistenceTests.cpp:344:105: error: code should be clang-formatted [-Wclang-format-violations]
+    checkRejected("bad-material-array-value.json", sceneWithMaterial("{\"baseColor\":[1,\"red\",0,1]}"),
+                                                                                                        ^
+GraphicEngineCore\tests\unit\assets\ScenePersistenceTests.cpp:345:61: error: code should be clang-formatted [-Wclang-format-violations]
+                  "baseColor contains a non-numeric value");
+                                                            ^
+GraphicEngineCore\tests\unit\assets\ScenePersistenceTests.cpp:346:102: error: code should be clang-formatted [-Wclang-format-violations]
+    checkRejected("bad-material-float-range.json", sceneWithMaterial("{\"baseColor\":[1e40,0,0,1]}"),
+                                                                                                     ^
+GraphicEngineCore\tests\unit\assets\ScenePersistenceTests.cpp:347:79: error: code should be clang-formatted [-Wclang-format-violations]
+                  "baseColor contains a non-finite or unrepresentable value");
+                                                                              ^
+GraphicEngineCore\tests\unit\assets\ScenePersistenceTests.cpp:348:92: error: code should be clang-formatted [-Wclang-format-violations]
+    checkRejected("bad-material-number.json", sceneWithMaterial("{\"metallic\":\"high\"}"),
+                                                                                           ^
+GraphicEngineCore\tests\unit\assets\ScenePersistenceTests.cpp:349:47: error: code should be clang-formatted [-Wclang-format-violations]
+                  "metallic must be numeric");
+                                              ^
+GraphicEngineCore\tests\unit\assets\ScenePersistenceTests.cpp:350:94: error: code should be clang-formatted [-Wclang-format-violations]
+    checkRejected("bad-material-number-range.json", sceneWithMaterial("{\"metallic\":1e40}"),
+                                                                                             ^
+GraphicEngineCore\tests\unit\assets\ScenePersistenceTests.cpp:351:78: error: code should be clang-formatted [-Wclang-format-violations]
+                  "metallic contains a non-finite or unrepresentable value");
+                                                                             ^
+GraphicEngineCore\tests\unit\assets\ScenePersistenceTests.cpp:372:108: error: code should be clang-formatted [-Wclang-format-violations]
+    checkRejected("bad-material-guid.json", sceneWithMaterial("{\"baseColorTextureGuid\":\"not-a-guid\"}"),
+                                                                                                           ^
+GraphicEngineCore\tests\unit\assets\ScenePersistenceTests.cpp:373:63: error: code should be clang-formatted [-Wclang-format-violations]
+                  "baseColorTextureGuid is not a valid GUID");
+                                                              ^
+GraphicEngineCore\tests\unit\assets\ScenePersistenceTests.cpp:374:97: error: code should be clang-formatted [-Wclang-format-violations]
+    checkRejected("bad-material-guid-type.json", sceneWithMaterial("{\"normalTextureGuid\":5}"),
+                                                                                                ^
+GraphicEngineCore\tests\unit\assets\ScenePersistenceTests.cpp:375:70: error: code should be clang-formatted [-Wclang-format-violations]
+                  "normalTextureGuid must be a GUID string or null");
+                                                                     ^
+GraphicEngineCore\tests\unit\assets\ScenePersistenceTests.cpp:376:2: error: code should be clang-formatted [-Wclang-format-violations]
+}
+ ^
+GraphicEngineCore\tests\unit\assets\AssetImporterTests.cpp:70:80: error: code should be clang-formatted [-Wclang-format-violations]
+void WriteModelWithBinary(const std::filesystem::path &path, const Json &model, const std::vector<uint8_t> &bytes)
+                                                                               ^
+GraphicEngineCore\tests\unit\assets\AssetImporterTests.cpp:367:70: error: code should be clang-formatted [-Wclang-format-violations]
+    material["extensions"]["KHR_materials_pbrSpecularGlossiness"] = {
+                                                                     ^
+GraphicEngineCore\tests\unit\assets\AssetImporterTests.cpp:372:70: error: code should be clang-formatted [-Wclang-format-violations]
+    material["extensions"]["KHR_materials_pbrSpecularGlossiness"] = {
+                                                                     ^
+GraphicEngineCore\tests\unit\assets\AssetImporterTests.cpp:385:61: error: code should be clang-formatted [-Wclang-format-violations]
+    expectError("bad-extension-texture-transform", material, "malformed KHR_texture_transform offset or scale");
+                                                            ^
+GraphicEngineCore\tests\unit\assets\AssetImporterTests.cpp:504:40: error: code should be clang-formatted [-Wclang-format-violations]
+    model["accessors"][0]["sparse"] = {
+                                       ^
+GraphicEngineCore\tests\unit\assets\AssetImporterTests.cpp:505:22: error: code should be clang-formatted [-Wclang-format-violations]
+        {"count", 1}, {"indices", {{"bufferView", 1}, {"componentType", 5121}}}, {"values", {{"bufferView", 0}}}};
+                     ^
+GraphicEngineCore\tests\unit\assets\AssetImporterTests.cpp:505:81: error: code should be clang-formatted [-Wclang-format-violations]
+        {"count", 1}, {"indices", {{"bufferView", 1}, {"componentType", 5121}}}, {"values", {{"bufferView", 0}}}};
+                                                                                ^
+GraphicEngineCore\tests\unit\assets\AssetImporterTests.cpp:544:86: error: code should be clang-formatted [-Wclang-format-violations]
+    const auto checkImport = [&](const std::string &name, int normalType, int uvType,
+                                                                                     ^
+GraphicEngineCore\tests\unit\assets\AssetImporterTests.cpp:545:58: error: code should be clang-formatted [-Wclang-format-violations]
+                                 const void *normalBytes, size_t normalSize, const void *uvBytes, size_t uvSize) {
+                                                         ^
+GraphicEngineCore\tests\unit\assets\AssetImporterTests.cpp:548:44: error: code should be clang-formatted [-Wclang-format-violations]
+        model["bufferViews"] = Json::array({{{"buffer", 0}, {"byteOffset", 0}, {"byteLength", 36}},
+                                           ^
+GraphicEngineCore\tests\unit\assets\AssetImporterTests.cpp:548:100: error: code should be clang-formatted [-Wclang-format-violations]
+        model["bufferViews"] = Json::array({{{"buffer", 0}, {"byteOffset", 0}, {"byteLength", 36}},
+                                                                                                   ^
+GraphicEngineCore\tests\unit\assets\AssetImporterTests.cpp:549:102: error: code should be clang-formatted [-Wclang-format-violations]
+                                            {{"buffer", 0}, {"byteOffset", 36 + normalSize + uvSize},
+                                                                                                     ^
+GraphicEngineCore\tests\unit\assets\AssetImporterTests.cpp:550:79: error: code should be clang-formatted [-Wclang-format-violations]
+                                             {"byteLength", sizeof(indices)}},
+                                                                              ^
+GraphicEngineCore\tests\unit\assets\AssetImporterTests.cpp:551:109: error: code should be clang-formatted [-Wclang-format-violations]
+                                            {{"buffer", 0}, {"byteOffset", 36}, {"byteLength", normalSize}},
+                                                                                                            ^
+GraphicEngineCore\tests\unit\assets\AssetImporterTests.cpp:554:57: error: code should be clang-formatted [-Wclang-format-violations]
+        model["accessors"].push_back({{"bufferView", 2}, {"componentType", normalType}, {"count", 3},
+                                                        ^
+GraphicEngineCore\tests\unit\assets\AssetImporterTests.cpp:554:88: error: code should be clang-formatted [-Wclang-format-violations]
+        model["accessors"].push_back({{"bufferView", 2}, {"componentType", normalType}, {"count", 3},
+                                                                                       ^
+GraphicEngineCore\tests\unit\assets\AssetImporterTests.cpp:555:56: error: code should be clang-formatted [-Wclang-format-violations]
+                                      {"type", "VEC3"}, {"normalized", true}});
+                                                       ^
+GraphicEngineCore\tests\unit\assets\AssetImporterTests.cpp:556:57: error: code should be clang-formatted [-Wclang-format-violations]
+        model["accessors"].push_back({{"bufferView", 3}, {"componentType", uvType}, {"count", 3},
+                                                        ^
+GraphicEngineCore\tests\unit\assets\AssetImporterTests.cpp:556:84: error: code should be clang-formatted [-Wclang-format-violations]
+        model["accessors"].push_back({{"bufferView", 3}, {"componentType", uvType}, {"count", 3},
+                                                                                   ^
+GraphicEngineCore\tests\unit\assets\AssetImporterTests.cpp:557:56: error: code should be clang-formatted [-Wclang-format-violations]
+                                      {"type", "VEC2"}, {"normalized", true}});
+                                                       ^
+GraphicEngineCore\tests\unit\assets\AssetImporterTests.cpp:581:99: error: code should be clang-formatted [-Wclang-format-violations]
+    checkImport("normalized-byte-attributes", 5120, 5121, byteNormals.data(), sizeof(byteNormals), byteUvs.data(),
+                                                                                                  ^
+GraphicEngineCore\tests\unit\assets\AssetImporterTests.cpp:581:115: error: code should be clang-formatted [-Wclang-format-violations]
+    checkImport("normalized-byte-attributes", 5120, 5121, byteNormals.data(), sizeof(byteNormals), byteUvs.data(),
+                                                                                                                  ^
+GraphicEngineCore\modules\rendering\src\render_graph\RenderGraph.h:69:47: error: code should be clang-formatted [-Wclang-format-violations]
+    RenderGraph(const RenderGraph &) = delete;
+                                              ^
+GraphicEngineCore\modules\rendering\src\render_graph\RenderGraph.h:70:58: error: code should be clang-formatted [-Wclang-format-violations]
+    RenderGraph &operator=(const RenderGraph &) = delete;
+                                                         ^
+GraphicEngineCore\modules\rendering\src\render_graph\RenderGraph.h:72:52: error: code should be clang-formatted [-Wclang-format-violations]
+    RenderGraph(RenderGraph &&) noexcept = default;
+                                                   ^
+GraphicEngineCore\modules\rendering\src\render_graph\RenderGraph.h:73:62: error: code should be clang-formatted [-Wclang-format-violations]
+    RenderGraph &operator=(RenderGraph &&) noexcept = delete;
+                                                             ^

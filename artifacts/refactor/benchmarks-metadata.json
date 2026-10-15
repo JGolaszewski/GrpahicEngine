@@ -1,0 +1,26 @@
+﻿{
+    "branch":  {
+
+               },
+    "commit":  "bd7fb5debbef2510b1527b99a5a77e5f56e936fd",
+    "configuration":  "Release",
+    "architecture":  "x64",
+    "compiler":  "Microsoft (R) C/C++ Optimizing Compiler Version 19.51.36256 for x64",
+    "cmake":  "cmake version 4.3.1-msvc1",
+    "benchmark_library":  "Google Benchmark v1.9.5",
+    "benchmark_command":  "GraphicEngineBenchmarks.exe --benchmark_min_time=0.1 --benchmark_repetitions=3 --benchmark_report_aggregates_only=true --benchmark_out=artifacts/refactor/benchmarks-release.json --benchmark_out_format=json",
+    "operating_system":  {
+                             "Caption":  "Microsoft Windows 11 Pro",
+                             "Version":  "10.0.26200",
+                             "BuildNumber":  "26200"
+                         },
+    "processor":  {
+                      "Name":  "Intel(R) Core(TM) Ultra 9 285K",
+                      "NumberOfCores":  24,
+                      "NumberOfLogicalProcessors":  24,
+                      "MaxClockSpeed":  3700
+                  },
+    "benchmark_report":  "artifacts/refactor/benchmarks-release.json",
+    "generated_at":  "2026-10-15T02:17:07.3918199+02:00",
+    "source_state":  "Dirty worktree based on detached HEAD; benchmark source and working tree changes are included but are not committed."
+}

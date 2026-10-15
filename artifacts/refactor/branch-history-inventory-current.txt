@@ -1,0 +1,63 @@
+Branch history inventory (current repository snapshot)
+captured_utc=2026-10-15 08:43:34
+branch | merge-base-with-main | commits after merge-base | main ancestor of branch
+MaterialSystem | d5ab54b | 14 | False
+asset-workflows | 0dbedab | 0 | False
+backup/fix-p1-report-changes-before-split | d5ab54b | 151 | False
+backup/p0-correctness-fixes-before-split | d5ab54b | 14 | False
+brdf-materials | 0850d88 | 0 | False
+d3d11-backend-layout | 15ae09c | 1 | False
+debug-gizmos | d5af3c7 | 0 | False
+editor-foundation | 241a58e | 0 | False
+engine-audit-fixes | 8cba6b1 | 0 | False
+engine-foundation | 33994ab | 0 | False
+engine-logging | 15ae09c | 0 | False
+feature/deferred-pbr-lighting | a1a68ad | 4 | False
+feature/modular-object-system | a1a68ad | 0 | False
+feature/scene-creation-workflow | 672764d | 5 | True
+feature/scene-graph-outliner | a1a68ad | 2 | False
+gltf-materials | b985a67 | 0 | False
+main | 672764d | 0 | True
+module-based-layout-cleanup | a1a68ad | 0 | False
+p0-correctness-fixes | 93d2653 | 0 | False
+render-graph | 381e2ed | 0 | False
+renderer-architecture | 3f8ea9c | 0 | False
+renderer-lifecycle | c1afc6a | 0 | False
+test/comprehensive-gtest-suite | a1a68ad | 5 | False
+
+Worktree ownership:
+worktree C:/Users/jgolasz/source/repos/JGolaszewski/GrpahicEngine
+HEAD bd7fb5debbef2510b1527b99a5a77e5f56e936fd
+branch refs/heads/test/comprehensive-gtest-suite
+
+worktree C:/Users/jgolasz/.codex/worktrees/19da/GrpahicEngine
+HEAD bd7fb5debbef2510b1527b99a5a77e5f56e936fd
+detached
+
+worktree C:/Users/jgolasz/.codex/worktrees/a80f/GrpahicEngine
+HEAD bd7fb5debbef2510b1527b99a5a77e5f56e936fd
+detached
+
+worktree C:/Users/jgolasz/source/repos/JGolaszewski/GrpahicEngine-deferred-pbr-lighting
+HEAD 70b3fe2bcc7b67326985e013f054a1cc9cf7d50f
+branch refs/heads/feature/deferred-pbr-lighting
+
+worktree C:/Users/jgolasz/source/repos/JGolaszewski/GrpahicEngine-scene-creation-work
+HEAD f02de27dd76707f36baa992fec9d0784e5ce961d
+branch refs/heads/feature/scene-creation-workflow
+
+worktree C:/Users/jgolasz/source/repos/JGolaszewski/GrpahicEngine-scene-graph
+HEAD 8f1ae5a3f9191dab8ce680f128ea223b62405ccb
+branch refs/heads/feature/scene-graph-outliner
+
+
+Current worktree change counts (porcelain entries; read-only audit):
+  primary test/comprehensive-gtest-suite: 201 changes, including untracked files
+  Codex worktree 19da (this checkout): 148 changes, including untracked files
+  Codex worktree a80f: 16 changes, including untracked files
+  feature/deferred-pbr-lighting worktree: clean
+  feature/scene-creation-workflow worktree: clean
+  feature/scene-graph-outliner worktree: 6 modified files
+
+No branch or worktree was changed during this audit. The dirty worktrees remain
+preserved while the history shape is unresolved.

@@ -1,14 +1,34 @@
-#include "rendering/include/renderer/ResourceManager.h"
+#include "ResourceManager.h"
+#include "RenderDevice.h"
+#include "MeshBackend.h"
+#include "TextureBackend.h"
 #include "runtime/include/LogMacros.h"
 
 #include <algorithm>
 #include <cmath>
 #include <functional>
+#include <utility>
 
 namespace Engine::Renderer
 {
 namespace
 {
+Engine::Renderer::PrimitiveTopology ToPrimitiveTopology(Engine::ImportedPrimitiveType type)
+{
+    switch (type)
+    {
+    case Engine::ImportedPrimitiveType::Triangles:
+        return Engine::Renderer::PrimitiveTopology::Triangles;
+    case Engine::ImportedPrimitiveType::Lines:
+        return Engine::Renderer::PrimitiveTopology::Lines;
+    case Engine::ImportedPrimitiveType::LineStrip:
+        return Engine::Renderer::PrimitiveTopology::LineStrip;
+    case Engine::ImportedPrimitiveType::Points:
+        return Engine::Renderer::PrimitiveTopology::Points;
+    }
+    return Engine::Renderer::PrimitiveTopology::Triangles;
+}
+
 struct TextureMip
 {
     uint32_t Width = 0;
@@ -64,8 +84,9 @@ std::vector<TextureMip> BuildTextureMips(const Engine::ImportedImage &image, boo
                 }
                 const size_t offset = (static_cast<size_t>(y) * mip.Width + x) * 4;
                 for (size_t channel = 0; channel < 3; ++channel)
-                    mip.Pixels[offset + channel] = EncodeColor(sum[channel] / count, srgb);
-                mip.Pixels[offset + 3] = EncodeColor(sum[3] / count, false);
+                    mip.Pixels[offset + channel] =
+                        EncodeColor(sum[channel] / static_cast<float>(count), srgb);
+                mip.Pixels[offset + 3] = EncodeColor(sum[3] / static_cast<float>(count), false);
             }
         }
         mips.push_back(std::move(mip));
@@ -74,14 +95,15 @@ std::vector<TextureMip> BuildTextureMips(const Engine::ImportedImage &image, boo
 }
 } // namespace
 
-ResourceManager::ResourceManager(nvrhi::IDevice *device) : m_Device(device), m_RenderDevice(device)
+ResourceManager::ResourceManager(nvrhi::IDevice *device)
+    : m_Device(device), m_RenderDevice(std::make_unique<RenderDevice>(device))
 {
     Engine::ImportedImage color;
     color.name = "FallbackBaseColor";
     color.width = color.height = 1;
     color.rgba8 = {255, 255, 255, 255};
     std::string error;
-    m_FallbackColor = m_RenderDevice.CreateTexture(color, true, error);
+    m_FallbackColor = m_RenderDevice->CreateTexture(color, true, error);
     if (m_FallbackColor)
         QueueTextureUpload(m_FallbackColor, color, true);
 
@@ -89,7 +111,7 @@ ResourceManager::ResourceManager(nvrhi::IDevice *device) : m_Device(device), m_R
     normal.name = "FallbackNormal";
     normal.width = normal.height = 1;
     normal.rgba8 = {128, 128, 255, 255};
-    m_FallbackNormal = m_RenderDevice.CreateTexture(normal, false, error);
+    m_FallbackNormal = m_RenderDevice->CreateTexture(normal, false, error);
     if (m_FallbackNormal)
         QueueTextureUpload(m_FallbackNormal, normal, false);
 }
@@ -135,13 +157,17 @@ std::shared_ptr<Mesh> ResourceManager::GetOrCreateMesh(const std::string &guid, 
         return it->second;
     }
 
-    ENGINE_LOG_DEBUG("Asset", "Mesh cache miss | guid: {} | generation: {} | vertex_count: {} | index_count: {} | estimated_bytes: {}",
+    ENGINE_LOG_DEBUG("Asset",
+                     "Mesh cache miss | guid: {} | generation: {} | vertex_count: {} | index_count: {} | "
+                     "estimated_bytes: {}",
                      guid, generation, vertices.size(), indices.size(),
                      vertices.size() * sizeof(Vertex) + indices.size() * sizeof(uint32_t));
-    auto mesh = m_RenderDevice.CreateMesh(vertices, indices, error);
+    auto mesh = m_RenderDevice->CreateMesh(vertices, indices, error);
     if (!mesh)
     {
-        ENGINE_LOG_ERROR("Render", "GPU mesh allocation failed | guid: {} | generation: {} | vertex_count: {} | index_count: {} | error: {}",
+        ENGINE_LOG_ERROR("Render",
+                         "GPU mesh allocation failed | guid: {} | generation: {} | vertex_count: {} | "
+                         "index_count: {} | error: {}",
                          guid, generation, vertices.size(), indices.size(), error);
         return nullptr;
     }
@@ -178,22 +204,27 @@ std::shared_ptr<TextureResource> ResourceManager::GetOrCreateTexture(const std::
     if (identity.empty())
     {
         error = "texture cache requires a non-empty asset or subresource identity";
-        ENGINE_LOG_ERROR("Asset", "Texture allocation rejected | identity_length: 0 | generation: {}", generation);
+        ENGINE_LOG_ERROR("Asset", "Texture allocation rejected | identity_length: 0 | generation: {}",
+                         generation);
         return nullptr;
     }
     const Key key{identity, generation, srgb};
     if (const auto it = m_Textures.find(key); it != m_Textures.end())
     {
-        ENGINE_LOG_TRACE("Asset", "Texture cache hit | identity: {} | generation: {} | srgb: {}",
-                         identity, generation, srgb);
+        ENGINE_LOG_TRACE("Asset", "Texture cache hit | identity: {} | generation: {} | srgb: {}", identity,
+                         generation, srgb);
         return it->second;
     }
-    ENGINE_LOG_DEBUG("Asset", "Texture cache miss | identity: {} | generation: {} | width: {} | height: {} | byte_size: {} | srgb: {}",
+    ENGINE_LOG_DEBUG("Asset",
+                     "Texture cache miss | identity: {} | generation: {} | width: {} | height: {} | "
+                     "byte_size: {} | srgb: {}",
                      identity, generation, image.width, image.height, image.rgba8.size(), srgb);
-    auto texture = m_RenderDevice.CreateTexture(image, srgb, error, sampler);
+    auto texture = m_RenderDevice->CreateTexture(image, srgb, error, sampler);
     if (!texture)
     {
-        ENGINE_LOG_ERROR("Render", "GPU texture allocation failed | identity: {} | generation: {} | width: {} | height: {} | error: {}",
+        ENGINE_LOG_ERROR("Render",
+                         "GPU texture allocation failed | identity: {} | generation: {} | width: {} | "
+                         "height: {} | error: {}",
                          identity, generation, image.width, image.height, error);
         return nullptr;
     }
@@ -247,7 +278,9 @@ bool ResourceManager::GetOrCreateModelMeshes(const std::string &guid, uint64_t g
         const auto &sourceMesh = model.meshes[meshIndex];
         if (sourceMesh.primitives.empty())
         {
-            error = "model mesh " + std::to_string(meshIndex) + " contains no primitives";
+            error = "model mesh ";
+            error += std::to_string(meshIndex);
+            error += " contains no primitives";
             break;
         }
         meshes[meshIndex].reserve(sourceMesh.primitives.size());
@@ -255,15 +288,18 @@ bool ResourceManager::GetOrCreateModelMeshes(const std::string &guid, uint64_t g
         {
             const std::string subresource =
                 "mesh/" + std::to_string(meshIndex) + "/primitive/" + std::to_string(primitiveIndex);
-            const Key key{guid + "/" + subresource, generation};
+            std::string resourceIdentity = guid;
+            resourceIdentity += '/';
+            resourceIdentity += subresource;
+            const Key key{std::move(resourceIdentity), generation};
             if (const auto cached = m_Meshes.find(key); cached != m_Meshes.end())
             {
                 meshes[meshIndex].push_back(cached->second);
                 continue;
             }
             const auto &primitive = sourceMesh.primitives[primitiveIndex];
-            auto gpuMesh = m_RenderDevice.CreateMesh(primitive.vertices, primitive.indices, error,
-                                                     primitive.primitiveType);
+            auto gpuMesh = m_RenderDevice->CreateMesh(primitive.vertices, primitive.indices, error,
+                                                      ToPrimitiveTopology(primitive.primitiveType));
             if (!gpuMesh)
                 break;
             staged.push_back({key, gpuMesh, primitive.vertices, primitive.indices});
@@ -373,29 +409,31 @@ void ResourceManager::QueueMeshUpload(const std::shared_ptr<Mesh> &mesh, std::ve
         return;
     const uint64_t bytes = static_cast<uint64_t>(vertices.size()) * sizeof(Vertex) +
                            static_cast<uint64_t>(indices.size()) * sizeof(uint32_t);
-    m_PendingUploads.push_back(
-        {[mesh, vertices = std::move(vertices), indices = std::move(indices)](
-             nvrhi::ICommandList *commandList) { mesh->UploadData(commandList, vertices, indices); },
-         bytes});
+    m_PendingUploads.push_back({[mesh, vertices = std::move(vertices),
+                                 indices = std::move(indices)](nvrhi::ICommandList *commandList) {
+                                    MeshBackendAccess::UploadData(*mesh, commandList, vertices, indices);
+                                },
+                                bytes});
     m_UploadProgress.BytesQueued += bytes;
 }
 
 void ResourceManager::QueueTextureUpload(const std::shared_ptr<TextureResource> &texture,
                                          const Engine::ImportedImage &image, bool srgb)
 {
-    if (!texture || !texture->Texture)
+    if (!texture || !TextureBackendAccess::GetTexture(*texture))
         return;
     std::vector<TextureMip> mips = BuildTextureMips(image, srgb);
     uint64_t bytes = 0;
     for (const auto &mip : mips)
         bytes += mip.Pixels.size();
-    m_PendingUploads.push_back(
-        {[texture, mips = std::move(mips)](nvrhi::ICommandList *commandList) {
-             for (size_t i = 0; i < mips.size(); ++i)
-                 commandList->writeTexture(texture->Texture, 0, static_cast<uint32_t>(i),
-                                           mips[i].Pixels.data(), static_cast<size_t>(mips[i].Width) * 4, 0);
-         },
-         bytes});
+    m_PendingUploads.push_back({[texture, mips = std::move(mips)](nvrhi::ICommandList *commandList) {
+                                    for (size_t i = 0; i < mips.size(); ++i)
+                                        commandList->writeTexture(TextureBackendAccess::GetTexture(*texture),
+                                                                  0, static_cast<uint32_t>(i),
+                                                                  mips[i].Pixels.data(),
+                                                                  static_cast<size_t>(mips[i].Width) * 4, 0);
+                                },
+                                bytes});
     m_UploadProgress.BytesQueued += bytes;
 }
 

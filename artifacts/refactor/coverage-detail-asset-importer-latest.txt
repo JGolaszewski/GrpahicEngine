@@ -1,0 +1,814 @@
+?ImportGltf@AssetImporter@Engine@@QEBA?AUAssetImportResult@2@AEBVpath@filesystem@std@@@Z:
+  720|    273|{
+  721|    273|    AssetImportResult result;
+  722|    273|    const std::string extension = sourcePath.extension().string();
+  723|    273|    std::string lowerExtension = extension;
+  724|    273|    std::transform(lowerExtension.begin(), lowerExtension.end(), lowerExtension.begin(),
+  725|    273|                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  726|    273|    if (lowerExtension != ".gltf" && lowerExtension != ".glb")
+                                                   ^18
+  ------------------
+  |  Branch (726:9): [True: 18, False: 255]
+  |  Branch (726:38): [True: 8, False: 10]
+  ------------------
+  727|      8|    {
+  728|      8|        result.error = Context(sourcePath, "expected a .gltf or .glb file");
+  729|      8|        return result;
+  730|      8|    }
+  731|       |
+  732|    265|    tinygltf::TinyGLTF loader;
+  733|    265|    tinygltf::Model source;
+  734|    265|    std::string warning, error;
+  735|    265|    const bool loaded = lowerExtension == ".glb"
+  ------------------
+  |  Branch (735:25): [True: 10, False: 255]
+  ------------------
+  736|    265|                            ? loader.LoadBinaryFromFile(&source, &error, &warning, sourcePath.string())
+                                            ^10
+  737|    265|                            : loader.LoadASCIIFromFile(&source, &error, &warning, sourcePath.string());
+                                            ^255
+  738|    265|    if (!warning.empty())
+  ------------------
+  |  Branch (738:9): [True: 0, False: 265]
+  ------------------
+  739|      0|        result.warnings.push_back(Context(sourcePath, warning));
+  740|    265|    if (!loaded)
+  ------------------
+  |  Branch (740:9): [True: 22, False: 243]
+  ------------------
+  741|     22|    {
+  742|     22|        result.error = Context(sourcePath, error.empty() ? "glTF parsing failed" : error);
+                                                                         ^0
+  ------------------
+  |  Branch (742:44): [True: 0, False: 22]
+  ------------------
+  743|     22|        return result;
+  744|     22|    }
+  745|    243|    for (const auto &extensionName : source.extensionsRequired)
+  ------------------
+  |  Branch (745:36): [True: 8, False: 235]
+  ------------------
+  746|      8|    {
+  747|      8|        if (extensionName != "KHR_materials_pbrSpecularGlossiness" &&
+  ------------------
+  |  Branch (747:13): [True: 8, False: 0]
+  ------------------
+  748|      8|            extensionName != "KHR_texture_transform")
+  ------------------
+  |  Branch (748:13): [True: 8, False: 0]
+  ------------------
+  749|      8|        {
+  750|      8|            result.error = Context(sourcePath, "required glTF extension is unsupported: " + extensionName);
+  751|      8|            return result;
+  752|      8|        }
+  753|      8|    }
+  754|    235|    for (const auto &extensionName : source.extensionsUsed)
+  ------------------
+  |  Branch (754:36): [True: 54, False: 235]
+  ------------------
+  755|     54|    {
+  756|     54|        if (extensionName != "KHR_texture_transform" &&
+  ------------------
+  |  Branch (756:13): [True: 31, False: 23]
+  ------------------
+  757|     31|            extensionName != "KHR_materials_pbrSpecularGlossiness" &&
+  ------------------
+  |  Branch (757:13): [True: 8, False: 23]
+  ------------------
+  758|      8|            std::find(source.extensionsRequired.begin(), source.extensionsRequired.end(), extensionName) ==
+  ------------------
+  |  Branch (758:13): [True: 8, False: 0]
+  ------------------
+  759|      8|                source.extensionsRequired.end())
+  760|      8|        {
+  761|      8|            result.warnings.push_back(
+  762|      8|                Context(sourcePath, "optional glTF extension will be ignored: " + extensionName));
+  763|      8|        }
+  764|     54|    }
+  765|    235|    if (!source.skins.empty())
+  ------------------
+  |  Branch (765:9): [True: 1, False: 234]
+  ------------------
+  766|      1|        result.warnings.push_back(
+  767|      1|            Context(sourcePath, "skinning is not imported; bind-pose geometry is used"));
+  768|    235|    if (!source.animations.empty())
+  ------------------
+  |  Branch (768:9): [True: 1, False: 234]
+  ------------------
+  769|      1|        result.warnings.push_back(Context(sourcePath, "animations are not imported"));
+  770|       |
+  771|    235|    result.model.sourcePath = sourcePath;
+  772|    235|    result.model.defaultScene = source.defaultScene;
+  773|    235|    result.model.scenes.reserve(source.scenes.size());
+  774|    235|    for (const auto &scene : source.scenes)
+  ------------------
+  |  Branch (774:28): [True: 235, False: 233]
+  ------------------
+  775|    235|    {
+  776|    235|        std::vector<uint32_t> roots;
+  777|    235|        for (int node : scene.nodes)
+  ------------------
+  |  Branch (777:23): [True: 237, False: 233]
+  ------------------
+  778|    237|        {
+  779|    237|            if (node < 0 || static_cast<size_t>(node) >= source.nodes.size())
+  ------------------
+  |  Branch (779:17): [True: 0, False: 237]
+  |  Branch (779:29): [True: 2, False: 235]
+  ------------------
+  780|      2|            {
+  781|      2|                result.error = Context(sourcePath, "scene references an invalid node");
+  782|      2|                return result;
+  783|      2|            }
+  784|    235|            roots.push_back(static_cast<uint32_t>(node));
+  785|    235|        }
+  786|    233|        result.model.scenes.push_back(std::move(roots));
+  787|    233|    }
+  788|    233|    if (result.model.defaultScene < -1 ||
+  ------------------
+  |  Branch (788:9): [True: 0, False: 233]
+  ------------------
+  789|    233|        (result.model.defaultScene >= 0 &&
+  ------------------
+  |  Branch (789:10): [True: 233, False: 0]
+  ------------------
+  790|    233|         static_cast<size_t>(result.model.defaultScene) >= result.model.scenes.size()))
+  ------------------
+  |  Branch (790:10): [True: 2, False: 231]
+  ------------------
+  791|      2|    {
+  792|      2|        result.error = Context(sourcePath, "default scene index is invalid");
+  793|      2|        return result;
+  794|      2|    }
+  795|       |
+  796|    231|    result.model.nodes.resize(source.nodes.size());
+  797|    451|    for (size_t i = 0; i < source.nodes.size(); ++i)
+                                                              ^220
+  ------------------
+  |  Branch (797:24): [True: 233, False: 218]
+  ------------------
+  798|    233|    {
+  799|    233|        const auto &input = source.nodes[i];
+  800|    233|        auto &node = result.model.nodes[i];
+  801|    233|        node.name = input.name;
+  802|    233|        if ((!input.matrix.empty() && input.matrix.size() != 16) ||
+                                                    ^4
+  ------------------
+  |  Branch (802:14): [True: 4, False: 229]
+  |  Branch (802:39): [True: 2, False: 2]
+  ------------------
+  803|    231|            (!input.translation.empty() && input.translation.size() != 3) ||
+                                                         ^4
+  ------------------
+  |  Branch (803:14): [True: 4, False: 227]
+  |  Branch (803:44): [True: 2, False: 2]
+  ------------------
+  804|    229|            (!input.rotation.empty() && input.rotation.size() != 4) ||
+                                                      ^2
+  ------------------
+  |  Branch (804:14): [True: 2, False: 227]
+  |  Branch (804:41): [True: 0, False: 2]
+  ------------------
+  805|    229|            (!input.scale.empty() && input.scale.size() != 3) ||
+                                                   ^2
+  ------------------
+  |  Branch (805:14): [True: 2, False: 227]
+  |  Branch (805:38): [True: 0, False: 2]
+  ------------------
+  806|    229|            (!input.matrix.empty() &&
+  ------------------
+  |  Branch (806:14): [True: 2, False: 227]
+  ------------------
+  807|      2|             (!input.translation.empty() || !input.rotation.empty() || !input.scale.empty())))
+  ------------------
+  |  Branch (807:15): [True: 0, False: 2]
+  |  Branch (807:45): [True: 0, False: 2]
+  |  Branch (807:72): [True: 0, False: 2]
+  ------------------
+  808|      4|        {
+  809|      4|            result.error = Context(sourcePath, "node has malformed or conflicting transform fields");
+  810|      4|            return result;
+  811|      4|        }
+  812|    229|        if (input.mesh >= 0 && static_cast<size_t>(input.mesh) >= source.meshes.size())
+                                             ^227
+  ------------------
+  |  Branch (812:13): [True: 227, False: 2]
+  |  Branch (812:32): [True: 9, False: 218]
+  ------------------
+  813|      9|        {
+  814|      9|            result.error = Context(sourcePath, "node references an invalid mesh");
+  815|      9|            return result;
+  816|      9|        }
+  817|    220|        node.meshIndex = input.mesh;
+  818|    220|        std::array<float, 16> matrixValues{};
+  819|    220|        if (input.matrix.size() == 16)
+  ------------------
+  |  Branch (819:13): [True: 2, False: 218]
+  ------------------
+  820|      2|        {
+  821|      2|            node.hasMatrix = true;
+  822|      2|            float *matrixMembers[] = {&node.matrix._11, &node.matrix._12, &node.matrix._13, &node.matrix._14,
+  823|      2|                                      &node.matrix._21, &node.matrix._22, &node.matrix._23, &node.matrix._24,
+  824|      2|                                      &node.matrix._31, &node.matrix._32, &node.matrix._33, &node.matrix._34,
+  825|      2|                                      &node.matrix._41, &node.matrix._42, &node.matrix._43, &node.matrix._44};
+  826|     34|            for (size_t n = 0; n < 16; ++n)
+                                                     ^32
+  ------------------
+  |  Branch (826:32): [True: 32, False: 2]
+  ------------------
+  827|     32|            {
+  828|     32|                if (!std::isfinite(input.matrix[n]) ||
+  ------------------
+  |  Branch (828:21): [True: 0, False: 32]
+  ------------------
+  829|     32|                    std::abs(input.matrix[n]) > std::numeric_limits<float>::max())
+  ------------------
+  |  Branch (829:21): [True: 0, False: 32]
+  ------------------
+  830|      0|                {
+  831|      0|                    result.error =
+  832|      0|                        Context(sourcePath, "node matrix contains a non-finite or unrepresentable value");
+  833|      0|                    return result;
+  834|      0|                }
+  835|     32|                matrixValues[n] = static_cast<float>(input.matrix[n]);
+  836|     32|                *matrixMembers[n] = matrixValues[n];
+  837|     32|            }
+  838|      2|        }
+  839|    218|        else
+  840|    218|        {
+  841|    218|            if (!input.translation.empty())
+  ------------------
+  |  Branch (841:17): [True: 2, False: 216]
+  ------------------
+  842|      2|                node.translation = {static_cast<float>(input.translation[0]),
+  843|      2|                                    static_cast<float>(input.translation[1]),
+  844|      2|                                    static_cast<float>(input.translation[2])};
+  845|    218|            if (!input.rotation.empty())
+  ------------------
+  |  Branch (845:17): [True: 2, False: 216]
+  ------------------
+  846|      2|                node.rotation = {static_cast<float>(input.rotation[0]), static_cast<float>(input.rotation[1]),
+  847|      2|                                 static_cast<float>(input.rotation[2]),
+  848|      2|                                 static_cast<float>(input.rotation[3])};
+  849|    218|            if (!input.scale.empty())
+  ------------------
+  |  Branch (849:17): [True: 2, False: 216]
+  ------------------
+  850|      2|                node.scale = {static_cast<float>(input.scale[0]), static_cast<float>(input.scale[1]),
+  851|      2|                              static_cast<float>(input.scale[2])};
+  852|    218|        }
+  853|    220|        const float transformValues[] = {
+  854|    220|            node.translation.x, node.translation.y, node.translation.z, node.rotation.x, node.rotation.y,
+  855|    220|            node.rotation.z,    node.rotation.w,    node.scale.x,       node.scale.y,    node.scale.z};
+  856|    220|        if (!std::all_of(std::begin(transformValues), std::end(transformValues),
+  ------------------
+  |  Branch (856:13): [True: 0, False: 220]
+  ------------------
+  857|    220|                         [](float value) { return std::isfinite(value); }))
+  858|      0|        {
+  859|      0|            result.error = Context(sourcePath, "node transform contains a non-finite value");
+  860|      0|            return result;
+  861|      0|        }
+  862|    220|    }
+  863|    429|    for (size_t i = 0; i < source.nodes.size(); ++i)
+                  ^218                                        ^211
+  ------------------
+  |  Branch (863:24): [True: 220, False: 209]
+  ------------------
+  864|    220|    {
+  865|    220|        const auto &input = source.nodes[i];
+  866|    220|        auto &node = result.model.nodes[i];
+  867|    220|        for (int child : input.children)
+  ------------------
+  |  Branch (867:24): [True: 11, False: 211]
+  ------------------
+  868|     11|        {
+  869|     11|            if (child < 0 || static_cast<size_t>(child) >= source.nodes.size() ||
+  ------------------
+  |  Branch (869:17): [True: 0, False: 11]
+  |  Branch (869:30): [True: 0, False: 11]
+  ------------------
+  870|     11|                child == static_cast<int>(i) || result.model.nodes[child].parentIndex != -1)
+                                                              ^2
+  ------------------
+  |  Branch (870:17): [True: 9, False: 2]
+  |  Branch (870:49): [True: 0, False: 2]
+  ------------------
+  871|      9|            {
+  872|      9|                result.error =
+  873|      9|                    Context(sourcePath, "node hierarchy contains an invalid or multiply-parented child");
+  874|      9|                return result;
+  875|      9|            }
+  876|      2|            result.model.nodes[child].parentIndex = static_cast<int32_t>(i);
+  877|      2|            node.children.push_back(static_cast<uint32_t>(child));
+  878|      2|        }
+  879|    220|    }
+  880|    209|    std::vector<uint8_t> visitState(result.model.nodes.size(), 0);
+  881|    209|    const auto visitNode = [&](const auto &self, size_t index) -> bool {
+  882|    209|        if (visitState[index] == 1)
+  883|    209|            return false;
+  884|    209|        if (visitState[index] == 2)
+  885|    209|            return true;
+  886|    209|        visitState[index] = 1;
+  887|    209|        for (uint32_t child : result.model.nodes[index].children)
+  888|    209|            if (!self(self, child))
+  889|    209|                return false;
+  890|    209|        visitState[index] = 2;
+  891|    209|        return true;
+  892|    209|    };
+  893|    420|    for (size_t i = 0; i < result.model.nodes.size(); ++i)
+                                                                    ^211
+  ------------------
+  |  Branch (893:24): [True: 211, False: 209]
+  ------------------
+  894|    211|    {
+  895|    211|        if (visitState[i] == 0 && !visitNode(visitNode, i))
+                                                ^209
+  ------------------
+  |  Branch (895:13): [True: 209, False: 2]
+  |  Branch (895:35): [True: 0, False: 209]
+  ------------------
+  896|      0|        {
+  897|      0|            result.error = Context(sourcePath, "node hierarchy contains a cycle");
+  898|      0|            return result;
+  899|      0|        }
+  900|    211|    }
+  901|    209|    for (const auto &scene : result.model.scenes)
+  ------------------
+  |  Branch (901:28): [True: 209, False: 207]
+  ------------------
+  902|    209|    {
+  903|    209|        for (uint32_t root : scene)
+  ------------------
+  |  Branch (903:28): [True: 211, False: 207]
+  ------------------
+  904|    211|        {
+  905|    211|            if (result.model.nodes[root].parentIndex != -1)
+  ------------------
+  |  Branch (905:17): [True: 2, False: 209]
+  ------------------
+  906|      2|            {
+  907|      2|                result.error = Context(sourcePath, "scene root is also a child node");
+  908|      2|                return result;
+  909|      2|            }
+  910|    211|        }
+  911|    209|    }
+  912|       |
+  913|    207|    result.model.materials.reserve(source.materials.size());
+  914|    207|    for (const auto &input : source.materials)
+  ------------------
+  |  Branch (914:28): [True: 33, False: 190]
+  ------------------
+  915|     33|    {
+  916|     33|        ImportedMaterial material;
+  917|     33|        material.name = input.name;
+  918|     33|        if (input.pbrMetallicRoughness.baseColorFactor.size() == 4)
+  ------------------
+  |  Branch (918:13): [True: 33, False: 0]
+  ------------------
+  919|     33|            material.baseColor = {static_cast<float>(input.pbrMetallicRoughness.baseColorFactor[0]),
+  920|     33|                                  static_cast<float>(input.pbrMetallicRoughness.baseColorFactor[1]),
+  921|     33|                                  static_cast<float>(input.pbrMetallicRoughness.baseColorFactor[2]),
+  922|     33|                                  static_cast<float>(input.pbrMetallicRoughness.baseColorFactor[3])};
+  923|     33|        if (input.emissiveFactor.size() == 3)
+  ------------------
+  |  Branch (923:13): [True: 33, False: 0]
+  ------------------
+  924|     33|            material.emissive = {static_cast<float>(input.emissiveFactor[0]),
+  925|     33|                                 static_cast<float>(input.emissiveFactor[1]),
+  926|     33|                                 static_cast<float>(input.emissiveFactor[2])};
+  927|     33|        material.metallic = static_cast<float>(input.pbrMetallicRoughness.metallicFactor);
+  928|     33|        material.roughness = static_cast<float>(input.pbrMetallicRoughness.roughnessFactor);
+  929|     33|        material.alphaMode = input.alphaMode;
+  930|     33|        if (material.alphaMode != "OPAQUE" && material.alphaMode != "MASK" && material.alphaMode != "BLEND")
+                                                            ^9                              ^9
+  ------------------
+  |  Branch (930:13): [True: 9, False: 24]
+  |  Branch (930:47): [True: 9, False: 0]
+  |  Branch (930:79): [True: 1, False: 8]
+  ------------------
+  931|      1|        {
+  932|      1|            result.error = Context(sourcePath, "material contains an invalid alpha mode");
+  933|      1|            return result;
+  934|      1|        }
+  935|     32|        material.alphaCutoff = static_cast<float>(input.alphaCutoff);
+  936|     32|        material.normalScale = static_cast<float>(input.normalTexture.scale);
+  937|     32|        material.occlusionStrength = static_cast<float>(input.occlusionTexture.strength);
+  938|     32|        material.doubleSided = input.doubleSided;
+  939|     32|        material.baseColorTexture = input.pbrMetallicRoughness.baseColorTexture.index;
+  940|     32|        material.metallicRoughnessTexture = input.pbrMetallicRoughness.metallicRoughnessTexture.index;
+  941|     32|        material.normalTexture = input.normalTexture.index;
+  942|     32|        material.occlusionTexture = input.occlusionTexture.index;
+  943|     32|        material.emissiveTexture = input.emissiveTexture.index;
+  944|     32|        material.baseColorTexCoord = input.pbrMetallicRoughness.baseColorTexture.texCoord;
+  945|     32|        material.metallicRoughnessTexCoord = input.pbrMetallicRoughness.metallicRoughnessTexture.texCoord;
+  946|     32|        material.normalTexCoord = input.normalTexture.texCoord;
+  947|     32|        material.occlusionTexCoord = input.occlusionTexture.texCoord;
+  948|     32|        material.emissiveTexCoord = input.emissiveTexture.texCoord;
+  949|     32|        if (!ReadTextureTransform(input.pbrMetallicRoughness.baseColorTexture.extensions,
+  ------------------
+  |  Branch (949:13): [True: 5, False: 27]
+  ------------------
+  950|     32|                                  material.baseColorTransform, material.baseColorTexCoord, error,
+  951|     32|                                  "baseColorTexture") ||
+  952|     27|            !ReadTextureTransform(input.pbrMetallicRoughness.metallicRoughnessTexture.extensions,
+  ------------------
+  |  Branch (952:13): [True: 0, False: 27]
+  ------------------
+  953|     27|                                  material.metallicRoughnessTransform, material.metallicRoughnessTexCoord,
+  954|     27|                                  error, "metallicRoughnessTexture") ||
+  955|     27|            !ReadTextureTransform(input.normalTexture.extensions, material.normalTransform,
+  ------------------
+  |  Branch (955:13): [True: 0, False: 27]
+  ------------------
+  956|     27|                                  material.normalTexCoord, error, "normalTexture") ||
+  957|     27|            !ReadTextureTransform(input.occlusionTexture.extensions, material.occlusionTransform,
+  ------------------
+  |  Branch (957:13): [True: 0, False: 27]
+  ------------------
+  958|     27|                                  material.occlusionTexCoord, error, "occlusionTexture") ||
+  959|     27|            !ReadTextureTransform(input.emissiveTexture.extensions, material.emissiveTransform,
+  ------------------
+  |  Branch (959:13): [True: 0, False: 27]
+  ------------------
+  960|     27|                                  material.emissiveTexCoord, error, "emissiveTexture"))
+  961|      5|        {
+  962|      5|            result.error = Context(sourcePath, error);
+  963|      5|            return result;
+  964|      5|        }
+  965|     27|        if (const auto extensionEntry = input.extensions.find("KHR_materials_pbrSpecularGlossiness");
+  966|     27|            extensionEntry != input.extensions.end())
+  ------------------
+  |  Branch (966:13): [True: 18, False: 9]
+  ------------------
+  967|     18|        {
+  968|     18|            const auto &value = extensionEntry->second;
+  969|     18|            material.specularGlossiness = true;
+  970|     18|            material.metallic = 0.0f;
+  971|     18|            material.glossiness = 1.0f;
+  972|     18|            float diffuseFactor[] = {1.0f, 1.0f, 1.0f, 1.0f};
+  973|     18|            float specularFactor[] = {1.0f, 1.0f, 1.0f};
+  974|     18|            if (!value.IsObject() ||
+  ------------------
+  |  Branch (974:17): [True: 0, False: 18]
+  ------------------
+  975|     18|                !ReadExtensionFactor(value, "diffuseFactor", 4, diffuseFactor, error,
+  ------------------
+  |  Branch (975:17): [True: 5, False: 13]
+  ------------------
+  976|     18|                                     "specular-glossiness") ||
+  977|     13|                !ReadExtensionFactor(value, "specularFactor", 3, specularFactor, error,
+  ------------------
+  |  Branch (977:17): [True: 0, False: 13]
+  ------------------
+  978|     13|                                     "specular-glossiness") ||
+  979|     13|                !ReadExtensionScalar(value, "glossinessFactor", material.glossiness, error,
+  ------------------
+  |  Branch (979:17): [True: 5, False: 8]
+  ------------------
+  980|     13|                                     "specular-glossiness") ||
+  981|      8|                !ReadExtensionTextureInfo(value, "diffuseTexture", material.baseColorTexture,
+  ------------------
+  |  Branch (981:17): [True: 0, False: 8]
+  ------------------
+  982|      8|                                          material.baseColorTexCoord, material.baseColorTransform, error,
+  983|      8|                                          "specular-glossiness") ||
+  984|      8|                !ReadExtensionTextureInfo(value, "specularGlossinessTexture",
+  ------------------
+  |  Branch (984:17): [True: 0, False: 8]
+  ------------------
+  985|      8|                                          material.metallicRoughnessTexture,
+  986|      8|                                          material.metallicRoughnessTexCoord,
+  987|      8|                                          material.metallicRoughnessTransform, error, "specular-glossiness"))
+  988|     10|            {
+  989|     10|                result.error =
+  990|     10|                    Context(sourcePath, error.empty() ? "malformed specular-glossiness extension" : error);
+                                                                      ^0
+  ------------------
+  |  Branch (990:41): [True: 0, False: 10]
+  ------------------
+  991|     10|                return result;
+  992|     10|            }
+  993|      8|            material.baseColor = {diffuseFactor[0], diffuseFactor[1], diffuseFactor[2], diffuseFactor[3]};
+  994|      8|            material.specular = {specularFactor[0], specularFactor[1], specularFactor[2]};
+  995|      8|        }
+  996|     17|        if (material.baseColorTexCoord >= ::Engine::Renderer::MaxTextureCoordinateSets ||
+  ------------------
+  |  Branch (996:13): [True: 1, False: 16]
+  ------------------
+  997|     16|            material.metallicRoughnessTexCoord >= ::Engine::Renderer::MaxTextureCoordinateSets ||
+  ------------------
+  |  Branch (997:13): [True: 0, False: 16]
+  ------------------
+  998|     16|            material.normalTexCoord >= ::Engine::Renderer::MaxTextureCoordinateSets ||
+  ------------------
+  |  Branch (998:13): [True: 0, False: 16]
+  ------------------
+  999|     16|            material.occlusionTexCoord >= ::Engine::Renderer::MaxTextureCoordinateSets ||
+  ------------------
+  |  Branch (999:13): [True: 0, False: 16]
+  ------------------
+ 1000|     16|            material.emissiveTexCoord >= ::Engine::Renderer::MaxTextureCoordinateSets)
+  ------------------
+  |  Branch (1000:13): [True: 0, False: 16]
+  ------------------
+ 1001|      1|        {
+ 1002|      1|            result.error = Context(sourcePath, "material selects a texture coordinate set above TEXCOORD_7");
+ 1003|      1|            return result;
+ 1004|      1|        }
+ 1005|     16|        result.model.materials.push_back(std::move(material));
+ 1006|     16|    }
+ 1007|       |
+ 1008|    190|    result.model.textures.reserve(source.textures.size());
+ 1009|    190|    for (const auto &input : source.textures)
+  ------------------
+  |  Branch (1009:28): [True: 10, False: 188]
+  ------------------
+ 1010|     10|    {
+ 1011|     10|        if (input.source < 0 || static_cast<size_t>(input.source) >= source.images.size())
+  ------------------
+  |  Branch (1011:13): [True: 0, False: 10]
+  |  Branch (1011:33): [True: 1, False: 9]
+  ------------------
+ 1012|      1|        {
+ 1013|      1|            result.error = Context(sourcePath, "texture references an invalid image");
+ 1014|      1|            return result;
+ 1015|      1|        }
+ 1016|      9|        if (input.sampler >= 0 && static_cast<size_t>(input.sampler) >= source.samplers.size())
+  ------------------
+  |  Branch (1016:13): [True: 9, False: 0]
+  |  Branch (1016:35): [True: 0, False: 9]
+  ------------------
+ 1017|      0|        {
+ 1018|      0|            result.error = Context(sourcePath, "texture references an invalid sampler");
+ 1019|      0|            return result;
+ 1020|      0|        }
+ 1021|      9|        ImportedTexture texture;
+ 1022|      9|        texture.imageIndex = input.source;
+ 1023|      9|        texture.samplerIndex = input.sampler;
+ 1024|      9|        if (input.sampler >= 0)
+  ------------------
+  |  Branch (1024:13): [True: 9, False: 0]
+  ------------------
+ 1025|      9|        {
+ 1026|      9|            const auto &sampler = source.samplers[input.sampler];
+ 1027|      9|            texture.magFilter = sampler.magFilter;
+ 1028|      9|            texture.minFilter = sampler.minFilter;
+ 1029|      9|            texture.wrapS = sampler.wrapS;
+ 1030|      9|            texture.wrapT = sampler.wrapT;
+ 1031|      9|        }
+ 1032|      9|        const auto validMinFilter = [](int filter) {
+ 1033|      9|            return filter < 0 || filter == 9728 || filter == 9729 || (filter >= 9984 && filter <= 9987);
+ 1034|      9|        };
+ 1035|      9|        const auto validMagFilter = [](int filter) { return filter < 0 || filter == 9728 || filter == 9729; };
+ 1036|      9|        const auto validAddress = [](int address) {
+ 1037|      9|            return address == 33071 || address == 33648 || address == 10497;
+ 1038|      9|        };
+ 1039|      9|        if (!validMagFilter(texture.magFilter) || !validMinFilter(texture.minFilter) || texture.wrapS < 0 ||
+                                                                ^8                                    ^8
+  ------------------
+  |  Branch (1039:13): [True: 1, False: 8]
+  |  Branch (1039:51): [True: 0, False: 8]
+  |  Branch (1039:89): [True: 0, False: 8]
+  ------------------
+ 1040|      8|            texture.wrapT < 0 || !validAddress(texture.wrapS) || !validAddress(texture.wrapT))
+  ------------------
+  |  Branch (1040:13): [True: 0, False: 8]
+  |  Branch (1040:34): [True: 0, False: 8]
+  |  Branch (1040:66): [True: 0, False: 8]
+  ------------------
+ 1041|      1|        {
+ 1042|      1|            result.error = Context(sourcePath, "texture uses an invalid glTF sampler state");
+ 1043|      1|            return result;
+ 1044|      1|        }
+ 1045|      8|        result.model.textures.push_back(texture);
+ 1046|      8|    }
+ 1047|    188|    for (const auto &material : result.model.materials)
+  ------------------
+  |  Branch (1047:31): [True: 14, False: 188]
+  ------------------
+ 1048|     14|    {
+ 1049|     14|        for (int texture : {material.baseColorTexture, material.metallicRoughnessTexture,
+  ------------------
+  |  Branch (1049:26): [True: 70, False: 14]
+  ------------------
+ 1050|     14|                            material.normalTexture, material.occlusionTexture, material.emissiveTexture})
+ 1051|     70|        {
+ 1052|     70|            if (!ValidTextureIndex(texture, result.model.textures.size()))
+  ------------------
+  |  Branch (1052:17): [True: 0, False: 70]
+  ------------------
+ 1053|      0|            {
+ 1054|      0|                result.error = Context(sourcePath, "material references an invalid texture");
+ 1055|      0|                return result;
+ 1056|      0|            }
+ 1057|     70|            if (texture < 0)
+  ------------------
+  |  Branch (1057:17): [True: 54, False: 16]
+  ------------------
+ 1058|     54|                continue;
+ 1059|     70|        }
+ 1060|     14|    }
+ 1061|       |
+ 1062|    188|    result.model.images.reserve(source.images.size());
+ 1063|    188|    for (const auto &input : source.images)
+  ------------------
+  |  Branch (1063:28): [True: 8, False: 188]
+  ------------------
+ 1064|      8|    {
+ 1065|      8|        if (!IsSupportedImage(input))
+  ------------------
+  |  Branch (1065:13): [True: 0, False: 8]
+  ------------------
+ 1066|      0|        {
+ 1067|      0|            result.error = Context(sourcePath, "image format is unsupported: " +
+ 1068|      0|                                                   (input.mimeType.empty() ? input.uri : input.mimeType));
+  ------------------
+  |  Branch (1068:53): [True: 0, False: 0]
+  ------------------
+ 1069|      0|            return result;
+ 1070|      0|        }
+ 1071|      8|        if (input.width <= 0 || input.height <= 0 || input.component <= 0 || input.bits != 8 ||
+  ------------------
+  |  Branch (1071:13): [True: 0, False: 8]
+  |  Branch (1071:33): [True: 0, False: 8]
+  |  Branch (1071:54): [True: 0, False: 8]
+  |  Branch (1071:78): [True: 0, False: 8]
+  ------------------
+ 1072|      8|            input.pixel_type != TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE)
+  ------------------
+  |  Branch (1072:13): [True: 0, False: 8]
+  ------------------
+ 1073|      0|        {
+ 1074|      0|            result.error = Context(sourcePath, "image decoder returned an unsupported pixel layout");
+ 1075|      0|            return result;
+ 1076|      0|        }
+ 1077|      8|        const size_t width = static_cast<size_t>(input.width), height = static_cast<size_t>(input.height);
+ 1078|      8|        if (width > std::numeric_limits<size_t>::max() / height ||
+  ------------------
+  |  Branch (1078:13): [True: 0, False: 8]
+  ------------------
+ 1079|      8|            width * height > std::numeric_limits<size_t>::max() / 4 ||
+  ------------------
+  |  Branch (1079:13): [True: 0, False: 8]
+  ------------------
+ 1080|      8|            input.image.size() != width * height * 4)
+  ------------------
+  |  Branch (1080:13): [True: 0, False: 8]
+  ------------------
+ 1081|      0|        {
+ 1082|      0|            result.error = Context(sourcePath, "image pixel data has an invalid size");
+ 1083|      0|            return result;
+ 1084|      0|        }
+ 1085|      8|        ImportedImage image;
+ 1086|      8|        image.name = input.name;
+ 1087|      8|        image.mimeType = input.mimeType;
+ 1088|      8|        image.width = static_cast<uint32_t>(input.width);
+ 1089|      8|        image.height = static_cast<uint32_t>(input.height);
+ 1090|      8|        image.rgba8.assign(input.image.begin(), input.image.end());
+ 1091|      8|        result.model.images.push_back(std::move(image));
+ 1092|      8|    }
+ 1093|       |
+ 1094|    188|    result.model.meshes.reserve(source.meshes.size());
+ 1095|    188|    for (const auto &input : source.meshes)
+  ------------------
+  |  Branch (1095:28): [True: 188, False: 162]
+  ------------------
+ 1096|    188|    {
+ 1097|    188|        ImportedMesh mesh;
+ 1098|    188|        mesh.name = input.name;
+ 1099|    188|        mesh.primitives.reserve(input.primitives.size());
+ 1100|    188|        for (const auto &primitive : input.primitives)
+  ------------------
+  |  Branch (1100:36): [True: 188, False: 162]
+  ------------------
+ 1101|    188|        {
+ 1102|    188|            if (primitive.material < -1 ||
+  ------------------
+  |  Branch (1102:17): [True: 0, False: 188]
+  ------------------
+ 1103|    188|                (primitive.material >= 0 &&
+  ------------------
+  |  Branch (1103:18): [True: 14, False: 174]
+  ------------------
+ 1104|     14|                 static_cast<size_t>(primitive.material) >= result.model.materials.size()))
+  ------------------
+  |  Branch (1104:18): [True: 0, False: 14]
+  ------------------
+ 1105|      0|            {
+ 1106|      0|                result.error = Context(sourcePath, "primitive references an invalid material");
+ 1107|      0|                return result;
+ 1108|      0|            }
+ 1109|    188|            ImportedPrimitive imported;
+ 1110|    188|            imported.name = mesh.name;
+ 1111|    188|            const uint32_t tangentTexCoord =
+ 1112|    188|                primitive.material >= 0
+  ------------------
+  |  Branch (1112:17): [True: 14, False: 174]
+  ------------------
+ 1113|    188|                    ? result.model.materials[static_cast<size_t>(primitive.material)].normalTexCoord
+                                    ^14
+ 1114|    188|                    : 0;
+                                    ^174
+ 1115|    188|            if (!ImportPrimitive(source, primitive, imported, error, tangentTexCoord))
+  ------------------
+  |  Branch (1115:17): [True: 26, False: 162]
+  ------------------
+ 1116|     26|            {
+ 1117|     26|                result.error = Context(sourcePath, error);
+ 1118|     26|                return result;
+ 1119|     26|            }
+ 1120|    162|            if (primitive.material >= 0)
+  ------------------
+  |  Branch (1120:17): [True: 14, False: 148]
+  ------------------
+ 1121|     14|            {
+ 1122|     14|                const auto &material = result.model.materials[static_cast<size_t>(primitive.material)];
+ 1123|     14|                const uint32_t coordinates[] = {material.baseColorTexCoord,
+ 1124|     14|                                                material.metallicRoughnessTexCoord, material.normalTexCoord,
+ 1125|     14|                                                material.occlusionTexCoord, material.emissiveTexCoord};
+ 1126|     14|                for (uint32_t coordinate : coordinates)
+  ------------------
+  |  Branch (1126:42): [True: 70, False: 14]
+  ------------------
+ 1127|     70|                {
+ 1128|     70|                    if (coordinate != 0 &&
+  ------------------
+  |  Branch (1128:25): [True: 0, False: 70]
+  ------------------
+ 1129|      0|                        !primitive.attributes.contains("TEXCOORD_" + std::to_string(coordinate)))
+  ------------------
+  |  Branch (1129:25): [True: 0, False: 0]
+  ------------------
+ 1130|      0|                    {
+ 1131|      0|                        result.error =
+ 1132|      0|                            Context(sourcePath, "material selects TEXCOORD_" + std::to_string(coordinate) +
+ 1133|      0|                                                    " but its primitive has no matching attribute");
+ 1134|      0|                        return result;
+ 1135|      0|                    }
+ 1136|     70|                }
+ 1137|     14|            }
+ 1138|    162|            mesh.primitives.push_back(std::move(imported));
+ 1139|    162|        }
+ 1140|    162|        result.model.meshes.push_back(std::move(mesh));
+ 1141|    162|    }
+ 1142|    162|    return result;
+ 1143|    188|}
+AssetImporter.cpp:??R<lambda_25>@?0??ImportGltf@AssetImporter@Engine@@QEBA?AUAssetImportResult@3@AEBVpath@filesystem@std@@@Z@QEBA?A?<auto>@@E@Z:
+  725|  1.34k|                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+AssetImporter.cpp:??R<lambda_26>@?0??ImportGltf@AssetImporter@Engine@@QEBA?AUAssetImportResult@3@AEBVpath@filesystem@std@@@Z@QEBA?A?<auto>@@M@Z:
+  857|  2.20k|                         [](float value) { return std::isfinite(value); }))
+AssetImporter.cpp:??$?RV<lambda_27>@?0??ImportGltf@AssetImporter@Engine@@QEBA?AUAssetImportResult@3@AEBVpath@filesystem@std@@@Z@@<lambda_27>@?0??ImportGltf@AssetImporter@Engine@@QEBA?AUAssetImportResult@3@AEBVpath@filesystem@std@@@Z@QEBA@AEBV0?0??123@QEBA?AU43@0@Z@_K@Z:
+  881|    211|    const auto visitNode = [&](const auto &self, size_t index) -> bool {
+  882|    211|        if (visitState[index] == 1)
+  ------------------
+  |  Branch (882:13): [True: 0, False: 211]
+  ------------------
+  883|      0|            return false;
+  884|    211|        if (visitState[index] == 2)
+  ------------------
+  |  Branch (884:13): [True: 0, False: 211]
+  ------------------
+  885|      0|            return true;
+  886|    211|        visitState[index] = 1;
+  887|    211|        for (uint32_t child : result.model.nodes[index].children)
+  ------------------
+  |  Branch (887:29): [True: 2, False: 211]
+  ------------------
+  888|      2|            if (!self(self, child))
+  ------------------
+  |  Branch (888:17): [True: 0, False: 2]
+  ------------------
+  889|      0|                return false;
+  890|    211|        visitState[index] = 2;
+  891|    211|        return true;
+  892|    211|    };
+AssetImporter.cpp:??R<lambda_30>@?0??ImportGltf@AssetImporter@Engine@@QEBA?AUAssetImportResult@3@AEBVpath@filesystem@std@@@Z@QEBA?A?<auto>@@H@Z:
+ 1035|      9|        const auto validMagFilter = [](int filter) { return filter < 0 || filter == 9728 || filter == 9729; };
+  ------------------
+  |  Branch (1035:61): [True: 0, False: 9]
+  |  Branch (1035:75): [True: 0, False: 9]
+  |  Branch (1035:93): [True: 8, False: 1]
+  ------------------
+AssetImporter.cpp:??R<lambda_29>@?0??ImportGltf@AssetImporter@Engine@@QEBA?AUAssetImportResult@3@AEBVpath@filesystem@std@@@Z@QEBA?A?<auto>@@H@Z:
+ 1032|      8|        const auto validMinFilter = [](int filter) {
+ 1033|      8|            return filter < 0 || filter == 9728 || filter == 9729 || (filter >= 9984 && filter <= 9987);
+  ------------------
+  |  Branch (1033:20): [True: 0, False: 8]
+  |  Branch (1033:34): [True: 0, False: 8]
+  |  Branch (1033:52): [True: 0, False: 8]
+  |  Branch (1033:71): [True: 8, False: 0]
+  |  Branch (1033:89): [True: 8, False: 0]
+  ------------------
+ 1034|      8|        };
+AssetImporter.cpp:??R<lambda_31>@?0??ImportGltf@AssetImporter@Engine@@QEBA?AUAssetImportResult@3@AEBVpath@filesystem@std@@@Z@QEBA?A?<auto>@@H@Z:
+ 1036|     16|        const auto validAddress = [](int address) {
+ 1037|     16|            return address == 33071 || address == 33648 || address == 10497;
+                                                     ^8                  ^0
+  ------------------
+  |  Branch (1037:20): [True: 8, False: 8]
+  |  Branch (1037:40): [True: 8, False: 0]
+  |  Branch (1037:60): [True: 0, False: 0]
+  ------------------
+ 1038|     16|        };
+

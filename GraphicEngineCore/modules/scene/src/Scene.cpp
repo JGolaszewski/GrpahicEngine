@@ -4,6 +4,7 @@
 #include "rendering/include/renderer/Light.h"
 
 #include <algorithm>
+#include <iterator>
 #include <limits>
 
 namespace Engine
@@ -48,9 +49,9 @@ EntityId Scene::AddEntity(std::shared_ptr<::Engine::Renderer::Entity> entity, En
 
 void Scene::RemoveEntity(::Engine::Renderer::Entity *entity)
 {
-    auto it =
-        std::find_if(m_Entities.begin(), m_Entities.end(),
-                     [entity](const std::shared_ptr<::Engine::Renderer::Entity> &ptr) { return ptr.get() == entity; });
+    auto it = std::find_if(
+        m_Entities.begin(), m_Entities.end(),
+        [entity](const std::shared_ptr<::Engine::Renderer::Entity> &ptr) { return ptr.get() == entity; });
 
     if (it != m_Entities.end())
     {
@@ -67,7 +68,7 @@ void Scene::RemoveEntity(EntityId id)
     {
         const size_t index = it->second;
         EraseIdAt(m_EntityIds, m_EntityIndices, index);
-        m_Entities.erase(m_Entities.begin() + index);
+        m_Entities.erase(std::next(m_Entities.begin(), static_cast<std::ptrdiff_t>(index)));
     }
 }
 
@@ -167,9 +168,9 @@ LightId Scene::AddLight(std::shared_ptr<::Engine::Renderer::SpotLight> light, Li
 
 void Scene::RemoveLight(::Engine::Renderer::SpotLight *light)
 {
-    auto it =
-        std::find_if(m_Lights.begin(), m_Lights.end(),
-                     [light](const std::shared_ptr<::Engine::Renderer::SpotLight> &ptr) { return ptr.get() == light; });
+    auto it = std::find_if(
+        m_Lights.begin(), m_Lights.end(),
+        [light](const std::shared_ptr<::Engine::Renderer::SpotLight> &ptr) { return ptr.get() == light; });
 
     if (it != m_Lights.end())
     {
@@ -186,7 +187,7 @@ void Scene::RemoveLight(LightId id)
     {
         const size_t index = it->second;
         EraseIdAt(m_LightIds, m_LightIndices, index);
-        m_Lights.erase(m_Lights.begin() + index);
+        m_Lights.erase(std::next(m_Lights.begin(), static_cast<std::ptrdiff_t>(index)));
     }
 }
 
@@ -237,9 +238,9 @@ CameraId Scene::AddCamera(std::shared_ptr<::Engine::Renderer::Camera> camera, Ca
 
 void Scene::RemoveCamera(::Engine::Renderer::Camera *camera)
 {
-    auto it =
-        std::find_if(m_Cameras.begin(), m_Cameras.end(),
-                     [camera](const std::shared_ptr<::Engine::Renderer::Camera> &ptr) { return ptr.get() == camera; });
+    auto it = std::find_if(
+        m_Cameras.begin(), m_Cameras.end(),
+        [camera](const std::shared_ptr<::Engine::Renderer::Camera> &ptr) { return ptr.get() == camera; });
 
     if (it != m_Cameras.end())
     {
@@ -256,7 +257,7 @@ void Scene::RemoveCamera(CameraId id)
     {
         const size_t index = it->second;
         EraseIdAt(m_CameraIds, m_CameraIndices, index);
-        m_Cameras.erase(m_Cameras.begin() + index);
+        m_Cameras.erase(std::next(m_Cameras.begin(), static_cast<std::ptrdiff_t>(index)));
     }
 }
 

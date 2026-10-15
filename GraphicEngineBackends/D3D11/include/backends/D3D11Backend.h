@@ -10,6 +10,7 @@
 #include <d3d11.h>
 #include <d3d11_1.h>
 #include <dxgi.h>
+#include <nvrhi/nvrhi.h>
 #include <wrl/client.h>
 
 namespace Engine
@@ -23,22 +24,13 @@ class D3D11Backend : public IRenderBackend
     void Present() override;
     void Resize(int width, int height) override;
     BackendDiagnostics GetDiagnostics() const noexcept override;
+    bool InitializeEditorUi(IWindow *window) override;
+    void BeginEditorUiFrame() override;
+    void RenderEditorUi(void *drawData) override;
+    void ShutdownEditorUi() override;
 
     void BeginGpuEvent(const wchar_t *name) override;
     void EndGpuEvent() override;
-
-    ID3D11Device *GetNativeDevice() const noexcept
-    {
-        return m_Device.Get();
-    }
-    ID3D11DeviceContext *GetNativeContext() const noexcept
-    {
-        return m_Context.Get();
-    }
-    ID3D11RenderTargetView *GetBackBufferRenderTarget() const noexcept
-    {
-        return m_RenderTargetView.Get();
-    }
 
     bool SupportsVSyncControl() const noexcept override
     {
@@ -54,18 +46,18 @@ class D3D11Backend : public IRenderBackend
         return m_VSyncEnabled;
     }
 
-    inline nvrhi::IDevice *GetDevice() const override
+    inline void *GetDevice() const override
     {
         return m_NvrhiDevice.Get();
     }
 
-    inline nvrhi::IFramebuffer *GetDefaultFramebuffer() const override
+    inline void *GetDefaultFramebuffer() const override
     {
         return m_NvrhiFramebuffer.Get();
     }
-    void *RegisterViewportTexture(void *renderTexture) const override;
 
   private:
+    void *RegisterViewportTextureHandle(void *renderTexture) const override;
     bool CreateSwapChainResources(uint32_t width, uint32_t height);
     Microsoft::WRL::ComPtr<ID3D11Device> m_Device;
     Microsoft::WRL::ComPtr<ID3D11DeviceContext> m_Context;

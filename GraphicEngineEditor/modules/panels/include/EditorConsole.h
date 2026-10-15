@@ -65,8 +65,7 @@ class EditorConsole
     void AttachToLogger();
     void DetachFromLogger();
     bool ConsumePauseRequest() noexcept;
-    void SetSimulationStateCallbacks(std::function<bool()> isPaused,
-                                    std::function<void(bool)> setPaused);
+    void SetSimulationStateCallbacks(std::function<bool()> isPaused, std::function<void(bool)> setPaused);
     void SetDiagnosticContextProvider(std::function<std::string()> provider,
                                       std::function<uint64_t()> currentFrameProvider);
     void UpdateAndRender(bool *isOpen);

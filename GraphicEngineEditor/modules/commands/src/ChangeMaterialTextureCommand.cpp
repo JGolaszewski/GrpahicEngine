@@ -3,11 +3,13 @@
 #include <utility>
 
 ChangeMaterialTextureCommand::ChangeMaterialTextureCommand(
-    std::shared_ptr<::Engine::Renderer::Material> material, std::shared_ptr<::Engine::Renderer::TextureResource> beforeBase,
-    std::shared_ptr<::Engine::Renderer::TextureResource> beforeNormal, std::optional<std::string> beforeBaseGuid,
-    std::optional<std::string> beforeNormalGuid, std::shared_ptr<::Engine::Renderer::TextureResource> afterBase,
-    std::shared_ptr<::Engine::Renderer::TextureResource> afterNormal, std::optional<std::string> afterBaseGuid,
-    std::optional<std::string> afterNormalGuid, Apply apply)
+    std::shared_ptr<::Engine::Renderer::Material> material,
+    std::shared_ptr<::Engine::Renderer::TextureResource> beforeBase,
+    std::shared_ptr<::Engine::Renderer::TextureResource> beforeNormal,
+    std::optional<std::string> beforeBaseGuid, std::optional<std::string> beforeNormalGuid,
+    std::shared_ptr<::Engine::Renderer::TextureResource> afterBase,
+    std::shared_ptr<::Engine::Renderer::TextureResource> afterNormal,
+    std::optional<std::string> afterBaseGuid, std::optional<std::string> afterNormalGuid, Apply apply)
     : m_Material(std::move(material)), m_BeforeBase(std::move(beforeBase)),
       m_BeforeNormal(std::move(beforeNormal)), m_AfterBase(std::move(afterBase)),
       m_AfterNormal(std::move(afterNormal)), m_BeforeBaseGuid(std::move(beforeBaseGuid)),

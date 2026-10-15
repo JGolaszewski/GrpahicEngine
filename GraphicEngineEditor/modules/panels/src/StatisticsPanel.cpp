@@ -7,18 +7,19 @@
 #include <algorithm>
 #include <array>
 #include <imgui.h>
+#include <iterator>
 #include <string_view>
 #include <vector>
 
 namespace
 {
-float Percentile(const std::vector<float> &sortedValues,
-                 size_t valueCount, float percentile)
+float Percentile(const std::vector<float> &sortedValues, size_t valueCount, float percentile)
 {
     if (valueCount == 0)
         return 0.0f;
 
-    const size_t index = static_cast<size_t>((valueCount - 1) * percentile);
+    const double boundedPercentile = (std::clamp)(static_cast<double>(percentile), 0.0, 1.0);
+    const size_t index = static_cast<size_t>(static_cast<double>(valueCount - 1) * boundedPercentile);
     return sortedValues[index];
 }
 
@@ -43,18 +44,19 @@ void LogBackendSnapshot(const Engine::Application *application)
 
     const Engine::BackendDiagnostics diagnostics = backend->GetDiagnostics();
     ENGINE_LOG_INFO_CODE("Performance", "performance.capture.backend",
-                         "Backend snapshot | backend: {} | device_ready: {} | generation: {} | adapter_vendor: 0x{:X} | adapter_device: 0x{:X} | dimensions: {}x{} | vsync: {}",
-                         diagnostics.BackendName, diagnostics.DeviceReady,
-                         diagnostics.DeviceGeneration, diagnostics.AdapterVendorId,
-                         diagnostics.AdapterDeviceId, diagnostics.Width, diagnostics.Height,
-                         diagnostics.VSyncEnabled);
+                         "Backend snapshot | backend: {} | device_ready: {} | generation: {} | "
+                         "adapter_vendor: 0x{:X} | adapter_device: 0x{:X} | dimensions: {}x{} | vsync: {}",
+                         diagnostics.BackendName, diagnostics.DeviceReady, diagnostics.DeviceGeneration,
+                         diagnostics.AdapterVendorId, diagnostics.AdapterDeviceId, diagnostics.Width,
+                         diagnostics.Height, diagnostics.VSyncEnabled);
     ENGINE_LOG_INFO_CODE("Performance", "performance.capture.backend_state",
-                         "Backend error state | present_result: 0x{:X} | device_removed_reason: 0x{:X} | last_backend_error: 0x{:X} | validation_warnings: {} | validation_errors: {}",
+                         "Backend error state | present_result: 0x{:X} | device_removed_reason: 0x{:X} | "
+                         "last_backend_error: 0x{:X} | validation_warnings: {} | validation_errors: {}",
                          diagnostics.LastPresentResult, diagnostics.DeviceRemovalReason,
                          diagnostics.LastBackendError, diagnostics.ValidationWarningCount,
                          diagnostics.ValidationErrorCount);
 }
-}
+} // namespace
 
 void StatWindow::Draw()
 {
@@ -79,11 +81,10 @@ void StatWindow::Draw()
                                         Engine::Application::FrameMetricsHistoryCapacity;
             for (size_t i = 0; i < applicationHistoryCount; ++i)
             {
-                const auto &sample = history[(historyStart + i) %
-                                             Engine::Application::FrameMetricsHistoryCapacity];
-                m_PausedHistory[i] = {sample.FrameIndex, sample.TimestampNs,
-                                      sample.Timing.FrameTimeMs, sample.Timing.GpuFrameTimeMs,
-                                      sample.Timing.GpuTimingAvailable};
+                const auto &sample =
+                    history[(historyStart + i) % Engine::Application::FrameMetricsHistoryCapacity];
+                m_PausedHistory[i] = {sample.FrameIndex, sample.TimestampNs, sample.Timing.FrameTimeMs,
+                                      sample.Timing.GpuFrameTimeMs, sample.Timing.GpuTimingAvailable};
             }
         }
     }
@@ -99,8 +100,8 @@ void StatWindow::Draw()
     if (ImGui::Combo("History window", &historyWindowIndex, historyWindows, 3))
         m_HistoryWindowSeconds = historyWindowIndex == 0 ? 1 : (historyWindowIndex == 1 ? 5 : 30);
     const size_t availableSamples = m_HistoryPaused ? m_PausedHistoryCount : applicationHistoryCount;
-    const size_t firstIndex = (timing.FrameCount - availableSamples) %
-                              Engine::Application::FrameMetricsHistoryCapacity;
+    const size_t firstIndex =
+        (timing.FrameCount - availableSamples) % Engine::Application::FrameMetricsHistoryCapacity;
     std::vector<float> frameTimes(Engine::Application::FrameMetricsHistoryCapacity);
     std::vector<float> frameTimePlot(Engine::Application::FrameMetricsHistoryCapacity);
     std::vector<float> fpsPlot(Engine::Application::FrameMetricsHistoryCapacity);
@@ -109,14 +110,16 @@ void StatWindow::Draw()
     size_t gpuSampleCount = 0;
 
     size_t sampleCount = 0;
-    const uint64_t latestTimestamp = availableSamples == 0 ? 0 :
-        (m_HistoryPaused ? m_PausedHistory[availableSamples - 1].TimestampNs
-                         : history[(timing.FrameCount - 1) %
-                                   Engine::Application::FrameMetricsHistoryCapacity].TimestampNs);
+    const uint64_t latestTimestamp =
+        availableSamples == 0
+            ? 0
+            : (m_HistoryPaused
+                   ? m_PausedHistory[availableSamples - 1].TimestampNs
+                   : history[(timing.FrameCount - 1) % Engine::Application::FrameMetricsHistoryCapacity]
+                         .TimestampNs);
     const uint64_t historyWindowNs = static_cast<uint64_t>(m_HistoryWindowSeconds) * 1000000000ull;
-    const uint64_t earliestTimestamp = latestTimestamp > historyWindowNs
-                                          ? latestTimestamp - historyWindowNs
-                                          : 0;
+    const uint64_t earliestTimestamp =
+        latestTimestamp > historyWindowNs ? latestTimestamp - historyWindowNs : 0;
     for (size_t i = 0; i < availableSamples; ++i)
     {
         HistoryPoint point;
@@ -128,8 +131,7 @@ void StatWindow::Draw()
         {
             const auto &sample = history[(firstIndex + i) % Engine::Application::FrameMetricsHistoryCapacity];
             point = {sample.FrameIndex, sample.TimestampNs, sample.Timing.FrameTimeMs,
-                     sample.Timing.GpuFrameTimeMs,
-                     sample.Timing.GpuTimingAvailable};
+                     sample.Timing.GpuFrameTimeMs, sample.Timing.GpuTimingAvailable};
         }
         if (point.TimestampNs < earliestTimestamp || point.FrameIndex < m_HistoryResetAfterFrame)
             continue;
@@ -147,7 +149,8 @@ void StatWindow::Draw()
     }
 
     const uint64_t frameIndex = timing.FrameCount == 0 ? 0 : timing.FrameCount - 1;
-    std::sort(frameTimes.begin(), frameTimes.begin() + sampleCount);
+    const auto sampleEnd = std::next(frameTimes.begin(), static_cast<std::ptrdiff_t>(sampleCount));
+    std::sort(frameTimes.begin(), sampleEnd);
     float latestGpuTimeMs = 0.0f;
     bool hasGpuTime = false;
     for (size_t i = 0; i < sampleCount; ++i)
@@ -168,8 +171,7 @@ void StatWindow::Draw()
     ImGui::Text("Frame time: %.2f ms (%.1f FPS)", timing.FrameTimeMs,
                 timing.FrameTimeMs > 0.0f ? 1000.0f / timing.FrameTimeMs : 0.0f);
     const float imguiFps = ImGui::GetIO().Framerate;
-    ImGui::Text("ImGui smoothed FPS: %.1f (%.2f ms)", imguiFps,
-                imguiFps > 0.0f ? 1000.0f / imguiFps : 0.0f);
+    ImGui::Text("ImGui smoothed FPS: %.1f (%.2f ms)", imguiFps, imguiFps > 0.0f ? 1000.0f / imguiFps : 0.0f);
     ImGui::Text("CPU frame total (incl. Present): %.2f ms | limiter wait: %.2f ms", timing.CpuFrameTimeMs,
                 timing.LimiterWaitMs);
     ImGui::Text("Rolling frame time: median %.2f ms | p95 %.2f ms | p99 %.2f ms",
@@ -199,8 +201,7 @@ void StatWindow::Draw()
                 timing.MaskedPackets, timing.TransparentPackets);
     ImGui::Text("Draw calls: %u | uploads: %llu bytes | buffer allocations: %u", timing.DrawCalls,
                 static_cast<unsigned long long>(timing.UploadBytes), timing.BufferAllocations);
-    ImGui::Text("Culling: %.2f ms | packet build: %.2f ms", timing.CullingTimeMs,
-                timing.PacketBuildTimeMs);
+    ImGui::Text("Culling: %.2f ms | packet build: %.2f ms", timing.CullingTimeMs, timing.PacketBuildTimeMs);
     ImGui::Text("Pipeline cache: %u hits, %u misses, %u created", timing.PipelineCacheHits,
                 timing.PipelineCacheMisses, timing.PipelineCreations);
     ImGui::SetNextItemWidth(160.0f);
@@ -216,20 +217,22 @@ void StatWindow::Draw()
 
     if (m_CaptureRequested && sampleCount > 0)
     {
-        ENGINE_LOG_INFO_CODE("Performance", "performance.manual_capture",
-                             "Performance snapshot | frame: {} | frame_ms: {:.3f} | gpu_available: {} | gpu_ms: {:.3f} | gpu_frame: {} | update_ms: {:.3f} | view_setup_ms: {:.3f} | render_ms: {:.3f}",
-                             frameIndex, timing.FrameTimeMs, timing.GpuTimingAvailable,
-                             timing.GpuFrameTimeMs, timing.GpuTimingFrameIndex,
-                             timing.UpdateTimeMs, timing.ViewSetupTimeMs, timing.RenderTimeMs);
+        ENGINE_LOG_INFO_CODE(
+            "Performance", "performance.manual_capture",
+            "Performance snapshot | frame: {} | frame_ms: {:.3f} | gpu_available: {} | gpu_ms: {:.3f} | "
+            "gpu_frame: {} | update_ms: {:.3f} | view_setup_ms: {:.3f} | render_ms: {:.3f}",
+            frameIndex, timing.FrameTimeMs, timing.GpuTimingAvailable, timing.GpuFrameTimeMs,
+            timing.GpuTimingFrameIndex, timing.UpdateTimeMs, timing.ViewSetupTimeMs, timing.RenderTimeMs);
         ENGINE_LOG_INFO_CODE("Performance", "performance.manual_capture.workload",
-                             "Performance workload | ui_ms: {:.3f} | present_ms: {:.3f} | limiter_wait_ms: {:.3f} | objects_submitted: {} | objects_culled: {} | packets_built: {} | draw_calls: {} | upload_bytes: {}",
+                             "Performance workload | ui_ms: {:.3f} | present_ms: {:.3f} | limiter_wait_ms: "
+                             "{:.3f} | objects_submitted: {} | objects_culled: {} | packets_built: {} | "
+                             "draw_calls: {} | upload_bytes: {}",
                              timing.UiTimeMs, timing.PresentTimeMs, timing.LimiterWaitMs,
                              timing.ObjectsSubmitted, timing.ObjectsCulled, timing.PacketsBuilt,
                              timing.DrawCalls, timing.UploadBytes);
         ENGINE_LOG_INFO_CODE("Performance", "performance.manual_capture.pipeline",
                              "Pipeline cache activity | hits: {} | misses: {} | created: {}",
-                             timing.PipelineCacheHits, timing.PipelineCacheMisses,
-                             timing.PipelineCreations);
+                             timing.PipelineCacheHits, timing.PipelineCacheMisses, timing.PipelineCreations);
         LogRecentDiagnosticRecords();
         LogBackendSnapshot(m_Application);
         m_CaptureRequested = false;
@@ -239,12 +242,16 @@ void StatWindow::Draw()
         (m_LastRegressionLogFrame == 0 || timing.FrameCount - m_LastRegressionLogFrame >= 300))
     {
         ENGINE_LOG_WARN_CODE("Performance", "performance.frame_budget.regression",
-                             "Frame budget exceeded for consecutive frames | frame: {} | frame_ms: {:.3f} | budget_ms: {:.3f} | gpu_available: {} | gpu_ms: {:.3f} | update_ms: {:.3f} | view_setup_ms: {:.3f} | render_ms: {:.3f}",
-                             frameIndex, timing.FrameTimeMs, m_FrameBudgetMs,
-                             timing.GpuTimingAvailable, timing.GpuFrameTimeMs,
-                             timing.UpdateTimeMs, timing.ViewSetupTimeMs, timing.RenderTimeMs);
+                             "Frame budget exceeded for consecutive frames | frame: {} | frame_ms: {:.3f} | "
+                             "budget_ms: {:.3f} | gpu_available: {} | gpu_ms: {:.3f} | update_ms: {:.3f} | "
+                             "view_setup_ms: {:.3f} | render_ms: {:.3f}",
+                             frameIndex, timing.FrameTimeMs, m_FrameBudgetMs, timing.GpuTimingAvailable,
+                             timing.GpuFrameTimeMs, timing.UpdateTimeMs, timing.ViewSetupTimeMs,
+                             timing.RenderTimeMs);
         ENGINE_LOG_WARN_CODE("Performance", "performance.frame_budget.workload",
-                             "Over-budget frame workload | ui_ms: {:.3f} | present_ms: {:.3f} | limiter_wait_ms: {:.3f} | objects_submitted: {} | objects_culled: {} | packets_built: {} | draw_calls: {} | upload_bytes: {}",
+                             "Over-budget frame workload | ui_ms: {:.3f} | present_ms: {:.3f} | "
+                             "limiter_wait_ms: {:.3f} | objects_submitted: {} | objects_culled: {} | "
+                             "packets_built: {} | draw_calls: {} | upload_bytes: {}",
                              timing.UiTimeMs, timing.PresentTimeMs, timing.LimiterWaitMs,
                              timing.ObjectsSubmitted, timing.ObjectsCulled, timing.PacketsBuilt,
                              timing.DrawCalls, timing.UploadBytes);
@@ -257,14 +264,14 @@ void StatWindow::Draw()
         m_CaptureRequested = true;
     if (sampleCount > 0)
     {
-        ImGui::PlotLines("Frame time (ms)", frameTimePlot.data(), static_cast<int>(sampleCount), 0,
-                         nullptr, 0.0f, (std::max)(m_FrameBudgetMs * 2.0f, 1.0f), ImVec2(0, 65));
-        ImGui::PlotLines("FPS", fpsPlot.data(), static_cast<int>(sampleCount), 0, nullptr, 0.0f,
-                         240.0f, ImVec2(0, 55));
+        ImGui::PlotLines("Frame time (ms)", frameTimePlot.data(), static_cast<int>(sampleCount), 0, nullptr,
+                         0.0f, (std::max)(m_FrameBudgetMs * 2.0f, 1.0f), ImVec2(0, 65));
+        ImGui::PlotLines("FPS", fpsPlot.data(), static_cast<int>(sampleCount), 0, nullptr, 0.0f, 240.0f,
+                         ImVec2(0, 55));
         if (gpuSampleCount > 0)
         {
-            ImGui::PlotLines("GPU render query (last completed, held between queries)",
-                             gpuTimePlot.data(), static_cast<int>(sampleCount), 0, nullptr, 0.0f,
+            ImGui::PlotLines("GPU render query (last completed, held between queries)", gpuTimePlot.data(),
+                             static_cast<int>(sampleCount), 0, nullptr, 0.0f,
                              (std::max)(m_FrameBudgetMs * 2.0f, 1.0f), ImVec2(0, 55));
         }
     }
@@ -274,16 +281,14 @@ void StatWindow::Draw()
         const Engine::BackendDiagnostics diagnostics = backend->GetDiagnostics();
         ImGui::SeparatorText("Backend");
         ImGui::Text("%s | device %s | %u x %u | generation %llu", diagnostics.BackendName,
-                    diagnostics.DeviceReady ? "ready" : "unavailable", diagnostics.Width,
-                    diagnostics.Height, static_cast<unsigned long long>(diagnostics.DeviceGeneration));
+                    diagnostics.DeviceReady ? "ready" : "unavailable", diagnostics.Width, diagnostics.Height,
+                    static_cast<unsigned long long>(diagnostics.DeviceGeneration));
         ImGui::Text("Adapter vendor/device: 0x%04X / 0x%04X | last present: %.2f ms",
-                    diagnostics.AdapterVendorId, diagnostics.AdapterDeviceId,
-                    diagnostics.LastPresentTimeMs);
+                    diagnostics.AdapterVendorId, diagnostics.AdapterDeviceId, diagnostics.LastPresentTimeMs);
         ImGui::Text("Validation warnings: %llu | errors: %llu",
                     static_cast<unsigned long long>(diagnostics.ValidationWarningCount),
                     static_cast<unsigned long long>(diagnostics.ValidationErrorCount));
-        ImGui::Text("Last backend error: 0x%08X",
-                    static_cast<uint32_t>(diagnostics.LastBackendError));
+        ImGui::Text("Last backend error: 0x%08X", static_cast<uint32_t>(diagnostics.LastBackendError));
         if (diagnostics.HasVSync)
             ImGui::Text("VSync: %s | Present result: 0x%08X | device removal: 0x%08X",
                         diagnostics.VSyncEnabled ? "on" : "off",
@@ -300,17 +305,16 @@ void StatWindow::Draw()
         size_t shown = 0;
         for (auto record = records.rbegin(); record != records.rend() && shown < 8; ++record)
         {
-            const bool marker = record->event.level >= Engine::Log::Level::Warning ||
-                                record->event.category == Engine::Log::Category::Backend ||
-                                record->event.category == Engine::Log::Category::Asset ||
-                                std::string_view(record->event.errorCode).find("performance.") !=
-                                    std::string_view::npos;
+            const bool marker =
+                record->event.level >= Engine::Log::Level::Warning ||
+                record->event.category == Engine::Log::Category::Backend ||
+                record->event.category == Engine::Log::Category::Asset ||
+                std::string_view(record->event.errorCode).find("performance.") != std::string_view::npos;
             if (!marker)
                 continue;
-            ImGui::TextWrapped("Frame %llu | %s | %s | %s",
-                               static_cast<unsigned long long>(record->event.frameIndex),
-                               Engine::Log::ToString(record->event.category),
-                               record->event.errorCode, record->text.c_str());
+            ImGui::TextWrapped(
+                "Frame %llu | %s | %s | %s", static_cast<unsigned long long>(record->event.frameIndex),
+                Engine::Log::ToString(record->event.category), record->event.errorCode, record->text.c_str());
             ++shown;
         }
         if (shown == 0)

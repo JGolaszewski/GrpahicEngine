@@ -1,4 +1,5 @@
-#include "rendering/include/PipelineCache.h"
+#include "PipelineCache.h"
+#include "MeshBackend.h"
 #include "runtime/include/LogMacros.h"
 
 #include <bit>
@@ -205,7 +206,7 @@ nvrhi::GraphicsPipelineHandle Engine::PipelineCache::GetOrCreatePipeline(const P
     effectiveKey.Framebuffer = fbInfo;
     if (effectiveKey.InputLayout.empty())
     {
-        effectiveKey.InputLayout = ::Engine::Renderer::Mesh::GetVertexAttributes();
+        effectiveKey.InputLayout = ::Engine::Renderer::MeshBackendAccess::GetVertexAttributes();
     }
 
     auto it = m_Cache.find(effectiveKey);
@@ -267,7 +268,8 @@ nvrhi::GraphicsPipelineHandle Engine::PipelineCache::GetOrCreatePipeline(const P
     auto pipeline = m_Device->createGraphicsPipeline(pdesc, effectiveKey.Framebuffer);
     if (!pipeline)
     {
-        ENGINE_LOG_ERROR("Render", "Graphics pipeline creation failed | cache_size: {} | color_target_count: {}",
+        ENGINE_LOG_ERROR("Render",
+                         "Graphics pipeline creation failed | cache_size: {} | color_target_count: {}",
                          m_Cache.size(), effectiveKey.Framebuffer.colorFormats.size());
         return nullptr;
     }

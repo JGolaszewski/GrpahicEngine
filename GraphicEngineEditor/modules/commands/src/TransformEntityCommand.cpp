@@ -1,3 +1,5 @@
+#include <utility>
+
 #include "commands/include/TransformEntityCommand.h"
 #include "rendering/include/renderer/Entity.h"
 
@@ -9,7 +11,7 @@
 TransformEntityCommand::TransformEntityCommand(std::weak_ptr<::Engine::Renderer::Entity> entity,
                                                const DirectX::XMFLOAT3 &oldPos,
                                                const DirectX::XMFLOAT3 &newPos)
-    : m_Entity(entity), m_OldPosition(oldPos), m_NewPosition(newPos)
+    : m_Entity(std::move(entity)), m_OldPosition(oldPos), m_NewPosition(newPos)
 {
 }
 

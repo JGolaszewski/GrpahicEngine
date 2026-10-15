@@ -1,4 +1,4 @@
-#include "rendering/include/renderer/render_graph/RenderView.h"
+#include "rendering/src/render_graph/RenderView.h"
 #include "rendering/include/renderer/Camera.h"
 #include "rendering/include/renderer/Viewport.h"
 
@@ -15,7 +15,7 @@ void RenderView::Initialize(const ::Engine::Renderer::Camera *camera, const Engi
     ViewportWidth = viewport->GetWidth();
     ViewportHeight = viewport->GetHeight();
 
-    TargetFramebuffer = viewport->GetFramebuffer();
+    TargetFramebuffer = static_cast<nvrhi::IFramebuffer *>(viewport->GetFramebufferHandle());
     DirectX::XMStoreFloat3(&CameraPosition, DirectX::XMVector3TransformCoord(
                                                 DirectX::XMVectorZero(), camera->m_Transform.GetWorldMat()));
 

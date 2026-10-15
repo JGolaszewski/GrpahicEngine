@@ -1,0 +1,20 @@
+Running main() from C:\Users\jgolasz\source\repos\JGolaszewski\GrpahicEngine\out\build\x64-debug\vcpkg_installed\vcpkg\blds\gtest\src\v1.17.0-e243b8ee0f.clean\googletest\src\gtest_main.cc
+Note: Google Test filter = EditorCameraControllerTests.*
+[==========] Running 5 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 5 tests from EditorCameraControllerTests
+[ RUN      ] EditorCameraControllerTests.CursorCaptureRequiresRightMouseAndHoveredViewport
+[       OK ] EditorCameraControllerTests.CursorCaptureRequiresRightMouseAndHoveredViewport (0 ms)
+[ RUN      ] EditorCameraControllerTests.ZoomRejectsMissingCameraAndNonFiniteInput
+[       OK ] EditorCameraControllerTests.ZoomRejectsMissingCameraAndNonFiniteInput (0 ms)
+[ RUN      ] EditorCameraControllerTests.ZoomClampsProjectionToSupportedFieldOfView
+[       OK ] EditorCameraControllerTests.ZoomClampsProjectionToSupportedFieldOfView (0 ms)
+[ RUN      ] EditorCameraControllerTests.MovementRequiresHoveredViewportWithoutTextInput
+[       OK ] EditorCameraControllerTests.MovementRequiresHoveredViewportWithoutTextInput (0 ms)
+[ RUN      ] EditorCameraControllerTests.MovesCameraAlongLocalAxesAndRotatesWhileDragging
+[       OK ] EditorCameraControllerTests.MovesCameraAlongLocalAxesAndRotatesWhileDragging (0 ms)
+[----------] 5 tests from EditorCameraControllerTests (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 5 tests from 1 test suite ran. (0 ms total)
+[  PASSED  ] 5 tests.

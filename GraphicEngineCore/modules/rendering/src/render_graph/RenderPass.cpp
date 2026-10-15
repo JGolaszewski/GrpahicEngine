@@ -1,13 +1,18 @@
-#include "rendering/include/renderer/render_graph/RenderPass.h"
-#include "rendering/include/SceneRenderer.h"
-#include "rendering/include/renderer/render_graph/FrameBlackboard.h"
-#include "rendering/include/renderer/render_graph/RenderView.h"
+#include "rendering/src/render_graph/RenderPass.h"
+#include "rendering/src/SceneRenderer.h"
+#include "rendering/src/render_graph/FrameBlackboard.h"
+#include "rendering/src/render_graph/RenderView.h"
 #include <algorithm>
+#include <limits>
 
 namespace
 {
 constexpr uint32_t ShadowMapSize = 2048;
 constexpr uint32_t MaxShadowedLights = 4;
+int ToScissorDimension(uint32_t dimension)
+{
+    return static_cast<int>((std::min)(dimension, static_cast<uint32_t>(std::numeric_limits<int>::max())));
+}
 } // namespace
 
 namespace Engine::Renderer
@@ -19,7 +24,8 @@ namespace Engine::Renderer
 
 ShadowPass::ShadowPass() = default;
 
-void ShadowPass::Setup(::Engine::Renderer::RGBuilder &builder, ::Engine::Renderer::FrameBlackboard &blackboard)
+void ShadowPass::Setup(::Engine::Renderer::RGBuilder &builder,
+                       ::Engine::Renderer::FrameBlackboard &blackboard)
 {
     uint32_t shadowMapSize = blackboard.Get<uint32_t>("ShadowMapSize", ShadowMapSize);
     uint32_t maxShadowedLights = blackboard.Get<uint32_t>("MaxShadowedLights", MaxShadowedLights);
@@ -69,7 +75,8 @@ bool ShadowPass::Execute(nvrhi::ICommandList *cmd, const ::Engine::Renderer::Ren
     const nvrhi::TextureDesc &shadowTexDesc = physicalShadowMap->getDesc();
 
     nvrhi::Viewport shadowViewport = nvrhi::Viewport(float(shadowTexDesc.width), float(shadowTexDesc.height));
-    nvrhi::Rect shadowScissor = nvrhi::Rect(shadowTexDesc.width, shadowTexDesc.height);
+    nvrhi::Rect shadowScissor =
+        nvrhi::Rect(ToScissorDimension(shadowTexDesc.width), ToScissorDimension(shadowTexDesc.height));
 
     if (!m_ShadowMapTexture || m_ShadowMapTexture.Get() != physicalShadowMap.Get())
     {
@@ -232,7 +239,7 @@ bool ForwardPass::Execute(nvrhi::ICommandList *cmd, const ::Engine::Renderer::Re
         return false;
 
     auto drawQueue = [&](const std::vector<::Engine::Renderer::RenderPacket> &packets,
-                         nvrhi::BindingSetHandle sceneBindings, nvrhi::IFramebuffer *fb,
+                         const nvrhi::BindingSetHandle &sceneBindings, nvrhi::IFramebuffer *fb,
                          const nvrhi::Viewport &vp, const nvrhi::Rect &scissor) {
         for (const auto &packet : packets)
         {
@@ -325,7 +332,8 @@ bool ForwardPass::Execute(nvrhi::ICommandList *cmd, const ::Engine::Renderer::Re
         const nvrhi::FramebufferInfoEx &fbInfo = mainFramebuffer->getFramebufferInfo();
 
         nvrhi::Viewport viewportState = nvrhi::Viewport(float(fbInfo.width), float(fbInfo.height));
-        nvrhi::Rect scissor = nvrhi::Rect(fbInfo.width, fbInfo.height);
+        nvrhi::Rect scissor =
+            nvrhi::Rect(ToScissorDimension(fbInfo.width), ToScissorDimension(fbInfo.height));
 
         if (!drawQueue(view->Queues.Opaque, sceneBindings, mainFramebuffer, viewportState, scissor) ||
             !drawQueue(view->Queues.Masked, sceneBindings, mainFramebuffer, viewportState, scissor) ||

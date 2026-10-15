@@ -1,0 +1,1706 @@
+    1|       |#include "runtime/include/LogEngine.h"
+    2|       |#include "runtime/include/EnvironmentVariable.h"
+    3|       |
+    4|       |#include <nlohmann/json.hpp>
+    5|       |
+    6|       |#include <array>
+    7|       |#include <bit>
+    8|       |#include <condition_variable>
+    9|       |#include <cstdio>
+   10|       |#include <cstdlib>
+   11|       |#include <deque>
+   12|       |#include <fstream>
+   13|       |#include <format>
+   14|       |#include <mutex>
+   15|       |#include <optional>
+   16|       |#include <unordered_map>
+   17|       |#include <utility>
+   18|       |
+   19|       |#ifdef _WIN32
+   20|       |#define NOMINMAX
+   21|       |#include <Windows.h>
+   22|       |#endif
+   23|       |
+   24|       |namespace Engine::Log
+   25|       |{
+   26|       |namespace
+   27|       |{
+   28|       |using Json = nlohmann::json;
+   29|       |constexpr size_t BreadcrumbCount = 1000;
+   30|       |
+   31|       |void FallbackDiagnostic(std::string_view message) noexcept
+   32|     17|{
+   33|     17|    try
+   34|     17|    {
+   35|     17|        std::string terminated(message);
+   36|     17|        terminated.push_back('\n');
+   37|     17|#ifdef _WIN32
+   38|     17|        OutputDebugStringA(terminated.c_str());
+   39|     17|#endif
+   40|     17|        std::fwrite(terminated.data(), 1, terminated.size(), stderr);
+   41|     17|        std::fflush(stderr);
+   42|     17|    }
+   43|     17|    catch (...)
+   44|     17|    {
+   45|      0|        std::fputs("Logger diagnostic failure\n", stderr);
+   46|      0|        std::fflush(stderr);
+   47|      0|    }
+   48|     17|}
+   49|       |
+   50|       |std::optional<Level> ParseLevel(const char *value) noexcept
+   51|      4|{
+   52|      4|    if (!value)
+  ------------------
+  |  Branch (52:9): [True: 0, False: 4]
+  ------------------
+   53|      0|        return std::nullopt;
+   54|      4|    const std::string_view text(value);
+   55|      4|    if (text == "trace" || text == "Trace" || text == "0")
+  ------------------
+  |  Branch (55:9): [True: 0, False: 4]
+  |  Branch (55:28): [True: 0, False: 4]
+  |  Branch (55:47): [True: 0, False: 4]
+  ------------------
+   56|      0|        return Level::Trace;
+   57|      4|    if (text == "debug" || text == "Debug" || text == "1")
+  ------------------
+  |  Branch (57:9): [True: 1, False: 3]
+  |  Branch (57:28): [True: 0, False: 3]
+  |  Branch (57:47): [True: 0, False: 3]
+  ------------------
+   58|      1|        return Level::Debug;
+   59|      3|    if (text == "info" || text == "Info" || text == "2")
+  ------------------
+  |  Branch (59:9): [True: 0, False: 3]
+  |  Branch (59:27): [True: 0, False: 3]
+  |  Branch (59:45): [True: 0, False: 3]
+  ------------------
+   60|      0|        return Level::Info;
+   61|      3|    if (text == "warn" || text == "warning" || text == "Warn" || text == "Warning" || text == "3")
+  ------------------
+  |  Branch (61:9): [True: 0, False: 3]
+  |  Branch (61:27): [True: 1, False: 2]
+  |  Branch (61:48): [True: 0, False: 2]
+  |  Branch (61:66): [True: 0, False: 2]
+  |  Branch (61:87): [True: 0, False: 2]
+  ------------------
+   62|      1|        return Level::Warning;
+   63|      2|    if (text == "error" || text == "Error" || text == "4")
+  ------------------
+  |  Branch (63:9): [True: 0, False: 2]
+  |  Branch (63:28): [True: 0, False: 2]
+  |  Branch (63:47): [True: 1, False: 1]
+  ------------------
+   64|      1|        return Level::Error;
+   65|      1|    if (text == "fatal" || text == "Fatal" || text == "5")
+  ------------------
+  |  Branch (65:9): [True: 0, False: 1]
+  |  Branch (65:28): [True: 0, False: 1]
+  |  Branch (65:47): [True: 0, False: 1]
+  ------------------
+   66|      0|        return Level::Fatal;
+   67|      1|    if (text == "none" || text == "None" || text == "6")
+  ------------------
+  |  Branch (67:9): [True: 0, False: 1]
+  |  Branch (67:27): [True: 0, False: 1]
+  |  Branch (67:45): [True: 0, False: 1]
+  ------------------
+   68|      0|        return Level::None;
+   69|      1|    return std::nullopt;
+   70|      1|}
+   71|       |
+   72|       |std::filesystem::path DefaultLogPath()
+   73|      5|{
+   74|      5|#ifdef _WIN32
+   75|      5|    if (const auto root = ReadEnvironmentVariable("LOCALAPPDATA"))
+  ------------------
+  |  Branch (75:20): [True: 5, False: 0]
+  ------------------
+   76|      5|        return std::filesystem::path(*root) / "GraphicEngine" / "logs" / "engine.jsonl";
+   77|       |#else
+   78|       |    if (const auto root = ReadEnvironmentVariable("XDG_STATE_HOME"))
+   79|       |        return std::filesystem::path(*root) / "graphic-engine" / "engine.jsonl";
+   80|       |    if (const auto root = ReadEnvironmentVariable("HOME"))
+   81|       |        return std::filesystem::path(*root) / ".local" / "state" / "graphic-engine" / "engine.jsonl";
+   82|       |#endif
+   83|      0|    return std::filesystem::current_path() / "engine.jsonl";
+   84|      5|}
+   85|       |
+   86|       |std::string CreateSessionId()
+   87|     11|{
+   88|     11|    const auto now = std::chrono::duration_cast<std::chrono::nanoseconds>(
+   89|     11|                         std::chrono::system_clock::now().time_since_epoch())
+   90|     11|                         .count();
+   91|     11|    return std::to_string(now) + "-" +
+   92|     11|           std::to_string(std::hash<std::thread::id>{}(std::this_thread::get_id()));
+   93|     11|}
+   94|       |
+   95|       |Configuration ResolveConfiguration(Configuration configuration)
+   96|     11|{
+   97|     11|    if (const auto path = ReadEnvironmentVariable("ENGINE_LOG_PATH"))
+  ------------------
+  |  Branch (97:20): [True: 0, False: 11]
+  ------------------
+   98|      0|        configuration.jsonlPath = *path;
+   99|     11|    else if (configuration.jsonlPath.empty())
+  ------------------
+  |  Branch (99:14): [True: 5, False: 6]
+  ------------------
+  100|      5|        configuration.jsonlPath = DefaultLogPath();
+  101|       |
+  102|     11|    if (configuration.breadcrumbPath.empty() && !configuration.jsonlPath.empty())
+  ------------------
+  |  Branch (102:9): [True: 5, False: 6]
+  |  Branch (102:49): [True: 5, False: 0]
+  ------------------
+  103|      5|        configuration.breadcrumbPath = configuration.jsonlPath.parent_path() / "engine-crash-breadcrumbs.log";
+  104|     11|    if (const auto path = ReadEnvironmentVariable("ENGINE_LOG_BREADCRUMB_PATH"))
+  ------------------
+  |  Branch (104:20): [True: 1, False: 10]
+  ------------------
+  105|      1|        configuration.breadcrumbPath = *path;
+  106|     11|    if (const auto limit = ReadEnvironmentVariable("ENGINE_LOG_MAX_FILE_SIZE_BYTES"))
+  ------------------
+  |  Branch (106:20): [True: 1, False: 10]
+  ------------------
+  107|      1|    {
+  108|      1|        char *end = nullptr;
+  109|      1|        const unsigned long long parsed = std::strtoull(limit->c_str(), &end, 10);
+  110|      1|        if (end != limit->c_str() && *end == '\0')
+  ------------------
+  |  Branch (110:13): [True: 1, False: 0]
+  |  Branch (110:38): [True: 1, False: 0]
+  ------------------
+  111|      1|            configuration.maxFileSizeBytes = static_cast<uint64_t>(parsed);
+  112|      1|    }
+  113|     11|    if (const auto count = ReadEnvironmentVariable("ENGINE_LOG_RETAINED_FILE_COUNT"))
+  ------------------
+  |  Branch (113:20): [True: 1, False: 10]
+  ------------------
+  114|      1|    {
+  115|      1|        char *end = nullptr;
+  116|      1|        const unsigned long long parsed = std::strtoull(count->c_str(), &end, 10);
+  117|      1|        if (end != count->c_str() && *end == '\0')
+  ------------------
+  |  Branch (117:13): [True: 0, False: 1]
+  |  Branch (117:38): [True: 0, False: 0]
+  ------------------
+  118|      0|            configuration.retainedFileCount = static_cast<size_t>((std::min)(parsed, 32ULL));
+  119|      1|    }
+  120|     11|    if (const auto value = ReadEnvironmentVariable("ENGINE_LOG_LEVEL"); value)
+  ------------------
+  |  Branch (120:73): [True: 1, False: 10]
+  ------------------
+  121|      1|    {
+  122|      1|        if (const auto level = ParseLevel(value->c_str()))
+  ------------------
+  |  Branch (122:24): [True: 1, False: 0]
+  ------------------
+  123|      1|            configuration.minimumLevel = *level;
+  124|      1|    }
+  125|     11|    constexpr std::array<std::pair<Category, const char *>, 12> categoryVariables{
+  126|     11|        {{Category::Core, "ENGINE_LOG_CORE_LEVEL"},
+  127|     11|         {Category::Editor, "ENGINE_LOG_EDITOR_LEVEL"},
+  128|     11|         {Category::Physics, "ENGINE_LOG_PHYSICS_LEVEL"},
+  129|     11|         {Category::Render, "ENGINE_LOG_RENDER_LEVEL"},
+  130|     11|         {Category::Backend, "ENGINE_LOG_BACKEND_LEVEL"},
+  131|     11|         {Category::Audio, "ENGINE_LOG_AUDIO_LEVEL"},
+  132|     11|         {Category::ECS, "ENGINE_LOG_ECS_LEVEL"},
+  133|     11|         {Category::Net, "ENGINE_LOG_NET_LEVEL"},
+  134|     11|         {Category::Network, "ENGINE_LOG_NETWORK_LEVEL"},
+  135|     11|         {Category::Asset, "ENGINE_LOG_ASSET_LEVEL"},
+  136|     11|         {Category::Diagnostics, "ENGINE_LOG_DIAGNOSTICS_LEVEL"},
+  137|     11|         {Category::Count, nullptr}}};
+  138|     11|    for (const auto &[category, variable] : categoryVariables)
+  ------------------
+  |  Branch (138:43): [True: 132, False: 11]
+  ------------------
+  139|    132|    {
+  140|    132|        if (!variable)
+  ------------------
+  |  Branch (140:13): [True: 11, False: 121]
+  ------------------
+  141|     11|            continue;
+  142|    121|        if (const auto value = ReadEnvironmentVariable(variable); value)
+  ------------------
+  |  Branch (142:67): [True: 3, False: 118]
+  ------------------
+  143|      3|        {
+  144|      3|            if (const auto level = ParseLevel(value->c_str()))
+  ------------------
+  |  Branch (144:28): [True: 2, False: 1]
+  ------------------
+  145|      2|                configuration.categoryMinimumLevels[static_cast<size_t>(category)] = *level;
+  146|      3|        }
+  147|    121|    }
+  148|     11|    return configuration;
+  149|     11|}
+  150|       |
+  151|       |std::string ArgumentText(const LogArgument &argument, std::string_view specification)
+  152|  1.26k|{
+  153|  1.26k|    const std::string pattern =
+  154|  1.26k|        "{" + (specification.empty() ? std::string{} : ":" + std::string(specification)) + "}";
+  ------------------
+  |  Branch (154:16): [True: 1.26k, False: 1]
+  ------------------
+  155|  1.26k|    const auto format = [&pattern](const auto &value) {
+  156|  1.26k|        try
+  157|  1.26k|        {
+  158|  1.26k|            return std::vformat(pattern, std::make_format_args(value));
+  159|  1.26k|        }
+  160|  1.26k|        catch (const std::format_error &)
+  161|  1.26k|        {
+  162|      1|            return std::string("<format-error>");
+  163|      1|        }
+  164|  1.26k|    };
+  ------------------
+  | LogEngine.cpp:??$?R_J@<lambda_0>@?0??ArgumentText@?A0x67FF2273@Log@Engine@@YA?AV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@AEBULogArgument@34@V?$basic_string_view@DU?$char_traits@D@std@@@6@@Z@QEBA?A?<auto>@@AEB_J@Z:
+  |  155|      3|    const auto format = [&pattern](const auto &value) {
+  |  156|      3|        try
+  |  157|      3|        {
+  |  158|      3|            return std::vformat(pattern, std::make_format_args(value));
+  |  159|      3|        }
+  |  160|      3|        catch (const std::format_error &)
+  |  161|      3|        {
+  |  162|      1|            return std::string("<format-error>");
+  |  163|      1|        }
+  |  164|      3|    };
+  ------------------
+  | LogEngine.cpp:??$?R_K@<lambda_0>@?0??ArgumentText@?A0x67FF2273@Log@Engine@@YA?AV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@AEBULogArgument@34@V?$basic_string_view@DU?$char_traits@D@std@@@6@@Z@QEBA?A?<auto>@@AEB_K@Z:
+  |  155|  1.16k|    const auto format = [&pattern](const auto &value) {
+  |  156|  1.16k|        try
+  |  157|  1.16k|        {
+  |  158|  1.16k|            return std::vformat(pattern, std::make_format_args(value));
+  |  159|  1.16k|        }
+  |  160|  1.16k|        catch (const std::format_error &)
+  |  161|  1.16k|        {
+  |  162|      0|            return std::string("<format-error>");
+  |  163|      0|        }
+  |  164|  1.16k|    };
+  ------------------
+  | LogEngine.cpp:??$?RN@<lambda_0>@?0??ArgumentText@?A0x67FF2273@Log@Engine@@YA?AV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@AEBULogArgument@34@V?$basic_string_view@DU?$char_traits@D@std@@@6@@Z@QEBA?A?<auto>@@AEBN@Z:
+  |  155|      1|    const auto format = [&pattern](const auto &value) {
+  |  156|      1|        try
+  |  157|      1|        {
+  |  158|      1|            return std::vformat(pattern, std::make_format_args(value));
+  |  159|      1|        }
+  |  160|      1|        catch (const std::format_error &)
+  |  161|      1|        {
+  |  162|      0|            return std::string("<format-error>");
+  |  163|      0|        }
+  |  164|      1|    };
+  ------------------
+  | LogEngine.cpp:??$?R_N@<lambda_0>@?0??ArgumentText@?A0x67FF2273@Log@Engine@@YA?AV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@AEBULogArgument@34@V?$basic_string_view@DU?$char_traits@D@std@@@6@@Z@QEBA?A?<auto>@@AEB_N@Z:
+  |  155|     27|    const auto format = [&pattern](const auto &value) {
+  |  156|     27|        try
+  |  157|     27|        {
+  |  158|     27|            return std::vformat(pattern, std::make_format_args(value));
+  |  159|     27|        }
+  |  160|     27|        catch (const std::format_error &)
+  |  161|     27|        {
+  |  162|      0|            return std::string("<format-error>");
+  |  163|      0|        }
+  |  164|     27|    };
+  ------------------
+  | LogEngine.cpp:??$?R$$BY0MA@D@<lambda_0>@?0??ArgumentText@?A0x67FF2273@Log@Engine@@YA?AV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@AEBULogArgument@34@V?$basic_string_view@DU?$char_traits@D@std@@@6@@Z@QEBA?A?<auto>@@AEAY0MA@$$CBD@Z:
+  |  155|     71|    const auto format = [&pattern](const auto &value) {
+  |  156|     71|        try
+  |  157|     71|        {
+  |  158|     71|            return std::vformat(pattern, std::make_format_args(value));
+  |  159|     71|        }
+  |  160|     71|        catch (const std::format_error &)
+  |  161|     71|        {
+  |  162|      0|            return std::string("<format-error>");
+  |  163|      0|        }
+  |  164|     71|    };
+  ------------------
+  165|  1.26k|    switch (argument.type)
+  ------------------
+  |  Branch (165:13): [True: 1.26k, False: 0]
+  ------------------
+  166|  1.26k|    {
+  167|      3|    case ArgumentType::Signed:
+  ------------------
+  |  Branch (167:5): [True: 3, False: 1.26k]
+  ------------------
+  168|      3|        return format(argument.value.signedValue);
+  169|  1.16k|    case ArgumentType::Unsigned:
+  ------------------
+  |  Branch (169:5): [True: 1.16k, False: 102]
+  ------------------
+  170|  1.16k|        return format(argument.value.unsignedValue);
+  171|      1|    case ArgumentType::Floating:
+  ------------------
+  |  Branch (171:5): [True: 1, False: 1.26k]
+  ------------------
+  172|      1|        return format(argument.value.floatingValue);
+  173|     27|    case ArgumentType::Boolean:
+  ------------------
+  |  Branch (173:5): [True: 27, False: 1.24k]
+  ------------------
+  174|     27|        return format(argument.value.booleanValue);
+  175|     71|    case ArgumentType::Text:
+  ------------------
+  |  Branch (175:5): [True: 71, False: 1.19k]
+  ------------------
+  176|     71|        return format(argument.value.text);
+  177|  1.26k|    }
+  178|      0|    return {};
+  179|  1.26k|}
+  180|       |
+  181|       |std::string FormatMessage(const LogEvent &event)
+  182|  1.17k|{
+  183|  1.17k|    std::string result;
+  184|  1.17k|    const std::string_view format = event.format ? event.format : "";
+  ------------------
+  |  Branch (184:37): [True: 1.17k, False: 0]
+  ------------------
+  185|  1.17k|    result.reserve(format.size() + static_cast<size_t>(event.argumentCount) * 16);
+  186|  1.17k|    size_t argumentIndex = 0;
+  187|  39.6k|    for (size_t i = 0; i < format.size(); ++i)
+  ------------------
+  |  Branch (187:24): [True: 38.4k, False: 1.17k]
+  ------------------
+  188|  38.4k|    {
+  189|  38.4k|        if (format[i] == '{' && i + 1 < format.size() && format[i + 1] == '{')
+  ------------------
+  |  Branch (189:13): [True: 1.27k, False: 37.1k]
+  |  Branch (189:33): [True: 1.27k, False: 0]
+  |  Branch (189:58): [True: 1, False: 1.27k]
+  ------------------
+  190|      1|        {
+  191|      1|            result.push_back('{');
+  192|      1|            ++i;
+  193|      1|        }
+  194|  38.4k|        else if (format[i] == '}' && i + 1 < format.size() && format[i + 1] == '}')
+  ------------------
+  |  Branch (194:18): [True: 2, False: 38.4k]
+  |  Branch (194:38): [True: 1, False: 1]
+  |  Branch (194:63): [True: 1, False: 0]
+  ------------------
+  195|      1|        {
+  196|      1|            result.push_back('}');
+  197|      1|            ++i;
+  198|      1|        }
+  199|  38.4k|        else if (format[i] == '{' && argumentIndex < MaxLogArguments && argumentIndex < event.argumentCount)
+  ------------------
+  |  Branch (199:18): [True: 1.27k, False: 37.1k]
+  |  Branch (199:38): [True: 1.27k, False: 0]
+  |  Branch (199:73): [True: 1.26k, False: 1]
+  ------------------
+  200|  1.26k|        {
+  201|  1.26k|            const size_t close = format.find('}', i + 1);
+  202|  1.26k|            if (close != std::string_view::npos)
+  ------------------
+  |  Branch (202:17): [True: 1.26k, False: 0]
+  ------------------
+  203|  1.26k|            {
+  204|  1.26k|                std::string_view specification;
+  205|  1.26k|                const size_t colon = format.find(':', i + 1);
+  206|  1.26k|                if (colon != std::string_view::npos && colon < close)
+  ------------------
+  |  Branch (206:21): [True: 96, False: 1.17k]
+  |  Branch (206:56): [True: 1, False: 95]
+  ------------------
+  207|      1|                    specification = format.substr(colon + 1, close - colon - 1);
+  208|  1.26k|                result += ArgumentText(event.arguments.at(argumentIndex++), specification);
+  209|  1.26k|                i = close;
+  210|  1.26k|            }
+  211|      0|            else
+  212|      0|                result.push_back(format[i]);
+  213|  1.26k|        }
+  214|  37.1k|        else
+  215|  37.1k|            result.push_back(format[i]);
+  216|  38.4k|    }
+  217|  1.17k|    return result;
+  218|  1.17k|}
+  219|       |
+  220|       |void FallbackEvent(const LogEvent &event) noexcept
+  221|    114|{
+  222|    114|    if (event.level < Level::Error)
+  ------------------
+  |  Branch (222:9): [True: 98, False: 16]
+  ------------------
+  223|     98|        return;
+  224|     16|    try
+  225|     16|    {
+  226|     16|        std::string diagnostic = "Critical log event could not be queued [";
+  227|     16|        diagnostic += ToString(event.level);
+  228|     16|        diagnostic += "][";
+  229|     16|        diagnostic += ToString(event.category);
+  230|     16|        diagnostic += ']';
+  231|     16|        if (event.errorCode[0])
+  ------------------
+  |  Branch (231:13): [True: 8, False: 8]
+  ------------------
+  232|      8|        {
+  233|      8|            diagnostic += " [";
+  234|      8|            diagnostic += event.errorCode;
+  235|      8|            diagnostic += ']';
+  236|      8|        }
+  237|     16|        diagnostic += ": ";
+  238|     16|        diagnostic += FormatMessage(event);
+  239|     16|        FallbackDiagnostic(diagnostic);
+  240|     16|    }
+  241|     16|    catch (...)
+  242|     16|    {
+  243|      0|        FallbackDiagnostic("Critical log event could not be queued");
+  244|      0|    }
+  245|     16|}
+  246|       |
+  247|       |Json ArgumentJson(const LogArgument &argument)
+  248|  1.23k|{
+  249|  1.23k|    switch (argument.type)
+  ------------------
+  |  Branch (249:13): [True: 1.23k, False: 0]
+  ------------------
+  250|  1.23k|    {
+  251|      3|    case ArgumentType::Signed:
+  ------------------
+  |  Branch (251:5): [True: 3, False: 1.23k]
+  ------------------
+  252|      3|        return argument.value.signedValue;
+  253|  1.16k|    case ArgumentType::Unsigned:
+  ------------------
+  |  Branch (253:5): [True: 1.16k, False: 72]
+  ------------------
+  254|  1.16k|        return argument.value.unsignedValue;
+  255|      1|    case ArgumentType::Floating:
+  ------------------
+  |  Branch (255:5): [True: 1, False: 1.23k]
+  ------------------
+  256|      1|        return argument.value.floatingValue;
+  257|     24|    case ArgumentType::Boolean:
+  ------------------
+  |  Branch (257:5): [True: 24, False: 1.21k]
+  ------------------
+  258|     24|        return argument.value.booleanValue;
+  259|     44|    case ArgumentType::Text:
+  ------------------
+  |  Branch (259:5): [True: 44, False: 1.19k]
+  ------------------
+  260|     44|        return argument.value.text;
+  261|  1.23k|    }
+  262|      0|    return nullptr;
+  263|  1.23k|}
+  264|       |
+  265|       |struct QueueCell
+  266|       |{
+  267|       |    std::atomic<size_t> sequence{0};
+  268|       |    LogEvent event{};
+  269|       |};
+  270|       |
+  271|       |struct Manager
+  272|       |{
+  273|       |    explicit Manager(Configuration config)
+  274|     11|        : configuration(std::move(config)), capacity((std::max)(size_t{2}, configuration.queueCapacity)),
+  275|     11|          mask(capacity - 1), minimumLevel(static_cast<uint8_t>(configuration.minimumLevel))
+  276|     11|    {
+  277|       |        // Bounded MPMC sequence queues require a power-of-two capacity.
+  278|     11|        capacity = std::bit_ceil(capacity);
+  279|     11|        mask = capacity - 1;
+  280|     11|        queue = std::make_unique<QueueCell[]>(capacity);
+  281|  7.81k|        for (size_t i = 0; i < capacity; ++i)
+  ------------------
+  |  Branch (281:28): [True: 7.80k, False: 11]
+  ------------------
+  282|  7.80k|            queue[i].sequence.store(i, std::memory_order_relaxed);
+  283|    121|        for (size_t i = 0; i < CategoryCount; ++i)
+  ------------------
+  |  Branch (283:28): [True: 110, False: 11]
+  ------------------
+  284|    110|            categoryMinimumLevels[i].store(static_cast<uint8_t>(configuration.categoryMinimumLevels[i]),
+  285|    110|                                           std::memory_order_relaxed);
+  286|     11|    }
+  287|       |
+  288|       |    Configuration configuration;
+  289|       |    std::string sessionId = CreateSessionId();
+  290|       |    size_t capacity;
+  291|       |    size_t mask;
+  292|       |    std::unique_ptr<QueueCell[]> queue;
+  293|       |    std::atomic<size_t> enqueuePosition{0};
+  294|       |    std::atomic<size_t> dequeuePosition{0};
+  295|       |    std::atomic<size_t> pending{0};
+  296|       |    std::atomic<size_t> queueHighWaterMark{0};
+  297|       |    std::atomic<uint64_t> acceptedEvents{0};
+  298|       |    std::atomic<uint64_t> writtenEvents{0};
+  299|       |    std::atomic<uint64_t> queueDroppedEvents{0};
+  300|       |    std::atomic<uint64_t> callbackFailedEvents{0};
+  301|       |    std::atomic<uint64_t> callbackDroppedEvents{0};
+  302|       |    std::atomic<uint64_t> fileFailedEvents{0};
+  303|       |    std::atomic<uint64_t> breadcrumbOverwrittenEvents{0};
+  304|       |    std::atomic<uint8_t> minimumLevel;
+  305|       |    std::array<std::atomic<uint8_t>, CategoryCount> categoryMinimumLevels{};
+  306|       |    std::atomic<bool> stopping{false};
+  307|       |    std::thread worker;
+  308|       |    std::thread callbackWorker;
+  309|       |    std::mutex wakeMutex;
+  310|       |    std::condition_variable wake;
+  311|       |    std::mutex drainMutex;
+  312|       |    std::condition_variable drained;
+  313|       |    std::mutex callbackQueueMutex;
+  314|       |    std::condition_variable callbackWake;
+  315|       |    std::deque<std::pair<LogRecord, std::vector<CallbackToken>>> callbackQueue;
+  316|       |    bool callbackStopping = false;
+  317|       |    std::mutex startupMutex;
+  318|       |    std::condition_variable startupReady;
+  319|       |    bool startupComplete = false;
+  320|       |    std::mutex sinkMutex;
+  321|       |    std::mutex ioMutex;
+  322|       |    std::mutex sinkErrorMutex;
+  323|       |    std::ofstream jsonl;
+  324|       |    std::atomic<FileSinkStatus> fileStatus{FileSinkStatus::Disabled};
+  325|       |    std::string lastSinkError;
+  326|       |    uint64_t jsonlBytes = 0;
+  327|       |    std::array<LogRecord, BreadcrumbCount> breadcrumbs{};
+  328|       |    size_t breadcrumbWrite = 0;
+  329|       |    size_t breadcrumbSize = 0;
+  330|       |    std::unordered_map<CallbackToken, LogCallback> callbacks;
+  331|       |
+  332|       |    bool Accepts(const LogEvent &event) const noexcept
+  333|  1.16k|    {
+  334|  1.16k|        const auto level = static_cast<uint8_t>(event.level);
+  335|  1.16k|        const size_t category = static_cast<size_t>(event.category);
+  336|  1.16k|        const uint8_t globalMinimum = minimumLevel.load(std::memory_order_relaxed);
+  337|  1.16k|        const uint8_t categoryMinimum = category < CategoryCount
+  ------------------
+  |  Branch (337:41): [True: 1.16k, False: 0]
+  ------------------
+  338|  1.16k|                                            ? categoryMinimumLevels[category].load(std::memory_order_relaxed)
+  339|  1.16k|                                            : globalMinimum;
+  340|  1.16k|        return level >= (std::max)(globalMinimum, categoryMinimum);
+  341|  1.16k|    }
+  342|       |
+  343|       |    void SetSinkFailure(const std::string &message)
+  344|      1|    {
+  345|      1|        fileStatus.store(FileSinkStatus::Failed, std::memory_order_release);
+  346|      1|        fileFailedEvents.fetch_add(1, std::memory_order_relaxed);
+  347|      1|        {
+  348|      1|            std::lock_guard lock(sinkErrorMutex);
+  349|      1|            lastSinkError = message;
+  350|      1|        }
+  351|      1|        FallbackDiagnostic(message);
+  352|      1|    }
+  353|       |
+  354|       |    bool RotateFile()
+  355|  1.16k|    {
+  356|  1.16k|        if (!configuration.maxFileSizeBytes || !jsonlBytes || jsonlBytes < configuration.maxFileSizeBytes)
+  ------------------
+  |  Branch (356:13): [True: 0, False: 1.16k]
+  |  Branch (356:48): [True: 0, False: 1.16k]
+  |  Branch (356:63): [True: 62, False: 1.09k]
+  ------------------
+  357|     62|            return true;
+  358|  1.09k|        jsonl.flush();
+  359|  1.09k|        jsonl.close();
+  360|  1.09k|        std::error_code error;
+  361|  1.09k|        if (configuration.retainedFileCount == 0)
+  ------------------
+  |  Branch (361:13): [True: 0, False: 1.09k]
+  ------------------
+  362|      0|        {
+  363|      0|            std::filesystem::remove(configuration.jsonlPath, error);
+  364|      0|        }
+  365|  1.09k|        else
+  366|  1.09k|        {
+  367|  1.09k|            const std::filesystem::path oldest =
+  368|  1.09k|                configuration.jsonlPath.string() + "." + std::to_string(configuration.retainedFileCount);
+  369|  1.09k|            std::filesystem::remove(oldest, error);
+  370|  1.09k|            error.clear();
+  371|  2.19k|            for (size_t index = configuration.retainedFileCount; index > 1; --index)
+  ------------------
+  |  Branch (371:66): [True: 1.09k, False: 1.09k]
+  ------------------
+  372|  1.09k|            {
+  373|  1.09k|                const auto from =
+  374|  1.09k|                    std::filesystem::path(configuration.jsonlPath.string() + "." + std::to_string(index - 1));
+  375|  1.09k|                const auto to =
+  376|  1.09k|                    std::filesystem::path(configuration.jsonlPath.string() + "." + std::to_string(index));
+  377|  1.09k|                if (std::filesystem::exists(from, error))
+  ------------------
+  |  Branch (377:21): [True: 1.09k, False: 1]
+  ------------------
+  378|  1.09k|                {
+  379|  1.09k|                    std::filesystem::rename(from, to, error);
+  380|  1.09k|                    if (error)
+  ------------------
+  |  Branch (380:25): [True: 0, False: 1.09k]
+  ------------------
+  381|      0|                        break;
+  382|  1.09k|                }
+  383|  1.09k|                error.clear();
+  384|  1.09k|            }
+  385|  1.09k|            if (!error)
+  ------------------
+  |  Branch (385:17): [True: 1.09k, False: 0]
+  ------------------
+  386|  1.09k|                std::filesystem::rename(configuration.jsonlPath, configuration.jsonlPath.string() + ".1",
+  387|  1.09k|                                        error);
+  388|  1.09k|        }
+  389|  1.09k|        if (error)
+  ------------------
+  |  Branch (389:13): [True: 0, False: 1.09k]
+  ------------------
+  390|      0|        {
+  391|      0|            SetSinkFailure("Log file rotation failed: " + error.message());
+  392|      0|            return false;
+  393|      0|        }
+  394|  1.09k|        jsonl.open(configuration.jsonlPath, std::ios::out | std::ios::trunc);
+  395|  1.09k|        if (!jsonl)
+  ------------------
+  |  Branch (395:13): [True: 0, False: 1.09k]
+  ------------------
+  396|      0|        {
+  397|      0|            SetSinkFailure("Log file reopen after rotation failed: " + configuration.jsonlPath.string());
+  398|      0|            return false;
+  399|      0|        }
+  400|  1.09k|        jsonlBytes = 0;
+  401|  1.09k|        fileStatus.store(FileSinkStatus::Ready, std::memory_order_release);
+  402|  1.09k|        return true;
+  403|  1.09k|    }
+  404|       |
+  405|       |    bool Push(const LogEvent &event) noexcept
+  406|  1.16k|    {
+  407|  1.16k|        size_t position = enqueuePosition.load(std::memory_order_relaxed);
+  408|  1.16k|        QueueCell *cell;
+  409|  1.16k|        for (;;)
+  410|  1.16k|        {
+  411|  1.16k|            cell = &queue[position & mask];
+  412|  1.16k|            const size_t sequence = cell->sequence.load(std::memory_order_acquire);
+  413|  1.16k|            const intptr_t difference = static_cast<intptr_t>(sequence) - static_cast<intptr_t>(position);
+  414|  1.16k|            if (difference == 0)
+  ------------------
+  |  Branch (414:17): [True: 1.16k, False: 0]
+  ------------------
+  415|  1.16k|            {
+  416|  1.16k|                if (enqueuePosition.compare_exchange_weak(position, position + 1, std::memory_order_relaxed))
+  ------------------
+  |  Branch (416:21): [True: 1.16k, False: 0]
+  ------------------
+  417|  1.16k|                    break;
+  418|  1.16k|            }
+  419|      0|            else if (difference < 0)
+  ------------------
+  |  Branch (419:22): [True: 0, False: 0]
+  ------------------
+  420|      0|                return false;
+  421|      0|            else
+  422|      0|                position = enqueuePosition.load(std::memory_order_relaxed);
+  423|  1.16k|        }
+  424|  1.16k|        cell->event = event;
+  425|  1.16k|        cell->sequence.store(position + 1, std::memory_order_release);
+  426|  1.16k|        return true;
+  427|  1.16k|    }
+  428|       |
+  429|       |    bool Pop(LogEvent &event) noexcept
+  430|  1.22k|    {
+  431|  1.22k|        size_t position = dequeuePosition.load(std::memory_order_relaxed);
+  432|  1.22k|        QueueCell *cell;
+  433|  1.22k|        for (;;)
+  434|  1.22k|        {
+  435|  1.22k|            cell = &queue[position & mask];
+  436|  1.22k|            const size_t sequence = cell->sequence.load(std::memory_order_acquire);
+  437|  1.22k|            const intptr_t difference = static_cast<intptr_t>(sequence) - static_cast<intptr_t>(position + 1);
+  438|  1.22k|            if (difference == 0)
+  ------------------
+  |  Branch (438:17): [True: 1.16k, False: 58]
+  ------------------
+  439|  1.16k|            {
+  440|  1.16k|                if (dequeuePosition.compare_exchange_weak(position, position + 1, std::memory_order_relaxed))
+  ------------------
+  |  Branch (440:21): [True: 1.16k, False: 0]
+  ------------------
+  441|  1.16k|                    break;
+  442|  1.16k|            }
+  443|     58|            else if (difference < 0)
+  ------------------
+  |  Branch (443:22): [True: 58, False: 0]
+  ------------------
+  444|     58|                return false;
+  445|      0|            else
+  446|      0|                position = dequeuePosition.load(std::memory_order_relaxed);
+  447|  1.22k|        }
+  448|  1.16k|        event = cell->event;
+  449|  1.16k|        cell->sequence.store(position + capacity, std::memory_order_release);
+  450|  1.16k|        return true;
+  451|  1.22k|    }
+  452|       |
+  453|       |    void Process(const LogEvent &event)
+  454|  1.16k|    {
+  455|  1.16k|        LogRecord record{event, FormatMessage(event)};
+  456|  1.16k|        Json payload = Json::object();
+  457|  1.16k|        for (size_t i = 0; i < event.payloadCount; ++i)
+  ------------------
+  |  Branch (457:28): [True: 1, False: 1.16k]
+  ------------------
+  458|      1|            payload[event.payload[i].key] = ArgumentJson(event.payload[i].value);
+  459|  1.16k|        Json arguments = Json::array();
+  460|  2.39k|        for (size_t i = 0; i < event.argumentCount; ++i)
+  ------------------
+  |  Branch (460:28): [True: 1.23k, False: 1.16k]
+  ------------------
+  461|  1.23k|            arguments.push_back(ArgumentJson(event.arguments[i]));
+  462|       |
+  463|  1.16k|        Json object = {{"timestamp_ns", event.timestampNs},
+  464|  1.16k|                       {"monotonic_ns", event.monotonicNs},
+  465|  1.16k|                       {"frame_index", event.frameIndex},
+  466|  1.16k|                       {"operation_id", event.operationId},
+  467|  1.16k|                       {"session_id", sessionId},
+  468|  1.16k|                       {"level", ToString(event.level)},
+  469|  1.16k|                       {"category", ToString(event.category)},
+  470|  1.16k|                       {"file", event.file ? event.file : ""},
+  ------------------
+  |  Branch (470:33): [True: 1.16k, False: 0]
+  ------------------
+  471|  1.16k|                       {"line", event.line},
+  472|  1.16k|                       {"function", event.function ? event.function : ""},
+  ------------------
+  |  Branch (472:37): [True: 1.16k, False: 0]
+  ------------------
+  473|  1.16k|                       {"error_code", event.errorCode[0] ? Json(event.errorCode) : Json(nullptr)},
+  ------------------
+  |  Branch (473:39): [True: 5, False: 1.15k]
+  ------------------
+  474|  1.16k|                       {"message", record.text},
+  475|  1.16k|                       {"payload", std::move(payload)},
+  476|  1.16k|                       {"arguments", std::move(arguments)},
+  477|  1.16k|                       {"thread_id", event.threadId}};
+  478|  1.16k|        {
+  479|  1.16k|            std::lock_guard lock(ioMutex);
+  480|  1.16k|            if (jsonl.is_open())
+  ------------------
+  |  Branch (480:17): [True: 1.16k, False: 1]
+  ------------------
+  481|  1.16k|            {
+  482|  1.16k|                if (RotateFile() && jsonl.is_open())
+  ------------------
+  |  Branch (482:21): [True: 1.16k, False: 0]
+  |  Branch (482:37): [True: 1.16k, False: 0]
+  ------------------
+  483|  1.16k|                {
+  484|  1.16k|                    const std::string line = object.dump() + '\n';
+  485|  1.16k|                    jsonl.write(line.data(), static_cast<std::streamsize>(line.size()));
+  486|  1.16k|                    if (!jsonl)
+  ------------------
+  |  Branch (486:25): [True: 0, False: 1.16k]
+  ------------------
+  487|      0|                    {
+  488|      0|                        jsonl.close();
+  489|      0|                        SetSinkFailure("Log file write failed: " + configuration.jsonlPath.string());
+  490|      0|                    }
+  491|  1.16k|                    else
+  492|  1.16k|                    {
+  493|  1.16k|                        jsonlBytes += line.size();
+  494|  1.16k|                        writtenEvents.fetch_add(1, std::memory_order_relaxed);
+  495|  1.16k|                    }
+  496|  1.16k|                    if (event.level >= Level::Error)
+  ------------------
+  |  Branch (496:25): [True: 17, False: 1.14k]
+  ------------------
+  497|     17|                    {
+  498|     17|                        jsonl.flush();
+  499|     17|                        if (!jsonl)
+  ------------------
+  |  Branch (499:29): [True: 0, False: 17]
+  ------------------
+  500|      0|                        {
+  501|      0|                            jsonl.close();
+  502|      0|                            SetSinkFailure("Log file flush failed: " + configuration.jsonlPath.string());
+  503|      0|                        }
+  504|     17|                    }
+  505|  1.16k|                }
+  506|  1.16k|            }
+  507|  1.16k|        }
+  508|       |
+  509|  1.16k|        std::vector<CallbackToken> activeCallbacks;
+  510|  1.16k|        {
+  511|  1.16k|            std::lock_guard lock(sinkMutex);
+  512|  1.16k|            if (breadcrumbSize == BreadcrumbCount)
+  ------------------
+  |  Branch (512:17): [True: 100, False: 1.06k]
+  ------------------
+  513|    100|                breadcrumbOverwrittenEvents.fetch_add(1, std::memory_order_relaxed);
+  514|  1.16k|            breadcrumbs[breadcrumbWrite] = record;
+  515|  1.16k|            breadcrumbWrite = (breadcrumbWrite + 1) % BreadcrumbCount;
+  516|  1.16k|            breadcrumbSize = (std::min)(breadcrumbSize + 1, BreadcrumbCount);
+  517|  1.16k|            activeCallbacks.reserve(callbacks.size());
+  518|  1.16k|            for (const auto &[token, callback] : callbacks)
+  ------------------
+  |  Branch (518:48): [True: 1.10k, False: 1.16k]
+  ------------------
+  519|  1.10k|            {
+  520|  1.10k|                (void)token;
+  521|  1.10k|                activeCallbacks.push_back(token);
+  522|  1.10k|            }
+  523|  1.16k|        }
+  524|  1.16k|        if (!activeCallbacks.empty())
+  ------------------
+  |  Branch (524:13): [True: 1.10k, False: 61]
+  ------------------
+  525|  1.10k|        {
+  526|  1.10k|            bool queueFull = false;
+  527|  1.10k|            try
+  528|  1.10k|            {
+  529|  1.10k|                std::lock_guard lock(callbackQueueMutex);
+  530|  1.10k|                if (callbackQueue.size() < capacity)
+  ------------------
+  |  Branch (530:21): [True: 1.10k, False: 0]
+  ------------------
+  531|  1.10k|                {
+  532|  1.10k|                    callbackQueue.emplace_back(record, std::move(activeCallbacks));
+  533|  1.10k|                    callbackWake.notify_one();
+  534|  1.10k|                }
+  535|      0|                else
+  536|      0|                    queueFull = true;
+  537|  1.10k|            }
+  538|  1.10k|            catch (...)
+  539|  1.10k|            {
+  540|      0|                queueFull = true;
+  541|      0|            }
+  542|  1.10k|            if (queueFull)
+  ------------------
+  |  Branch (542:17): [True: 0, False: 1.10k]
+  ------------------
+  543|      0|                callbackDroppedEvents.fetch_add(1, std::memory_order_relaxed);
+  544|  1.10k|        }
+  545|  1.16k|        if (event.level == Level::Fatal && !configuration.breadcrumbPath.empty())
+  ------------------
+  |  Branch (545:13): [True: 0, False: 1.16k]
+  |  Branch (545:44): [True: 0, False: 0]
+  ------------------
+  546|      0|            WriteBreadcrumbs(configuration.breadcrumbPath);
+  547|  1.16k|    }
+  548|       |
+  549|       |    void WriteBreadcrumbs(const std::filesystem::path &path) noexcept
+  550|      6|    {
+  551|      6|        try
+  552|      6|        {
+  553|      6|            std::lock_guard lock(sinkMutex);
+  554|      6|            std::error_code error;
+  555|      6|            if (path.has_parent_path())
+  ------------------
+  |  Branch (555:17): [True: 6, False: 0]
+  ------------------
+  556|      6|                std::filesystem::create_directories(path.parent_path(), error);
+  557|      6|            if (error)
+  ------------------
+  |  Branch (557:17): [True: 0, False: 6]
+  ------------------
+  558|      0|            {
+  559|      0|                FallbackDiagnostic("Unable to create breadcrumb directory: " + error.message());
+  560|      0|                return;
+  561|      0|            }
+  562|      6|            std::ofstream output(path, std::ios::out | std::ios::trunc);
+  563|      6|            if (!output)
+  ------------------
+  |  Branch (563:17): [True: 0, False: 6]
+  ------------------
+  564|      0|            {
+  565|      0|                FallbackDiagnostic("Unable to persist log breadcrumbs: " + path.string());
+  566|      0|                return;
+  567|      0|            }
+  568|      6|            const size_t start = (breadcrumbWrite + BreadcrumbCount - breadcrumbSize) % BreadcrumbCount;
+  569|     62|            for (size_t i = 0; i < breadcrumbSize; ++i)
+  ------------------
+  |  Branch (569:32): [True: 56, False: 6]
+  ------------------
+  570|     56|            {
+  571|     56|                const LogRecord &record = breadcrumbs[(start + i) % BreadcrumbCount];
+  572|     56|                output << record.event.timestampNs << " [" << ToString(record.event.level) << "]["
+  573|     56|                       << ToString(record.event.category) << "][frame=" << record.event.frameIndex
+  574|     56|                       << "][operation=" << record.event.operationId << "]";
+  575|     56|                if (record.event.errorCode[0])
+  ------------------
+  |  Branch (575:21): [True: 5, False: 51]
+  ------------------
+  576|      5|                    output << "[code=" << record.event.errorCode << "]";
+  577|     56|                output << ' ' << (record.event.file ? record.event.file : "") << ':' << record.event.line
+  ------------------
+  |  Branch (577:35): [True: 56, False: 0]
+  ------------------
+  578|     56|                       << ' ' << record.text << '\n';
+  579|     56|            }
+  580|      6|            output.flush();
+  581|      6|            if (!output)
+  ------------------
+  |  Branch (581:17): [True: 0, False: 6]
+  ------------------
+  582|      0|                FallbackDiagnostic("Unable to complete log breadcrumb write: " + path.string());
+  583|      6|        }
+  584|      6|        catch (...)
+  585|      6|        {
+  586|      0|            FallbackDiagnostic("Unexpected error while persisting log breadcrumbs");
+  587|      0|        }
+  588|      6|    }
+  589|       |
+  590|       |    void RunCallbacks()
+  591|     11|    {
+  592|     11|        for (;;)
+  593|  1.11k|        {
+  594|  1.11k|            std::pair<LogRecord, std::vector<CallbackToken>> work;
+  595|  1.11k|            {
+  596|  1.11k|                std::unique_lock lock(callbackQueueMutex);
+  597|  2.22k|                callbackWake.wait(lock, [this] { return callbackStopping || !callbackQueue.empty(); });
+  ------------------
+  |  Branch (597:57): [True: 11, False: 2.21k]
+  |  Branch (597:77): [True: 1.10k, False: 1.11k]
+  ------------------
+  598|  1.11k|                if (callbackQueue.empty() && callbackStopping)
+  ------------------
+  |  Branch (598:21): [True: 11, False: 1.10k]
+  |  Branch (598:46): [True: 11, False: 0]
+  ------------------
+  599|     11|                    break;
+  600|  1.10k|                work = std::move(callbackQueue.front());
+  601|  1.10k|                callbackQueue.pop_front();
+  602|  1.10k|            }
+  603|      0|            for (CallbackToken token : work.second)
+  ------------------
+  |  Branch (603:38): [True: 1.10k, False: 1.10k]
+  ------------------
+  604|  1.10k|            {
+  605|  1.10k|                LogCallback callback;
+  606|  1.10k|                {
+  607|  1.10k|                    std::lock_guard lock(sinkMutex);
+  608|  1.10k|                    const auto found = callbacks.find(token);
+  609|  1.10k|                    if (found != callbacks.end())
+  ------------------
+  |  Branch (609:25): [True: 1.10k, False: 0]
+  ------------------
+  610|  1.10k|                        callback = found->second;
+  611|  1.10k|                }
+  612|  1.10k|                if (!callback)
+  ------------------
+  |  Branch (612:21): [True: 0, False: 1.10k]
+  ------------------
+  613|      0|                    continue;
+  614|  1.10k|                try
+  615|  1.10k|                {
+  616|  1.10k|                    callback(work.first);
+  617|  1.10k|                }
+  618|  1.10k|                catch (...)
+  619|  1.10k|                {
+  620|  1.10k|                    callbackFailedEvents.fetch_add(1, std::memory_order_relaxed);
+  621|  1.10k|                }
+  622|  1.10k|            }
+  623|  1.10k|        }
+  624|     11|    }
+  625|       |
+  626|       |    void Run()
+  627|     11|    {
+  628|     11|#ifdef _WIN32
+  629|     11|        SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_LOWEST);
+  630|     11|#endif
+  631|     11|        try
+  632|     11|        {
+  633|     11|            if (!configuration.jsonlPath.empty())
+  ------------------
+  |  Branch (633:17): [True: 11, False: 0]
+  ------------------
+  634|     11|            {
+  635|     11|                fileStatus.store(FileSinkStatus::Opening, std::memory_order_release);
+  636|     11|                std::error_code error;
+  637|     11|                if (configuration.jsonlPath.has_parent_path())
+  ------------------
+  |  Branch (637:21): [True: 11, False: 0]
+  ------------------
+  638|     11|                    std::filesystem::create_directories(configuration.jsonlPath.parent_path(), error);
+  639|     11|                if (error)
+  ------------------
+  |  Branch (639:21): [True: 1, False: 10]
+  ------------------
+  640|      1|                    SetSinkFailure("Unable to create log directory: " + error.message());
+  641|     10|                else
+  642|     10|                {
+  643|     10|                    jsonl.open(configuration.jsonlPath, std::ios::out | std::ios::app);
+  644|     10|                    if (!jsonl)
+  ------------------
+  |  Branch (644:25): [True: 0, False: 10]
+  ------------------
+  645|      0|                        SetSinkFailure("Unable to open log file: " + configuration.jsonlPath.string());
+  646|     10|                    else
+  647|     10|                    {
+  648|     10|                        jsonlBytes = std::filesystem::file_size(configuration.jsonlPath, error);
+  649|     10|                        if (error)
+  ------------------
+  |  Branch (649:29): [True: 0, False: 10]
+  ------------------
+  650|      0|                            jsonlBytes = 0;
+  651|     10|                        const std::string header =
+  652|     10|                            Json{{"type", "session_start"},
+  653|     10|                                 {"session_id", sessionId},
+  654|     10|                                 {"timestamp_ns", std::chrono::duration_cast<std::chrono::nanoseconds>(
+  655|     10|                                                      std::chrono::system_clock::now().time_since_epoch())
+  656|     10|                                                      .count()}}
+  657|     10|                                .dump() +
+  658|     10|                            '\n';
+  659|     10|                        jsonl.write(header.data(), static_cast<std::streamsize>(header.size()));
+  660|     10|                        if (!jsonl)
+  ------------------
+  |  Branch (660:29): [True: 0, False: 10]
+  ------------------
+  661|      0|                        {
+  662|      0|                            jsonl.close();
+  663|      0|                            SetSinkFailure("Unable to write the log session header: " +
+  664|      0|                                           configuration.jsonlPath.string());
+  665|      0|                        }
+  666|     10|                        else
+  667|     10|                        {
+  668|     10|                            jsonlBytes += header.size();
+  669|     10|                            fileStatus.store(FileSinkStatus::Ready, std::memory_order_release);
+  670|     10|                        }
+  671|     10|                    }
+  672|     10|                }
+  673|     11|            }
+  674|      0|            else
+  675|      0|                fileStatus.store(FileSinkStatus::Disabled, std::memory_order_release);
+  676|     11|        }
+  677|     11|        catch (...)
+  678|     11|        {
+  679|      0|            if (jsonl.is_open())
+  ------------------
+  |  Branch (679:17): [True: 0, False: 0]
+  ------------------
+  680|      0|                jsonl.close();
+  681|      0|            SetSinkFailure("Unexpected error while opening the log file");
+  682|      0|        }
+  683|     11|        {
+  684|     11|            std::lock_guard lock(startupMutex);
+  685|     11|            startupComplete = true;
+  686|     11|        }
+  687|     11|        startupReady.notify_all();
+  688|     11|        for (;;)
+  689|  1.22k|        {
+  690|  1.22k|            LogEvent event;
+  691|  1.22k|            if (Pop(event))
+  ------------------
+  |  Branch (691:17): [True: 1.16k, False: 58]
+  ------------------
+  692|  1.16k|            {
+  693|  1.16k|                try
+  694|  1.16k|                {
+  695|  1.16k|                    Process(event);
+  696|  1.16k|                }
+  697|  1.16k|                catch (...)
+  698|  1.16k|                {
+  699|      0|                    FallbackDiagnostic("Unhandled error while processing a log event");
+  700|      0|                }
+  701|  1.16k|                pending.fetch_sub(1, std::memory_order_release);
+  702|  1.16k|                drained.notify_all();
+  703|  1.16k|                continue;
+  704|  1.16k|            }
+  705|     58|            if (stopping.load(std::memory_order_acquire) && pending.load(std::memory_order_acquire) == 0)
+  ------------------
+  |  Branch (705:17): [True: 11, False: 47]
+  |  Branch (705:61): [True: 11, False: 0]
+  ------------------
+  706|     11|                break;
+  707|     47|            std::unique_lock lock(wakeMutex);
+  708|     94|            wake.wait_for(lock, std::chrono::milliseconds(10), [this] {
+  709|     94|                return stopping.load(std::memory_order_relaxed) ||
+  ------------------
+  |  Branch (709:24): [True: 11, False: 83]
+  ------------------
+  710|     83|                       pending.load(std::memory_order_relaxed) != 0;
+  ------------------
+  |  Branch (710:24): [True: 24, False: 59]
+  ------------------
+  711|     94|            });
+  712|     47|        }
+  713|     11|        {
+  714|     11|            std::lock_guard lock(ioMutex);
+  715|     11|            if (jsonl.is_open())
+  ------------------
+  |  Branch (715:17): [True: 10, False: 1]
+  ------------------
+  716|     10|            {
+  717|     10|                jsonl.flush();
+  718|     10|                if (!jsonl)
+  ------------------
+  |  Branch (718:21): [True: 0, False: 10]
+  ------------------
+  719|      0|                {
+  720|      0|                    jsonl.close();
+  721|      0|                    SetSinkFailure("Log file flush failed during shutdown: " +
+  722|      0|                                   configuration.jsonlPath.string());
+  723|      0|                }
+  724|     10|            }
+  725|     11|        }
+  726|     11|    }
+  727|       |};
+  728|       |
+  729|       |std::atomic<Manager *> gManager{nullptr};
+  730|       |std::mutex gLifecycleMutex;
+  731|       |bool gShuttingDown = false;
+  732|       |std::atomic<uint64_t> gFrameIndex{0};
+  733|       |std::atomic<uint64_t> gNextOperationId{1};
+  734|       |std::atomic<size_t> gActiveProducers{0};
+  735|       |thread_local uint64_t gCurrentOperationId = 0;
+  736|       |std::atomic<uint8_t> gMinimumLevel{static_cast<uint8_t>(Level::Trace)};
+  737|       |std::array<std::atomic<uint8_t>, CategoryCount> gCategoryMinimumLevels{};
+  738|       |std::atomic<CallbackToken> gNextCallbackToken{1};
+  739|       |std::mutex gLegacyCallbackMutex;
+  740|       |CallbackToken gLegacyCallbackToken = 0;
+  741|       |} // namespace
+  742|       |
+  743|       |const char *ToString(Level level) noexcept
+  744|  1.23k|{
+  745|  1.23k|    switch (level)
+  746|  1.23k|    {
+  747|      2|    case Level::Trace:
+  ------------------
+  |  Branch (747:5): [True: 2, False: 1.23k]
+  ------------------
+  748|      2|        return "Trace";
+  749|     30|    case Level::Debug:
+  ------------------
+  |  Branch (749:5): [True: 30, False: 1.20k]
+  ------------------
+  750|     30|        return "Debug";
+  751|  1.15k|    case Level::Info:
+  ------------------
+  |  Branch (751:5): [True: 1.15k, False: 84]
+  ------------------
+  752|  1.15k|        return "Info";
+  753|      1|    case Level::Warning:
+  ------------------
+  |  Branch (753:5): [True: 1, False: 1.23k]
+  ------------------
+  754|      1|        return "Warning";
+  755|     50|    case Level::Error:
+  ------------------
+  |  Branch (755:5): [True: 50, False: 1.18k]
+  ------------------
+  756|     50|        return "Error";
+  757|      0|    case Level::Fatal:
+  ------------------
+  |  Branch (757:5): [True: 0, False: 1.23k]
+  ------------------
+  758|      0|        return "Fatal";
+  759|      1|    default:
+  ------------------
+  |  Branch (759:5): [True: 1, False: 1.23k]
+  ------------------
+  760|      1|        return "None";
+  761|  1.23k|    }
+  762|  1.23k|}
+  763|       |
+  764|       |const char *ToString(Category category) noexcept
+  765|  1.23k|{
+  766|  1.23k|    switch (category)
+  767|  1.23k|    {
+  768|  1.14k|    case Category::Core:
+  ------------------
+  |  Branch (768:5): [True: 1.14k, False: 87]
+  ------------------
+  769|  1.14k|        return "Core";
+  770|      0|    case Category::Editor:
+  ------------------
+  |  Branch (770:5): [True: 0, False: 1.23k]
+  ------------------
+  771|      0|        return "Editor";
+  772|      0|    case Category::Physics:
+  ------------------
+  |  Branch (772:5): [True: 0, False: 1.23k]
+  ------------------
+  773|      0|        return "Physics";
+  774|     46|    case Category::Render:
+  ------------------
+  |  Branch (774:5): [True: 46, False: 1.18k]
+  ------------------
+  775|     46|        return "Render";
+  776|      0|    case Category::Backend:
+  ------------------
+  |  Branch (776:5): [True: 0, False: 1.23k]
+  ------------------
+  777|      0|        return "Backend";
+  778|      0|    case Category::Audio:
+  ------------------
+  |  Branch (778:5): [True: 0, False: 1.23k]
+  ------------------
+  779|      0|        return "Audio";
+  780|      2|    case Category::ECS:
+  ------------------
+  |  Branch (780:5): [True: 2, False: 1.23k]
+  ------------------
+  781|      2|        return "ECS";
+  782|      0|    case Category::Net:
+  ------------------
+  |  Branch (782:5): [True: 0, False: 1.23k]
+  ------------------
+  783|      0|        return "Network";
+  784|     37|    case Category::Asset:
+  ------------------
+  |  Branch (784:5): [True: 37, False: 1.19k]
+  ------------------
+  785|     37|        return "Asset";
+  786|      1|    case Category::Diagnostics:
+  ------------------
+  |  Branch (786:5): [True: 1, False: 1.23k]
+  ------------------
+  787|      1|        return "Diagnostics";
+  788|      1|    default:
+  ------------------
+  |  Branch (788:5): [True: 1, False: 1.23k]
+  ------------------
+  789|      1|        return "Core";
+  790|  1.23k|    }
+  791|  1.23k|}
+  792|       |
+  793|       |Category CategoryFromName(std::string_view name) noexcept
+  794|    171|{
+  795|    171|    if (name == "Render")
+  ------------------
+  |  Branch (795:9): [True: 39, False: 132]
+  ------------------
+  796|     39|        return Category::Render;
+  797|    132|    if (name == "Editor")
+  ------------------
+  |  Branch (797:9): [True: 0, False: 132]
+  ------------------
+  798|      0|        return Category::Editor;
+  799|    132|    if (name == "Backend")
+  ------------------
+  |  Branch (799:9): [True: 0, False: 132]
+  ------------------
+  800|      0|        return Category::Backend;
+  801|    132|    if (name == "Diagnostics")
+  ------------------
+  |  Branch (801:9): [True: 0, False: 132]
+  ------------------
+  802|      0|        return Category::Diagnostics;
+  803|    132|    if (name == "Physics")
+  ------------------
+  |  Branch (803:9): [True: 0, False: 132]
+  ------------------
+  804|      0|        return Category::Physics;
+  805|    132|    if (name == "Audio")
+  ------------------
+  |  Branch (805:9): [True: 0, False: 132]
+  ------------------
+  806|      0|        return Category::Audio;
+  807|    132|    if (name == "ECS")
+  ------------------
+  |  Branch (807:9): [True: 6, False: 126]
+  ------------------
+  808|      6|        return Category::ECS;
+  809|    126|    if (name == "Net")
+  ------------------
+  |  Branch (809:9): [True: 0, False: 126]
+  ------------------
+  810|      0|        return Category::Net;
+  811|    126|    if (name == "Network")
+  ------------------
+  |  Branch (811:9): [True: 1, False: 125]
+  ------------------
+  812|      1|        return Category::Network;
+  813|    125|    if (name == "Asset")
+  ------------------
+  |  Branch (813:9): [True: 102, False: 23]
+  ------------------
+  814|    102|        return Category::Asset;
+  815|     23|    return Category::Core;
+  816|    125|}
+  817|       |
+  818|       |bool Initialize(const Configuration &configuration)
+  819|     11|{
+  820|     11|    std::lock_guard lock(gLifecycleMutex);
+  821|     11|    if (gShuttingDown)
+  ------------------
+  |  Branch (821:9): [True: 0, False: 11]
+  ------------------
+  822|      0|        return false;
+  823|     11|    if (gManager.load(std::memory_order_acquire))
+  ------------------
+  |  Branch (823:9): [True: 0, False: 11]
+  ------------------
+  824|      0|        return gManager.load(std::memory_order_relaxed)->fileStatus.load(std::memory_order_acquire) !=
+  825|      0|               FileSinkStatus::Failed;
+  826|     11|    Manager *manager = nullptr;
+  827|     11|    try
+  828|     11|    {
+  829|     11|        Configuration resolved = ResolveConfiguration(configuration);
+  830|     11|        gMinimumLevel.store(static_cast<uint8_t>(resolved.minimumLevel), std::memory_order_relaxed);
+  831|    121|        for (size_t i = 0; i < CategoryCount; ++i)
+  ------------------
+  |  Branch (831:28): [True: 110, False: 11]
+  ------------------
+  832|    110|            gCategoryMinimumLevels[i].store(static_cast<uint8_t>(resolved.categoryMinimumLevels[i]),
+  833|    110|                                            std::memory_order_relaxed);
+  834|     11|        manager = new Manager(std::move(resolved));
+  835|     11|    }
+  836|     11|    catch (...)
+  837|     11|    {
+  838|      0|        FallbackDiagnostic("Unable to allocate the logger state");
+  839|      0|        return false;
+  840|      0|    }
+  841|     11|    try
+  842|     11|    {
+  843|     11|        manager->worker = std::thread([manager] { manager->Run(); });
+  844|     11|    }
+  845|     11|    catch (...)
+  846|     11|    {
+  847|      0|        delete manager;
+  848|      0|        FallbackDiagnostic("Unable to start the logger worker thread");
+  849|      0|        return false;
+  850|      0|    }
+  851|     11|    try
+  852|     11|    {
+  853|     11|        manager->callbackWorker = std::thread([manager] { manager->RunCallbacks(); });
+  854|     11|    }
+  855|     11|    catch (...)
+  856|     11|    {
+  857|      0|        manager->stopping.store(true, std::memory_order_release);
+  858|      0|        manager->wake.notify_one();
+  859|      0|        if (manager->worker.joinable())
+  ------------------
+  |  Branch (859:13): [True: 0, False: 0]
+  ------------------
+  860|      0|            manager->worker.join();
+  861|      0|        delete manager;
+  862|      0|        FallbackDiagnostic("Unable to start the logger callback worker thread");
+  863|      0|        return false;
+  864|      0|    }
+  865|     11|    gManager.store(manager, std::memory_order_release);
+  866|     11|    {
+  867|     11|        std::unique_lock startupLock(manager->startupMutex);
+  868|     22|        manager->startupReady.wait(startupLock, [manager] { return manager->startupComplete; });
+  869|     11|    }
+  870|     11|    return manager->fileStatus.load(std::memory_order_acquire) != FileSinkStatus::Failed;
+  871|     11|}
+  872|       |
+  873|       |void Shutdown() noexcept
+  874|     13|{
+  875|     13|    Manager *manager = nullptr;
+  876|     13|    {
+  877|     13|        std::lock_guard lock(gLifecycleMutex);
+  878|     13|        manager = gManager.exchange(nullptr, std::memory_order_acq_rel);
+  879|     13|        if (!manager)
+  ------------------
+  |  Branch (879:13): [True: 2, False: 11]
+  ------------------
+  880|      2|            return;
+  881|     11|        gShuttingDown = true;
+  882|     11|    }
+  883|     11|    while (gActiveProducers.load(std::memory_order_acquire) != 0)
+  ------------------
+  |  Branch (883:12): [True: 0, False: 11]
+  ------------------
+  884|      0|        std::this_thread::yield();
+  885|     11|    manager->stopping.store(true, std::memory_order_release);
+  886|     11|    manager->wake.notify_one();
+  887|     11|    if (manager->worker.joinable())
+  ------------------
+  |  Branch (887:9): [True: 11, False: 0]
+  ------------------
+  888|     11|        manager->worker.join();
+  889|     11|    {
+  890|     11|        std::lock_guard callbackLock(manager->callbackQueueMutex);
+  891|     11|        manager->callbackStopping = true;
+  892|     11|    }
+  893|     11|    manager->callbackWake.notify_one();
+  894|     11|    if (manager->callbackWorker.joinable())
+  ------------------
+  |  Branch (894:9): [True: 11, False: 0]
+  ------------------
+  895|     11|        manager->callbackWorker.join();
+  896|     11|    delete manager;
+  897|     11|    {
+  898|     11|        std::lock_guard lock(gLifecycleMutex);
+  899|     11|        gShuttingDown = false;
+  900|     11|    }
+  901|     11|}
+  902|       |
+  903|       |void Flush() noexcept
+  904|     23|{
+  905|     23|    try
+  906|     23|    {
+  907|     23|        Manager *manager = gManager.load(std::memory_order_acquire);
+  908|     23|        if (!manager)
+  ------------------
+  |  Branch (908:13): [True: 2, False: 21]
+  ------------------
+  909|      2|            return;
+  910|     21|        std::unique_lock drainLock(manager->drainMutex);
+  911|  1.13k|        if (!manager->drained.wait_for(drainLock, std::chrono::seconds(5), [manager] {
+  ------------------
+  |  Branch (911:13): [True: 0, False: 21]
+  ------------------
+  912|  1.13k|                return manager->pending.load(std::memory_order_acquire) == 0;
+  913|  1.13k|            }))
+  914|      0|            FallbackDiagnostic("Timed out while flushing the log queue");
+  915|     21|        drainLock.unlock();
+  916|     21|        std::lock_guard lock(manager->ioMutex);
+  917|     21|        if (manager->jsonl.is_open())
+  ------------------
+  |  Branch (917:13): [True: 20, False: 1]
+  ------------------
+  918|     20|        {
+  919|     20|            manager->jsonl.flush();
+  920|     20|            if (!manager->jsonl)
+  ------------------
+  |  Branch (920:17): [True: 0, False: 20]
+  ------------------
+  921|      0|            {
+  922|      0|                manager->jsonl.close();
+  923|      0|                manager->SetSinkFailure("Log file flush failed: " +
+  924|      0|                                        manager->configuration.jsonlPath.string());
+  925|      0|            }
+  926|     20|        }
+  927|     21|    }
+  928|     23|    catch (...)
+  929|     23|    {
+  930|      0|        FallbackDiagnostic("Unexpected error while flushing the log queue");
+  931|      0|    }
+  932|     23|}
+  933|       |
+  934|       |bool IsInitialized() noexcept
+  935|     14|{
+  936|     14|    return gManager.load(std::memory_order_acquire) != nullptr;
+  937|     14|}
+  938|       |
+  939|       |void SetFrameIndex(uint64_t frameIndex) noexcept
+  940|      4|{
+  941|      4|    gFrameIndex.store(frameIndex, std::memory_order_relaxed);
+  942|      4|}
+  943|       |
+  944|       |uint64_t GetCurrentOperationId() noexcept
+  945|     47|{
+  946|     47|    return gCurrentOperationId;
+  947|     47|}
+  948|       |
+  949|       |void SetCurrentOperationId(uint64_t operationId) noexcept
+  950|     90|{
+  951|     90|    gCurrentOperationId = operationId;
+  952|     90|}
+  953|       |
+  954|       |uint64_t CreateOperationId() noexcept
+  955|     40|{
+  956|     40|    return gNextOperationId.fetch_add(1, std::memory_order_relaxed);
+  957|     40|}
+  958|       |
+  959|       |CallbackToken SubscribeCallback(LogCallback callback)
+  960|      2|{
+  961|      2|    if (!callback)
+  ------------------
+  |  Branch (961:9): [True: 0, False: 2]
+  ------------------
+  962|      0|        return 0;
+  963|      2|    const CallbackToken token = gNextCallbackToken.fetch_add(1, std::memory_order_relaxed);
+  964|      2|    if (Manager *manager = gManager.load(std::memory_order_acquire))
+  ------------------
+  |  Branch (964:18): [True: 2, False: 0]
+  ------------------
+  965|      2|    {
+  966|      2|        std::lock_guard lock(manager->sinkMutex);
+  967|      2|        manager->callbacks.emplace(token, std::move(callback));
+  968|      2|        return token;
+  969|      2|    }
+  970|      0|    return 0;
+  971|      2|}
+  972|       |
+  973|       |void UnsubscribeCallback(CallbackToken token) noexcept
+  974|      8|{
+  975|      8|    if (token == 0)
+  ------------------
+  |  Branch (975:9): [True: 6, False: 2]
+  ------------------
+  976|      6|        return;
+  977|      2|    if (Manager *manager = gManager.load(std::memory_order_acquire))
+  ------------------
+  |  Branch (977:18): [True: 2, False: 0]
+  ------------------
+  978|      2|    {
+  979|      2|        std::lock_guard lock(manager->sinkMutex);
+  980|      2|        manager->callbacks.erase(token);
+  981|      2|    }
+  982|      2|}
+  983|       |
+  984|       |void SetCallback(LogCallback callback)
+  985|      6|{
+  986|      6|    std::lock_guard lock(gLegacyCallbackMutex);
+  987|      6|    UnsubscribeCallback(gLegacyCallbackToken);
+  988|      6|    gLegacyCallbackToken = callback ? SubscribeCallback(std::move(callback)) : 0;
+  ------------------
+  |  Branch (988:28): [True: 0, False: 6]
+  ------------------
+  989|      6|}
+  990|       |
+  991|       |void SetMinimumLevel(Level level) noexcept
+  992|      1|{
+  993|      1|    gMinimumLevel.store(static_cast<uint8_t>(level), std::memory_order_relaxed);
+  994|      1|    if (Manager *manager = gManager.load(std::memory_order_acquire))
+  ------------------
+  |  Branch (994:18): [True: 1, False: 0]
+  ------------------
+  995|      1|        manager->minimumLevel.store(static_cast<uint8_t>(level), std::memory_order_relaxed);
+  996|      1|}
+  997|       |
+  998|       |Level GetMinimumLevel() noexcept
+  999|      3|{
+ 1000|      3|    return static_cast<Level>(gMinimumLevel.load(std::memory_order_relaxed));
+ 1001|      3|}
+ 1002|       |
+ 1003|       |void SetCategoryMinimumLevel(Category category, Level level) noexcept
+ 1004|      2|{
+ 1005|      2|    const size_t index = static_cast<size_t>(category);
+ 1006|      2|    if (index >= CategoryCount)
+  ------------------
+  |  Branch (1006:9): [True: 1, False: 1]
+  ------------------
+ 1007|      1|        return;
+ 1008|      1|    gCategoryMinimumLevels[index].store(static_cast<uint8_t>(level), std::memory_order_relaxed);
+ 1009|      1|    if (Manager *manager = gManager.load(std::memory_order_acquire))
+  ------------------
+  |  Branch (1009:18): [True: 1, False: 0]
+  ------------------
+ 1010|      1|        manager->categoryMinimumLevels[index].store(static_cast<uint8_t>(level), std::memory_order_relaxed);
+ 1011|      1|}
+ 1012|       |
+ 1013|       |Level GetCategoryMinimumLevel(Category category) noexcept
+ 1014|      5|{
+ 1015|      5|    const size_t index = static_cast<size_t>(category);
+ 1016|      5|    if (index >= CategoryCount)
+  ------------------
+  |  Branch (1016:9): [True: 1, False: 4]
+  ------------------
+ 1017|      1|        return GetMinimumLevel();
+ 1018|      4|    return static_cast<Level>(gCategoryMinimumLevels[index].load(std::memory_order_relaxed));
+ 1019|      5|}
+ 1020|       |
+ 1021|       |HealthSnapshot GetHealthSnapshot()
+ 1022|     11|{
+ 1023|     11|    HealthSnapshot result;
+ 1024|     11|    if (Manager *manager = gManager.load(std::memory_order_acquire))
+  ------------------
+  |  Branch (1024:18): [True: 11, False: 0]
+  ------------------
+ 1025|     11|    {
+ 1026|     11|        result.jsonlPath = manager->configuration.jsonlPath;
+ 1027|     11|        result.breadcrumbPath = manager->configuration.breadcrumbPath;
+ 1028|     11|        result.sessionId = manager->sessionId;
+ 1029|     11|        result.fileStatus = manager->fileStatus.load(std::memory_order_acquire);
+ 1030|     11|        result.acceptedEvents = manager->acceptedEvents.load(std::memory_order_relaxed);
+ 1031|     11|        result.writtenEvents = manager->writtenEvents.load(std::memory_order_relaxed);
+ 1032|     11|        result.queueDroppedEvents = manager->queueDroppedEvents.load(std::memory_order_relaxed);
+ 1033|     11|        result.callbackFailedEvents = manager->callbackFailedEvents.load(std::memory_order_relaxed);
+ 1034|     11|        result.callbackDroppedEvents = manager->callbackDroppedEvents.load(std::memory_order_relaxed);
+ 1035|     11|        result.fileFailedEvents = manager->fileFailedEvents.load(std::memory_order_relaxed);
+ 1036|     11|        result.breadcrumbOverwrittenEvents =
+ 1037|     11|            manager->breadcrumbOverwrittenEvents.load(std::memory_order_relaxed);
+ 1038|     11|        result.queueDepth = manager->pending.load(std::memory_order_relaxed);
+ 1039|     11|        result.queueCapacity = manager->capacity;
+ 1040|     11|        result.queueHighWaterMark = manager->queueHighWaterMark.load(std::memory_order_relaxed);
+ 1041|     11|        std::lock_guard lock(manager->sinkErrorMutex);
+ 1042|     11|        result.lastSinkError = manager->lastSinkError;
+ 1043|     11|    }
+ 1044|     11|    return result;
+ 1045|     11|}
+ 1046|       |
+ 1047|       |std::vector<LogRecord> GetRecentRecords()
+ 1048|      4|{
+ 1049|      4|    if (Manager *manager = gManager.load(std::memory_order_acquire))
+  ------------------
+  |  Branch (1049:18): [True: 4, False: 0]
+  ------------------
+ 1050|      4|    {
+ 1051|      4|        std::lock_guard lock(manager->sinkMutex);
+ 1052|      4|        std::vector<LogRecord> records;
+ 1053|      4|        records.reserve(manager->breadcrumbSize);
+ 1054|      4|        const size_t start =
+ 1055|      4|            (manager->breadcrumbWrite + BreadcrumbCount - manager->breadcrumbSize) % BreadcrumbCount;
+ 1056|  1.01k|        for (size_t i = 0; i < manager->breadcrumbSize; ++i)
+  ------------------
+  |  Branch (1056:28): [True: 1.00k, False: 4]
+  ------------------
+ 1057|  1.00k|            records.push_back(manager->breadcrumbs[(start + i) % BreadcrumbCount]);
+ 1058|      4|        return records;
+ 1059|      4|    }
+ 1060|      0|    return {};
+ 1061|      4|}
+ 1062|       |
+ 1063|       |void DumpCrashBreadcrumbs(const std::filesystem::path &path) noexcept
+ 1064|      6|{
+ 1065|      6|    Manager *manager = gManager.load(std::memory_order_acquire);
+ 1066|      6|    if (!manager)
+  ------------------
+  |  Branch (1066:9): [True: 0, False: 6]
+  ------------------
+ 1067|      0|        return;
+ 1068|      6|    Flush();
+ 1069|      6|    manager->WriteBreadcrumbs(path);
+ 1070|      6|}
+ 1071|       |
+ 1072|       |bool Enqueue(const LogEvent &source) noexcept
+ 1073|  1.27k|{
+ 1074|  1.27k|    gActiveProducers.fetch_add(1, std::memory_order_acq_rel);
+ 1075|  1.27k|    Manager *manager = gManager.load(std::memory_order_acquire);
+ 1076|  1.27k|    if (!manager || manager->stopping.load(std::memory_order_relaxed))
+  ------------------
+  |  Branch (1076:9): [True: 114, False: 1.16k]
+  |  Branch (1076:21): [True: 0, False: 1.16k]
+  ------------------
+ 1077|    114|    {
+ 1078|    114|        FallbackEvent(source);
+ 1079|    114|        gActiveProducers.fetch_sub(1, std::memory_order_release);
+ 1080|    114|        return false;
+ 1081|    114|    }
+ 1082|  1.16k|    LogEvent event = source;
+ 1083|  1.16k|    if (!manager->Accepts(event) && event.level < Level::Error)
+  ------------------
+  |  Branch (1083:9): [True: 2, False: 1.16k]
+  |  Branch (1083:37): [True: 2, False: 0]
+  ------------------
+ 1084|      2|    {
+ 1085|      2|        gActiveProducers.fetch_sub(1, std::memory_order_release);
+ 1086|      2|        return false;
+ 1087|      2|    }
+ 1088|  1.16k|    event.timestampNs = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+ 1089|  1.16k|                                                  std::chrono::system_clock::now().time_since_epoch())
+ 1090|  1.16k|                                                  .count());
+ 1091|  1.16k|    event.monotonicNs = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+ 1092|  1.16k|                                                  std::chrono::steady_clock::now().time_since_epoch())
+ 1093|  1.16k|                                                  .count());
+ 1094|  1.16k|    event.frameIndex = gFrameIndex.load(std::memory_order_relaxed);
+ 1095|  1.16k|    event.threadId = std::hash<std::thread::id>{}(std::this_thread::get_id());
+ 1096|  1.16k|    if (event.operationId == 0)
+  ------------------
+  |  Branch (1096:9): [True: 1.16k, False: 0]
+  ------------------
+ 1097|  1.16k|        event.operationId = gCurrentOperationId;
+ 1098|  1.16k|    const size_t depth = manager->pending.fetch_add(1, std::memory_order_relaxed) + 1;
+ 1099|  1.16k|    size_t highWater = manager->queueHighWaterMark.load(std::memory_order_relaxed);
+ 1100|  1.16k|    while (depth > highWater &&
+  ------------------
+  |  Branch (1100:12): [True: 1.13k, False: 32]
+  ------------------
+ 1101|  1.13k|           !manager->queueHighWaterMark.compare_exchange_weak(highWater, depth, std::memory_order_relaxed))
+  ------------------
+  |  Branch (1101:12): [True: 0, False: 1.13k]
+  ------------------
+ 1102|      0|    {
+ 1103|      0|    }
+ 1104|  1.16k|    if (!manager->Push(event))
+  ------------------
+  |  Branch (1104:9): [True: 0, False: 1.16k]
+  ------------------
+ 1105|      0|    {
+ 1106|      0|        manager->pending.fetch_sub(1, std::memory_order_release);
+ 1107|      0|        manager->queueDroppedEvents.fetch_add(1, std::memory_order_relaxed);
+ 1108|      0|        FallbackEvent(event);
+ 1109|      0|        manager->drained.notify_all();
+ 1110|      0|        gActiveProducers.fetch_sub(1, std::memory_order_release);
+ 1111|      0|        return false;
+ 1112|      0|    }
+ 1113|  1.16k|    manager->acceptedEvents.fetch_add(1, std::memory_order_relaxed);
+ 1114|  1.16k|    manager->wake.notify_one();
+ 1115|  1.16k|    gActiveProducers.fetch_sub(1, std::memory_order_release);
+ 1116|  1.16k|    return true;
+ 1117|  1.16k|}
+ 1118|       |
+ 1119|       |bool SubmitStructuredEvent(const LogEvent &event) noexcept
+ 1120|     13|{
+ 1121|     13|    return Enqueue(event);
+ 1122|     13|}
+ 1123|       |} // namespace Engine::Log
+

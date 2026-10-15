@@ -7,11 +7,6 @@ class IRenderBackend;
 class ViewportTarget;
 } // namespace Engine
 
-namespace Engine
-{
-class D3D11Backend;
-}
-
 class EditorUiIntegration
 {
   public:
@@ -26,6 +21,6 @@ class EditorUiIntegration
     }
 
   private:
-    Engine::D3D11Backend *m_Backend = nullptr;
+    Engine::IRenderBackend *m_Backend = nullptr;
     bool m_Initialized = false;
 };

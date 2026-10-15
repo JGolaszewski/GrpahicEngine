@@ -88,8 +88,8 @@ class Editor : public Engine::Application
     void RequestSceneAction(SceneFileActionRequestedEvent::Action action);
     bool SaveCurrentScene(bool choosePath);
     void DrawUnsavedChangesModal();
-    void OnEntityMembershipChanged(Engine::EntityId id, const std::shared_ptr<::Engine::Renderer::Entity> &entity,
-                                   bool present);
+    void OnEntityMembershipChanged(Engine::EntityId id,
+                                   const std::shared_ptr<::Engine::Renderer::Entity> &entity, bool present);
     bool AssignTexture(Engine::EntityId entityId, int32_t materialSlot,
                        AssetImportRequestedEvent::TextureSemantic semantic,
                        const std::optional<std::string> &textureGuid);

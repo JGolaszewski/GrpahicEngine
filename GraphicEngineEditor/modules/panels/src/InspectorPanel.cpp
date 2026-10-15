@@ -294,7 +294,8 @@ void InspectorPanel::DrawObjectInspector()
 
     bool materialChanged = false;
     materialChanged |= ImGui::ColorEdit4(
-        properties.Workflow == ::Engine::Renderer::MaterialWorkflow::SpecularGlossiness ? "Diffuse factor" : "Base color",
+        properties.Workflow == ::Engine::Renderer::MaterialWorkflow::SpecularGlossiness ? "Diffuse factor"
+                                                                                        : "Base color",
         baseColor);
     trackMaterialWidget();
     materialChanged |= ImGui::ColorEdit3("Emission", emissive);
