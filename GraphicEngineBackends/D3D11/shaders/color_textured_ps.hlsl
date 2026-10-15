@@ -163,8 +163,18 @@ float SampleShadowPCF(uint lightIndex, float3 worldPos, float3 normalWS, float3 
 }
 
 // MAIN PIXEL SHADER FUNCTION
-float4 main_ps(VS_OUTPUT input) : SV_TARGET
+struct PS_OUTPUT
 {
+    float4 FinalColor : SV_TARGET0;
+    float Depth : SV_TARGET1;
+    float4 WorldNormal : SV_TARGET2;
+    float4 SpecularLighting : SV_TARGET3;
+    float4 DiffuseLighting : SV_TARGET4;
+};
+
+PS_OUTPUT main_ps(VS_OUTPUT input)
+{
+    PS_OUTPUT output;
     const float2 uvBase = GetTextureCoordinate(g_TextureCoordinates0.x, input);
     const float2 uvNormal = GetTextureCoordinate(g_TextureCoordinates0.y, input);
     const float2 uvMetallicRoughness = GetTextureCoordinate(g_TextureCoordinates0.z, input);
@@ -186,15 +196,21 @@ float4 main_ps(VS_OUTPUT input) : SV_TARGET
     const float3 emissiveSample = g_EmissiveMap.Sample(g_EmissiveSampler, emissiveUv).rgb;
     const float4 baseColorFactor = g_BaseColor * input.color;
     const float3 baseColor = baseColorFactor.rgb * baseColorSample.rgb;
-    if ((g_ModelFlags.w & 0xffu) == 1u && baseColorFactor.a * baseColorSample.a < g_AlphaParams.x)
+    const float baseAlpha = baseColorFactor.a * baseColorSample.a;
+    if ((g_ModelFlags.w & 0xffu) == 1u && baseAlpha < g_AlphaParams.x)
     {
         discard;
     }
 
     if (g_ObjectParams.y > 0.5f)
     {
-        return float4(baseColor + g_EmissiveMetallic.rgb * emissiveSample,
-                      baseColorFactor.a * baseColorSample.a);
+        const float3 unlit = baseColor + g_EmissiveMetallic.rgb * emissiveSample;
+        output.FinalColor = float4(unlit, baseAlpha);
+        output.Depth = input.pos.z;
+        output.WorldNormal = float4(BrdfNormalizeOr(input.normalWS, float3(0.0f, 0.0f, 1.0f)), 1.0f);
+        output.SpecularLighting = float4(0.0f, 0.0f, 0.0f, baseAlpha);
+        output.DiffuseLighting = float4(unlit, baseAlpha);
+        return output;
     }
 
     const float3 geometricNormal = BrdfNormalizeOr(input.normalWS, float3(0.0f, 0.0f, 1.0f));
@@ -232,7 +248,6 @@ float4 main_ps(VS_OUTPUT input) : SV_TARGET
 
     float3 diffuseAccum = 0.0f;
     float3 specAccum    = 0.0f;
-    float3 brdfAccum    = 0.0f;
 
     [loop]
     for (uint i = 0; i < g_LightCount; ++i)
@@ -298,15 +313,27 @@ float4 main_ps(VS_OUTPUT input) : SV_TARGET
             const float3 brdfBaseColor = isSpecularGlossiness ? diffuseColor : baseColor;
             const float brdfMetallic = isSpecularGlossiness ? 0.0f : metallic;
             const float3 brdfF0 = isSpecularGlossiness ? specularF0 : dielectricF0;
-            const float3 brdf = g_ModelFlags.y == 2u
-                ? EvaluateGtrBrdf(query, brdfBaseColor, brdfMetallic, brdfF0, alpha, g_SurfaceParams.z)
-                : EvaluateGgxBrdf(query, brdfBaseColor, brdfMetallic, brdfF0, alpha);
-            brdfAccum += brdf * lightColor * (query.NoL * intensity * attenuation * shadow);
+            float3 diffuseBrdf;
+            float3 specularBrdf;
+            if (g_ModelFlags.y == 2u)
+            {
+                EvaluateGtrBrdfComponents(query, brdfBaseColor, brdfMetallic, brdfF0, alpha,
+                    g_SurfaceParams.z, diffuseBrdf, specularBrdf);
+            }
+            else
+            {
+                EvaluateGgxBrdfComponents(query, brdfBaseColor, brdfMetallic, brdfF0, alpha,
+                    diffuseBrdf, specularBrdf);
+            }
+            const float3 lightScale = lightColor * (query.NoL * intensity * attenuation * shadow);
+            diffuseAccum += diffuseBrdf * lightScale;
+            specAccum += specularBrdf * lightScale;
         }
     }
 
     const float occlusion = lerp(1.0f, occlusionSample, saturate(g_TextureParams.y));
-    float3 ambient = isLegacy ? 0.04f * legacyDiffuseColor * occlusion : 0.0f;
+    float3 ambientDiffuse = isLegacy ? 0.04f * legacyDiffuseColor * occlusion : 0.0f;
+    float3 ambientSpecular = 0.0f;
     if (!isLegacy && g_LightPadding.x > 0.5f)
     {
         const float3 viewDirection = BrdfNormalizeOr(V, N);
@@ -323,11 +350,17 @@ float4 main_ps(VS_OUTPUT input) : SV_TARGET
         const float2 brdfIntegration = g_BrdfIntegrationLut.Sample(g_BrdfIntegrationSampler,
             float2(saturate(dot(N, viewDirection)), saturate(roughness)));
         const float3 iblF0 = isSpecularGlossiness ? specularF0 : lerp(dielectricF0, baseColor, metallic);
-        ambient = EvaluateSplitSumIbl(irradiance, prefiltered, brdfIntegration, N, viewDirection,
-            diffuseColor, iblF0, saturate(roughness), occlusion);
+        EvaluateSplitSumIblComponents(irradiance, prefiltered, brdfIntegration, N, viewDirection,
+            diffuseColor, iblF0, saturate(roughness), occlusion, ambientDiffuse, ambientSpecular);
     }
     float3 emissive = g_EmissiveMetallic.rgb * emissiveSample;
 
-    const float3 directLighting = isLegacy ? diffuseAccum + specAccum : brdfAccum;
-    return float4(ambient + directLighting + emissive, baseColorFactor.a * baseColorSample.a);
+    const float3 diffuseLighting = ambientDiffuse + diffuseAccum + emissive;
+    const float3 specularLighting = ambientSpecular + specAccum;
+    output.FinalColor = float4(diffuseLighting + specularLighting, baseAlpha);
+    output.Depth = input.pos.z;
+    output.WorldNormal = float4(N, 1.0f);
+    output.SpecularLighting = float4(specularLighting, baseAlpha);
+    output.DiffuseLighting = float4(diffuseLighting, baseAlpha);
+    return output;
 }

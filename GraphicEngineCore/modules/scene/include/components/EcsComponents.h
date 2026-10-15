@@ -97,11 +97,13 @@ struct SpotLight {
   bool CastShadows = true;
 };
 
-/// Projection and activation settings for an entity camera.
+/// Projection, output resolution, and activation settings for an authored scene camera.
 struct Camera {
   float FieldOfViewDegrees = 45.0F;
   float NearPlane = 0.1F;
   float FarPlane = 1000.0F;
+  uint32_t OutputWidth = 1920;  ///< Configured render output width in pixels; must be positive.
+  uint32_t OutputHeight = 1080; ///< Configured render output height in pixels; must be positive.
   int32_t Priority = 0;
   bool Active = true;
 };
@@ -153,8 +155,9 @@ inline auto Validate(const SpotLight& component) -> Status {
 inline auto Validate(const Camera& component) -> Status {
   if (!std::isfinite(component.FieldOfViewDegrees) || component.FieldOfViewDegrees <= 0.0F ||
       component.FieldOfViewDegrees >= 180.0F || !std::isfinite(component.NearPlane) || component.NearPlane <= 0.0F ||
-      !std::isfinite(component.FarPlane) || component.FarPlane <= component.NearPlane) {
-    return std::unexpected(MakeError("Camera field of view and clip planes are invalid"));
+      !std::isfinite(component.FarPlane) || component.FarPlane <= component.NearPlane || component.OutputWidth == 0 ||
+      component.OutputHeight == 0) {
+    return std::unexpected(MakeError("Camera projection, clip planes, or output resolution are invalid"));
   }
   return {};
 }

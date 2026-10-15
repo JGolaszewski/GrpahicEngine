@@ -1,4 +1,5 @@
 #pragma once
+#include "rendering/include/renderer/CameraView.h"
 #include "rendering/include/renderer/DebugGeometry.h"
 #include "rendering/include/renderer/Light.h"
 #include "rendering/src/RenderPacket.h"
@@ -83,10 +84,12 @@ public:
   DirectX::XMVECTOR FrustumPlanes[6] = {DirectX::XMVectorZero(), DirectX::XMVectorZero(), DirectX::XMVectorZero(),
                                         DirectX::XMVectorZero(), DirectX::XMVectorZero(), DirectX::XMVectorZero()};
 
-  void Initialize(const Engine::Scene* scene, Engine::EntityHandle cameraEntity, const Engine::Viewport* viewport);
+  void Initialize(const Engine::Scene* scene, const Engine::Renderer::CameraView& camera,
+                  const Engine::Viewport* viewport);
 
   void ExtractFrustumPlanes();
   bool IsSphereVisible(const DirectX::XMFLOAT3& center, float radius) const;
+  bool FinalRender = false;
 
   void Clear() {
     Queues.Clear();

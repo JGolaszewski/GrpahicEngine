@@ -17,6 +17,7 @@ namespace Engine {
 class Viewport;
 class ViewportTarget;
 } // namespace Engine
+class RenderPanel;
 
 class Editor final : public Engine::Application {
 public:
@@ -44,7 +45,6 @@ private:
   void DestroyViewport();
   void BuildDefaultDockLayoutIfNeeded(uint32_t dockspaceId);
   static void BuildDefaultDockLayout(uint32_t dockspaceId);
-  [[nodiscard]] auto FindActiveCamera() const -> Engine::EntityHandle;
   void UpdateEditorCamera(float deltaTime);
   [[nodiscard]] auto GetViewportTextureID() const -> void*;
 
@@ -52,11 +52,14 @@ private:
   std::shared_ptr<Engine::Viewport> m_EditorViewport;
   std::shared_ptr<Engine::ViewportTarget> m_EditorViewportTarget;
   std::vector<std::unique_ptr<EditorPanel>> m_Panels;
+  RenderPanel* m_RenderPanel = nullptr;
   EditorEventRouter m_EventRouter;
   std::vector<EditorEventRouter::Connection> m_PanelConnections;
   EditorUiIntegration m_UiIntegration;
   EditorConsole m_EditorConsole;
   Engine::EntityHandle m_SelectedEntity = Engine::InvalidEntityHandle;
+  Engine::Ecs::LocalTransform m_EditorCameraTransform{.Position = {0.0F, 0.0F, -5.0F}};
+  Engine::Ecs::Camera m_EditorCameraSettings;
   std::pair<float, float> m_ViewportSize = {0.0F, 0.0F};
   bool m_DefaultLayoutBuilt = false;
   bool m_EngineConsoleOpen = true;

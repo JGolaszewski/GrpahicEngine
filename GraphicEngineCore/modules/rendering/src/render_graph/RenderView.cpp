@@ -6,16 +6,9 @@
 
 namespace Engine::Renderer {
 
-void RenderView::Initialize(const Engine::Scene* scene, Engine::EntityHandle cameraEntity,
+void RenderView::Initialize(const Engine::Scene* scene, const Engine::Renderer::CameraView& camera,
                             const Engine::Viewport* viewport) {
-  if (scene == nullptr || cameraEntity == Engine::InvalidEntityHandle || viewport == nullptr) {
-    return;
-  }
-
-  const auto* camera = scene->World().Get<Engine::Ecs::Camera>(cameraEntity);
-  const auto* transform = scene->World().Get<Engine::Ecs::WorldTransform>(cameraEntity);
-  const auto* visibility = scene->World().Get<Engine::Ecs::GlobalVisibility>(cameraEntity);
-  if (camera == nullptr || transform == nullptr || visibility == nullptr || !camera->Active || !visibility->IsVisible) {
+  if (scene == nullptr || viewport == nullptr) {
     return;
   }
 
@@ -23,12 +16,10 @@ void RenderView::Initialize(const Engine::Scene* scene, Engine::EntityHandle cam
   ViewportHeight = viewport->GetHeight();
 
   TargetFramebuffer = static_cast<nvrhi::IFramebuffer*>(viewport->GetFramebufferHandle());
-  DirectX::XMVECTOR scale;
-  DirectX::XMVECTOR rotation;
-  DirectX::XMVECTOR position;
-  if (!DirectX::XMMatrixDecompose(&scale, &rotation, &position, DirectX::XMLoadFloat4x4(&transform->Matrix))) {
-    return;
-  }
+  const DirectX::XMFLOAT4 rotationValue{camera.Rotation[0], camera.Rotation[1], camera.Rotation[2], camera.Rotation[3]};
+  const DirectX::XMFLOAT3 positionValue{camera.Position[0], camera.Position[1], camera.Position[2]};
+  const DirectX::XMVECTOR rotation = DirectX::XMQuaternionNormalize(DirectX::XMLoadFloat4(&rotationValue));
+  const DirectX::XMVECTOR position = DirectX::XMLoadFloat3(&positionValue);
   const DirectX::XMVECTOR forward = DirectX::XMVector3Rotate(DirectX::XMVectorSet(0.0F, 0.0F, 1.0F, 0.0F), rotation);
   const DirectX::XMVECTOR up = DirectX::XMVector3Rotate(DirectX::XMVectorSet(0.0F, 1.0F, 0.0F, 0.0F), rotation);
   DirectX::XMStoreFloat3(&CameraPosition, position);
@@ -39,8 +30,8 @@ void RenderView::Initialize(const Engine::Scene* scene, Engine::EntityHandle cam
   }
 
   ViewMatrix = DirectX::XMMatrixLookToLH(position, forward, up);
-  ProjectionMatrix = DirectX::XMMatrixPerspectiveFovLH(DirectX::XMConvertToRadians(camera->FieldOfViewDegrees), aspect,
-                                                       camera->NearPlane, camera->FarPlane);
+  ProjectionMatrix = DirectX::XMMatrixPerspectiveFovLH(DirectX::XMConvertToRadians(camera.FieldOfViewDegrees), aspect,
+                                                       camera.NearPlane, camera.FarPlane);
   ViewProjection = ViewMatrix * ProjectionMatrix;
   ExtractFrustumPlanes();
 }

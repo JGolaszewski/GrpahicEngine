@@ -270,8 +270,15 @@ void ForwardPass::Setup(::Engine::Renderer::RGBuilder& builder, FrameBlackboard&
       output.IsDepth = depth;
       view->OutputAttachments.push_back(output);
     };
+    uint32_t colorIndex = 0;
     for (const nvrhi::FramebufferAttachment& attachment : framebuffer.colorAttachments) {
       importAttachment(attachment, false);
+      if (view->FinalRender && !view->OutputAttachments.empty()) {
+        auto& output = view->OutputAttachments.back();
+        output.ClearColor =
+            colorIndex == 1 ? nvrhi::Color(1.0F, 1.0F, 1.0F, 1.0F) : nvrhi::Color(0.0F, 0.0F, 0.0F, 0.0F);
+      }
+      ++colorIndex;
     }
     if (framebuffer.depthAttachment.valid()) {
       importAttachment(framebuffer.depthAttachment, true);
@@ -371,7 +378,7 @@ auto DebugPass::Execute(nvrhi::ICommandList* cmd, const ::Engine::Renderer::Rend
   }
 
   for (const ::Engine::Renderer::RenderView* view : ctx.GetBlackboard().GetSceneViews()) {
-    if (view != nullptr) {
+    if ((view != nullptr) && !view->FinalRender) {
       m_SceneRenderer->RenderDebugGeometry(cmd, *view);
     }
   }

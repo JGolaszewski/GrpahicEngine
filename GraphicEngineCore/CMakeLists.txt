@@ -47,7 +47,7 @@ target_link_libraries(GraphicEngineCore PUBLIC
     nvrhi
     Microsoft::DirectXMath
 )
-target_link_libraries(GraphicEngineCore PRIVATE nlohmann_json::nlohmann_json)
+target_link_libraries(GraphicEngineCore PRIVATE nlohmann_json::nlohmann_json OpenImageIO::OpenImageIO)
 target_include_directories(GraphicEngineCore SYSTEM PRIVATE
     "${ENGINE_TINYGLTF_INCLUDE_DIR}"
     "${ENGINE_STB_INCLUDE_DIR}"

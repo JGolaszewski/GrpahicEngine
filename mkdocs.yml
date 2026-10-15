@@ -38,7 +38,11 @@ nav:
       - C++ guidelines: cpp-guidelines.md
       - Logging: logging.md
       - Rendering:
+          - Cameras: rendering/cameras.md
+          - Editor render panel: rendering/editor-render-panel.md
+          - Render output and image export: rendering/output.md
           - Shadows: rendering/shadows.md
+          - Final rendering: rendering/final-render.md
   - Workflows:
       - Development workflow: development-workflow.md
       - Testing: testing.md
