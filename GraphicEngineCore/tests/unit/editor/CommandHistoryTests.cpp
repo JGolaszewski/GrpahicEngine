@@ -2,6 +2,7 @@
 
 #include <gtest/gtest.h>
 
+#include <functional>
 #include <memory>
 
 namespace {
@@ -11,16 +12,21 @@ public:
   ValueCommand(int& value, int nextValue, int& destructions)
       : m_Value(value), m_PreviousValue(value), m_NextValue(nextValue), m_Destructions(destructions) {}
 
-  ~ValueCommand() override { ++m_Destructions; }
+  ValueCommand(const ValueCommand&) = delete;
+  auto operator=(const ValueCommand&) -> ValueCommand& = delete;
+  ValueCommand(ValueCommand&&) = delete;
+  auto operator=(ValueCommand&&) -> ValueCommand& = delete;
 
-  void Execute() override { m_Value = m_NextValue; }
-  void Undo() override { m_Value = m_PreviousValue; }
+  ~ValueCommand() override { ++m_Destructions.get(); }
+
+  void Execute() override { m_Value.get() = m_NextValue; }
+  void Undo() override { m_Value.get() = m_PreviousValue; }
 
 private:
-  int& m_Value;
+  std::reference_wrapper<int> m_Value;
   int m_PreviousValue;
   int m_NextValue;
-  int& m_Destructions;
+  std::reference_wrapper<int> m_Destructions;
 };
 
 TEST(CommandHistoryTests, ExecutesUndoesAndRedoesInOrder) {

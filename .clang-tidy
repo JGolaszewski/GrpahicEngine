@@ -1,4 +1,5 @@
 # Same-typed coordinate/callback parameters and signed legacy flag bitmasks are intentional.
+# Disable container indexing diagnostics: ECS row loops use a common validated span length, and std::span has no C++23 at().
 Checks: >
   -*,
   bugprone-*,
@@ -12,9 +13,10 @@ Checks: >
   -readability-magic-numbers,
   -cppcoreguidelines-pro-bounds-pointer-arithmetic,
   -cppcoreguidelines-pro-bounds-constant-array-index,
+  -cppcoreguidelines-pro-bounds-avoid-unchecked-container-access,
   -modernize-use-auto
 
-WarningsAsErrors: 'bugprone-*,performance-*'
+WarningsAsErrors: '*'
 HeaderFilterRegex: '.*(GraphicEngineCore|GraphicEngineEditor|GraphicEngineBackends|SandboxApp)/.*'
 ExcludeHeaderFilterRegex: '.*(vendor|out|build)/.*'
 FormatStyle: file
@@ -22,3 +24,15 @@ SystemHeaders: false
 CheckOptions:
   - key: modernize-use-default-member-init.UseAssignment
     value: '1'
+  # Short component names are conventional for the small vector and matrix
+  # calculations used by the renderer and asset importer.
+  - key: readability-identifier-length.IgnoredVariableNames
+    value: '^([a-c]|[r-z]|[a-c][0-9]|[r-z][0-9]|i[a-c])$'
+  - key: readability-identifier-length.IgnoredParameterNames
+    value: '^([a-c]|[r-z]|[a-c][0-9]|[r-z][0-9]|i[a-c])$'
+  - key: readability-identifier-length.IgnoredLoopCounterNames
+    value: '^[ijkc_]$'
+  - key: readability-identifier-length.MinimumVariableNameLength
+    value: '2'
+  - key: readability-identifier-length.MinimumParameterNameLength
+    value: '2'

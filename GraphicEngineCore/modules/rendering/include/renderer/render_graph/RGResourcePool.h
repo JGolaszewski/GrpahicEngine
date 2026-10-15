@@ -1,7 +1,7 @@
 #pragma once
 
-#include "runtime/include/CoreExport.h"
 #include "rendering/include/renderer/render_graph/RGResources.h"
+#include "runtime/include/CoreExport.h"
 
 #include <nvrhi/nvrhi.h>
 
@@ -13,24 +13,21 @@
 #  pragma warning(disable : 4251) // These engine DLL types intentionally expose same-toolchain member types.
 #endif
 
-namespace Engine::Renderer
-{
+namespace Engine::Renderer {
 
-class ENGINE_API RGResourcePool
-{
-  public:
-    RGResourcePool(nvrhi::DeviceHandle device);
+class ENGINE_API RGResourcePool {
+public:
+  RGResourcePool(nvrhi::DeviceHandle device);
 
-    nvrhi::TextureHandle Acquire(const RGTextureDesc &desc);
-    void Release(const RGTextureDesc &desc, nvrhi::TextureHandle texture);
-    void Clear();
+  nvrhi::TextureHandle Acquire(const RGTextureDesc& desc);
+  void Release(const RGTextureDesc& desc, nvrhi::TextureHandle texture);
+  void Clear();
 
-  private:
-    nvrhi::DeviceHandle m_Device;
+private:
+  nvrhi::DeviceHandle m_Device;
 
-    std::unordered_map<RGTextureDesc, std::vector<nvrhi::TextureHandle>, RGTextureDescHasher,
-                       RGTextureDescEqual>
-        m_FreeTextures;
+  std::unordered_map<RGTextureDesc, std::vector<nvrhi::TextureHandle>, RGTextureDescHasher, RGTextureDescEqual>
+      m_FreeTextures;
 };
 
 } // namespace Engine::Renderer

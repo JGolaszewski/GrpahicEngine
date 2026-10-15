@@ -49,6 +49,7 @@ add_library(RenderBackendD3D11 STATIC
     src/backends/D3D11Backend.cpp
     src/windows/GLFWWindow.cpp
 )
+engine_enable_strict_msvc_checks(RenderBackendD3D11)
 
 target_include_directories(RenderBackendD3D11 PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/include"

@@ -8,6 +8,7 @@
       "binaryDir": "${sourceDir}/out/build/${presetName}",
       "installDir": "${sourceDir}/out/install/${presetName}",
       "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
         "CMAKE_C_COMPILER": "cl.exe",
         "CMAKE_CXX_COMPILER": "cl.exe",
         "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
@@ -38,12 +39,30 @@
       }
     },
     {
+      "name": "x64-asan",
+      "displayName": "x64 Debug with MSVC AddressSanitizer",
+      "inherits": "x64-debug",
+      "cacheVariables": {
+        "CMAKE_C_FLAGS": "/fsanitize=address",
+        "CMAKE_CXX_FLAGS": "/fsanitize=address"
+      }
+    },
+    {
       "name": "x64-release",
       "displayName": "x64 Release",
       "inherits": "x64-debug",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "ENGINE_ASSET_ROOT": "${sourceDir}/out/build/${presetName}/bin"
+      }
+    },
+    {
+      "name": "x64-release-benchmarks",
+      "displayName": "x64 Release with Benchmarks",
+      "inherits": "x64-release",
+      "cacheVariables": {
+        "ENGINE_BUILD_BENCHMARKS": "ON",
+        "VCPKG_MANIFEST_FEATURES": "benchmarks"
       }
     },
     {
@@ -67,6 +86,41 @@
         "CMAKE_BUILD_TYPE": "Release",
         "ENGINE_ASSET_ROOT": "${sourceDir}/out/build/${presetName}/bin"
       }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "x64-release-benchmarks",
+      "configurePreset": "x64-release-benchmarks",
+      "targets": ["GraphicEngineBenchmarks"]
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "x64-debug",
+      "configurePreset": "x64-debug",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "x64-debug-unit",
+      "displayName": "x64 Debug Unit Tests",
+      "configurePreset": "x64-debug",
+      "filter": { "include": { "label": "unit" } },
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "x64-debug-integration",
+      "displayName": "x64 Debug Integration Tests",
+      "configurePreset": "x64-debug",
+      "filter": { "include": { "label": "integration" } },
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "x64-release-benchmarks",
+      "displayName": "x64 Release Benchmark Smoke Tests",
+      "configurePreset": "x64-release-benchmarks",
+      "filter": { "include": { "label": "benchmark" } },
+      "output": { "outputOnFailure": true }
     }
   ]
 }

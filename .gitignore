@@ -16,6 +16,12 @@ vendor/
 !ENGINE_REAUDIT_REPORT_V2.md
 !GLTF_IMPLEMENTATION_GAP_REPORT.md
 !LOGGING_DEBUGGING_IMPROVEMENT_PLAN.md
+!TESTING_IMPLEMENTATION_PROMPT.md
+!SPRAWOZDANIE_POSTPROCESSING.md
+!ARCHETYPE_ECS_ARCHITECTURE_PLAN.md
+!DOCUMENTATION_PIPELINE_PLAN.md
+!docs/*.md
+!docs/**/*.md
 !docs/logging.md
 
 # =========================
@@ -65,3 +71,5 @@ compile_commands.json
 # =========================
 .codex/auth.json  # Codex auth tokens
 .codex/worktrees/ # Local Codex background worktrees
+.venv-docs/
+site/

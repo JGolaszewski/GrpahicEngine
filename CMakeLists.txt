@@ -33,7 +33,23 @@ endif()
 
 project ("GraphicEngine")
 
+cmake_policy(SET CMP0077 NEW)
+
 include(CTest)
+
+function(engine_enable_strict_msvc_checks TARGET_NAME)
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+        target_compile_options(${TARGET_NAME} PRIVATE
+            /W4
+            /WX
+            /permissive-
+            /EHsc
+            /analyze
+            /w14242
+            /w14265
+        )
+    endif()
+endfunction()
 
 find_program(ENGINE_CLANG_TIDY_EXECUTABLE NAMES clang-tidy)
 if(NOT ENGINE_CLANG_TIDY_EXECUTABLE AND DEFINED ENV{VSINSTALLDIR})
@@ -55,6 +71,7 @@ endif()
 set(NVRHI_WITH_DX11 ON)
 set(ENGINE_MAX_LIGHTS 8 CACHE STRING "Maximum number of lights supported by CPU and GPU lighting buffers")
 option(ENGINE_ENABLE_LOGGING "Compile engine logging calls" ON)
+option(ENGINE_LINT_DURING_BUILD "Run clang-tidy as a dependency of first-party build targets" ON)
 set(ENGINE_LOG_LEVEL_MIN 0 CACHE STRING "Global minimum log level (0=Trace, 1=Debug, 2=Info, 3=Warn, 4=Error, 5=Fatal, 6=None)")
 set_property(CACHE ENGINE_LOG_LEVEL_MIN PROPERTY STRINGS 0 1 2 3 4 5 6)
 set(ENGINE_LOG_LEVEL_MIN_DEBUG "" CACHE STRING "Optional Debug log cutoff override; empty uses ENGINE_LOG_LEVEL_MIN")
@@ -136,6 +153,9 @@ target_link_libraries(imgui PUBLIC
     d3d11
 )
 
+# Preserve the parent project's option() values when the vendored project uses
+# a minimum CMake version that predates CMP0077.
+set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
 add_subdirectory(vendor/nvrhi)
 
 # NVRHI is vendored, so suppress diagnostics from its public headers in consumers.

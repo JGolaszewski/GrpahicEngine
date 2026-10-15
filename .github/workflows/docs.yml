@@ -1,0 +1,48 @@
+name: Documentation
+
+on:
+  push:
+    paths:
+      - '.github/workflows/docs.yml'
+      - 'Doxyfile'
+      - 'mkdocs.yml'
+      - 'requirements-docs.txt'
+      - 'docs/**'
+      - 'GraphicEngineCore/modules/**/include/**'
+      - 'scripts/LOGGING_CMAKE_SNIPPET.cmake'
+      - 'scripts/build-docs.ps1'
+  pull_request:
+    paths:
+      - '.github/workflows/docs.yml'
+      - 'Doxyfile'
+      - 'mkdocs.yml'
+      - 'requirements-docs.txt'
+      - 'docs/**'
+      - 'GraphicEngineCore/modules/**/include/**'
+      - 'scripts/LOGGING_CMAKE_SNIPPET.cmake'
+      - 'scripts/build-docs.ps1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-docs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Install Doxygen
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes doxygen
+
+      - name: Build documentation
+        shell: pwsh
+        run: ./scripts/build-docs.ps1

@@ -5,7 +5,6 @@
 #include <string>
 #include <vector>
 
-#include "runtime/include/CoreExport.h"
 #include "rendering/include/renderer/render_graph/FrameBlackboard.h"
 #include "rendering/include/renderer/render_graph/FrameContext.h"
 #include "rendering/include/renderer/render_graph/RGBuilder.h"
@@ -13,64 +12,62 @@
 #include "rendering/include/renderer/render_graph/RGResources.h"
 #include "rendering/include/renderer/render_graph/RenderContext.h"
 #include "rendering/include/renderer/render_graph/RenderPass.h"
+#include "runtime/include/CoreExport.h"
 
 #ifdef _MSC_VER
 #  pragma warning(push)
 #  pragma warning(disable : 4251) // These engine DLL types intentionally expose same-toolchain member types.
 #endif
 
-namespace Engine::Renderer
-{
+namespace Engine::Renderer {
 
-struct RGPassNode
-{
-    std::unique_ptr<IRenderPass> pass;
-    RGPassDependencies deps;
+struct RGPassNode {
+  std::unique_ptr<IRenderPass> pass;
+  RGPassDependencies deps;
 
-    RGPassNode() = default;
+  RGPassNode() = default;
 
-    // Block copying
-    RGPassNode(const RGPassNode &) = delete;
-    RGPassNode &operator=(const RGPassNode &) = delete;
+  // Block copying
+  RGPassNode(const RGPassNode&) = delete;
+  RGPassNode& operator=(const RGPassNode&) = delete;
 
-    // Move allow
-    RGPassNode(RGPassNode &&) noexcept = default;
-    RGPassNode &operator=(RGPassNode &&) noexcept = default;
+  // Move allow
+  RGPassNode(RGPassNode&&) noexcept = default;
+  RGPassNode& operator=(RGPassNode&&) noexcept = default;
 };
 
-class ENGINE_API RenderGraph
-{
-  private:
-    RGResourceRegistry m_Registry;
-    FrameContext &m_FrameContext;
-    nvrhi::DeviceHandle m_Device;
-    std::vector<RGPassNode> m_Nodes;
-    std::string m_LastError;
-    bool m_Compiled = false;
+class ENGINE_API RenderGraph {
+private:
+  bool AcquireTransientResources(uint32_t passIndex);
+  void TrackImportedResources(uint32_t passIndex, nvrhi::ICommandList* commandList);
+  void ApplyAccessStates(uint32_t passIndex, nvrhi::ICommandList* commandList);
+  void ReleaseTransientResources();
+  void ReleaseResourcesAtPassEnd(uint32_t passIndex, nvrhi::ICommandList* commandList);
 
-  public:
-    RenderGraph(nvrhi::DeviceHandle device, FrameContext &frameContext);
+  RGResourceRegistry m_Registry;
+  FrameContext& m_FrameContext;
+  nvrhi::DeviceHandle m_Device;
+  std::vector<RGPassNode> m_Nodes;
+  std::string m_LastError;
+  bool m_Compiled = false;
 
-    FrameBlackboard &GetBlackboard()
-    {
-        return m_FrameContext.GetBlackboard();
-    }
+public:
+  RenderGraph(nvrhi::DeviceHandle device, FrameContext& frameContext);
 
-    void Reset();
-    bool AddPass(std::unique_ptr<IRenderPass> pass);
-    bool Compile();
-    bool Execute(nvrhi::ICommandList *cmd);
-    const std::string &GetLastError() const noexcept
-    {
-        return m_LastError;
-    }
-    std::string Dump() const;
+  FrameBlackboard& GetBlackboard() { return m_FrameContext.GetBlackboard(); }
 
-    RenderGraph(const RenderGraph &) = delete;
-    RenderGraph &operator=(const RenderGraph &) = delete;
+  void Reset();
+  bool AddPass(std::unique_ptr<IRenderPass> pass);
+  bool Compile();
+  bool Execute(nvrhi::ICommandList* cmd);
+  const std::string& GetLastError() const noexcept { return m_LastError; }
+  std::string Dump() const;
 
-    RenderGraph(RenderGraph &&) noexcept = default;
-    RenderGraph &operator=(RenderGraph &&) noexcept = default;
+  RenderGraph(const RenderGraph&) = delete;
+  RenderGraph& operator=(const RenderGraph&) = delete;
+
+  RenderGraph(RenderGraph&&) noexcept = default;
+  RenderGraph& operator=(RenderGraph&&) noexcept = default;
 };
 
 } // namespace Engine::Renderer

@@ -1,222 +1,214 @@
 #include "panels/include/HierarchyPanel.h"
 
 #include <algorithm>
+#include <cctype>
+#include <cstring>
 #include <imgui.h>
 #include <string>
+#include <utility>
 
-// ================================================================================
-// HierarchyPanel::OnEvent
-// ================================================================================
-// Listens for SceneChangedEvent (to update entity counts) and
-// EntitySelectedEvent / EntityDeselectedEvent (to update selection highlight).
-// ================================================================================
+namespace {
+constexpr const char* kEntityPayload = "ECS_ENTITY";
 
-void HierarchyPanel::OnEvent(Engine::Events::Event &event)
-{
-    Engine::Events::EventDispatcher dispatcher(event);
+auto HasText(const char* text, const char* query) -> bool {
+  if (query[0] == '\0') {
+    return true;
+  }
+  std::string haystack(text);
+  std::string needle(query);
+  std::ranges::transform(haystack, haystack.begin(),
+                         [](unsigned char value) -> char { return static_cast<char>(std::tolower(value)); });
+  std::ranges::transform(needle, needle.begin(),
+                         [](unsigned char value) -> char { return static_cast<char>(std::tolower(value)); });
+  return haystack.contains(needle);
+}
+} // namespace
 
-    dispatcher.Dispatch<SceneChangedEvent>([this](const auto &e) {
-        m_ObjectIds = e.GetObjectIds();
-        m_LightIds = e.GetLightIds();
-        m_CameraIds = e.GetCameraIds();
-        return false;
-    });
-
-    dispatcher.Dispatch<EntitySelectedEvent>([this](const auto &e) {
-        m_SelectedItemType = e.GetItemType();
-        m_SelectedObjectIndex = e.GetObjectIndex();
-        m_SelectedLightIndex = e.GetLightIndex();
-        m_SelectedCameraIndex = e.GetCameraIndex();
-        return false;
-    });
-
-    dispatcher.Dispatch<EntityDeselectedEvent>([this](const auto &) {
-        m_SelectedItemType = EntitySelectedEvent::ItemType::None;
-        m_SelectedObjectIndex = -1;
-        m_SelectedLightIndex = -1;
-        m_SelectedCameraIndex = -1;
-        return false;
-    });
-
-    dispatcher.Dispatch<AssetRegistryChangedEvent>([this](const auto &update) {
-        m_Models = update.GetModels();
-        if (m_Models.empty())
-            m_SelectedModelIndex = 0;
-        else
-            m_SelectedModelIndex =
-                (std::clamp)(m_SelectedModelIndex, 0, static_cast<int>(m_Models.size()) - 1);
-        return false;
-    });
+void HierarchyPanel::OnEvent(Engine::Events::Event& event) {
+  Engine::Events::EventDispatcher dispatcher(event);
+  dispatcher.Dispatch<SceneChangedEvent>([this](const auto& sceneEvent) -> bool {
+    m_Scene = sceneEvent.GetScene();
+    return false;
+  });
+  dispatcher.Dispatch<EcsEntitySelectedEvent>([this](const auto& selection) -> bool {
+    m_SelectedEntity = selection.GetEntity();
+    return false;
+  });
+  dispatcher.Dispatch<EntityDeselectedEvent>([this](const auto&) -> bool {
+    m_SelectedEntity = Engine::InvalidEntityHandle;
+    return false;
+  });
 }
 
-void HierarchyPanel::Draw()
-{
-    ImGui::Begin("Scene", nullptr, ImGuiWindowFlags_NoCollapse);
-
-    if (ImGui::CollapsingHeader("Objects", ImGuiTreeNodeFlags_DefaultOpen))
-    {
-        for (size_t i = 0; i < m_ObjectIds.size(); ++i)
-        {
-            const std::string label = "Object " + std::to_string(i);
-            const bool selected = m_SelectedItemType == EntitySelectedEvent::ItemType::Object &&
-                                  m_SelectedObjectIndex == static_cast<int>(i);
-            if (ImGui::Selectable(label.c_str(), selected))
-            {
-                EmitEvent(std::make_unique<EntitySelectedEvent>(
-                    EntitySelectedEvent::ItemType::Object, static_cast<int>(i), -1, -1, m_ObjectIds[i],
-                    Engine::InvalidLightId, Engine::InvalidCameraId));
-            }
-        }
-
-        if (m_ObjectIds.empty())
-        {
-            ImGui::TextDisabled("No active objects");
-        }
-    }
-
-    if (ImGui::CollapsingHeader("Lights", ImGuiTreeNodeFlags_DefaultOpen))
-    {
-        for (size_t i = 0; i < m_LightIds.size(); ++i)
-        {
-            const std::string label = "Light " + std::to_string(i);
-            const bool selected = m_SelectedItemType == EntitySelectedEvent::ItemType::Light &&
-                                  m_SelectedLightIndex == static_cast<int>(i);
-            if (ImGui::Selectable(label.c_str(), selected))
-            {
-                EmitEvent(std::make_unique<EntitySelectedEvent>(
-                    EntitySelectedEvent::ItemType::Light, -1, static_cast<int>(i), -1,
-                    Engine::InvalidEntityId, m_LightIds[i], Engine::InvalidCameraId));
-            }
-        }
-
-        if (m_LightIds.empty())
-        {
-            ImGui::TextDisabled("No lights");
-        }
-    }
-
-    if (ImGui::CollapsingHeader("Cameras", ImGuiTreeNodeFlags_DefaultOpen))
-    {
-        for (size_t i = 0; i < m_CameraIds.size(); ++i)
-        {
-            const std::string label = "Camera " + std::to_string(i);
-            const bool selected = m_SelectedItemType == EntitySelectedEvent::ItemType::Camera &&
-                                  m_SelectedCameraIndex == static_cast<int>(i);
-            if (ImGui::Selectable(label.c_str(), selected))
-            {
-                EmitEvent(std::make_unique<EntitySelectedEvent>(EntitySelectedEvent::ItemType::Camera, -1, -1,
-                                                                static_cast<int>(i), Engine::InvalidEntityId,
-                                                                Engine::InvalidLightId, m_CameraIds[i]));
-            }
-        }
-
-        if (m_CameraIds.empty())
-        {
-            ImGui::TextDisabled("No cameras");
-        }
-    }
-
-    ImGui::Spacing();
-    DrawAddObjectModal();
-
+void HierarchyPanel::Draw() {
+  ImGui::Begin("Scene Hierarchy", nullptr, ImGuiWindowFlags_NoCollapse);
+  if (!m_Scene) {
+    ImGui::TextUnformatted("No active scene");
     ImGui::End();
+    return;
+  }
+
+  (void)ImGui::InputTextWithHint("##hierarchy-filter", "Search entities or components...", m_Filter.data(),
+                                 m_Filter.size());
+  const std::vector<Engine::Scene::EntitySnapshot> entities = m_Scene->HierarchySnapshot();
+  for (const auto& entity : entities) {
+    if (entity.Parent == Engine::InvalidEntityHandle && SubtreeMatches(entity, entities)) {
+      DrawEntityNode(entity, entities);
+    }
+  }
+  if (entities.empty()) {
+    ImGui::TextUnformatted("No entities");
+  }
+  DrawRootDropTarget();
+  if (ImGui::BeginPopupContextWindow("HierarchyEmptyContext", ImGuiPopupFlags_MouseButtonRight)) {
+    DrawCreateMenu(Engine::InvalidEntityHandle);
+    ImGui::EndPopup();
+  }
+  if (ImGui::Button("+ Create Entity", ImVec2(-1.0F, 0.0F))) {
+    ImGui::OpenPopup("Create entity");
+  }
+  if (ImGui::BeginPopup("Create entity")) {
+    DrawCreateMenu(Engine::InvalidEntityHandle);
+    ImGui::EndPopup();
+  }
+  ImGui::End();
 }
 
-void HierarchyPanel::DrawAddObjectModal()
-{
-    if (ImGui::Button("Add", ImVec2(-1.0f, 0.0f)))
-    {
-        ImGui::OpenPopup("Add object to scene");
+auto HierarchyPanel::MatchesFilter(const Engine::Scene::EntitySnapshot& entity) const -> bool {
+  if (m_Filter[0] == '\0') {
+    return true;
+  }
+  const char* query = m_Filter.data();
+  if (HasText(entity.Name.c_str(), query)) {
+    return true;
+  }
+  if (HasText("Transform", query) || HasText("Hierarchy", query) || HasText("PersistentIdentity", query)) {
+    return true;
+  }
+  return (entity.HasMeshRenderer && (HasText("MeshRenderer", query) || HasText("Mesh", query))) ||
+         (entity.HasSpotLight && (HasText("SpotLight", query) || HasText("Light", query))) ||
+         (entity.HasCamera && HasText("Camera", query));
+}
+
+auto HierarchyPanel::SubtreeMatches(const Engine::Scene::EntitySnapshot& entity,
+                                    const std::vector<Engine::Scene::EntitySnapshot>& entities) const -> bool {
+  if (MatchesFilter(entity)) {
+    return true;
+  }
+  return std::ranges::any_of(entities, [this, &entity, &entities](const auto& candidate) -> bool {
+    return candidate.Parent == entity.Handle && SubtreeMatches(candidate, entities);
+  });
+}
+
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
+void HierarchyPanel::DrawEntityNode(const Engine::Scene::EntitySnapshot& entity,
+                                    const std::vector<Engine::Scene::EntitySnapshot>& entities) {
+  const bool hasChildren = std::ranges::any_of(entities, [this, &entity, &entities](const auto& candidate) -> bool {
+    return candidate.Parent == entity.Handle && SubtreeMatches(candidate, entities);
+  });
+  if (!SubtreeMatches(entity, entities)) {
+    return;
+  }
+  const std::string name = entity.Name.empty() ? "Entity " + std::to_string(entity.Handle.Index) : entity.Name;
+  const char* icon = "[Entity]";
+  if (entity.HasSpotLight) {
+    icon = "[Light]";
+  } else if (entity.HasCamera) {
+    icon = "[Camera]";
+  } else if (entity.HasMeshRenderer) {
+    icon = "[Mesh]";
+  }
+  const std::string label = std::string(icon) + " " + name;
+  ImGui::PushID(static_cast<int>(entity.Handle.Index));
+  ImGui::PushID(static_cast<int>(entity.Handle.Generation));
+  const ImGuiTreeNodeFlags flags =
+      (hasChildren ? ImGuiTreeNodeFlags_None : ImGuiTreeNodeFlags_Leaf) | ImGuiTreeNodeFlags_OpenOnArrow |
+      ImGuiTreeNodeFlags_SpanAvailWidth |
+      (m_SelectedEntity == entity.Handle ? ImGuiTreeNodeFlags_Selected : ImGuiTreeNodeFlags_None);
+  const bool expanded = ImGui::TreeNodeEx(label.c_str(), flags);
+  if (ImGui::IsItemClicked()) {
+    EmitEvent(std::make_unique<EcsEntitySelectedEvent>(entity.Handle));
+  }
+  if (ImGui::BeginPopupContextItem("EntityContext")) {
+    if (ImGui::MenuItem("Create child entity")) {
+      EmitEvent(std::make_unique<EcsEntityCreateRequestedEvent>("Entity", entity.Handle));
     }
-
-    if (!ImGui::BeginPopupModal("Add object to scene", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
-    {
-        return;
+    ImGui::Separator();
+    if (ImGui::MenuItem("Create child mesh")) {
+      EmitEvent(
+          std::make_unique<EcsEntityCreateRequestedEvent>("Mesh", entity.Handle, Engine::Scene::EntityPreset::Mesh));
     }
-
-    static const char *shapeItems[] = {"Cube", "Sphere", "Plane", "Cone"};
-    int selectedShape = static_cast<int>(m_SpawnShape);
-    if (ImGui::Combo("Type", &selectedShape, shapeItems, IM_ARRAYSIZE(shapeItems)))
-    {
-        m_SpawnShape = static_cast<SpawnShapeType>(selectedShape);
+    if (ImGui::MenuItem("Create child spot light")) {
+      EmitEvent(std::make_unique<EcsEntityCreateRequestedEvent>("Spot Light", entity.Handle,
+                                                                Engine::Scene::EntityPreset::SpotLight));
     }
-
-    float spawnPosition[3] = {m_SpawnPosition.x, m_SpawnPosition.y, m_SpawnPosition.z};
-    if (ImGui::DragFloat3("Start position", spawnPosition, 0.05f))
-    {
-        m_SpawnPosition = {spawnPosition[0], spawnPosition[1], spawnPosition[2]};
+    if (ImGui::MenuItem("Create child camera")) {
+      EmitEvent(std::make_unique<EcsEntityCreateRequestedEvent>("Camera", entity.Handle,
+                                                                Engine::Scene::EntityPreset::Camera));
     }
-
-    float spawnScale[3] = {m_SpawnScale.x, m_SpawnScale.y, m_SpawnScale.z};
-    if (ImGui::DragFloat3("Start scale", spawnScale, 0.05f, 0.05f, 100.0f))
-    {
-        m_SpawnScale = {spawnScale[0], spawnScale[1], spawnScale[2]};
+    ImGui::Separator();
+    if (ImGui::MenuItem("Delete entity")) {
+      EmitEvent(std::make_unique<EcsEntityDeleteRequestedEvent>(entity.Handle));
     }
-
-    float spawnColor[4] = {m_SpawnColor.x, m_SpawnColor.y, m_SpawnColor.z, m_SpawnColor.w};
-    if (ImGui::ColorEdit4("Start color", spawnColor))
-    {
-        m_SpawnColor = {spawnColor[0], spawnColor[1], spawnColor[2], spawnColor[3]};
-    }
-
-    float spawnEmissive[3] = {m_SpawnEmissive.x, m_SpawnEmissive.y, m_SpawnEmissive.z};
-    if (ImGui::ColorEdit3("Start emission", spawnEmissive))
-    {
-        m_SpawnEmissive = {spawnEmissive[0], spawnEmissive[1], spawnEmissive[2]};
-    }
-
-    ImGui::SliderFloat("Start metallic", &m_SpawnMetallic, 0.0f, 1.0f);
-    ImGui::SliderFloat("Start roughness", &m_SpawnRoughness, 0.0f, 1.0f);
-
-    if (!m_Models.empty())
-    {
-        std::vector<const char *> modelNames;
-        modelNames.reserve(m_Models.size());
-        for (const auto &model : m_Models)
-            modelNames.push_back(model.name.c_str());
-        ImGui::SeparatorText("Imported model");
-        ImGui::Combo("Asset", &m_SelectedModelIndex, modelNames.data(), static_cast<int>(modelNames.size()));
-        if (ImGui::Button("Add selected model", ImVec2(-1.0f, 0.0f)))
-        {
-            const auto &model = m_Models[static_cast<size_t>(m_SelectedModelIndex)];
-            EmitEvent(std::make_unique<AddModelRequestedEvent>(model.guid, m_SpawnPosition, m_SpawnScale));
-            m_SpawnPosition.x += 2.5f;
-            ImGui::CloseCurrentPopup();
-        }
-    }
-
-    if (ImGui::Button("Add", ImVec2(140.0f, 0.0f)))
-    {
-        AddObjectRequestedEvent::Shape shape;
-        switch (m_SpawnShape)
-        {
-        case SpawnShapeType::Cube:
-            shape = AddObjectRequestedEvent::Shape::Cube;
-            break;
-        case SpawnShapeType::Sphere:
-            shape = AddObjectRequestedEvent::Shape::Sphere;
-            break;
-        case SpawnShapeType::Plane:
-            shape = AddObjectRequestedEvent::Shape::Plane;
-            break;
-        case SpawnShapeType::Cone:
-            shape = AddObjectRequestedEvent::Shape::Cone;
-            break;
-        }
-
-        EmitEvent(std::make_unique<AddObjectRequestedEvent>(shape, m_SpawnPosition, m_SpawnScale,
-                                                            m_SpawnColor, m_SpawnEmissive, m_SpawnMetallic,
-                                                            m_SpawnRoughness));
-
-        m_SpawnPosition.x += 2.5f;
-        ImGui::CloseCurrentPopup();
-    }
-
-    ImGui::SameLine();
-    if (ImGui::Button("Cancel", ImVec2(140.0f, 0.0f)))
-    {
-        ImGui::CloseCurrentPopup();
-    }
-
     ImGui::EndPopup();
+  }
+  if (ImGui::BeginDragDropSource()) {
+    ImGui::SetDragDropPayload(kEntityPayload, &entity.Handle, sizeof(entity.Handle));
+    ImGui::TextUnformatted(label.c_str());
+    ImGui::EndDragDropSource();
+  }
+  if (ImGui::BeginDragDropTarget()) {
+    if (const auto* payload = ImGui::AcceptDragDropPayload(kEntityPayload);
+        payload != nullptr && std::cmp_equal(payload->DataSize, sizeof(Engine::EntityHandle))) {
+      Engine::EntityHandle dragged;
+      std::memcpy(&dragged, payload->Data, sizeof(dragged));
+      if (dragged != entity.Handle) {
+        EmitEvent(std::make_unique<EcsEntityReparentRequestedEvent>(dragged, entity.Handle));
+      }
+    }
+    ImGui::EndDragDropTarget();
+  }
+  if (expanded) {
+    for (const auto& child : entities) {
+      if (child.Parent == entity.Handle && SubtreeMatches(child, entities)) {
+        DrawEntityNode(child, entities);
+      }
+    }
+    ImGui::TreePop();
+  }
+  ImGui::PopID();
+  ImGui::PopID();
+}
+
+void HierarchyPanel::DrawRootDropTarget() {
+  ImGui::Separator();
+  (void)ImGui::Button("Scene Root", ImVec2(-1.0F, 0.0F));
+  if (ImGui::BeginDragDropTarget()) {
+    if (const auto* payload = ImGui::AcceptDragDropPayload(kEntityPayload);
+        payload != nullptr && std::cmp_equal(payload->DataSize, sizeof(Engine::EntityHandle))) {
+      Engine::EntityHandle dragged;
+      std::memcpy(&dragged, payload->Data, sizeof(dragged));
+      EmitEvent(std::make_unique<EcsEntityReparentRequestedEvent>(dragged, Engine::InvalidEntityHandle));
+    }
+    ImGui::EndDragDropTarget();
+  }
+}
+
+void HierarchyPanel::DrawCreateMenu(Engine::EntityHandle parent) {
+  (void)ImGui::InputText("Name", m_NewEntityName.data(), m_NewEntityName.size());
+  if (ImGui::MenuItem("Create Empty Entity")) {
+    EmitEvent(std::make_unique<EcsEntityCreateRequestedEvent>(m_NewEntityName.data(), parent));
+  }
+  if (ImGui::MenuItem("Create Mesh Entity")) {
+    EmitEvent(std::make_unique<EcsEntityCreateRequestedEvent>(m_NewEntityName.data(), parent,
+                                                              Engine::Scene::EntityPreset::Mesh));
+  }
+  if (ImGui::MenuItem("Create Spot Light")) {
+    EmitEvent(std::make_unique<EcsEntityCreateRequestedEvent>(m_NewEntityName.data(), parent,
+                                                              Engine::Scene::EntityPreset::SpotLight));
+  }
+  if (ImGui::MenuItem("Create Camera")) {
+    EmitEvent(std::make_unique<EcsEntityCreateRequestedEvent>(m_NewEntityName.data(), parent,
+                                                              Engine::Scene::EntityPreset::Camera));
+  }
 }

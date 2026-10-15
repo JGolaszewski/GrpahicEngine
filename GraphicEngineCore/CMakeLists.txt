@@ -5,11 +5,14 @@ file(GLOB_RECURSE CORE_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/modules/*/src/*.cpp"
 )
 
+set(CORE_MODULES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/modules")
+
 function(configure_engine_module TARGET MODULE_NAME)
+    engine_enable_strict_msvc_checks(${TARGET})
     target_include_directories(${TARGET}
         PUBLIC
-            "${CMAKE_CURRENT_SOURCE_DIR}/modules"
-            "${CMAKE_CURRENT_SOURCE_DIR}/modules/${MODULE_NAME}/include"
+            "${CORE_MODULES_DIR}"
+            "${CORE_MODULES_DIR}/${MODULE_NAME}/include"
     )
     target_compile_definitions(${TARGET} PRIVATE
         EXPORTING_ENGINE_CORE
@@ -32,7 +35,7 @@ add_subdirectory(modules/assets)
 add_subdirectory(modules/scene)
 add_subdirectory(modules/rendering)
 
-set(CORE_MODULE_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/modules")
+set(CORE_MODULE_INCLUDE_DIRS "${CORE_MODULES_DIR}")
 
 add_library(GraphicEngineCore SHARED ${CORE_HEADERS}
     $<TARGET_OBJECTS:EngineRuntime>
@@ -40,6 +43,7 @@ add_library(GraphicEngineCore SHARED ${CORE_HEADERS}
     $<TARGET_OBJECTS:EngineScene>
     $<TARGET_OBJECTS:EngineRendering>
 )
+engine_enable_strict_msvc_checks(GraphicEngineCore)
 target_link_libraries(GraphicEngineCore PUBLIC
     nvrhi
     Microsoft::DirectXMath
@@ -83,6 +87,7 @@ foreach(HEADER IN LISTS CORE_HEADERS)
     list(APPEND CORE_HEADER_CHECK_SOURCES "${HEADER_CHECK_SOURCE}")
 endforeach()
 add_library(CorePublicHeaderChecks OBJECT ${CORE_HEADER_CHECK_SOURCES})
+engine_enable_strict_msvc_checks(CorePublicHeaderChecks)
 target_link_libraries(CorePublicHeaderChecks PRIVATE GraphicEngineCore)
 target_compile_definitions(CorePublicHeaderChecks PRIVATE ENGINE_MAX_LIGHTS=${ENGINE_MAX_LIGHTS})
 
@@ -109,11 +114,15 @@ endif()
 
 file(GLOB_RECURSE ENGINE_TIDY_SOURCES CONFIGURE_DEPENDS
     "${PROJECT_SOURCE_DIR}/GraphicEngineCore/modules/*/src/*.cpp"
-    "${PROJECT_SOURCE_DIR}/GraphicEngineCore/tests/*.cpp"
     "${PROJECT_SOURCE_DIR}/GraphicEngineEditor/modules/*/src/*.cpp"
     "${PROJECT_SOURCE_DIR}/GraphicEngineBackends/D3D11/src/*.cpp"
     "${PROJECT_SOURCE_DIR}/SandboxApp/*.cpp"
+    "${PROJECT_SOURCE_DIR}/GraphicEngineCore/tests/*.cpp"
+    "${PROJECT_SOURCE_DIR}/GraphicEngineCore/tests/unit/*.cpp"
 )
+if(NOT ENGINE_BUILD_BENCHMARKS)
+    list(FILTER ENGINE_TIDY_SOURCES EXCLUDE REGEX "/tests/benchmarks/")
+endif()
 if(CMAKE_GENERATOR MATCHES "Ninja|Makefiles")
     if(WIN32)
         set(ENGINE_CLANG_TIDY_WRAPPER_ARGS)
@@ -121,7 +130,12 @@ if(CMAKE_GENERATOR MATCHES "Ninja|Makefiles")
         if(MSVC)
             list(APPEND ENGINE_CLANG_TIDY_WRAPPER_ARGS -UseClDriver)
         endif()
-        add_custom_target(lint ALL
+        if(ENGINE_LINT_DURING_BUILD)
+            set(ENGINE_LINT_TARGET_SCOPE ALL)
+        else()
+            set(ENGINE_LINT_TARGET_SCOPE)
+        endif()
+        add_custom_target(lint ${ENGINE_LINT_TARGET_SCOPE}
             COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -File
                 "${ENGINE_CLANG_TIDY_WRAPPER}"
                 -CompilationDatabase "${CMAKE_BINARY_DIR}/compile_commands.json"
@@ -133,38 +147,23 @@ if(CMAKE_GENERATOR MATCHES "Ninja|Makefiles")
             VERBATIM
         )
     else()
-        add_custom_target(lint ALL
+        if(ENGINE_LINT_DURING_BUILD)
+            set(ENGINE_LINT_TARGET_SCOPE ALL)
+        else()
+            set(ENGINE_LINT_TARGET_SCOPE)
+        endif()
+        add_custom_target(lint ${ENGINE_LINT_TARGET_SCOPE}
             COMMAND ${ENGINE_CLANG_TIDY_COMMAND} --quiet -p "${CMAKE_BINARY_DIR}" ${ENGINE_TIDY_SOURCES}
             WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
             COMMENT "Running clang-tidy on project C++ sources"
             VERBATIM
         )
     endif()
-    add_dependencies(EngineRuntime lint)
-    add_dependencies(EngineAssets lint)
-    add_dependencies(EngineScene lint)
-    add_dependencies(EngineRendering lint)
-    add_dependencies(GraphicEngineCore lint)
-endif()
-
-add_custom_target(tests
-    COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
-    WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
-    COMMENT "Running engine tests"
-)
-
-if(BUILD_TESTING)
-    add_executable(BrdfReferenceTests tests/BrdfReferenceTests.cpp)
-    if(NOT CMAKE_GENERATOR MATCHES "Ninja|Makefiles")
-        set_property(TARGET BrdfReferenceTests PROPERTY CXX_CLANG_TIDY "${ENGINE_CLANG_TIDY_COMMAND}")
+    if(ENGINE_LINT_DURING_BUILD)
+        add_dependencies(EngineRuntime lint)
+        add_dependencies(EngineAssets lint)
+        add_dependencies(EngineScene lint)
+        add_dependencies(EngineRendering lint)
+        add_dependencies(GraphicEngineCore lint)
     endif()
-    target_link_libraries(BrdfReferenceTests PRIVATE GraphicEngineCore Microsoft::DirectXMath nvrhi)
-    add_test(NAME BrdfReferenceTests COMMAND BrdfReferenceTests)
-
-    add_executable(AssetManagerTests tests/AssetManagerTests.cpp)
-    if(NOT CMAKE_GENERATOR MATCHES "Ninja|Makefiles")
-        set_property(TARGET AssetManagerTests PROPERTY CXX_CLANG_TIDY "${ENGINE_CLANG_TIDY_COMMAND}")
-    endif()
-    target_link_libraries(AssetManagerTests PRIVATE GraphicEngineCore)
-    add_test(NAME AssetManagerTests COMMAND AssetManagerTests)
 endif()

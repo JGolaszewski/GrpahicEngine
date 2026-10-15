@@ -10,13 +10,13 @@ namespace {
 class TestEvent final : public Engine::Events::Event {
 public:
   static auto GetStaticType() -> Engine::Events::EventType { return Engine::Events::EventType::KeyPressed; }
-  auto GetType() const -> Engine::Events::EventType override { return GetStaticType(); }
+  [[nodiscard]] auto GetType() const -> Engine::Events::EventType override { return GetStaticType(); }
 };
 
 class OtherTestEvent final : public Engine::Events::Event {
 public:
   static auto GetStaticType() -> Engine::Events::EventType { return Engine::Events::EventType::KeyReleased; }
-  auto GetType() const -> Engine::Events::EventType override { return GetStaticType(); }
+  [[nodiscard]] auto GetType() const -> Engine::Events::EventType override { return GetStaticType(); }
 };
 
 TEST(EventDispatcherTests, DispatchesMatchingTypeAndPropagatesHandledState) {
@@ -24,7 +24,7 @@ TEST(EventDispatcherTests, DispatchesMatchingTypeAndPropagatesHandledState) {
   Engine::Events::EventDispatcher dispatcher(event);
   int callbackCount = 0;
 
-  EXPECT_TRUE(dispatcher.Dispatch<TestEvent>([&callbackCount](TestEvent&) {
+  EXPECT_TRUE(dispatcher.Dispatch<TestEvent>([&callbackCount](TestEvent&) -> bool {
     ++callbackCount;
     return true;
   }));
@@ -37,7 +37,7 @@ TEST(EventDispatcherTests, IgnoresNonmatchingTypeWithoutCallingCallback) {
   Engine::Events::EventDispatcher dispatcher(event);
   int callbackCount = 0;
 
-  EXPECT_FALSE(dispatcher.Dispatch<OtherTestEvent>([&callbackCount](OtherTestEvent&) {
+  EXPECT_FALSE(dispatcher.Dispatch<OtherTestEvent>([&callbackCount](OtherTestEvent&) -> bool {
     ++callbackCount;
     return true;
   }));
@@ -50,7 +50,7 @@ TEST(EventDispatcherTests, DoesNotClearAlreadyHandledEvent) {
   event.Handled = true;
   Engine::Events::EventDispatcher dispatcher(event);
 
-  EXPECT_TRUE(dispatcher.Dispatch<TestEvent>([](TestEvent&) { return false; }));
+  EXPECT_TRUE(dispatcher.Dispatch<TestEvent>([](TestEvent&) -> bool { return false; }));
   EXPECT_TRUE(event.Handled);
 }
 

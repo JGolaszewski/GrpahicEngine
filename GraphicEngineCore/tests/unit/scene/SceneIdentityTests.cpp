@@ -1,34 +1,44 @@
-#include "rendering/include/renderer/Entity.h"
 #include "scene/include/Scene.h"
 
 #include <gtest/gtest.h>
 
-#include <memory>
-
-TEST(SceneIdentityTests, RestoresIdsAndKeepsIndexConsistentAfterRemovalAndReplacement) {
+TEST(SceneIdentityTests, StructuralChangesAreStagedAndHandlesBecomeStaleAfterDestruction) {
   Engine::Scene scene;
-  auto first = std::make_shared<Engine::Renderer::Entity>(nullptr, nullptr);
-  auto middle = std::make_shared<Engine::Renderer::Entity>(nullptr, nullptr);
-  auto last = std::make_shared<Engine::Renderer::Entity>(nullptr, nullptr);
-  ASSERT_EQ(scene.AddEntity(first, 10), 10U);
-  ASSERT_EQ(scene.AddEntity(middle, 20), 20U);
-  ASSERT_EQ(scene.AddEntity(last, 30), 30U);
+  const uint64_t sequence = scene.QueueCreate("Persistent entity");
+  EXPECT_EQ(scene.EntityCount(), 0U);
 
-  scene.RemoveEntity(middle.get());
-  EXPECT_EQ(scene.FindEntity(10), first);
-  EXPECT_EQ(scene.FindEntity(20), nullptr);
-  EXPECT_EQ(scene.FindEntity(30), last);
-  EXPECT_EQ(scene.GetEntityId(last.get()), 30U);
+  const auto created = scene.sync();
+  ASSERT_EQ(created.size(), 1U);
+  ASSERT_EQ(created.front().Sequence, sequence);
+  ASSERT_TRUE(created.front().Outcome);
+  const Engine::EntityHandle entity = created.front().Entity;
+  ASSERT_TRUE(scene.World().IsAlive(entity));
+  ASSERT_NE(scene.World().Get<Engine::Ecs::Name>(entity), nullptr);
+  EXPECT_EQ(scene.World().Get<Engine::Ecs::Name>(entity)->Value, "Persistent entity");
 
-  auto replacement = std::make_shared<Engine::Renderer::Entity>(nullptr, nullptr);
-  ASSERT_TRUE(scene.ReplaceEntity(30, replacement));
-  EXPECT_EQ(scene.FindEntity(30), replacement);
-  EXPECT_EQ(scene.GetEntityId(replacement.get()), 30U);
-  EXPECT_EQ(scene.AddEntity(std::make_shared<Engine::Renderer::Entity>(nullptr, nullptr)), 31U);
-  EXPECT_EQ(scene.AddEntity(std::make_shared<Engine::Renderer::Entity>(nullptr, nullptr), 10), Engine::InvalidEntityId);
+  const uint64_t destroySequence = scene.QueueDestroy(entity);
+  EXPECT_TRUE(scene.World().IsAlive(entity));
+  const auto destroyed = scene.sync();
+  ASSERT_EQ(destroyed.size(), 1U);
+  EXPECT_EQ(destroyed.front().Sequence, destroySequence);
+  EXPECT_TRUE(destroyed.front().Outcome);
+  EXPECT_FALSE(scene.World().IsAlive(entity));
 }
 
-TEST(SceneIdentityTests, InvalidIndexReturnsInvalidId) {
+TEST(SceneIdentityTests, PersistentIdentityIsStoredAsAnEcsComponent) {
   Engine::Scene scene;
-  EXPECT_EQ(scene.GetEntityIdAt(0), Engine::InvalidEntityId);
+  (void)scene.QueueCreate("Entity");
+  const auto created = scene.sync();
+  ASSERT_EQ(created.size(), 1U);
+  ASSERT_TRUE(created.front().Outcome);
+  const Engine::EntityHandle entity = created.front().Entity;
+
+  constexpr Engine::Ecs::SceneGuid guid{.High = 7, .Low = 42};
+  (void)scene.QueueSet(entity, Engine::Ecs::PersistentIdentity{.Guid = guid});
+  const auto updated = scene.sync();
+  ASSERT_EQ(updated.size(), 1U);
+  ASSERT_TRUE(updated.front().Outcome);
+  const auto* identity = scene.World().Get<Engine::Ecs::PersistentIdentity>(entity);
+  ASSERT_NE(identity, nullptr);
+  EXPECT_EQ(identity->Guid, guid);
 }

@@ -2,28 +2,36 @@
 
 ## Correctness tests
 
-The default x64 Debug preset builds the existing asset and BRDF executables and the
-GoogleTest CPU unit suite. Unit tests do not create a window or graphics device.
-Asset tests use temporary project roots and clean them up when the test exits.
+The default x64 Debug preset builds every correctness suite through one CTest
+project. CTest exposes each GoogleTest case and each standalone harness to
+Visual Studio's CMake Test Explorer. Unit tests do not create a window or graphics
+device. Asset tests use temporary project roots and clean them up when the test
+exits.
 
 ```powershell
 cmake --preset x64-debug
 cmake --build out/build/x64-debug --parallel $env:NUMBER_OF_PROCESSORS
-ctest --test-dir out/build/x64-debug --output-on-failure -C Debug -L "unit|integration"
+ctest --preset x64-debug
+ctest --preset x64-debug-unit
+ctest --preset x64-debug-integration
 ```
 
-Run all correctness tests or select a GoogleTest case with:
+The `engine-tests` build target builds and runs every registered test, including
+the benchmark smoke test when the benchmark feature is enabled. Narrow targets
+are `engine-unit-tests`, `engine-integration-tests`, and
+`engine-benchmark-tests`. Run one GoogleTest case or a named legacy suite with:
 
 ```powershell
-ctest --test-dir out/build/x64-debug --output-on-failure -C Debug
+ctest --test-dir out/build/x64-debug --output-on-failure -C Debug -L "unit|integration"
 out/build/x64-debug/bin/GraphicEngineUnitTests.exe --gtest_filter="TransformTests.*"
 ctest --test-dir out/build/x64-debug --output-on-failure -R "AssetManagerTests|BrdfReferenceTests"
 ```
 
 CTest discovers the individual GoogleTest cases at test time, so `-R` and
-`--gtest_filter` can narrow runs. `AssetManagerTests` remains an integration-style
-legacy executable while it is incrementally migrated; `BrdfReferenceTests` remains
-a standalone numerical reference suite. New tests belong under `tests/unit/<domain>`.
+`--gtest_filter` can narrow runs. `AssetManagerTests` is an integration-style
+legacy executable; `BrdfReferenceTests` is a standalone numerical reference
+suite. Both are registered alongside GoogleTest in the central test CMake file.
+New unit tests belong under `tests/unit/<domain>`.
 Slow numerical integration should use a `slow` label and stay outside the default
 PR run. No GPU correctness target is currently registered; GPU tests require a
 deterministic device-selection and cleanup adapter before they can be enabled.
@@ -47,7 +55,9 @@ out/build/x64-release/bin/GraphicEngineBenchmarks.exe `
   --benchmark_out_format=json
 ```
 
-The benchmark target currently measures transform world-matrix cache hits and
+The `engine-benchmark-tests` target and `x64-release-benchmarks` CTest preset run a
+short smoke pass when benchmarks are enabled. The benchmark target currently
+measures transform world-matrix cache hits and
 parent-chain depth. Google Benchmark handles warmup, repeated samples, statistics,
 and JSON output. Expand it with representative workloads as stable CPU-side seams
 become available. Compare only Release runs from controlled hardware; record the
