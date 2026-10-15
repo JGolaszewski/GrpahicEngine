@@ -33,7 +33,7 @@ public:
 
   TemporaryOutputDirectory(const TemporaryOutputDirectory&) = delete;
   auto operator=(const TemporaryOutputDirectory&) -> TemporaryOutputDirectory& = delete;
-  ~TemporaryOutputDirectory() {
+  ~TemporaryOutputDirectory() noexcept {
     std::error_code ignored;
     std::filesystem::remove_all(m_Root, ignored);
   }
