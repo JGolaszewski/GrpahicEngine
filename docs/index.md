@@ -22,6 +22,9 @@ $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";"
 
 The first run creates `.venv-docs` and installs the pinned MkDocs, MkDoxy, and Markdown lint packages into it. The generated site, Doxygen XML, and API Markdown are written under `out/docs/` and are not source files.
 
+The documentation workflow checks relevant pull requests and deploys successful
+builds from `main` to GitHub Pages.
+
 Pass `-Serve` to preview the generated site locally:
 
 ```powershell

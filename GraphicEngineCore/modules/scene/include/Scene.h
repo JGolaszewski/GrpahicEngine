@@ -29,58 +29,109 @@ namespace Engine {
 class ENGINE_API Scene {
 public:
   /// Components initialized when a queued entity is created.
-  enum class EntityPreset : unsigned char { Empty, Mesh, SpotLight, Camera };
+  enum class EntityPreset : unsigned char {
+    Empty, ///< Create an entity with only required hierarchy components.
+    Mesh, ///< Create an entity with a mesh renderer.
+    SpotLight, ///< Create an entity with a spot light.
+    Camera ///< Create an entity with a camera.
+  };
   /// Read-only hierarchy data for editor and inspection clients.
   struct EntitySnapshot {
-    EntityHandle Handle;
-    EntityHandle Parent;
-    std::string Name;
-    bool HasMeshRenderer = false;
-    bool HasSpotLight = false;
-    bool HasCamera = false;
+    EntityHandle Handle; ///< Entity represented by this snapshot.
+    EntityHandle Parent; ///< Parent entity, or the invalid handle for a root.
+    std::string Name; ///< User-facing entity name.
+    bool HasMeshRenderer = false; ///< Whether the entity has a mesh renderer.
+    bool HasSpotLight = false; ///< Whether the entity has a spot light.
+    bool HasCamera = false; ///< Whether the entity has a camera.
   };
 
   /// Outcome of one queued structural command.
   struct SyncResult {
-    uint64_t Sequence = 0;
-    EntityHandle Entity = InvalidEntityHandle;
-    bool EntityCreated = false;
-    Status Outcome;
+    uint64_t Sequence = 0; ///< Sequence returned when the command was queued.
+    EntityHandle Entity = InvalidEntityHandle; ///< Entity created or modified by the command.
+    bool EntityCreated = false; ///< Whether the command created an entity.
+    Status Outcome; ///< Command result, including any operation error.
   };
+  /// Compatibility name for the hierarchy snapshot record.
   using EcsEntitySnapshot = EntitySnapshot;
+  /// Compatibility name for a queued structural command result.
   using StructuralCommandResult = SyncResult;
 
   Scene() = default;
   Scene(const Scene&) = delete;
   auto operator=(const Scene&) -> Scene& = delete;
 
+  /// Gets the scene-owned archetype world.
+  /// @return Read-only world access.
   [[nodiscard]] auto World() const noexcept -> const ArchetypeWorld& { return m_World; }
+  /// Gets the scene-owned archetype world through its explicit accessor name.
+  /// @return Read-only world access.
   [[nodiscard]] auto GetArchetypeWorld() const noexcept -> const ArchetypeWorld& { return m_World; }
+  /// Gets the scheduler for registering scene systems.
+  /// @return Mutable scheduler reference.
   [[nodiscard]] auto Scheduler() noexcept -> SystemScheduler& { return m_Scheduler; }
+  /// Gets the scheduler through its explicit accessor name.
+  /// @return Mutable scheduler reference.
   [[nodiscard]] auto GetSystemScheduler() noexcept -> SystemScheduler& { return m_Scheduler; }
+  /// Gets the current scene epoch used to reject stale queued commands.
+  /// @return Monotonically increasing scene epoch.
   [[nodiscard]] auto Epoch() const noexcept -> uint64_t { return m_SceneEpoch; }
+  /// Gets the current scene epoch through its explicit accessor name.
+  /// @return Monotonically increasing scene epoch.
   [[nodiscard]] auto GetSceneEpoch() const noexcept -> uint64_t { return m_SceneEpoch; }
+  /// Gets the configured scale from meters to scene units.
+  /// @return Scene units per meter.
   [[nodiscard]] auto UnitsPerMeter() const noexcept -> float { return m_UnitsPerMeter; }
+  /// Gets the configured scale through its explicit accessor name.
+  /// @return Scene units per meter.
   [[nodiscard]] auto GetUnitsPerMeter() const noexcept -> float { return m_UnitsPerMeter; }
+  /// Sets the scale from meters to scene units.
+  /// @param unitsPerMeter Positive finite number of scene units per meter.
   void SetUnitsPerMeter(float unitsPerMeter) noexcept { m_UnitsPerMeter = unitsPerMeter; }
 
   // Queue methods only append owning commands. They never mutate world storage.
   /// Queue entity creation; the returned sequence identifies its sync result.
+  /// @param name User-facing entity name.
+  /// @param parent Parent entity, or the invalid handle to create a root.
+  /// @param preset Components to initialize on the new entity.
+  /// @return Sequence number for the next synchronization result.
   [[nodiscard]] auto QueueCreate(std::string name, EntityHandle parent = InvalidEntityHandle,
                                  EntityPreset preset = EntityPreset::Empty) -> uint64_t;
   /// Queue entity destruction for the next synchronization barrier.
+  /// @param entity Entity to destroy.
+  /// @return Sequence number for the command result.
   [[nodiscard]] auto QueueDestroy(EntityHandle entity) -> uint64_t;
   /// Queue reparenting; invalid hierarchy changes are reported by sync().
+  /// @param entity Entity to reparent.
+  /// @param parent New parent, or the invalid handle to make the entity a root.
+  /// @return Sequence number for the command result.
   [[nodiscard]] auto QueueReparent(EntityHandle entity, EntityHandle parent) -> uint64_t;
+  /// Compatibility alias for QueueCreate.
+  /// @param name User-facing entity name.
+  /// @param parent Parent entity or the invalid handle for a root.
+  /// @param preset Components to initialize on the entity.
+  /// @return Sequence number for the command result.
   [[nodiscard]] auto QueueCreateEcsEntity(std::string name, EntityHandle parent = InvalidEntityHandle,
                                           EntityPreset preset = EntityPreset::Empty) -> uint64_t {
     return QueueCreate(std::move(name), parent, preset);
   }
+  /// Compatibility alias for QueueDestroy.
+  /// @param entity Entity to destroy.
+  /// @return Sequence number for the command result.
   [[nodiscard]] auto QueueDestroyEcsEntity(EntityHandle entity) -> uint64_t { return QueueDestroy(entity); }
+  /// Compatibility alias for QueueReparent.
+  /// @param entity Entity to reparent.
+  /// @param parent New parent or the invalid handle for a root.
+  /// @return Sequence number for the command result.
   [[nodiscard]] auto QueueReparentEcsEntity(EntityHandle entity, EntityHandle parent) -> uint64_t {
     return QueueReparent(entity, parent);
   }
 
+  /// Queues adding a component after validating the component and entity.
+  /// @tparam Component Component type to add.
+  /// @param entity Entity receiving the component.
+  /// @param component Component value to store.
+  /// @return Sequence number for the synchronization result.
   template <typename Component>
     requires(std::is_nothrow_move_constructible_v<Component> && std::is_nothrow_destructible_v<Component>)
   [[nodiscard]] auto QueueAdd(EntityHandle entity, Component component) -> uint64_t {
@@ -102,10 +153,19 @@ public:
     });
   }
   template <typename Component>
+  /// Compatibility alias for QueueAdd.
+  /// @tparam Component Component type to add.
+  /// @param entity Entity receiving the component.
+  /// @param component Component value to store.
+  /// @return Sequence number for the synchronization result.
   [[nodiscard]] auto QueueAddEcsComponent(EntityHandle entity, Component component) -> uint64_t {
     return QueueAdd<Component>(entity, std::move(component));
   }
 
+  /// Queues removal of a component from an entity.
+  /// @tparam Component Component type to remove.
+  /// @param entity Entity from which to remove the component.
+  /// @return Sequence number for the synchronization result.
   template <typename Component>
     requires(std::is_nothrow_move_constructible_v<Component> && std::is_nothrow_destructible_v<Component>)
   [[nodiscard]] auto QueueRemove(EntityHandle entity) -> uint64_t {
@@ -122,10 +182,19 @@ public:
       }
     });
   }
+  /// Compatibility alias for QueueRemove.
+  /// @tparam Component Component type to remove.
+  /// @param entity Entity from which to remove the component.
+  /// @return Sequence number for the synchronization result.
   template <typename Component> [[nodiscard]] auto QueueRemoveEcsComponent(EntityHandle entity) -> uint64_t {
     return QueueRemove<Component>(entity);
   }
 
+  /// Queues replacing an existing component after validating the new value.
+  /// @tparam Component Component type to replace.
+  /// @param entity Entity whose component is replaced.
+  /// @param component New component value.
+  /// @return Sequence number for the synchronization result.
   template <typename Component>
     requires(std::is_nothrow_move_constructible_v<Component> && std::is_nothrow_destructible_v<Component> &&
              std::is_nothrow_move_assignable_v<Component>)
@@ -149,10 +218,20 @@ public:
     });
   }
   template <typename Component>
+  /// Compatibility alias for QueueSet.
+  /// @tparam Component Component type to replace.
+  /// @param entity Entity whose component is replaced.
+  /// @param component New component value.
+  /// @return Sequence number for the synchronization result.
   [[nodiscard]] auto QueueSetEcsComponent(EntityHandle entity, Component component) -> uint64_t {
     return QueueSet<Component>(entity, std::move(component));
   }
 
+  /// Replaces a component immediately outside system execution.
+  /// @tparam Component Component type to replace.
+  /// @param entity Entity whose component is replaced.
+  /// @param component New component value.
+  /// @return Success, or an error when the edit is disallowed or the component is invalid.
   template <typename Component>
     requires(std::is_nothrow_move_constructible_v<Component> && std::is_nothrow_move_assignable_v<Component>)
   [[nodiscard]] auto SetInPlace(EntityHandle entity, Component component) -> Status {
@@ -176,14 +255,25 @@ public:
 
   /// Apply queued structural changes at an exclusive barrier and return outcomes.
   /// Commands queued during processing are applied in a later wave in the same call.
+  /// @return Results for commands applied during this call.
   [[nodiscard]] auto sync() -> std::vector<SyncResult>;
+  /// Compatibility alias for sync.
+  /// @return Results for commands applied during this call.
   [[nodiscard]] auto DrainStructuralCommands() -> std::vector<SyncResult> { return sync(); }
+  /// Builds a read-only hierarchy snapshot for editor and inspection clients.
+  /// @return Snapshot records ordered by hierarchy traversal.
   [[nodiscard]] auto HierarchySnapshot() const -> std::vector<EntitySnapshot>;
+  /// Compatibility alias for HierarchySnapshot.
+  /// @return Snapshot records ordered by hierarchy traversal.
   [[nodiscard]] auto GetEcsHierarchySnapshot() const -> std::vector<EntitySnapshot> { return HierarchySnapshot(); }
+  /// Gets the number of live entities in the scene.
+  /// @return Current entity count.
   [[nodiscard]] auto EntityCount() const noexcept -> size_t { return m_World.EntityCount(); }
 
   /// Apply queued work and run registered systems for one frame update.
   /// Structural writes are synchronized between system phases.
+  /// @param deltaTime Elapsed frame time in seconds.
+  /// @return Success, or the first error reported by synchronization or a system.
   [[nodiscard]] auto Update(float deltaTime) -> Status;
 
 private:
