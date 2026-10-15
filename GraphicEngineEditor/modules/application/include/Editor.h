@@ -44,7 +44,6 @@ private:
   void DestroyViewport();
   void BuildDefaultDockLayoutIfNeeded(uint32_t dockspaceId);
   static void BuildDefaultDockLayout(uint32_t dockspaceId);
-  [[nodiscard]] auto FindActiveCamera() const -> Engine::EntityHandle;
   void UpdateEditorCamera(float deltaTime);
   [[nodiscard]] auto GetViewportTextureID() const -> void*;
 
@@ -57,6 +56,8 @@ private:
   EditorUiIntegration m_UiIntegration;
   EditorConsole m_EditorConsole;
   Engine::EntityHandle m_SelectedEntity = Engine::InvalidEntityHandle;
+  Engine::Ecs::LocalTransform m_EditorCameraTransform{.Position = {0.0F, 0.0F, -5.0F}};
+  Engine::Ecs::Camera m_EditorCameraSettings;
   std::pair<float, float> m_ViewportSize = {0.0F, 0.0F};
   bool m_DefaultLayoutBuilt = false;
   bool m_EngineConsoleOpen = true;
