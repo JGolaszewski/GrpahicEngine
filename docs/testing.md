@@ -2,6 +2,44 @@
 
 ## Correctness tests
 
+### When to add tests
+
+Add a focused regression test for every bug fix and tests for new deterministic
+behavior, boundary conditions, and failure results. Prefer tests of observable
+contracts over tests coupled to private implementation details. Keep unit tests
+fast and independent of windows, GPU devices, external services, and unnecessary
+filesystem state. Use integration tests when real subsystem or platform
+interaction is required. Before adding a test, inspect the current checkout's
+CMake test registration and `ctest -N` output; those are authoritative for the
+available framework, target names, and labels. In the current checkout, GoogleTest
+unit tests live under `GraphicEngineCore/tests/unit/` in the
+`GraphicEngineUnitTests` target; `BrdfReferenceTests` is also labeled `unit`,
+and `AssetManagerTests` is labeled `integration`.
+
+### Running focused and full checks
+
+Configure and build the relevant test target, then use CTest to run a focused
+test selection. Run the complete registered suite before review when the
+toolchain permits:
+
+```powershell
+ctest --test-dir out/build/x64-debug -N
+ctest --test-dir out/build/x64-debug --output-on-failure -C Debug -R "<test-name-or-pattern>"
+ctest --test-dir out/build/x64-debug --output-on-failure -C Debug -L unit
+ctest --test-dir out/build/x64-debug --output-on-failure -C Debug
+```
+
+Run `ctest --test-dir out/build/x64-debug --output-on-failure -C Debug -L integration`
+for the integration subset. The `engine-unit-tests`,
+`engine-integration-tests`, and `engine-tests` build targets also build and run
+the corresponding CTest selections.
+
+Ninja builds also run the repository's `lint` target during compilation.
+`clang-tidy` is required and its configured findings can fail the build, so a
+successful build includes the clang-tidy gate. Fix applicable first-party
+findings rather than suppressing or bypassing the check. If the toolchain is
+unavailable, report which checks could not run.
+
 The default x64 Debug preset builds the asset and BRDF executables and the GoogleTest
 CPU unit suite. Tests use temporary project roots where they write scene or asset
 files; the suite does not create a window or graphics device.
