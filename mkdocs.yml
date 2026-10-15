@@ -1,0 +1,45 @@
+site_name: GraphicEngine Documentation
+site_description: Architecture, workflows, and API reference for GraphicEngine.
+docs_dir: docs
+site_dir: out/docs/site
+strict: true
+
+theme:
+  name: material
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.indexes
+    - search.suggest
+    - search.highlight
+
+plugins:
+  - search
+
+markdown_extensions:
+  - toc:
+      permalink: true
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.snippets:
+      base_path:
+        - scripts
+        - GraphicEngineCore/modules
+        - GraphicEngineEditor/modules
+        - GraphicEngineBackends/D3D11
+        - SandboxApp
+      check_paths: true
+      restrict_base_path: true
+
+nav:
+  - Home: index.md
+  - Architecture and guides:
+      - C++ guidelines: cpp-guidelines.md
+      - Logging: logging.md
+      - Rendering:
+          - Shadows: rendering/shadows.md
+  - Workflows:
+      - Testing: testing.md
+      - Windows validation: validation/windows.md
+  - Core API: api-reference.md

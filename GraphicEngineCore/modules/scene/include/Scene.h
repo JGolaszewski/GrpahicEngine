@@ -24,6 +24,10 @@ class Camera;
 
 namespace Engine
 {
+/// Owns the entities, lights, and cameras that make up a scene.
+///
+/// Persistent IDs are used to identify scene objects independently of their
+/// current position in the corresponding contiguous collections.
 class ENGINE_API Scene
 {
   public:
@@ -38,6 +42,7 @@ class ENGINE_API Scene
     }
 
     // Entities
+    /// Add an entity, optionally preserving a supplied persistent ID.
     EntityId AddEntity(std::shared_ptr<::Engine::Renderer::Entity> entity, EntityId persistentId = InvalidEntityId);
     void RemoveEntity(::Engine::Renderer::Entity *entity);
     void RemoveEntity(EntityId id);
@@ -52,6 +57,7 @@ class ENGINE_API Scene
     }
     EntityId GetEntityIdAt(size_t index) const;
     EntityId GetEntityId(const ::Engine::Renderer::Entity *entity) const;
+    /// Find an entity by persistent ID; returns an empty pointer when absent.
     std::shared_ptr<::Engine::Renderer::Entity> FindEntity(EntityId id) const;
     DirectX::XMFLOAT3 FindFreeSpawnPosition(const DirectX::XMFLOAT3 &initialPosition,
                                             float minimumDistance = 2.0f, float horizontalStep = 2.5f,

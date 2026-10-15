@@ -32,17 +32,22 @@ struct ShadowSettings
     uint32_t MaxShadowCastersPerScene = Scene::Engine::Renderer::MaxShadowedLights;
 };
 
+/// Coordinates frame rendering, resource management, and render graph work.
 class ENGINE_API RenderSystem
 {
   public:
+    /// Create a render system backed by the supplied backend.
     RenderSystem(IRenderBackend *backend);
     bool IsValid() const
     {
         return m_CommandList != nullptr;
     }
 
+    /// Begin frame recording before submitting viewport render work.
     void BeginFrame();
+    /// Submit the scene and shadow views for the current frame.
     void SubmitViews(const std::vector<Engine::ViewportBinding> &views);
+    /// Finish and submit the current frame to the backend.
     void EndFrame();
     bool SetShadowSettings(const ShadowSettings &settings) noexcept;
     const ShadowSettings &GetShadowSettings() const noexcept

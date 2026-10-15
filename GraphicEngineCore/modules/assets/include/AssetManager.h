@@ -20,6 +20,10 @@
 
 namespace Engine
 {
+/// Imports and tracks project assets, and loads or saves scene documents.
+///
+/// AssetManager paths are interpreted relative to the configured project root
+/// where applicable. Import operations return a stable asset GUID on success.
 class ENGINE_API AssetManager
 {
   public:
@@ -44,7 +48,9 @@ class ENGINE_API AssetManager
         return m_ProjectRoot;
     }
 
+    /// Import a model and return its registry GUID, or an Error on failure.
     Result<std::string> ImportModel(const std::filesystem::path &sourcePath);
+    /// Import a texture and return its registry GUID, or an Error on failure.
     Result<std::string> ImportTexture(const std::filesystem::path &sourcePath);
     bool ImportModel(const std::filesystem::path &sourcePath, std::string &guid, std::string &error);
     bool ImportTexture(const std::filesystem::path &sourcePath, std::string &guid, std::string &error);
