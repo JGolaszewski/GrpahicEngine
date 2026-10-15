@@ -174,6 +174,19 @@ doxygen Doxyfile
 The standalone command writes XML under `out/docs/doxygen/xml`. The regular
 documentation build uses MkDoxy's generated XML cache under `out/docs/site/`.
 
+## Markdown documentation lint
+
+The documentation build scans source Markdown with the pinned PyMarkdown
+configuration before generating the site. Run the same check directly from the
+repository root when reviewing Markdown changes:
+
+```powershell
+.\.venv-docs\Scripts\pymarkdown.exe --strict-config scan --recurse docs
+```
+
+Line-length checking is disabled because the existing documentation uses long
+Markdown paragraphs; heading, spacing, list, and whitespace rules remain active.
+
 ## CI guidance
 
 Run Windows MSVC x64 Debug configure/build and `unit|integration` CTest labels on
