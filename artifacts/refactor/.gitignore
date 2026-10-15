@@ -1,3 +1,6 @@
 # Raw LLVM coverage shards are temporary; keep merged profile and reports.
 *.profraw
 main-final-coverage-*.profraw
+
+# Doxygen HTML is generated and built separately by the docs workflow.
+doxygen/html/

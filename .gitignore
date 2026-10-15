@@ -15,6 +15,7 @@ vendor/
 !AGENTS.md
 !docs/*.md
 !docs/**/*.md
+!.codex/skills/**/SKILL.md
 
 # =========================
 # Build & CMake Artifacts
@@ -63,5 +64,11 @@ compile_commands.json
 # =========================
 .codex/auth.json  # Codex auth tokens
 .codex/worktrees/ # Local Codex background worktrees
+# Generated Python bytecode for hook imports.
+.codex/hooks/__pycache__/
 .venv-docs/
 site/
+
+# Local environment files may contain credentials.
+.env
+.env-shell
