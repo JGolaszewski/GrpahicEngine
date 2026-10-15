@@ -59,6 +59,8 @@ public:
 private:
   static void AddSpotLight(Engine::EntityHandle entity, const Engine::Ecs::SpotLight& light,
                            const Engine::Ecs::WorldTransform& transform, bool selected, DebugGeometry& geometry);
+  static void AddCameraFrustum(const Engine::Ecs::Camera& camera, const Engine::Ecs::WorldTransform& transform,
+                               DebugGeometry& geometry);
   static void AddWireframePlane(DebugGeometry& geometry);
 };
 } // namespace Engine::Renderer

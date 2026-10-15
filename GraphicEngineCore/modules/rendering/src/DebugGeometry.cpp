@@ -3,6 +3,7 @@
 #include "scene/include/Scene.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <numbers>
 
@@ -65,24 +66,76 @@ void DebugGeometryBuilder::BuildScene(const Engine::Scene& scene, const DebugRen
     AddWireframePlane(geometry);
   }
 
-  if (!settings.ShowLightGizmos) {
-    return;
+  if (settings.ShowLightGizmos) {
+    scene.World()
+        .ForEachChunkReadOnly<Engine::Ecs::SpotLight, Engine::Ecs::WorldTransform, Engine::Ecs::GlobalVisibility>(
+            [&settings, &geometry](std::span<const Engine::EntityHandle> entities,
+                                   std::span<const Engine::Ecs::SpotLight> lights,
+                                   std::span<const Engine::Ecs::WorldTransform> transforms,
+                                   std::span<const Engine::Ecs::GlobalVisibility> visibility) -> void {
+              for (size_t row = 0; row < entities.size(); ++row) {
+                if (!visibility[row].IsVisible) {
+                  continue;
+                }
+                AddSpotLight(entities[row], lights[row], transforms[row],
+                             static_cast<Engine::LightId>(entities[row].Index) + 1 == settings.SelectedLightId,
+                             geometry);
+              }
+            });
   }
 
-  scene.World()
-      .ForEachChunkReadOnly<Engine::Ecs::SpotLight, Engine::Ecs::WorldTransform, Engine::Ecs::GlobalVisibility>(
-          [&settings, &geometry](std::span<const Engine::EntityHandle> entities,
-                                 std::span<const Engine::Ecs::SpotLight> lights,
-                                 std::span<const Engine::Ecs::WorldTransform> transforms,
-                                 std::span<const Engine::Ecs::GlobalVisibility> visibility) -> void {
-            for (size_t row = 0; row < entities.size(); ++row) {
-              if (!visibility[row].IsVisible) {
-                continue;
-              }
-              AddSpotLight(entities[row], lights[row], transforms[row],
-                           static_cast<Engine::LightId>(entities[row].Index) + 1 == settings.SelectedLightId, geometry);
+  if (settings.ShowCameraFrustums) {
+    scene.World().ForEachChunkReadOnly<Engine::Ecs::Camera, Engine::Ecs::WorldTransform, Engine::Ecs::GlobalVisibility>(
+        [&geometry](std::span<const Engine::EntityHandle>, std::span<const Engine::Ecs::Camera> cameras,
+                    std::span<const Engine::Ecs::WorldTransform> transforms,
+                    std::span<const Engine::Ecs::GlobalVisibility> visibility) -> void {
+          for (size_t row = 0; row < cameras.size(); ++row) {
+            if (visibility[row].IsVisible) {
+              AddCameraFrustum(cameras[row], transforms[row], geometry);
             }
-          });
+          }
+        });
+  }
+}
+
+void DebugGeometryBuilder::AddCameraFrustum(const Engine::Ecs::Camera& camera,
+                                            const Engine::Ecs::WorldTransform& transform, DebugGeometry& geometry) {
+  if (!Engine::Ecs::Validate(camera)) {
+    return;
+  }
+  DirectX::XMVECTOR scale;
+  DirectX::XMVECTOR rotation;
+  DirectX::XMVECTOR position;
+  if (!DirectX::XMMatrixDecompose(&scale, &rotation, &position, DirectX::XMLoadFloat4x4(&transform.Matrix))) {
+    return;
+  }
+  const float aspect = static_cast<float>(camera.OutputWidth) / static_cast<float>(camera.OutputHeight);
+  const float tangent = std::tan(DirectX::XMConvertToRadians(camera.FieldOfViewDegrees) * 0.5F);
+  const DirectX::XMVECTOR forward = DirectX::XMVector3Rotate(DirectX::XMVectorSet(0.0F, 0.0F, 1.0F, 0.0F), rotation);
+  const DirectX::XMVECTOR right = DirectX::XMVector3Rotate(DirectX::XMVectorSet(1.0F, 0.0F, 0.0F, 0.0F), rotation);
+  const DirectX::XMVECTOR up = DirectX::XMVector3Rotate(DirectX::XMVectorSet(0.0F, 1.0F, 0.0F, 0.0F), rotation);
+  const auto planeCorners = [&](float distance) -> std::array<DirectX::XMFLOAT3, 4> {
+    const float halfHeight = tangent * distance;
+    const float halfWidth = halfHeight * aspect;
+    const DirectX::XMVECTOR center = DirectX::XMVectorAdd(position, DirectX::XMVectorScale(forward, distance));
+    const DirectX::XMVECTOR horizontal = DirectX::XMVectorScale(right, halfWidth);
+    const DirectX::XMVECTOR vertical = DirectX::XMVectorScale(up, halfHeight);
+    return {
+        StoreFloat3(DirectX::XMVectorAdd(DirectX::XMVectorSubtract(center, horizontal), vertical)),
+        StoreFloat3(DirectX::XMVectorAdd(DirectX::XMVectorAdd(center, horizontal), vertical)),
+        StoreFloat3(DirectX::XMVectorSubtract(DirectX::XMVectorAdd(center, horizontal), vertical)),
+        StoreFloat3(DirectX::XMVectorSubtract(DirectX::XMVectorSubtract(center, horizontal), vertical)),
+    };
+  };
+  const auto nearCorners = planeCorners(camera.NearPlane);
+  const auto farCorners = planeCorners(camera.FarPlane);
+  const DirectX::XMFLOAT4 color(0.25F, 0.8F, 1.0F, 0.9F);
+  for (size_t edge = 0; edge < 4; ++edge) {
+    const size_t next = (edge + 1) % 4;
+    geometry.AddLine(nearCorners[edge], nearCorners[next], color);
+    geometry.AddLine(farCorners[edge], farCorners[next], color);
+    geometry.AddLine(nearCorners[edge], farCorners[edge], color);
+  }
 }
 
 void DebugGeometryBuilder::AddSpotLight(Engine::EntityHandle entity, const Engine::Ecs::SpotLight& light,

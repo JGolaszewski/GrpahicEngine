@@ -110,6 +110,20 @@ auto ReadId(const Json& object, uint64_t& id, std::string& error) -> bool {
   return true;
 }
 
+auto ReadPositiveDimension(const Json& object, const char* key, uint32_t& result, std::string& error) -> bool {
+  if (!object.contains(key)) {
+    return true;
+  }
+  const Json& value = object.at(key);
+  if (!value.is_number_unsigned() || value.get<uint64_t>() == 0 ||
+      value.get<uint64_t>() > std::numeric_limits<uint32_t>::max()) {
+    error = std::string(key) + " must be a positive 32-bit integer";
+    return false;
+  }
+  result = value.get<uint32_t>();
+  return true;
+}
+
 auto ReadGuid(const Json& object, const char* key, std::optional<SceneGuidDocument>& result, std::string& error)
     -> bool {
   if (!object.contains(key) || object.at(key).is_null()) {
@@ -423,6 +437,8 @@ auto CameraJson(const SceneCameraDocument& camera) -> Json {
       {"fovRadians", camera.fovRadians},
       {"nearPlane", camera.nearPlane},
       {"farPlane", camera.farPlane},
+      {"outputWidth", camera.outputWidth},
+      {"outputHeight", camera.outputHeight},
   };
 }
 
@@ -544,7 +560,8 @@ auto ValidateCamera(const SceneCameraDocument& camera, std::set<uint64_t>& ids) 
   return camera.id != 0 && ids.insert(camera.id).second &&
          std::ranges::all_of(values, [](float value) -> bool { return std::isfinite(value); }) &&
          camera.fovRadians > 0.0F && camera.fovRadians < std::numbers::pi_v<float> && camera.nearPlane > 0.0F &&
-         camera.farPlane > camera.nearPlane && std::isfinite(rotationLengthSquared) && rotationLengthSquared > 1.0e-12F;
+         camera.farPlane > camera.nearPlane && camera.outputWidth > 0 && camera.outputHeight > 0 &&
+         std::isfinite(rotationLengthSquared) && rotationLengthSquared > 1.0e-12F;
 }
 
 auto ValidateCameras(const std::filesystem::path& path, const SceneDocument& document, std::string& error) -> bool {
@@ -858,6 +875,8 @@ auto LoadCameraArray(const Json& root, SceneDocumentResult& result, const std::f
                     "fovRadians",
                     "nearPlane",
                     "farPlane",
+                    "outputWidth",
+                    "outputHeight",
                 },
                 result.warnings, context);
       SceneCameraDocument camera;
@@ -869,7 +888,9 @@ auto LoadCameraArray(const Json& root, SceneDocumentResult& result, const std::f
           !ReadArrayField(item, "rotation", camera.rotation, fieldError) ||
           !ReadNumber(item, "fovRadians", camera.fovRadians, fieldError) ||
           !ReadNumber(item, "nearPlane", camera.nearPlane, fieldError) ||
-          !ReadNumber(item, "farPlane", camera.farPlane, fieldError)) {
+          !ReadNumber(item, "farPlane", camera.farPlane, fieldError) ||
+          !ReadPositiveDimension(item, "outputWidth", camera.outputWidth, fieldError) ||
+          !ReadPositiveDimension(item, "outputHeight", camera.outputHeight, fieldError)) {
         result.error = FileContext(path, context + ": " + (fieldError.empty() ? "duplicate camera ID" : fieldError));
         return false;
       }
@@ -877,7 +898,8 @@ auto LoadCameraArray(const Json& root, SceneDocumentResult& result, const std::f
           (camera.rotation.at(0) * camera.rotation.at(0)) + (camera.rotation.at(1) * camera.rotation.at(1)) +
           (camera.rotation.at(2) * camera.rotation.at(2)) + (camera.rotation.at(3) * camera.rotation.at(3));
       if (camera.fovRadians <= 0.0F || camera.fovRadians >= std::numbers::pi_v<float> || camera.nearPlane <= 0.0F ||
-          camera.farPlane <= camera.nearPlane || rotationLengthSquared <= 1.0e-12F) {
+          camera.farPlane <= camera.nearPlane || camera.outputWidth == 0 || camera.outputHeight == 0 ||
+          rotationLengthSquared <= 1.0e-12F) {
         result.error = FileContext(path, context + " contains invalid projection or rotation values");
         return false;
       }

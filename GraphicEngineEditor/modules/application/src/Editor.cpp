@@ -27,8 +27,6 @@
 #include <cmath>
 #include <imgui.h>
 #include <imgui_internal.h>
-#include <optional>
-#include <span>
 #include <string>
 #include <utility>
 
@@ -69,10 +67,8 @@ void Editor::OnInit() {
   }
 
   m_ActiveScene = std::make_shared<Engine::Scene>();
-  const uint64_t cameraCreate = m_ActiveScene->QueueCreate("Editor Camera");
   const uint64_t meshCreate = m_ActiveScene->QueueCreate("Cube");
   const uint64_t lightCreate = m_ActiveScene->QueueCreate("Spot Light");
-  Engine::EntityHandle cameraEntity = Engine::InvalidEntityHandle;
   Engine::EntityHandle meshEntity = Engine::InvalidEntityHandle;
   Engine::EntityHandle lightEntity = Engine::InvalidEntityHandle;
   for (const auto& result : m_ActiveScene->sync()) {
@@ -80,21 +76,13 @@ void Editor::OnInit() {
       ENGINE_LOG_ERROR("Scene", "Default scene entity creation failed | reason: {}", result.Outcome.error().Message);
       continue;
     }
-    if (result.Sequence == cameraCreate) {
-      cameraEntity = result.Entity;
-    } else if (result.Sequence == meshCreate) {
+    if (result.Sequence == meshCreate) {
       meshEntity = result.Entity;
     } else if (result.Sequence == lightCreate) {
       lightEntity = result.Entity;
     }
   }
 
-  if (cameraEntity != Engine::InvalidEntityHandle) {
-    Engine::Ecs::LocalTransform cameraTransform;
-    cameraTransform.Position = {0.0F, 0.0F, -5.0F};
-    (void)m_ActiveScene->QueueSet(cameraEntity, cameraTransform);
-    (void)m_ActiveScene->QueueAdd(cameraEntity, Engine::Ecs::Camera{});
-  }
   if (meshEntity != Engine::InvalidEntityHandle) {
     Engine::Ecs::MeshRenderer meshRenderer;
     meshRenderer.PrimitiveType = "cube";
@@ -180,35 +168,11 @@ void Editor::OnUpdate(float deltaTime) {
   UpdateEditorCamera(deltaTime);
 }
 
-auto Editor::FindActiveCamera() const -> Engine::EntityHandle {
-  if (!m_ActiveScene) {
-    return Engine::InvalidEntityHandle;
-  }
-  Engine::EntityHandle cameraEntity = Engine::InvalidEntityHandle;
-  m_ActiveScene->World().ForEachChunkReadOnly<Engine::Ecs::Camera, Engine::Ecs::GlobalVisibility>(
-      [&cameraEntity](std::span<const Engine::EntityHandle> entities, std::span<const Engine::Ecs::Camera> cameras,
-                      std::span<const Engine::Ecs::GlobalVisibility> visibility) -> void {
-        for (size_t row = 0; row < entities.size(); ++row) {
-          if (cameras[row].Active && visibility[row].IsVisible) {
-            cameraEntity = entities[row];
-            return;
-          }
-        }
-      });
-  return cameraEntity;
-}
-
 void Editor::UpdateEditorCamera(float deltaTime) {
-  if (!m_ViewportHovered || !m_ActiveScene) {
+  if (!m_ViewportHovered) {
     return;
   }
-  const Engine::EntityHandle cameraEntity = FindActiveCamera();
-  const auto* storedTransform = m_ActiveScene->World().Get<Engine::Ecs::LocalTransform>(cameraEntity);
-  if (storedTransform == nullptr) {
-    return;
-  }
-
-  Engine::Ecs::LocalTransform updated = *storedTransform;
+  Engine::Ecs::LocalTransform updated = m_EditorCameraTransform;
   bool changed = false;
   if (m_MouseDeltaX != 0.0 || m_MouseDeltaY != 0.0) {
     std::array<float, 3> pitchYawRoll = QuaternionToPitchYawRoll(updated.Rotation);
@@ -251,10 +215,7 @@ void Editor::UpdateEditorCamera(float deltaTime) {
   }
   if (DirectX::XMVectorGetX(DirectX::XMVector3LengthSq(movement)) < 1.0e-6F || deltaTime <= 0.0F) {
     if (changed) {
-      const Engine::Status status = m_ActiveScene->SetInPlace(cameraEntity, updated);
-      if (!status) {
-        ENGINE_LOG_WARN("Scene", "Editor camera rotation rejected | reason: {}", status.error().Message);
-      }
+      m_EditorCameraTransform = updated;
     }
     return;
   }
@@ -266,38 +227,23 @@ void Editor::UpdateEditorCamera(float deltaTime) {
   DirectX::XMFLOAT3 movedPosition{};
   DirectX::XMStoreFloat3(&movedPosition, position);
   updated.Position = {movedPosition.x, movedPosition.y, movedPosition.z};
-  const Engine::Status status = m_ActiveScene->SetInPlace(cameraEntity, updated);
-  if (!status) {
-    ENGINE_LOG_WARN("Scene", "Editor camera movement rejected | reason: {}", status.error().Message);
-  }
+  m_EditorCameraTransform = updated;
 }
 
 void Editor::OnSetupViews() {
   if (!m_ActiveScene || !m_EditorViewport) {
     return;
   }
-  std::optional<Engine::EntityHandle> cameraEntity;
-  m_ActiveScene->World().ForEachChunkReadOnly<Engine::Ecs::Camera, Engine::Ecs::GlobalVisibility>(
-      [&cameraEntity](std::span<const Engine::EntityHandle> entities, std::span<const Engine::Ecs::Camera> cameras,
-                      std::span<const Engine::Ecs::GlobalVisibility> visibility) -> void {
-        if (cameraEntity) {
-          return;
-        }
-        for (size_t row = 0; row < entities.size(); ++row) {
-          if (cameras[row].Active && visibility[row].IsVisible) {
-            cameraEntity = entities[row];
-            return;
-          }
-        }
-      });
-  if (!cameraEntity) {
-    return;
-  }
   Engine::ViewportBinding binding;
-  binding.CameraEntity = *cameraEntity;
+  binding.Camera.Position = m_EditorCameraTransform.Position;
+  binding.Camera.Rotation = m_EditorCameraTransform.Rotation;
+  binding.Camera.FieldOfViewDegrees = m_EditorCameraSettings.FieldOfViewDegrees;
+  binding.Camera.NearPlane = m_EditorCameraSettings.NearPlane;
+  binding.Camera.FarPlane = m_EditorCameraSettings.FarPlane;
   binding.TargetViewport = m_EditorViewport.get();
   binding.TargetScene = m_ActiveScene.get();
   binding.DebugSettings.ShowLightGizmos = m_ShowDebugLightGizmos;
+  binding.DebugSettings.ShowCameraFrustums = true;
   binding.DebugSettings.ShowWireframePlane = m_ShowDebugWireframePlane;
   RegisterView(binding);
 }

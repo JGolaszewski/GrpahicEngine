@@ -569,6 +569,8 @@ auto Application::LoadSceneDocument(const SceneDocument& document, std::string& 
         .FieldOfViewDegrees = DirectX::XMConvertToDegrees(source.fovRadians),
         .NearPlane = source.nearPlane,
         .FarPlane = source.farPlane,
+        .OutputWidth = source.outputWidth,
+        .OutputHeight = source.outputHeight,
     };
     (void)stagedScene->QueueSet(pending.Handle, transform);
     const SceneGuidDocument cameraGuid = source.identityGuid.value_or(SceneGuidDocument{.high = 2, .low = source.id});
@@ -703,6 +705,8 @@ auto Application::CreateSceneDocument(const Scene& scene) const -> SceneDocument
               camera.fovRadians = DirectX::XMConvertToRadians(components[row].FieldOfViewDegrees);
               camera.nearPlane = components[row].NearPlane;
               camera.farPlane = components[row].FarPlane;
+              camera.outputWidth = components[row].OutputWidth;
+              camera.outputHeight = components[row].OutputHeight;
               document.cameras.push_back(camera);
               (void)names;
             }

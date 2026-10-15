@@ -76,6 +76,37 @@ TEST(ScenePersistenceTests, RoundTripsFieldsAndRejectsTraversalWithoutOverwritin
   EXPECT_TRUE(loaded.document.entities.front().forceWireframe);
 }
 
+TEST(ScenePersistenceTests, PersistsCameraResolutionAndUsesFullHdDefaultsForOlderScenes) {
+  TemporaryProject project;
+  Engine::AssetManager assets(project.Root());
+  Engine::SceneDocument document;
+  Engine::SceneCameraDocument camera;
+  camera.id = 7;
+  camera.outputWidth = 2560;
+  camera.outputHeight = 1440;
+  document.cameras.push_back(camera);
+
+  std::string error;
+  ASSERT_TRUE(assets.SaveScene("camera.scene.json", document, error)) << error;
+  const auto loaded = assets.LoadScene("camera.scene.json");
+  ASSERT_TRUE(loaded) << loaded.error;
+  ASSERT_EQ(loaded.document.cameras.size(), 1U);
+  EXPECT_EQ(loaded.document.cameras.front().outputWidth, 2560U);
+  EXPECT_EQ(loaded.document.cameras.front().outputHeight, 1440U);
+
+  const auto legacyPath = project.Root() / "legacy-camera.scene.json";
+  {
+    std::ofstream legacy(legacyPath, std::ios::binary | std::ios::trunc);
+    legacy
+        << R"({"schemaVersion":1,"unitsPerMeter":1,"cameras":[{"id":9,"position":[0,0,0],"rotation":[0,0,0,1],"fovRadians":1,"nearPlane":0.1,"farPlane":100}]})";
+  }
+  const auto legacy = assets.LoadScene("legacy-camera.scene.json");
+  ASSERT_TRUE(legacy) << legacy.error;
+  ASSERT_EQ(legacy.document.cameras.size(), 1U);
+  EXPECT_EQ(legacy.document.cameras.front().outputWidth, 1920U);
+  EXPECT_EQ(legacy.document.cameras.front().outputHeight, 1080U);
+}
+
 TEST(ScenePersistenceTests, FailedAtomicReplacementPreservesDestinationAndRemovesTemporaryFile) {
   TemporaryProject project;
   Engine::AssetManager assets(project.Root());
@@ -272,6 +303,14 @@ TEST(ScenePersistenceTests, RejectsMalformedEntityLightAndCameraFields) {
                 "invalid projection or rotation values");
   const std::string validCamera =
       R"({"id":1,"position":[0,0,0],"rotation":[0,0,0,1],"fovRadians":1,"nearPlane":0.1,"farPlane":100})";
+  checkRejected(
+      "camera-zero-width.json",
+      root("\"cameras\":[" + replaceField(validCamera, "\"farPlane\":100", "\"farPlane\":100,\"outputWidth\":0") + "]"),
+      "positive 32-bit integer");
+  checkRejected("camera-fractional-height.json",
+                root("\"cameras\":[" +
+                     replaceField(validCamera, "\"farPlane\":100", "\"farPlane\":100,\"outputHeight\":720.5") + "]"),
+                "positive 32-bit integer");
   checkRejected("camera-near-plane.json",
                 root("\"cameras\":[" + replaceField(validCamera, "\"nearPlane\":0.1", "\"nearPlane\":0") + "]"),
                 "invalid projection or rotation values");

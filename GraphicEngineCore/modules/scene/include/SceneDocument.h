@@ -84,6 +84,9 @@ struct SceneCameraDocument {
   float fovRadians = 0.785398163f;
   float nearPlane = 0.1f;
   float farPlane = 1000.0f;
+  /// Render output dimensions; missing values in older files use 1920 x 1080.
+  uint32_t outputWidth = 1920;
+  uint32_t outputHeight = 1080;
 };
 
 struct SceneDocument {

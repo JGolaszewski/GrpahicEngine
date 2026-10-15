@@ -7,6 +7,7 @@
 #include <cmath>
 #include <functional>
 #include <imgui.h>
+#include <limits>
 #include <string>
 
 namespace {
@@ -215,6 +216,61 @@ void InspectorPanel::DrawEntityInspector() {
     bool changed = ImGui::SliderFloat("Field of view", &camera.FieldOfViewDegrees, 10.0F, 150.0F, "%.1f deg");
     changed |= ImGui::DragFloat("Near plane", &camera.NearPlane, 0.01F, 0.001F, 100.0F);
     changed |= ImGui::DragFloat("Far plane", &camera.FarPlane, 0.1F, camera.NearPlane + 0.01F, 100000.0F);
+    constexpr std::array<const char*, 5> resolutionOptions = {"720p (1280 x 720)", "1080p (1920 x 1080)",
+                                                              "1440p (2560 x 1440)", "4K UHD (3840 x 2160)", "Custom"};
+    int resolutionIndex = 4;
+    if (camera.OutputWidth == 1280 && camera.OutputHeight == 720) {
+      resolutionIndex = 0;
+    } else if (camera.OutputWidth == 1920 && camera.OutputHeight == 1080) {
+      resolutionIndex = 1;
+    } else if (camera.OutputWidth == 2560 && camera.OutputHeight == 1440) {
+      resolutionIndex = 2;
+    } else if (camera.OutputWidth == 3840 && camera.OutputHeight == 2160) {
+      resolutionIndex = 3;
+    }
+    if (ImGui::Combo("Output resolution", &resolutionIndex, resolutionOptions.data(),
+                     static_cast<int>(resolutionOptions.size()))) {
+      switch (resolutionIndex) {
+      case 0:
+        camera.OutputWidth = 1280;
+        camera.OutputHeight = 720;
+        changed = true;
+        break;
+      case 1:
+        camera.OutputWidth = 1920;
+        camera.OutputHeight = 1080;
+        changed = true;
+        break;
+      case 2:
+        camera.OutputWidth = 2560;
+        camera.OutputHeight = 1440;
+        changed = true;
+        break;
+      case 3:
+        camera.OutputWidth = 3840;
+        camera.OutputHeight = 2160;
+        changed = true;
+        break;
+      default:
+        break;
+      }
+    }
+    if (resolutionIndex == 4) {
+      int outputWidth =
+          static_cast<int>((std::min)(camera.OutputWidth, static_cast<uint32_t>(std::numeric_limits<int>::max())));
+      int outputHeight =
+          static_cast<int>((std::min)(camera.OutputHeight, static_cast<uint32_t>(std::numeric_limits<int>::max())));
+      const bool widthChanged = ImGui::InputInt("Output width", &outputWidth);
+      const bool heightChanged = ImGui::InputInt("Output height", &outputHeight);
+      if (widthChanged && outputWidth > 0) {
+        camera.OutputWidth = static_cast<uint32_t>(outputWidth);
+        changed = true;
+      }
+      if (heightChanged && outputHeight > 0) {
+        camera.OutputHeight = static_cast<uint32_t>(outputHeight);
+        changed = true;
+      }
+    }
     changed |= ImGui::InputInt("Priority", &camera.Priority);
     changed |= ImGui::Checkbox("Active camera", &camera.Active);
     if (changed) {

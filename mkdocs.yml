@@ -38,6 +38,7 @@ nav:
       - C++ guidelines: cpp-guidelines.md
       - Logging: logging.md
       - Rendering:
+          - Cameras: rendering/cameras.md
           - Shadows: rendering/shadows.md
           - Final rendering: rendering/final-render.md
   - Workflows:
