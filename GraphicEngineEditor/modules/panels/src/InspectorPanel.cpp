@@ -217,18 +217,6 @@ void InspectorPanel::DrawObjectInspector()
         sceneChanged = true;
     }
 
-    if (ImGui::TreeNode("World Transform (read only)"))
-    {
-        DirectX::XMFLOAT4X4 world{};
-        DirectX::XMStoreFloat4x4(&world, selectedEntity->transform.GetWorldMat());
-        for (size_t row = 0; row < 4; ++row)
-        {
-            ImGui::Text("%.3f  %.3f  %.3f  %.3f", world.m[row][0], world.m[row][1], world.m[row][2],
-                        world.m[row][3]);
-        }
-        ImGui::TreePop();
-    }
-
     sceneChanged |= ImGui::Checkbox("Wireframe", &selectedEntity->ForceWireframe);
     sceneChanged |= ImGui::Checkbox("Disable depth test", &selectedEntity->DisableDepthTest);
     sceneChanged |= ImGui::Checkbox("Cast shadows", &selectedEntity->CastShadows);

@@ -122,14 +122,18 @@ void HierarchyPanel::Draw()
 void HierarchyPanel::DrawEntityTree(const Engine::Object &parent)
 {
     for (const auto &child : parent.GetChildren())
+    {
         DrawEntityNode(child);
+    }
 }
 
 void HierarchyPanel::DrawEntityNode(const std::shared_ptr<Engine::Object> &object)
 {
     const auto entity = std::dynamic_pointer_cast<::Engine::Renderer::Entity>(object);
     if (!entity || !m_Scene)
+    {
         return;
+    }
     const Engine::EntityId entityId = m_Scene->GetEntityId(entity.get());
     const std::string label = entity->Name.empty() ? "Entity " + std::to_string(entityId) : entity->Name;
     ImGui::PushID(static_cast<int>(entityId >> 32U));
@@ -163,7 +167,9 @@ void HierarchyPanel::DrawEntityNode(const std::shared_ptr<Engine::Object> &objec
         {
             const auto draggedId = *static_cast<const Engine::EntityId *>(payload->Data);
             if (draggedId != entityId)
+            {
                 EmitEvent(std::make_unique<EntityReparentRequestedEvent>(draggedId, entityId));
+            }
         }
         ImGui::EndDragDropTarget();
     }

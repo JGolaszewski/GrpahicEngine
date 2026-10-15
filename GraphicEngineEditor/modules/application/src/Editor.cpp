@@ -660,19 +660,25 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event)
         return false;
     });
 
-    dispatcher.Dispatch<EntityReparentRequestedEvent>([this](const auto &request) {
+    dispatcher.Dispatch<EntityReparentRequestedEvent>([this](const auto &request) -> bool {
         if (!m_ActiveScene)
+        {
             return false;
+        }
         const auto entity = m_ActiveScene->FindEntity(request.GetEntityId());
         const auto parent = request.GetParentId() == Engine::InvalidEntityId
                                 ? std::shared_ptr<::Engine::Renderer::Entity>{}
                                 : m_ActiveScene->FindEntity(request.GetParentId());
         if (!entity || (request.GetParentId() != Engine::InvalidEntityId && !parent))
+        {
             return false;
+        }
         Engine::Object *parentObject =
             parent ? static_cast<Engine::Object *>(parent.get()) : &m_ActiveScene->GetRoot();
         if (!entity->SetParent(parentObject))
+        {
             return false;
+        }
         m_SceneDirty = true;
         BroadcastSceneChanged();
         return true;
