@@ -33,7 +33,7 @@ public:
 
   TemporaryOutputDirectory(const TemporaryOutputDirectory&) = delete;
   auto operator=(const TemporaryOutputDirectory&) -> TemporaryOutputDirectory& = delete;
-  ~TemporaryOutputDirectory() noexcept {
+  ~TemporaryOutputDirectory() noexcept { // NOLINT(bugprone-exception-escape): uses remove_all's error_code overload.
     std::error_code ignored;
     std::filesystem::remove_all(m_Root, ignored);
   }
