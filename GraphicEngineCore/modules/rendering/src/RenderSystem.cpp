@@ -246,7 +246,12 @@ void RenderSystem::SubmitViews(const std::vector<Engine::ViewportBinding>& views
 
   m_RenderGraph->AddPass(std::make_unique<::Engine::Renderer::ShadowPass>());
   m_RenderGraph->AddPass(std::make_unique<::Engine::Renderer::ForwardPass>(m_SceneRenderer.get()));
-  m_RenderGraph->AddPass(std::make_unique<::Engine::Renderer::DebugPass>(m_SceneRenderer.get()));
+  const bool hasEditorView = std::ranges::any_of(bb.GetSceneViews(), [](const ::Engine::Renderer::RenderView* view) {
+    return view != nullptr && !view->FinalRender;
+  });
+  if (hasEditorView) {
+    m_RenderGraph->AddPass(std::make_unique<::Engine::Renderer::DebugPass>(m_SceneRenderer.get()));
+  }
 }
 
 auto RenderSystem::SetShadowSettings(const ShadowSettings& settings) noexcept -> bool {
