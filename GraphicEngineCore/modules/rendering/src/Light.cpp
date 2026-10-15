@@ -83,12 +83,20 @@ void SpotLight::SetShadowNormalBias(float bias)
 
 DirectX::XMFLOAT3 SpotLight::GetDirection() const
 {
-    return m_Direction;
+    using namespace DirectX;
+    const XMMATRIX world = transform.GetWorldMat();
+    const XMVECTOR direction = XMVector3Normalize(XMVector3TransformNormal(XMLoadFloat3(&m_Direction), world));
+    XMFLOAT3 result{};
+    XMStoreFloat3(&result, direction);
+    return result;
 }
 
 DirectX::XMFLOAT3 SpotLight::GetPosition() const
 {
-    return m_Position;
+    DirectX::XMFLOAT3 result{};
+    DirectX::XMStoreFloat3(&result, DirectX::XMVector3TransformCoord(
+                                      DirectX::XMLoadFloat3(&m_Position), transform.GetWorldMat()));
+    return result;
 }
 
 bool SpotLight::GetUsePosition() const
@@ -143,9 +151,11 @@ DirectionalLightData SpotLight::GetDirectionalLightData() const
     const float innerRad = m_InnerAngleDegrees * 0.017453292519943295769f;
     const float outerRad = m_OuterAngleDegrees * 0.017453292519943295769f;
 
-    data.DirectionIntensity = {m_Direction.x, m_Direction.y, m_Direction.z, m_Intensity};
+    const auto direction = GetDirection();
+    const auto position = GetPosition();
+    data.DirectionIntensity = {direction.x, direction.y, direction.z, m_Intensity};
     data.ColorUsePosition = {m_Color.x, m_Color.y, m_Color.z, m_UsePosition ? 1.0f : 0.0f};
-    data.PositionRange = {m_Position.x, m_Position.y, m_Position.z, m_Range};
+    data.PositionRange = {position.x, position.y, position.z, m_Range};
     data.ConeParams = {std::cos(innerRad), std::cos(outerRad), 0.0f, 0.0f};
     data.ShadowParams = {-1.0f, m_ShadowBias, m_ShadowNormalBias, m_CastShadows ? 1.0f : 0.0f};
 

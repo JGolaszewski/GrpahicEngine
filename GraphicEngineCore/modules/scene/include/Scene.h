@@ -1,6 +1,7 @@
 #pragma once
 
 #include "runtime/include/CoreExport.h"
+#include "scene/include/Object.h"
 #include "scene/include/SceneIds.h"
 #include "scene/include/Object.h"
 

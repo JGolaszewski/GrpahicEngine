@@ -1,6 +1,7 @@
 #pragma once
 
 #include "runtime/include/CoreExport.h"
+#include "scene/include/Object.h"
 
 #include <DirectXMath.h>
 #include <cstdint>
@@ -8,17 +9,15 @@
 #include "scene/include/components/Transform.h"
 
 #ifdef _MSC_VER
-#  pragma warning(push)
-#  pragma warning(disable : 4251) // These engine DLL types intentionally expose same-toolchain member types.
+#pragma warning(push)
+#pragma warning(disable : 4251) // These engine DLL types intentionally expose same-toolchain member types.
 #endif
 
 namespace Engine::Renderer
 {
-class ENGINE_API Camera
+class ENGINE_API Camera : public ::Engine::Object
 {
   public:
-    ::Engine::Components::Transform m_Transform;
-
     // Projection values use radians for FOV and positive distances for planes.
     Camera(float fovRadians, float znear, float zfar);
 
@@ -53,5 +52,5 @@ class ENGINE_API Camera
 } // namespace Engine::Renderer
 
 #ifdef _MSC_VER
-#  pragma warning(pop)
+#pragma warning(pop)
 #endif

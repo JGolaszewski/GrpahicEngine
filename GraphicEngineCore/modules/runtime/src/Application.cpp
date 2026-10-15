@@ -313,8 +313,7 @@ void Application::Run(std::unique_ptr<IWindow> window, std::unique_ptr<IRenderBa
         {
             if (const SceneRenderer *sceneRenderer = m_RenderSystem->GetSceneRenderer())
             {
-                const SceneRenderer::SubmissionStats &submission =
-                    sceneRenderer->GetSubmissionStats();
+                const SceneRenderer::SubmissionStats &submission = sceneRenderer->GetSubmissionStats();
                 frameTimingStats.ObjectsSubmitted = submission.ObjectsSubmitted;
                 frameTimingStats.ObjectsCulled = submission.ObjectsCulled;
                 frameTimingStats.PacketsBuilt = submission.PacketsBuilt;
@@ -685,6 +684,7 @@ bool Application::LoadSceneDocument(const SceneDocument &document, std::string &
         auto light = std::make_shared<::Engine::Renderer::SpotLight>(
             DirectX::XMFLOAT3(source.direction[0], source.direction[1], source.direction[2]),
             DirectX::XMFLOAT3(source.color[0], source.color[1], source.color[2]), source.intensity);
+        light->Name = source.name;
         light->SetUsePosition(source.usePosition);
         light->SetPosition({source.position[0], source.position[1], source.position[2]});
         light->SetRange(source.range);
@@ -700,15 +700,70 @@ bool Application::LoadSceneDocument(const SceneDocument &document, std::string &
 
     for (const auto &source : document.cameras)
     {
-        auto camera = std::make_shared<::Engine::Renderer::Camera>(source.fovRadians, source.nearPlane,
-                                                                   source.farPlane);
-        camera->m_Transform.SetPosition(source.position[0], source.position[1], source.position[2]);
-        camera->m_Transform.Rotation = {source.rotation[0], source.rotation[1], source.rotation[2],
+        auto camera =
+            std::make_shared<::Engine::Renderer::Camera>(source.fovRadians, source.nearPlane, source.farPlane);
+        camera->Name = source.name;
+        camera->transform.SetPosition(source.position[0], source.position[1], source.position[2]);
+        camera->transform.Rotation = {source.rotation[0], source.rotation[1], source.rotation[2],
                                         source.rotation[3]};
         if (stagedScene->AddCamera(std::move(camera), source.id) == InvalidCameraId)
         {
             return fail("scene contains a duplicate or unsupported camera ID " + std::to_string(source.id));
         }
+    }
+
+    struct PendingParent
+    {
+        Engine::Object *Child = nullptr;
+        Engine::SceneNodeParentDocument Parent;
+        std::string Description;
+    };
+    std::vector<PendingParent> pendingParents;
+    pendingParents.reserve(document.entities.size() + document.lights.size() + document.cameras.size());
+    for (const auto &source : document.entities)
+    {
+        if (source.parent)
+            pendingParents.push_back({stagedScene->FindEntity(source.id).get(), *source.parent,
+                                      "entity " + std::to_string(source.id)});
+    }
+    for (const auto &source : document.lights)
+    {
+        if (source.parent)
+            pendingParents.push_back({stagedScene->FindLight(source.id).get(), *source.parent,
+                                      "light " + std::to_string(source.id)});
+    }
+    for (const auto &source : document.cameras)
+    {
+        if (source.parent)
+            pendingParents.push_back({stagedScene->FindCamera(source.id).get(), *source.parent,
+                                      "camera " + std::to_string(source.id)});
+    }
+    std::stable_sort(pendingParents.begin(), pendingParents.end(), [](const auto &left, const auto &right) {
+        if (left.Parent.type != right.Parent.type)
+            return left.Parent.type < right.Parent.type;
+        if (left.Parent.id != right.Parent.id)
+            return left.Parent.id < right.Parent.id;
+        return left.Parent.siblingOrder < right.Parent.siblingOrder;
+    });
+    const auto resolveParent = [&stagedScene](const Engine::SceneNodeParentDocument &parent) -> Engine::Object * {
+        if (parent.type == "entity")
+            return stagedScene->FindEntity(parent.id).get();
+        if (parent.type == "light")
+            return stagedScene->FindLight(parent.id).get();
+        if (parent.type == "camera")
+            return stagedScene->FindCamera(parent.id).get();
+        return nullptr;
+    };
+    for (const auto &pending : pendingParents)
+    {
+        Engine::Object *parent = resolveParent(pending.Parent);
+        if (!pending.Child || !parent)
+        {
+            warnings.push_back(pending.Description + " references a missing parent; placed at scene root");
+            continue;
+        }
+        if (!pending.Child->SetParent(parent, Engine::Object::ParentTransformMode::KeepLocal))
+            warnings.push_back(pending.Description + " has an invalid or cyclic parent; placed at scene root");
     }
 
     m_ActiveViews.clear();
@@ -743,6 +798,20 @@ SceneDocument Application::CreateSceneDocument(const Scene &scene) const
         if (const auto *parentEntity = dynamic_cast<const ::Engine::Renderer::Entity *>(entity->GetParent()))
             item.parentId = scene.GetEntityId(parentEntity);
         item.name = entity->Name;
+        if (entity->GetParent() && entity->GetParent() != &scene.GetRoot())
+        {
+            const auto children = entity->GetParent()->GetChildren();
+            const auto sibling = std::find_if(children.begin(), children.end(), [&](const auto &candidate) {
+                return candidate.get() == entity.get();
+            });
+            const uint32_t siblingOrder = sibling == children.end() ? 0u : static_cast<uint32_t>(sibling - children.begin());
+            if (const auto *parentEntity = dynamic_cast<const ::Engine::Renderer::Entity *>(entity->GetParent()))
+                item.parent = Engine::SceneNodeParentDocument{"entity", scene.GetEntityId(parentEntity), siblingOrder};
+            else if (const auto *parentLight = dynamic_cast<const ::Engine::Renderer::SpotLight *>(entity->GetParent()))
+                item.parent = Engine::SceneNodeParentDocument{"light", scene.GetLightId(parentLight), siblingOrder};
+            else if (const auto *parentCamera = dynamic_cast<const ::Engine::Renderer::Camera *>(entity->GetParent()))
+                item.parent = Engine::SceneNodeParentDocument{"camera", scene.GetCameraId(parentCamera), siblingOrder};
+        }
         item.modelGuid = entity->ModelGuid;
         item.materialGuid = entity->MaterialGuid;
         item.primitiveType = entity->PrimitiveType;
@@ -786,6 +855,21 @@ SceneDocument Application::CreateSceneDocument(const Scene &scene) const
             continue;
         SceneLightDocument item;
         item.id = scene.GetLightIdAt(i);
+        item.name = light->Name;
+        if (light->GetParent() && light->GetParent() != &scene.GetRoot())
+        {
+            const auto children = light->GetParent()->GetChildren();
+            const auto sibling = std::find_if(children.begin(), children.end(), [&](const auto &candidate) {
+                return candidate.get() == light.get();
+            });
+            const uint32_t siblingOrder = sibling == children.end() ? 0u : static_cast<uint32_t>(sibling - children.begin());
+            if (const auto *parentEntity = dynamic_cast<const ::Engine::Renderer::Entity *>(light->GetParent()))
+                item.parent = Engine::SceneNodeParentDocument{"entity", scene.GetEntityId(parentEntity), siblingOrder};
+            else if (const auto *parentLight = dynamic_cast<const ::Engine::Renderer::SpotLight *>(light->GetParent()))
+                item.parent = Engine::SceneNodeParentDocument{"light", scene.GetLightId(parentLight), siblingOrder};
+            else if (const auto *parentCamera = dynamic_cast<const ::Engine::Renderer::Camera *>(light->GetParent()))
+                item.parent = Engine::SceneNodeParentDocument{"camera", scene.GetCameraId(parentCamera), siblingOrder};
+        }
         const auto direction = light->GetDirection();
         const auto position = light->GetPosition();
         const auto color = light->GetColor();
@@ -810,7 +894,22 @@ SceneDocument Application::CreateSceneDocument(const Scene &scene) const
             continue;
         SceneCameraDocument item;
         item.id = scene.GetCameraIdAt(i);
-        const auto &transform = camera->m_Transform;
+        item.name = camera->Name;
+        if (camera->GetParent() && camera->GetParent() != &scene.GetRoot())
+        {
+            const auto children = camera->GetParent()->GetChildren();
+            const auto sibling = std::find_if(children.begin(), children.end(), [&](const auto &candidate) {
+                return candidate.get() == camera.get();
+            });
+            const uint32_t siblingOrder = sibling == children.end() ? 0u : static_cast<uint32_t>(sibling - children.begin());
+            if (const auto *parentEntity = dynamic_cast<const ::Engine::Renderer::Entity *>(camera->GetParent()))
+                item.parent = Engine::SceneNodeParentDocument{"entity", scene.GetEntityId(parentEntity), siblingOrder};
+            else if (const auto *parentLight = dynamic_cast<const ::Engine::Renderer::SpotLight *>(camera->GetParent()))
+                item.parent = Engine::SceneNodeParentDocument{"light", scene.GetLightId(parentLight), siblingOrder};
+            else if (const auto *parentCamera = dynamic_cast<const ::Engine::Renderer::Camera *>(camera->GetParent()))
+                item.parent = Engine::SceneNodeParentDocument{"camera", scene.GetCameraId(parentCamera), siblingOrder};
+        }
+        const auto &transform = camera->transform;
         item.position = {transform.Position.x, transform.Position.y, transform.Position.z};
         item.rotation = {transform.Rotation.x, transform.Rotation.y, transform.Rotation.z,
                          transform.Rotation.w};

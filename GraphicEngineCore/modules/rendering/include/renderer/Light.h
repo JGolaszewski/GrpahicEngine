@@ -2,6 +2,7 @@
 #pragma once
 
 #include "runtime/include/CoreExport.h"
+#include "scene/include/Object.h"
 #include <DirectXMath.h>
 #include <cstddef>
 #include <cstdint>
@@ -47,7 +48,7 @@ static_assert(offsetof(DirectionalLightData, ShadowParams) == 128);
 static_assert(offsetof(LightsCBData, LightCount) == ENGINE_MAX_LIGHTS * sizeof(DirectionalLightData));
 static_assert(sizeof(LightsCBData) == ENGINE_MAX_LIGHTS * sizeof(DirectionalLightData) + 16);
 
-class ENGINE_API SpotLight
+class ENGINE_API SpotLight : public ::Engine::Object
 {
   public:
     SpotLight() = default;

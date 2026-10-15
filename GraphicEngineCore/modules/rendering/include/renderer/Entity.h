@@ -45,7 +45,6 @@ class ENGINE_API Entity : public ::Engine::Object
     std::shared_ptr<Mesh> mesh;
     std::shared_ptr<Material> material;
     std::vector<Submesh> Submeshes;
-    std::string Name;
     std::optional<std::string> ModelGuid;
     std::optional<std::string> MaterialGuid;
     std::optional<std::string> PrimitiveType;

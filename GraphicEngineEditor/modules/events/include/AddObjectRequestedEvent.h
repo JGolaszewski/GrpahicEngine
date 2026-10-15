@@ -1,7 +1,11 @@
 #pragma once
 
 #include "runtime/include/events/Event.h"
+#include "events/include/SceneCreationResult.h"
 #include <DirectXMath.h>
+#include <memory>
+#include <string>
+#include <utility>
 
 // ================================================================================
 // AddObjectRequestedEvent.h
@@ -24,9 +28,9 @@ class AddObjectRequestedEvent : public Engine::Events::Event
 
     AddObjectRequestedEvent(Shape shape, const DirectX::XMFLOAT3 &position, const DirectX::XMFLOAT3 &scale,
                             const DirectX::XMFLOAT4 &color, const DirectX::XMFLOAT3 &emissive, float metallic,
-                            float roughness)
+                            float roughness, std::string name = {})
         : m_Shape(shape), m_Position(position), m_Scale(scale), m_Color(color), m_Emissive(emissive),
-          m_Metallic(metallic), m_Roughness(roughness)
+          m_Metallic(metallic), m_Roughness(roughness), m_Name(std::move(name))
     {
     }
 
@@ -68,6 +72,14 @@ class AddObjectRequestedEvent : public Engine::Events::Event
     {
         return m_Roughness;
     }
+    [[nodiscard]] const std::string &GetName() const noexcept
+    {
+        return m_Name;
+    }
+    [[nodiscard]] const std::shared_ptr<SceneCreationResult> &GetCreationResult() const noexcept
+    {
+        return m_CreationResult;
+    }
 
   private:
     Shape m_Shape;
@@ -77,4 +89,6 @@ class AddObjectRequestedEvent : public Engine::Events::Event
     DirectX::XMFLOAT3 m_Emissive;
     float m_Metallic;
     float m_Roughness;
+    std::string m_Name;
+    std::shared_ptr<SceneCreationResult> m_CreationResult = std::make_shared<SceneCreationResult>();
 };

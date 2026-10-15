@@ -550,11 +550,11 @@ void InspectorPanel::DrawCameraInspector()
     ImGui::Text("Camera %d", m_SelectedCameraIndex);
     ImGui::Separator();
 
-    float position[3] = {selectedCamera->m_Transform.Position.x, selectedCamera->m_Transform.Position.y,
-                         selectedCamera->m_Transform.Position.z};
+    float position[3] = {selectedCamera->transform.Position.x, selectedCamera->transform.Position.y,
+                         selectedCamera->transform.Position.z};
     if (ImGui::DragFloat3("Position", position, 0.05f))
     {
-        selectedCamera->m_Transform.SetPosition(position[0], position[1], position[2]);
+        selectedCamera->transform.SetPosition(position[0], position[1], position[2]);
         EmitEvent(std::make_unique<SceneModifiedEvent>());
     }
 

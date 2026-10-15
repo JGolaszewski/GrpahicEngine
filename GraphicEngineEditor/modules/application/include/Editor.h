@@ -6,6 +6,7 @@
 #include "application/include/EditorSceneDocument.h"
 #include "commands/include/CommandHistory.h"
 #include "events/include/AssetImportRequestedEvent.h"
+#include "events/include/SceneCreationResult.h"
 #include "events/include/SceneFileActionRequestedEvent.h"
 #include "panels/include/EditorPanel.h"
 #include "panels/include/EditorConsole.h"
@@ -88,15 +89,17 @@ class Editor : public Engine::Application
     void RequestSceneAction(SceneFileActionRequestedEvent::Action action);
     bool SaveCurrentScene(bool choosePath);
     void DrawUnsavedChangesModal();
-    void OnEntityMembershipChanged(Engine::EntityId id, const std::shared_ptr<::Engine::Renderer::Entity> &entity,
-                                   bool present);
+    void OnEntityMembershipChanged(Engine::EntityId id,
+                                   const std::shared_ptr<::Engine::Renderer::Entity> &entity, bool present);
     bool AssignTexture(Engine::EntityId entityId, int32_t materialSlot,
                        AssetImportRequestedEvent::TextureSemantic semantic,
                        const std::optional<std::string> &textureGuid);
     void ReimportAsset(const std::string &guid);
     void ReassignModel(Engine::EntityId entityId, const std::string &guid);
-    void AddModelToScene(const std::string &guid, const DirectX::XMFLOAT3 &position,
-                         const DirectX::XMFLOAT3 &scale);
+    bool AddModelToScene(const std::string &guid, const DirectX::XMFLOAT3 &position,
+                         const DirectX::XMFLOAT3 &scale, std::string &error,
+                         const std::string &name = {});
+    bool CommitCreatedEntity(const std::shared_ptr<::Engine::Renderer::Entity> &entity, std::string &error);
     struct SelectionSnapshot
     {
         SelectedItemType Type = SelectedItemType::None;
@@ -166,6 +169,8 @@ class Editor : public Engine::Application
         std::string Guid;
         DirectX::XMFLOAT3 Position{};
         DirectX::XMFLOAT3 Scale{1.0f, 1.0f, 1.0f};
+        std::string Name;
+        std::shared_ptr<SceneCreationResult> Result;
     };
     std::optional<PendingUnsupportedModelLoad> m_PendingUnsupportedModelLoad;
     std::string m_UnsupportedModelWarnings;

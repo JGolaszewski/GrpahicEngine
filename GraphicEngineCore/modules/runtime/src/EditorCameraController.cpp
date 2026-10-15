@@ -76,7 +76,7 @@ void EditorCameraController::Update(float deltaTime) noexcept
     const float sinYaw = std::sin(m_Yaw);
     const float cosYaw = std::cos(m_Yaw);
 
-    auto &position = m_Camera->m_Transform.Position;
+    auto &position = m_Camera->transform.Position;
     position.x += (sinYaw * moveForward + cosYaw * moveRight) * step;
     position.z += (cosYaw * moveForward - sinYaw * moveRight) * step;
     position.y += moveUp * step;
@@ -85,7 +85,7 @@ void EditorCameraController::Update(float deltaTime) noexcept
     {
         m_Yaw += m_MouseDeltaX * lookSensitivity;
         m_Pitch = std::clamp(m_Pitch + m_MouseDeltaY * lookSensitivity, -maxPitch, maxPitch);
-        m_Camera->m_Transform.SetRotation(m_Pitch, m_Yaw, 0.0f);
+        m_Camera->transform.SetRotation(m_Pitch, m_Yaw, 0.0f);
     }
 
     m_MouseDeltaX = 0.0f;

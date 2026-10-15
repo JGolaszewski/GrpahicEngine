@@ -1,6 +1,7 @@
 #include "scene/include/Scene.h"
 
 #include "rendering/include/renderer/Entity.h"
+#include "rendering/include/renderer/Camera.h"
 #include "rendering/include/renderer/Light.h"
 
 #include <algorithm>
@@ -10,6 +11,17 @@ namespace Engine
 {
 namespace
 {
+void DetachNodePromotingChildren(Engine::Object &node)
+{
+    Engine::Object *parent = node.GetParent();
+    if (!parent)
+        return;
+    const std::vector<std::shared_ptr<Engine::Object>> children(node.GetChildren().begin(), node.GetChildren().end());
+    for (const auto &child : children)
+        child->SetParent(parent, Engine::Object::ParentTransformMode::KeepWorld);
+    parent->RemoveChild(&node);
+}
+
 template <typename Id>
 void EraseIdAt(std::vector<Id> &ids, std::unordered_map<Id, size_t> &indices, size_t index)
 {
@@ -24,7 +36,7 @@ void EraseIdAt(std::vector<Id> &ids, std::unordered_map<Id, size_t> &indices, si
 
 EntityId Scene::AddEntity(std::shared_ptr<::Engine::Renderer::Entity> entity, EntityId persistentId)
 {
-    if (!entity)
+    if (!entity || entity->GetParent() != nullptr)
         return InvalidEntityId;
     EntityId id = m_NextEntityId;
     if (persistentId != InvalidEntityId)
@@ -40,7 +52,7 @@ EntityId Scene::AddEntity(std::shared_ptr<::Engine::Renderer::Entity> entity, En
             return InvalidEntityId;
         ++m_NextEntityId;
     }
-    if (entity->GetParent() != nullptr || !m_Root.AddChild(entity))
+    if (!m_Root.AddChild(entity))
         return InvalidEntityId;
     m_Entities.push_back(std::move(entity));
     m_EntityIds.push_back(id);
@@ -57,15 +69,7 @@ void Scene::RemoveEntity(::Engine::Renderer::Entity *entity)
     if (it != m_Entities.end())
     {
         const auto index = static_cast<size_t>(std::distance(m_Entities.begin(), it));
-        const auto entityChildren = (*it)->GetChildren();
-        std::vector<std::shared_ptr<Object>> children(entityChildren.begin(), entityChildren.end());
-        Object *parent = (*it)->GetParent();
-        if (parent == nullptr) {
-            parent = &m_Root;
-        }
-        for (const auto &child : children)
-            child->SetParent(parent);
-        (*it)->SetParent(nullptr);
+        DetachNodePromotingChildren(**it);
         m_Entities.erase(it);
         EraseIdAt(m_EntityIds, m_EntityIndices, index);
     }
@@ -77,15 +81,7 @@ void Scene::RemoveEntity(EntityId id)
     if (it != m_EntityIndices.end())
     {
         const size_t index = it->second;
-        const auto entityChildren = m_Entities[index]->GetChildren();
-        std::vector<std::shared_ptr<Object>> children(entityChildren.begin(), entityChildren.end());
-        Object *parent = m_Entities[index]->GetParent();
-        if (parent == nullptr) {
-            parent = &m_Root;
-        }
-        for (const auto &child : children)
-            child->SetParent(parent);
-        m_Entities[index]->SetParent(nullptr);
+        DetachNodePromotingChildren(*m_Entities[index]);
         EraseIdAt(m_EntityIds, m_EntityIndices, index);
         m_Entities.erase(m_Entities.begin() + index);
     }
@@ -98,21 +94,28 @@ bool Scene::ReplaceEntity(EntityId id, std::shared_ptr<::Engine::Renderer::Entit
     const auto it = m_EntityIndices.find(id);
     if (it == m_EntityIndices.end())
         return false;
-    const auto &current = m_Entities[it->second];
-    if (entity.get() == current.get())
-        return true;
-    Object *parent = current->GetParent();
-    if (parent == nullptr) {
-        parent = &m_Root;
-    }
-    if (parent == nullptr || entity->GetParent() != nullptr || !entity->SetParent(parent))
+    const size_t index = it->second;
+    const auto current = m_Entities[index];
+    if (!current || entity->GetParent() != nullptr)
         return false;
-    const auto currentChildren = current->GetChildren();
-    std::vector<std::shared_ptr<Object>> children(currentChildren.begin(), currentChildren.end());
+    Object *parent = current->GetParent();
+    if (!parent || !parent->AddChild(entity))
+        return false;
+    const std::vector<std::shared_ptr<Object>> children(current->GetChildren().begin(), current->GetChildren().end());
     for (const auto &child : children)
-        child->SetParent(entity.get());
-    current->SetParent(nullptr);
-    m_Entities[it->second] = std::move(entity);
+    {
+        if (!child->SetParent(entity.get(), Object::ParentTransformMode::KeepLocal))
+        {
+            entity->SetParent(parent, Object::ParentTransformMode::KeepWorld);
+            return false;
+        }
+    }
+    if (!parent->RemoveChild(current.get()))
+    {
+        entity->SetParent(parent, Object::ParentTransformMode::KeepWorld);
+        return false;
+    }
+    m_Entities[index] = std::move(entity);
     return true;
 }
 
@@ -177,7 +180,7 @@ DirectX::XMFLOAT3 Scene::FindFreeSpawnPosition(const DirectX::XMFLOAT3 &initialP
 
 LightId Scene::AddLight(std::shared_ptr<::Engine::Renderer::SpotLight> light, LightId persistentId)
 {
-    if (!light)
+    if (!light || light->GetParent() != nullptr)
         return InvalidLightId;
     LightId id = m_NextLightId;
     if (persistentId != InvalidLightId)
@@ -193,6 +196,8 @@ LightId Scene::AddLight(std::shared_ptr<::Engine::Renderer::SpotLight> light, Li
             return InvalidLightId;
         ++m_NextLightId;
     }
+    if (!m_Root.AddChild(light))
+        return InvalidLightId;
     m_Lights.push_back(std::move(light));
     m_LightIds.push_back(id);
     m_LightIndices.emplace(id, m_LightIds.size() - 1);
@@ -208,6 +213,7 @@ void Scene::RemoveLight(::Engine::Renderer::SpotLight *light)
     if (it != m_Lights.end())
     {
         const auto index = static_cast<size_t>(std::distance(m_Lights.begin(), it));
+        DetachNodePromotingChildren(**it);
         m_Lights.erase(it);
         EraseIdAt(m_LightIds, m_LightIndices, index);
     }
@@ -219,6 +225,7 @@ void Scene::RemoveLight(LightId id)
     if (it != m_LightIndices.end())
     {
         const size_t index = it->second;
+        DetachNodePromotingChildren(*m_Lights[index]);
         EraseIdAt(m_LightIds, m_LightIndices, index);
         m_Lights.erase(m_Lights.begin() + index);
     }
@@ -247,7 +254,7 @@ std::shared_ptr<::Engine::Renderer::SpotLight> Scene::FindLight(LightId id) cons
 
 CameraId Scene::AddCamera(std::shared_ptr<::Engine::Renderer::Camera> camera, CameraId persistentId)
 {
-    if (!camera)
+    if (!camera || camera->GetParent() != nullptr)
         return InvalidCameraId;
     CameraId id = m_NextCameraId;
     if (persistentId != InvalidCameraId)
@@ -263,6 +270,8 @@ CameraId Scene::AddCamera(std::shared_ptr<::Engine::Renderer::Camera> camera, Ca
             return InvalidCameraId;
         ++m_NextCameraId;
     }
+    if (!m_Root.AddChild(camera))
+        return InvalidCameraId;
     m_Cameras.push_back(std::move(camera));
     m_CameraIds.push_back(id);
     m_CameraIndices.emplace(id, m_CameraIds.size() - 1);
@@ -278,6 +287,7 @@ void Scene::RemoveCamera(::Engine::Renderer::Camera *camera)
     if (it != m_Cameras.end())
     {
         const auto index = static_cast<size_t>(std::distance(m_Cameras.begin(), it));
+        DetachNodePromotingChildren(**it);
         m_Cameras.erase(it);
         EraseIdAt(m_CameraIds, m_CameraIndices, index);
     }
@@ -289,6 +299,7 @@ void Scene::RemoveCamera(CameraId id)
     if (it != m_CameraIndices.end())
     {
         const size_t index = it->second;
+        DetachNodePromotingChildren(*m_Cameras[index]);
         EraseIdAt(m_CameraIds, m_CameraIndices, index);
         m_Cameras.erase(m_Cameras.begin() + index);
     }

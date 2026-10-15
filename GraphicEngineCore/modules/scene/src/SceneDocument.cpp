@@ -127,6 +127,45 @@ bool ReadId(const Json &object, uint64_t &id, std::string &error)
     return true;
 }
 
+bool ReadParent(const Json &object, std::optional<SceneNodeParentDocument> &parent, std::string &error)
+{
+    if (!object.contains("parent") || object.at("parent").is_null())
+        return true;
+    const Json &value = object.at("parent");
+    if (!value.is_object() || !value.contains("type") || !value.at("type").is_string() ||
+        !value.contains("id") || !value.at("id").is_number_unsigned())
+    {
+        error = "parent must contain a node type and positive ID";
+        return false;
+    }
+    SceneNodeParentDocument result;
+    result.type = value.at("type").get<std::string>();
+    result.id = value.at("id").get<uint64_t>();
+    if ((result.type != "entity" && result.type != "light" && result.type != "camera") || result.id == 0)
+    {
+        error = "parent type or ID is invalid";
+        return false;
+    }
+    if (value.contains("siblingOrder"))
+    {
+        if (!value.at("siblingOrder").is_number_unsigned())
+        {
+            error = "parent.siblingOrder must be an unsigned integer";
+            return false;
+        }
+        result.siblingOrder = value.at("siblingOrder").get<uint32_t>();
+    }
+    parent = std::move(result);
+    return true;
+}
+
+Json ToJson(const std::optional<SceneNodeParentDocument> &parent)
+{
+    if (!parent)
+        return nullptr;
+    return Json{{"type", parent->type}, {"id", parent->id}, {"siblingOrder", parent->siblingOrder}};
+}
+
 template <size_t N>
 bool ReadArrayField(const Json &object, const char *key, std::array<float, N> &result, std::string &error)
 {
@@ -360,6 +399,7 @@ Json ToJson(const SceneDocument &document)
         Json item = {{"id", entity.id},
                      {"parentId", entity.parentId ? Json(*entity.parentId) : Json(nullptr)},
                      {"name", entity.name},
+                     {"parent", ToJson(entity.parent)},
                      {"modelGuid", entity.modelGuid ? Json(*entity.modelGuid) : Json(nullptr)},
                      {"materialGuid", entity.materialGuid ? Json(*entity.materialGuid) : Json(nullptr)},
                      {"primitiveType", entity.primitiveType ? Json(*entity.primitiveType) : Json(nullptr)},
@@ -430,6 +470,8 @@ Json ToJson(const SceneDocument &document)
     for (const auto &light : document.lights)
     {
         result["lights"].push_back({{"id", light.id},
+                                    {"name", light.name},
+                                    {"parent", ToJson(light.parent)},
                                     {"direction", light.direction},
                                     {"position", light.position},
                                     {"color", light.color},
@@ -446,6 +488,8 @@ Json ToJson(const SceneDocument &document)
     for (const auto &camera : document.cameras)
     {
         result["cameras"].push_back({{"id", camera.id},
+                                     {"name", camera.name},
+                                     {"parent", ToJson(camera.parent)},
                                      {"position", camera.position},
                                      {"rotation", camera.rotation},
                                      {"fovRadians", camera.fovRadians},
@@ -532,11 +576,12 @@ SceneDocumentResult SceneSerializer::Load(const std::filesystem::path &path) con
                 return result;
             }
             KnownKeys(item,
-                      {"id", "parentId", "name", "modelGuid", "materialGuid", "primitiveType", "material",
+                      {"id", "name", "parent", "modelGuid", "materialGuid", "primitiveType", "material",
                        "materialOverrides", "position", "rotation", "scale", "render"},
                       result.warnings, context);
             SceneEntityDocument entity;
-            if (!ReadId(item, entity.id, fieldError) || !entityIds.insert(entity.id).second)
+            if (!ReadId(item, entity.id, fieldError) || !entityIds.insert(entity.id).second ||
+                !ReadParent(item, entity.parent, fieldError))
             {
                 result.error = FileContext(path, context + ".id must be a unique positive integer");
                 return result;
@@ -732,11 +777,12 @@ SceneDocumentResult SceneSerializer::Load(const std::filesystem::path &path) con
                 return result;
             }
             KnownKeys(item,
-                      {"id", "direction", "position", "color", "intensity", "range", "innerAngleDegrees",
+                      {"id", "name", "parent", "direction", "position", "color", "intensity", "range", "innerAngleDegrees",
                        "outerAngleDegrees", "shadowBias", "shadowNormalBias", "usePosition", "castShadows"},
                       result.warnings, context);
             SceneLightDocument light;
             if (!ReadId(item, light.id, fieldError) || !lightIds.insert(light.id).second ||
+                !ReadParent(item, light.parent, fieldError) ||
                 !ReadArrayField(item, "direction", light.direction, fieldError) ||
                 !ReadArrayField(item, "position", light.position, fieldError) ||
                 !ReadArrayField(item, "color", light.color, fieldError) ||
@@ -752,6 +798,15 @@ SceneDocumentResult SceneSerializer::Load(const std::filesystem::path &path) con
                 result.error = FileContext(
                     path, context + ": " + (fieldError.empty() ? "duplicate light ID" : fieldError));
                 return result;
+            }
+            if (item.contains("name"))
+            {
+                if (!item.at("name").is_string())
+                {
+                    result.error = FileContext(path, context + ".name must be a string");
+                    return result;
+                }
+                light.name = item.at("name").get<std::string>();
             }
             const float directionLengthSquared = light.direction[0] * light.direction[0] +
                                                  light.direction[1] * light.direction[1] +
@@ -785,10 +840,11 @@ SceneDocumentResult SceneSerializer::Load(const std::filesystem::path &path) con
                 result.error = FileContext(path, context + " must be an object");
                 return result;
             }
-            KnownKeys(item, {"id", "position", "rotation", "fovRadians", "nearPlane", "farPlane"},
+            KnownKeys(item, {"id", "name", "parent", "position", "rotation", "fovRadians", "nearPlane", "farPlane"},
                       result.warnings, context);
             SceneCameraDocument camera;
             if (!ReadId(item, camera.id, fieldError) || !cameraIds.insert(camera.id).second ||
+                !ReadParent(item, camera.parent, fieldError) ||
                 !ReadArrayField(item, "position", camera.position, fieldError) ||
                 !ReadArrayField(item, "rotation", camera.rotation, fieldError) ||
                 !ReadNumber(item, "fovRadians", camera.fovRadians, fieldError) ||
@@ -798,6 +854,15 @@ SceneDocumentResult SceneSerializer::Load(const std::filesystem::path &path) con
                 result.error = FileContext(
                     path, context + ": " + (fieldError.empty() ? "duplicate camera ID" : fieldError));
                 return result;
+            }
+            if (item.contains("name"))
+            {
+                if (!item.at("name").is_string())
+                {
+                    result.error = FileContext(path, context + ".name must be a string");
+                    return result;
+                }
+                camera.name = item.at("name").get<std::string>();
             }
             const float rotationLengthSquared =
                 camera.rotation[0] * camera.rotation[0] + camera.rotation[1] * camera.rotation[1] +

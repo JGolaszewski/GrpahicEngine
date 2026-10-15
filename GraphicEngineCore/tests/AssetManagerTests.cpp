@@ -160,6 +160,7 @@ namespace {
 		Engine::SceneEntityDocument primitive;
 		primitive.id = 23;
 		primitive.name = "editable primitive";
+		primitive.parent = Engine::SceneNodeParentDocument{"entity", 17, 0};
 		primitive.primitiveType = "sphere";
 		Engine::SceneMaterialDocument primitiveMaterial;
 		primitiveMaterial.baseColor = {0.8f, 0.3f, 0.1f, 1.0f};
@@ -169,10 +170,14 @@ namespace {
 
 		Engine::SceneLightDocument light;
 		light.id = 31;
+		light.name = "test light";
+		light.parent = Engine::SceneNodeParentDocument{"entity", 23, 1};
 		light.position = {3.0f, 4.0f, 5.0f};
 		document.lights.push_back(light);
 		Engine::SceneCameraDocument camera;
 		camera.id = 41;
+		camera.name = "test camera";
+		camera.parent = Engine::SceneNodeParentDocument{"light", 31, 0};
 		camera.position = {6.0f, 7.0f, 8.0f};
 		document.cameras.push_back(camera);
 
@@ -193,6 +198,7 @@ namespace {
 			result.materialOverrides[0]->normalTextureGuid == overrideMaterial.normalTextureGuid,
 			"scene round-trip changed an editable material override");
 		Require(result.position == entity.position && result.forceWireframe, "scene round-trip changed entity settings");
+		Require(!result.parent, "scene round-trip changed a root-level entity");
 		Require(loaded.document.unitsPerMeter == document.unitsPerMeter,
 			"scene round-trip changed its physical unit scale");
 		const auto& loadedPrimitive = loaded.document.entities[1];
@@ -201,10 +207,16 @@ namespace {
 		Require(loadedPrimitive.material && loadedPrimitive.material->baseColor == primitiveMaterial.baseColor &&
 			loadedPrimitive.material->roughness == primitiveMaterial.roughness,
 			"scene round-trip changed primitive material settings");
+		Require(loadedPrimitive.parent && loadedPrimitive.parent->type == "entity" && loadedPrimitive.parent->id == 17,
+			"scene round-trip changed a nested entity parent");
 		Require(loaded.document.lights.size() == 1 && loaded.document.lights[0].id == light.id &&
-			loaded.document.lights[0].position == light.position, "scene round-trip changed light state");
+			loaded.document.lights[0].position == light.position && loaded.document.lights[0].name == light.name &&
+			loaded.document.lights[0].parent && loaded.document.lights[0].parent->id == 23,
+			"scene round-trip changed light state or parent");
 		Require(loaded.document.cameras.size() == 1 && loaded.document.cameras[0].id == camera.id &&
-			loaded.document.cameras[0].position == camera.position, "scene round-trip changed camera state");
+			loaded.document.cameras[0].position == camera.position && loaded.document.cameras[0].name == camera.name &&
+			loaded.document.cameras[0].parent && loaded.document.cameras[0].parent->id == 31,
+			"scene round-trip changed camera state or parent");
 
 		Require(!assets.SaveScene("../escaped.scene.json", document, error), "scene save escaped the project root");
 	}

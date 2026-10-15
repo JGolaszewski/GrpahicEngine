@@ -203,12 +203,33 @@ void HierarchyPanel::DrawAddObjectModal()
         return;
     }
 
+    if (m_PendingCreation)
+    {
+        const auto result = m_PendingCreation->GetSnapshot();
+        if (result.state == SceneCreationResult::State::Succeeded)
+        {
+            m_SpawnPosition.x += 2.5f;
+            m_PendingCreation.reset();
+            m_CreationError.clear();
+            ImGui::CloseCurrentPopup();
+            ImGui::EndPopup();
+            return;
+        }
+        if (result.state == SceneCreationResult::State::Failed)
+        {
+            m_CreationError = result.error;
+            m_PendingCreation.reset();
+        }
+    }
+
     static const char *shapeItems[] = {"Cube", "Sphere", "Plane", "Cone"};
     int selectedShape = static_cast<int>(m_SpawnShape);
     if (ImGui::Combo("Type", &selectedShape, shapeItems, IM_ARRAYSIZE(shapeItems)))
     {
         m_SpawnShape = static_cast<SpawnShapeType>(selectedShape);
     }
+
+    ImGui::InputText("Name", m_SpawnName, sizeof(m_SpawnName));
 
     float spawnPosition[3] = {m_SpawnPosition.x, m_SpawnPosition.y, m_SpawnPosition.z};
     if (ImGui::DragFloat3("Start position", spawnPosition, 0.05f))
@@ -248,9 +269,24 @@ void HierarchyPanel::DrawAddObjectModal()
         if (ImGui::Button("Add selected model", ImVec2(-1.0f, 0.0f)))
         {
             const auto &model = m_Models[static_cast<size_t>(m_SelectedModelIndex)];
-            EmitEvent(std::make_unique<AddModelRequestedEvent>(model.guid, m_SpawnPosition, m_SpawnScale));
-            m_SpawnPosition.x += 2.5f;
-            ImGui::CloseCurrentPopup();
+            auto request =
+                std::make_unique<AddModelRequestedEvent>(model.guid, m_SpawnPosition, m_SpawnScale,
+                                                         m_SpawnName);
+            m_PendingCreation = request->GetCreationResult();
+            m_CreationError.clear();
+            EmitEvent(std::move(request));
+            const auto result = m_PendingCreation->GetSnapshot();
+            if (result.state == SceneCreationResult::State::Succeeded)
+            {
+                m_SpawnPosition.x += 2.5f;
+                m_PendingCreation.reset();
+                ImGui::CloseCurrentPopup();
+            }
+            else if (result.state == SceneCreationResult::State::Failed)
+            {
+                m_CreationError = result.error;
+                m_PendingCreation.reset();
+            }
         }
     }
 
@@ -273,12 +309,33 @@ void HierarchyPanel::DrawAddObjectModal()
             break;
         }
 
-        EmitEvent(std::make_unique<AddObjectRequestedEvent>(shape, m_SpawnPosition, m_SpawnScale,
-                                                            m_SpawnColor, m_SpawnEmissive, m_SpawnMetallic,
-                                                            m_SpawnRoughness));
+        auto request =
+            std::make_unique<AddObjectRequestedEvent>(shape, m_SpawnPosition, m_SpawnScale, m_SpawnColor,
+                                                      m_SpawnEmissive, m_SpawnMetallic, m_SpawnRoughness,
+                                                      m_SpawnName);
+        m_PendingCreation = request->GetCreationResult();
+        m_CreationError.clear();
+        EmitEvent(std::move(request));
+        const auto result = m_PendingCreation->GetSnapshot();
+        if (result.state == SceneCreationResult::State::Succeeded)
+        {
+            m_SpawnPosition.x += 2.5f;
+            m_PendingCreation.reset();
+            ImGui::CloseCurrentPopup();
+        }
+        else if (result.state == SceneCreationResult::State::Failed)
+        {
+            m_CreationError = result.error;
+            m_PendingCreation.reset();
+        }
+    }
 
-        m_SpawnPosition.x += 2.5f;
-        ImGui::CloseCurrentPopup();
+    if (m_PendingCreation)
+        ImGui::TextDisabled("Creation is pending...");
+    if (!m_CreationError.empty())
+    {
+        ImGui::Spacing();
+        ImGui::TextWrapped("%s", m_CreationError.c_str());
     }
 
     ImGui::SameLine();

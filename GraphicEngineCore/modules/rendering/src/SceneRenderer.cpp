@@ -71,7 +71,7 @@ DirectX::XMMATRIX ComputeSpotLightViewProj(const ::Engine::Renderer::Directional
 
 // --- Initialization ---
 
-Engine::SceneRenderer::SceneRenderer(nvrhi::IDevice*)
+Engine::SceneRenderer::SceneRenderer(nvrhi::IDevice *)
 {
 }
 
@@ -135,7 +135,8 @@ void Engine::SceneRenderer::EnsureDebugBuffer(nvrhi::BufferHandle &buffer, uint6
         return;
     }
 
-    const uint64_t requiredBytes = static_cast<uint64_t>(vertexCount) * sizeof(::Engine::Renderer::DebugVertex);
+    const uint64_t requiredBytes =
+        static_cast<uint64_t>(vertexCount) * sizeof(::Engine::Renderer::DebugVertex);
     if (buffer && capacity >= requiredBytes)
     {
         return;
@@ -610,14 +611,16 @@ void Engine::SceneRenderer::CullAndFillView(::Engine::Renderer::RenderView *view
 
             auto packet = CreateRenderPacket(submesh.mesh.get(), submesh.material.get());
             packet.PerObjectData = perObjectData;
-            const ::Engine::Renderer::MaterialProperties materialProperties = submesh.material->GetProperties();
+            const ::Engine::Renderer::MaterialProperties materialProperties =
+                submesh.material->GetProperties();
             if (view->ViewType == ::Engine::Renderer::RenderView::Type::Shadow &&
                 materialProperties.AlphaMode == ::Engine::Renderer::MaterialAlphaMode::Blend)
             {
                 return;
             }
-            packet.ShadowAlphaTest = view->ViewType == ::Engine::Renderer::RenderView::Type::Shadow &&
-                                     materialProperties.AlphaMode == ::Engine::Renderer::MaterialAlphaMode::Mask;
+            packet.ShadowAlphaTest =
+                view->ViewType == ::Engine::Renderer::RenderView::Type::Shadow &&
+                materialProperties.AlphaMode == ::Engine::Renderer::MaterialAlphaMode::Mask;
             packet.Queue = view->ViewType == ::Engine::Renderer::RenderView::Type::Shadow
                                ? ::Engine::Renderer::RenderQueueType::Opaque
                            : materialProperties.AlphaMode == ::Engine::Renderer::MaterialAlphaMode::Mask
@@ -745,10 +748,11 @@ void Engine::SceneRenderer::SortViewQueues(::Engine::Renderer::RenderView *view)
 
     std::stable_sort(view->Queues.Opaque.begin(), view->Queues.Opaque.end(), lessBySubmissionState);
     std::stable_sort(view->Queues.Masked.begin(), view->Queues.Masked.end(), lessBySubmissionState);
-    std::stable_sort(view->Queues.Transparent.begin(), view->Queues.Transparent.end(),
-                     [](const ::Engine::Renderer::RenderPacket &left, const ::Engine::Renderer::RenderPacket &right) {
-                         return left.CameraDepth > right.CameraDepth;
-                     });
+    std::stable_sort(
+        view->Queues.Transparent.begin(), view->Queues.Transparent.end(),
+        [](const ::Engine::Renderer::RenderPacket &left, const ::Engine::Renderer::RenderPacket &right) {
+            return left.CameraDepth > right.CameraDepth;
+        });
 }
 
 // --- View Building ---
@@ -766,8 +770,9 @@ void Engine::SceneRenderer::BuildViews(::Engine::Renderer::FrameBlackboard &blac
     m_PipelineCache.BeginFrame();
     if (!EnsurePerObjectResources(EstimateDrawCount(blackboard), frameContext, diagnostics))
     {
-        ENGINE_LOG_ERROR("Render", "Per-object frame resources unavailable | estimated_draw_count: {} | frame_index: {}",
-                         EstimateDrawCount(blackboard), frameContext.GetFrameIndex());
+        ENGINE_LOG_ERROR(
+            "Render", "Per-object frame resources unavailable | estimated_draw_count: {} | frame_index: {}",
+            EstimateDrawCount(blackboard), frameContext.GetFrameIndex());
         return;
     }
 
@@ -819,7 +824,7 @@ void Engine::SceneRenderer::BuildDebugGeometry(::Engine::Renderer::RenderView *v
     }
 
     ::Engine::Renderer::DebugGeometryBuilder::BuildScene(*view->TargetScene, view->DebugSettings,
-                                               view->DebugGeometryData);
+                                                         view->DebugGeometryData);
 }
 
 void Engine::SceneRenderer::BuildShadowData(Engine::Scene *scene,

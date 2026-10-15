@@ -28,6 +28,7 @@
 
 #include <DirectXMath.h>
 #include <algorithm>
+#include <cmath>
 #include <filesystem>
 #include <imgui.h>
 #include <imgui_internal.h>
@@ -44,7 +45,7 @@ std::string JoinWarnings(const std::vector<std::string> &warnings)
     for (const auto &warning : warnings)
     {
         if (!message.empty())
-            message += "\n";
+            message += '\n';
         message += warning;
     }
     return message;
@@ -153,7 +154,7 @@ void Editor::OnInit()
     // --- Create and Bind Camera ---
     auto mainCamera =
         std::make_shared<::Engine::Renderer::Camera>(m_CameraFov, m_CameraNearPlane, m_CameraFarPlane);
-    mainCamera->m_Transform.SetPosition(0.0f, 0.0f, -5.0f);
+    mainCamera->transform.SetPosition(0.0f, 0.0f, -5.0f);
 
     m_ActiveCameraId = m_ActiveScene->AddCamera(mainCamera);
 
@@ -548,10 +549,28 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event)
     });
 
     dispatcher.Dispatch<AddObjectRequestedEvent>([this](const auto &e) {
+        const auto &result = e.GetCreationResult();
+        const auto fail = [&result](std::string message) {
+            if (result)
+                result->Complete(false, std::move(message));
+            return true;
+        };
         if (!m_ActiveScene || !GetRenderSystem())
         {
-            return false;
+            return fail("The active scene or renderer is unavailable.");
         }
+
+        const auto finite3 = [](const DirectX::XMFLOAT3 &value) {
+            return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
+        };
+        if (!finite3(e.GetPosition()) || !finite3(e.GetScale()) || !finite3(e.GetEmissive()) ||
+            !std::isfinite(e.GetColor().x) || !std::isfinite(e.GetColor().y) ||
+            !std::isfinite(e.GetColor().z) || !std::isfinite(e.GetColor().w) ||
+            e.GetScale().x <= 0.0f || e.GetScale().y <= 0.0f || e.GetScale().z <= 0.0f)
+            return fail("Position, scale, color, and emission must be finite; scale components must be positive.");
+        if (!std::isfinite(e.GetMetallic()) || e.GetMetallic() < 0.0f || e.GetMetallic() > 1.0f ||
+            !std::isfinite(e.GetRoughness()) || e.GetRoughness() < 0.0f || e.GetRoughness() > 1.0f)
+            return fail("Metallic and roughness values must be between 0 and 1.");
 
         ::Engine::Renderer::MaterialProperties materialProperties;
         materialProperties.BaseColor = e.GetColor();
@@ -559,30 +578,37 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event)
         materialProperties.Metallic = e.GetMetallic();
         materialProperties.Roughness = e.GetRoughness();
         auto material = GetRenderSystem()->CreateMaterial(materialProperties);
+        if (!material)
+            return fail("The renderer could not create a material for this primitive.");
 
         const DirectX::XMFLOAT3 spawnPosition = m_ActiveScene->FindFreeSpawnPosition(e.GetPosition());
         Engine::PrimitiveShape shape;
         const char *primitiveType = nullptr;
+        const char *displayName = nullptr;
         switch (e.GetShape())
         {
         case AddObjectRequestedEvent::Shape::Cube:
             shape = Engine::PrimitiveShape::Cube;
             primitiveType = "cube";
+            displayName = "Cube";
             break;
         case AddObjectRequestedEvent::Shape::Sphere:
             shape = Engine::PrimitiveShape::Sphere;
             primitiveType = "sphere";
+            displayName = "Sphere";
             break;
         case AddObjectRequestedEvent::Shape::Plane:
             shape = Engine::PrimitiveShape::Plane;
             primitiveType = "plane";
+            displayName = "Plane";
             break;
         case AddObjectRequestedEvent::Shape::Cone:
             shape = Engine::PrimitiveShape::Cone;
             primitiveType = "cone";
+            displayName = "Cone";
             break;
         default:
-            return false;
+            return fail("The selected primitive type is unsupported.");
         }
 
         auto createdEntity =
@@ -590,26 +616,17 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event)
 
         if (!createdEntity)
         {
-            return false;
+            return fail("The renderer could not construct the requested primitive.");
         }
 
-        if (!m_ActiveScene)
-            return false;
         createdEntity->PrimitiveType = primitiveType;
-        createdEntity->Name = primitiveType;
-        const auto selectionBefore = CaptureSelection();
-        m_CommandHistory.Execute(std::make_unique<EntityMembershipCommand>(
-            m_ActiveScene, createdEntity, Engine::InvalidEntityId, true,
-            [this, selectionBefore](auto id, const auto &entity, bool present, bool undo) {
-                if (undo)
-                {
-                    m_SceneDirty = true;
-                    RestoreSelection(selectionBefore);
-                }
-                else
-                    OnEntityMembershipChanged(id, entity, present);
-            }));
-        return false;
+        createdEntity->Name = e.GetName().empty() ? displayName : e.GetName();
+        std::string error;
+        if (!CommitCreatedEntity(createdEntity, error))
+            return fail(std::move(error));
+        if (result)
+            result->Complete(true);
+        return true;
     });
 
     dispatcher.Dispatch<MaterialChangedEvent>([this](const auto &e) {
@@ -768,13 +785,18 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event)
     });
 
     dispatcher.Dispatch<AddModelRequestedEvent>([this](const auto &request) {
+        const auto &result = request.GetCreationResult();
         if (!m_ActiveScene || !GetRenderSystem())
+        {
+            result->Complete(false, "The active scene or renderer is unavailable.");
             return true;
+        }
         m_FileError.clear();
         std::string error;
         if (!GetAssetManager()->LoadModel(request.GetGuid(), error))
         {
             m_FileError = std::move(error);
+            result->Complete(false, m_FileError);
             return true;
         }
         const auto model = GetAssetManager()->GetModel(request.GetGuid());
@@ -782,6 +804,7 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event)
         if (!model || !generation)
         {
             m_FileError = "The imported model is not available in the asset registry.";
+            result->Complete(false, m_FileError);
             return true;
         }
         if (HasIgnoredExtensionWarning(model->importWarnings))
@@ -791,12 +814,21 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event)
                          std::back_inserter(extensionWarnings), [](const std::string &warning) {
                              return warning.find("extension will be ignored:") != std::string::npos;
                          });
-            m_PendingUnsupportedModelLoad =
-                PendingUnsupportedModelLoad{request.GetGuid(), request.GetPosition(), request.GetScale()};
+            m_PendingUnsupportedModelLoad = PendingUnsupportedModelLoad{
+                request.GetGuid(), request.GetPosition(), request.GetScale(), request.GetName(), result};
             m_UnsupportedModelWarnings = JoinWarnings(extensionWarnings);
             return true;
         }
-        AddModelToScene(request.GetGuid(), request.GetPosition(), request.GetScale());
+        if (!AddModelToScene(request.GetGuid(), request.GetPosition(), request.GetScale(), error,
+                             request.GetName()))
+        {
+            m_FileError = error;
+            result->Complete(false, std::move(error));
+        }
+        else
+        {
+            result->Complete(true);
+        }
         return true;
     });
 
@@ -822,49 +854,97 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event)
     });
 }
 
-void Editor::AddModelToScene(const std::string &guid, const DirectX::XMFLOAT3 &requestedPosition,
-                             const DirectX::XMFLOAT3 &scale)
+bool Editor::AddModelToScene(const std::string &guid, const DirectX::XMFLOAT3 &requestedPosition,
+                             const DirectX::XMFLOAT3 &scale, std::string &error, const std::string &name)
 {
     if (!m_ActiveScene || !GetRenderSystem())
-        return;
-    std::string error;
-    if (!GetAssetManager()->LoadModel(guid, error))
     {
-        m_FileError = std::move(error);
-        return;
+        error = "The active scene or renderer is unavailable.";
+        return false;
     }
+    if (!GetAssetManager()->LoadModel(guid, error))
+        return false;
     const auto model = GetAssetManager()->GetModel(guid);
     const auto generation = GetAssetManager()->GetGeneration(guid);
     if (!model || !generation)
     {
-        m_FileError = "The imported model is not available in the asset registry.";
-        return;
+        error = "The imported model is not available in the asset registry.";
+        return false;
+    }
+    if (!std::isfinite(requestedPosition.x) || !std::isfinite(requestedPosition.y) ||
+        !std::isfinite(requestedPosition.z) || !std::isfinite(scale.x) || !std::isfinite(scale.y) ||
+        !std::isfinite(scale.z) || scale.x <= 0.0f || scale.y <= 0.0f || scale.z <= 0.0f)
+    {
+        error = "Model position must be finite and scale components must be finite and positive.";
+        return false;
     }
     std::vector<std::string> warnings;
     auto entity = GetRenderSystem()->CreateModelEntity(guid, *generation, *model, {}, error, warnings);
     if (!entity)
-    {
-        m_FileError = std::move(error);
-        return;
-    }
-    entity->Name = model->sourcePath.stem().string();
+        return false;
+    entity->Name = name.empty() ? model->sourcePath.stem().string() : name;
     const auto position = m_ActiveScene->FindFreeSpawnPosition(requestedPosition);
     entity->transform.SetPosition(position.x, position.y, position.z);
     entity->transform.SetScale(scale.x, scale.y, scale.z);
+    if (!CommitCreatedEntity(entity, error))
+        return false;
+    if (!warnings.empty())
+        m_FileError = JoinWarnings(warnings);
+    return true;
+}
+
+bool Editor::CommitCreatedEntity(const std::shared_ptr<::Engine::Renderer::Entity> &entity,
+                                 std::string &error)
+{
+    const auto scene = m_ActiveScene;
+    if (!scene || !entity)
+    {
+        error = "The active scene or constructed entity is unavailable.";
+        return false;
+    }
+
+    const std::string baseName = entity->Name.empty() ? "Object" : entity->Name;
+    std::unordered_set<std::string> existingNames;
+    for (const auto &existing : scene->GetEntities())
+    {
+        if (existing)
+            existingNames.insert(existing->Name);
+    }
+    if (existingNames.contains(entity->Name))
+    {
+        for (size_t suffix = 2;; ++suffix)
+        {
+            std::string candidate = baseName + " (" + std::to_string(suffix) + ")";
+            if (!existingNames.contains(candidate))
+            {
+                entity->Name = std::move(candidate);
+                break;
+            }
+        }
+    }
+
+    const Engine::EntityId id = scene->AddEntity(entity);
+    if (id == Engine::InvalidEntityId)
+    {
+        error = "The scene rejected the new object; no scene changes were made.";
+        return false;
+    }
     const auto selectionBefore = CaptureSelection();
     m_CommandHistory.Execute(std::make_unique<EntityMembershipCommand>(
-        m_ActiveScene, entity, Engine::InvalidEntityId, true,
-        [this, selectionBefore](auto id, const auto &addedEntity, bool present, bool undo) {
+        scene, entity, id, true,
+        [this, selectionBefore](auto changedId, const auto &addedEntity, bool present, bool undo) {
             if (undo)
             {
                 m_SceneDirty = true;
                 RestoreSelection(selectionBefore);
             }
             else
-                OnEntityMembershipChanged(id, addedEntity, present);
-        }));
-    if (!warnings.empty())
-        m_FileError = JoinWarnings(warnings);
+            {
+                OnEntityMembershipChanged(changedId, addedEntity, present);
+            }
+        },
+        true));
+    return true;
 }
 
 void Editor::OnEntityMembershipChanged(Engine::EntityId id,
@@ -1507,7 +1587,7 @@ void Editor::RequestSceneAction(SceneFileActionRequestedEvent::Action action)
         auto scene = std::make_shared<Engine::Scene>();
         auto camera =
             std::make_shared<::Engine::Renderer::Camera>(m_CameraFov, m_CameraNearPlane, m_CameraFarPlane);
-        camera->m_Transform.SetPosition(0.0f, 0.0f, -5.0f);
+        camera->transform.SetPosition(0.0f, 0.0f, -5.0f);
         scene->AddCamera(camera);
         if (m_ActiveScene)
             RemoveScene(m_ActiveScene);
@@ -1548,7 +1628,7 @@ void Editor::RequestSceneAction(SceneFileActionRequestedEvent::Action action)
         auto scene = std::make_shared<Engine::Scene>();
         auto camera =
             std::make_shared<::Engine::Renderer::Camera>(m_CameraFov, m_CameraNearPlane, m_CameraFarPlane);
-        camera->m_Transform.SetPosition(0.0f, 0.0f, -5.0f);
+        camera->transform.SetPosition(0.0f, 0.0f, -5.0f);
         scene->AddCamera(camera);
         if (m_ActiveScene)
             RemoveScene(m_ActiveScene);
@@ -1609,7 +1689,6 @@ bool Editor::SaveCurrentScene(bool choosePath)
                                                                 : std::optional(m_SceneDocument.GetPath()));
     if (!path)
         return false;
-    std::string error;
     const Engine::SceneDocument document = CreateSceneDocument(*m_ActiveScene);
     Engine::Status saved = m_SceneDocument.Save(*GetAssetManager(), document, *path);
     if (!saved)
@@ -1682,6 +1761,12 @@ void Editor::DrawUnsavedChangesModal()
     ImGui::SetNextWindowSize(ImVec2(640.0f, 300.0f), ImGuiCond_Appearing);
     if (ImGui::BeginPopupModal("Unsupported model extensions", nullptr, ImGuiWindowFlags_NoResize))
     {
+        if (!m_PendingUnsupportedModelLoad)
+        {
+            ImGui::EndPopup();
+            return;
+        }
+        auto pendingLoad = *m_PendingUnsupportedModelLoad;
         ImGui::TextWrapped("This model uses a glTF extension that the renderer does not support. Its "
                            "geometry can still be loaded, but the affected material may look different.");
         ImGui::Spacing();
@@ -1690,6 +1775,8 @@ void Editor::DrawUnsavedChangesModal()
         ImGui::EndChild();
         if (ImGui::Button("Cancel", ImVec2(140.0f, 0.0f)))
         {
+            if (pendingLoad.Result)
+                pendingLoad.Result->Complete(false, "Model creation was cancelled.");
             m_PendingUnsupportedModelLoad.reset();
             m_UnsupportedModelWarnings.clear();
             ImGui::CloseCurrentPopup();
@@ -1697,11 +1784,21 @@ void Editor::DrawUnsavedChangesModal()
         ImGui::SameLine();
         if (ImGui::Button("Load unsupported", ImVec2(180.0f, 0.0f)))
         {
-            auto pending = std::move(*m_PendingUnsupportedModelLoad);
+            auto pending = std::move(pendingLoad);
             m_PendingUnsupportedModelLoad.reset();
             m_UnsupportedModelWarnings.clear();
             ImGui::CloseCurrentPopup();
-            AddModelToScene(pending.Guid, pending.Position, pending.Scale);
+            std::string error;
+            if (!AddModelToScene(pending.Guid, pending.Position, pending.Scale, error, pending.Name))
+            {
+                m_FileError = error;
+                if (pending.Result)
+                    pending.Result->Complete(false, std::move(error));
+            }
+            else if (pending.Result)
+            {
+                pending.Result->Complete(true);
+            }
         }
         ImGui::EndPopup();
     }

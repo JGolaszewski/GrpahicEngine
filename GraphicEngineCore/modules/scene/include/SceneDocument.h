@@ -32,11 +32,19 @@ struct SceneMaterialDocument
     std::optional<std::string> normalTextureGuid;
 };
 
+struct SceneNodeParentDocument
+{
+    std::string type;
+    uint64_t id = 0;
+    uint32_t siblingOrder = 0;
+};
+
 struct SceneEntityDocument
 {
     uint64_t id = 0;
     std::optional<uint64_t> parentId;
     std::string name;
+    std::optional<SceneNodeParentDocument> parent;
     std::optional<std::string> modelGuid;
     std::optional<std::string> materialGuid;
     std::optional<std::string> primitiveType;
@@ -54,6 +62,8 @@ struct SceneEntityDocument
 struct SceneLightDocument
 {
     uint64_t id = 0;
+    std::string name;
+    std::optional<SceneNodeParentDocument> parent;
     std::array<float, 3> direction = {0.0f, -1.0f, 0.0f};
     std::array<float, 3> position = {0.0f, 3.0f, 0.0f};
     std::array<float, 3> color = {1.0f, 1.0f, 1.0f};
@@ -70,6 +80,8 @@ struct SceneLightDocument
 struct SceneCameraDocument
 {
     uint64_t id = 0;
+    std::string name;
+    std::optional<SceneNodeParentDocument> parent;
     std::array<float, 3> position{};
     std::array<float, 4> rotation = {0.0f, 0.0f, 0.0f, 1.0f};
     float fovRadians = 0.785398163f;
