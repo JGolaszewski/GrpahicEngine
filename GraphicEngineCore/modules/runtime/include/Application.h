@@ -90,7 +90,7 @@ public:
   void Run(std::unique_ptr<IWindow> window, std::unique_ptr<IRenderBackend> backend);
 
   /// Adds a scene to the update and serialization list.
-  /// @param scene Scene to register; null entries are accepted and skipped during update.
+  /// @param[in] scene Scene to register; null entries are accepted and skipped during update.
   void AddScene(const std::shared_ptr<Scene>& scene);
 
   /// Removes the first matching scene from the active list.
