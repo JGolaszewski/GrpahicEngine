@@ -6,10 +6,20 @@
 
 #include <GLFW/glfw3.h>
 #include <algorithm>
+#include <d3d11.h>
 #include <imgui.h>
 #include <imgui_impl_dx11.h>
 #include <imgui_impl_glfw.h>
 #include <nvrhi/nvrhi.h>
+#include <wrl/client.h>
+
+struct EditorUiIntegration::PreviewTexture {
+  Microsoft::WRL::ComPtr<ID3D11Texture2D> Texture;
+  Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> View;
+};
+
+EditorUiIntegration::EditorUiIntegration() = default;
+EditorUiIntegration::~EditorUiIntegration() = default;
 
 auto EditorUiIntegration::Initialize(Engine::IWindow* window, Engine::IRenderBackend* backend) -> bool {
   auto* d3d11Backend = dynamic_cast<Engine::D3D11Backend*>(backend);
@@ -80,6 +90,7 @@ void EditorUiIntegration::Shutdown() {
   ImGui_ImplGlfw_Shutdown();
   ImGui::DestroyContext();
   m_Backend = nullptr;
+  m_PreviewTexture.reset();
   m_Initialized = false;
 }
 
@@ -88,4 +99,36 @@ auto EditorUiIntegration::GetTextureId(const Engine::ViewportTarget* target) con
     return nullptr;
   }
   return m_Backend->RegisterViewportTexture(*target);
+}
+
+auto EditorUiIntegration::SetRenderPreview(uint32_t width, uint32_t height, std::span<const uint8_t> rgbaPixels)
+    -> bool {
+  if (!m_Initialized || m_Backend == nullptr || width == 0 || height == 0 ||
+      rgbaPixels.size() != static_cast<size_t>(width) * height * 4U) {
+    return false;
+  }
+  D3D11_TEXTURE2D_DESC textureDescription{};
+  textureDescription.Width = width;
+  textureDescription.Height = height;
+  textureDescription.MipLevels = 1;
+  textureDescription.ArraySize = 1;
+  textureDescription.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+  textureDescription.SampleDesc.Count = 1;
+  textureDescription.Usage = D3D11_USAGE_DEFAULT;
+  textureDescription.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+  D3D11_SUBRESOURCE_DATA initialData{};
+  initialData.pSysMem = rgbaPixels.data();
+  initialData.SysMemPitch = width * 4U;
+  auto preview = std::make_unique<PreviewTexture>();
+  ID3D11Device* device = m_Backend->GetNativeDevice();
+  if (device == nullptr || FAILED(device->CreateTexture2D(&textureDescription, &initialData, &preview->Texture)) ||
+      FAILED(device->CreateShaderResourceView(preview->Texture.Get(), nullptr, &preview->View))) {
+    return false;
+  }
+  m_PreviewTexture = std::move(preview);
+  return true;
+}
+
+auto EditorUiIntegration::GetRenderPreviewTextureId() const noexcept -> void* {
+  return m_PreviewTexture == nullptr ? nullptr : m_PreviewTexture->View.Get();
 }

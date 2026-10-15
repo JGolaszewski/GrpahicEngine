@@ -10,10 +10,12 @@ public:
   void Draw() override;
   void SetConsoleOpenHandler(std::function<void()> handler) { m_ConsoleOpenHandler = std::move(handler); }
   void SetSettingsOpenHandler(std::function<void()> handler) { m_SettingsOpenHandler = std::move(handler); }
+  void SetRenderOpenHandler(std::function<void()> handler) { m_RenderOpenHandler = std::move(handler); }
 
 private:
   void DrawFileMenu();
   void DrawWindowMenu();
   std::function<void()> m_ConsoleOpenHandler;
   std::function<void()> m_SettingsOpenHandler;
+  std::function<void()> m_RenderOpenHandler;
 };

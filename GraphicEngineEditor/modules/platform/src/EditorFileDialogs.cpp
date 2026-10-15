@@ -109,6 +109,28 @@ auto ChooseLogExportFile(const std::filesystem::path& initialPath) -> std::optio
   return (GetSaveFileNameW(&dialog) != 0) ? std::optional(std::filesystem::path(filename.data())) : std::nullopt;
 }
 
+auto ChooseRenderOutputFile(bool exr, const std::filesystem::path& initialPath)
+    -> std::optional<std::filesystem::path> {
+  std::vector<wchar_t> filename(32768);
+  if (!initialPath.empty()) {
+    const auto initial = initialPath.wstring();
+    wcsncpy_s(filename.data(), filename.size(), initial.c_str(), _TRUNCATE);
+  }
+  OPENFILENAMEW dialog{};
+  dialog.lStructSize = sizeof(dialog);
+  dialog.lpstrFile = filename.data();
+  dialog.nMaxFile = static_cast<DWORD>(filename.size());
+  dialog.lpstrFilter = exr ? L"OpenEXR images (*.exr)\0*.exr\0All files (*.*)\0*.*\0\0"
+                           : L"PNG images (*.png)\0*.png\0All files (*.*)\0*.*\0\0";
+  dialog.nFilterIndex = 1;
+  const auto initialDirectory =
+      initialPath.empty() ? std::filesystem::current_path().wstring() : initialPath.parent_path().wstring();
+  dialog.lpstrInitialDir = initialDirectory.c_str();
+  dialog.Flags = OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR | OFN_OVERWRITEPROMPT;
+  dialog.lpstrDefExt = exr ? L"exr" : L"png";
+  return GetSaveFileNameW(&dialog) != 0 ? std::optional(std::filesystem::path(filename.data())) : std::nullopt;
+}
+
 auto OpenSourceFile(const std::filesystem::path& path) -> bool {
   std::error_code error;
   if (path.empty() || !std::filesystem::exists(path, error) || error) {
