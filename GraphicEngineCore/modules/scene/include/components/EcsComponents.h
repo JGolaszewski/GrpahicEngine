@@ -108,7 +108,7 @@ struct Light {
   float OuterAngleDegrees = 30.0F;                      ///< Outer spotlight cone angle in degrees.
   float ShadowBias = 0.0015F;                           ///< Constant shadow-map depth bias.
   float ShadowNormalBias = 0.0015F;                     ///< Slope-scaled shadow-map bias.
-  bool CastShadows = true;                              ///< Whether the light produces shadows when supported.
+  bool CastShadows = true;                              ///< Whether the light produces shadows.
 };
 /// Source-compatible alias for the previous spot-light component name.
 using SpotLight = Light;

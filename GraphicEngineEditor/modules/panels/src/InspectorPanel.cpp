@@ -363,9 +363,7 @@ void InspectorPanel::DrawEntityInspector() {
     }
     changed |= ImGui::DragFloat("Shadow bias", &light.ShadowBias, 0.0001F, 0.0F, 0.1F);
     changed |= ImGui::DragFloat("Shadow normal bias", &light.ShadowNormalBias, 0.0001F, 0.0F, 0.1F);
-    if (light.Type == Engine::Ecs::LightType::Spot) {
-      changed |= ImGui::Checkbox("Cast shadows", &light.CastShadows);
-    }
+    changed |= ImGui::Checkbox("Cast shadows", &light.CastShadows);
     if (changed) {
       emitSet(Mutation::Component::SpotLight, light);
     }

@@ -118,34 +118,61 @@ float SampleShadowPCF(uint lightIndex, float3 worldPos, float3 normalWS, float3 
         return 1.0f;
     }
 
-    float4 lightClip = mul(float4(worldPos, 1.0f), light.LightViewProj);
-    if (abs(lightClip.w) < 1e-5f)
-    {
-        return 1.0f;
-    }
-
-    float3 lightNdc = lightClip.xyz / lightClip.w;
-    if (lightNdc.x < -1.0f || lightNdc.x > 1.0f ||
-        lightNdc.y < -1.0f || lightNdc.y > 1.0f ||
-        lightNdc.z <  0.0f || lightNdc.z > 1.0f)
-    {
-        return 1.0f;
-    }
-
     uint shadowWidth;
     uint shadowHeight;
     uint shadowElements;
     uint shadowLevels;
     g_ShadowMaps.GetDimensions(0, shadowWidth, shadowHeight, shadowElements, shadowLevels);
 
-    float2 uv        = lightNdc.xy * float2(0.5f, -0.5f) + 0.5f;
     float2 texelSize = 1.0f / float2(max(shadowWidth, 1), max(shadowHeight, 1));
 
     const float NdotL        = saturate(dot(normalWS, lightVec));
     const float bias         = light.ShadowParams.y + (1.0f - NdotL) * light.ShadowParams.z;
-    const float compareDepth = saturate(lightNdc.z - bias);
-
-    const float slice      = shadowMapIndex;
+    float2 uv = 0.0f;
+    float compareDepth = 1.0f;
+    float slice = shadowMapIndex;
+    if (light.ConeParams.z > 0.5f)
+    {
+        const float3 fromLight = worldPos - light.PositionRange.xyz;
+        const float3 magnitude = abs(fromLight);
+        const float major = max(magnitude.x, max(magnitude.y, magnitude.z));
+        if (major <= 1e-5f || major > light.PositionRange.w)
+        {
+            return 1.0f;
+        }
+        float2 faceUv;
+        if (magnitude.x >= magnitude.y && magnitude.x >= magnitude.z)
+        {
+            if (fromLight.x >= 0.0f) { slice += 0.0f; faceUv = float2(-fromLight.z, -fromLight.y) / major; }
+            else                    { slice += 1.0f; faceUv = float2(fromLight.z, -fromLight.y) / major; }
+        }
+        else if (magnitude.y >= magnitude.z)
+        {
+            if (fromLight.y >= 0.0f) { slice += 2.0f; faceUv = float2(fromLight.x, fromLight.z) / major; }
+            else                    { slice += 3.0f; faceUv = float2(fromLight.x, -fromLight.z) / major; }
+        }
+        else
+        {
+            if (fromLight.z >= 0.0f) { slice += 4.0f; faceUv = float2(fromLight.x, -fromLight.y) / major; }
+            else                    { slice += 5.0f; faceUv = float2(-fromLight.x, -fromLight.y) / major; }
+        }
+        uv = faceUv * 0.5f + 0.5f;
+        const float nearPlane = 0.05f;
+        const float farPlane = max(light.PositionRange.w, nearPlane + 0.01f);
+        const float pointDepth = farPlane / (farPlane - nearPlane) -
+                                 (farPlane * nearPlane) / ((farPlane - nearPlane) * major);
+        compareDepth = saturate(pointDepth - bias);
+    }
+    else
+    {
+        const float4 lightClip = mul(float4(worldPos, 1.0f), light.LightViewProj);
+        if (abs(lightClip.w) < 1e-5f) return 1.0f;
+        const float3 lightNdc = lightClip.xyz / lightClip.w;
+        if (lightNdc.x < -1.0f || lightNdc.x > 1.0f || lightNdc.y < -1.0f || lightNdc.y > 1.0f ||
+            lightNdc.z < 0.0f || lightNdc.z > 1.0f) return 1.0f;
+        uv = lightNdc.xy * float2(0.5f, -0.5f) + 0.5f;
+        compareDepth = saturate(lightNdc.z - bias);
+    }
     float       visibility = 0.0f;
 
     [unroll]
