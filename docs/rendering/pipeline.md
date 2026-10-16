@@ -1,0 +1,128 @@
+# Rendering pipeline
+
+GraphicEngine currently renders scenes with a forward pipeline. `RenderSystem`
+collects one or more viewport bindings per frame, prepares a `RenderView` for
+each valid binding, builds draw queues, and submits those views to a render graph.
+The graph contains shadow, forward, and (when an editor view exists) debug
+passes. D3D11 is the shipped backend; Core records work through NVRHI.
+
+## Frame and render graph
+
+At `BeginFrame`, the render system opens its command list, applies queued GPU
+uploads, updates dirty material constants, and resets the frame graph. View
+submission resolves scene objects and cameras, builds per-view draw queues and
+lighting data, and creates shadow views for shadow-casting lights. `EndFrame`
+compiles and executes the graph, records GPU timing, closes and submits the
+command list, and advances frame resources.
+
+```mermaid
+flowchart LR
+  Begin[BeginFrame: uploads and material updates] --> Views[Submit views: build queues and lighting]
+  Views --> Shadow[ShadowPass: depth array]
+  Shadow --> Forward[ForwardPass: scene attachments]
+  Forward --> Debug{Any editor view?}
+  Debug -->|Yes| Overlay[DebugPass: editor geometry]
+  Debug -->|No| Submit[Submit command list]
+  Overlay --> Submit
+```
+
+Each pass declares texture reads and writes during setup. The graph uses those
+declarations to derive producer/consumer and read/write ordering, reject
+transient reads without a producer and cycles, and sort active passes. Imported
+viewport attachments keep their external texture handles; graph-created
+textures are transient and borrowed from a per-frame pool for their declared
+lifetimes. Before each pass, the graph applies the declared NVRHI resource
+states and commits barriers. A pass failure stops execution and is reported by
+the render system. `RenderGraph::Dump()` describes graph resources, pass order,
+resource lifetimes, and access states for diagnostics.
+
+### Pass responsibilities
+
+- **`ShadowPass`** writes depth for shadow views into a transient 2D texture
+  array. The configured shadow resolution is shared by its slices. The pass
+  writes one slice per shadow view.
+- **`ForwardPass`** reads the shadow map and renders each scene view to its
+  imported color and depth attachments. It clears the attachments, then draws
+  opaque, masked, skybox, transparent, and UI queues in that order.
+- **`DebugPass`** writes the editor view attachments and draws editor debug
+  geometry. It is added only when at least one submitted view uses editor mode;
+  it skips preview and final views.
+
+The graph is a scheduling and resource-state layer around these passes. It does
+not currently provide a deferred/G-buffer renderer, post-processing pass chain,
+or general-purpose graph editor.
+
+## Shader and pipeline architecture
+
+HLSL source is in `GraphicEngineBackends/D3D11/shaders`. The D3D11 CMake target
+requires the Windows SDK `fxc` compiler and builds shader-model 5.0 vertex and
+pixel shaders to DXBC files in the configured engine asset root's `shaders`
+directory. Shared BRDF functions are in `brdf_common.hlsli`; CMake tracks HLSL
+include files as shader build dependencies.
+
+At runtime, Core's `ShaderFactory` resolves shader paths relative to
+`GRAPHIC_ENGINE_ASSET_ROOT` (or the configured default asset root), loads DXBC,
+and caches shader handles by normalized path. `MaterialSystem` creates the
+standard material binding layout and material binding sets. `SceneRenderer`
+combines shaders, vertex layout, material state, and framebuffer properties
+into pipeline keys; `PipelineCache` reuses graphics pipelines for matching
+keys. Material, scene, and per-object data use separate binding layouts.
+
+The standard mesh shaders have an untextured pixel shader and a textured pixel
+shader. Both use the selected material BRDF model and light data. The textured
+variant additionally samples the material maps. Debug geometry uses dedicated
+debug shaders, while alpha-masked shadow casters use a shadow pixel shader so
+their base-color alpha cutoff is respected. Shader source or register-layout
+changes must stay compatible with the CPU-side material and scene binding
+layouts.
+
+## Materials and PBR
+
+`Engine::Renderer::MaterialProperties` is the editable CPU-side material
+description. It supports metallic-roughness and specular-glossiness workflows,
+dielectric reflectance from index of refraction or explicit F0, and three BRDF
+choices: `Legacy`, `GGX`, and `GTR`. The default workflow is metallic-roughness,
+the default model is `Legacy`, and the default alpha mode is opaque. Input
+factors are sanitized and clamped when `BuildMaterialGpu` packs the shader
+constant buffer.
+
+The textured shader supports base color, normal, metallic-roughness, occlusion,
+and emissive maps, with a UV set and UV transform per slot. It applies the
+corresponding factors and texture values during shading. The metallic-roughness
+map follows the glTF channel convention: green supplies roughness and blue
+supplies metallic. In the specular-glossiness workflow, glossiness is converted
+to roughness and specular color drives dielectric reflectance. The normal map
+supports a scale, and occlusion has a strength factor. Material constants are
+packed in the CPU `MaterialGpu` structure and uploaded to the shader constant
+buffer; keep that CPU/HLSL layout synchronized when changing either side.
+
+Materials also select opaque, mask, or blend alpha behavior and whether
+triangles are double-sided. Opaque and masked materials can cast shadows when
+the entity's `CastShadows` option is enabled. Masked shadows use the material's
+alpha cutoff; blended materials do not cast shadows. See [shadow caster
+behavior](shadows.md) for the precise current rule.
+
+## Multiple views, camera preview, and final output
+
+Each `ViewportBinding` has its own scene, camera, target, dimensions, and render
+mode. `Editor` mode renders editor debug geometry. `Preview` mode renders the
+scene without editor overlays and can be used for a selected scene camera's
+picture-in-picture view. `Final` mode renders to attachments for final output
+and also omits editor overlays. Preview target dimensions determine that view's
+aspect ratio; editor display scale and preview render quality are separate
+preferences.
+
+Final camera output uses an offscreen target at the requested dimensions. The
+renderer captures final color, depth, world normal, specular-lighting, and
+diffuse-lighting planes. `BeginFinalRender` submits GPU copies to staging
+textures and returns a ticket; callers poll on the render thread until the
+readback is ready. The optional final-color hook can change the linear
+scene-referred final-color plane; the other planes remain pre-hook. PNG export
+applies a display transform, while selected-AOV multilayer EXR keeps float
+samples. See [final rendering and output planes](final-render.md) and
+[render output and image export](output.md) for their detailed contracts.
+
+The final output path is a dedicated offscreen render workflow rather than an
+extra post-processing graph pass. It requires an idle render system and allows
+only one active final-render ticket at a time. The editor camera preview is a
+separate interactive viewport and does not include editor debug geometry.
