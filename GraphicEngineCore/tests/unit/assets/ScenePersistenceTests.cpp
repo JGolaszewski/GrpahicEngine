@@ -72,6 +72,8 @@ TEST(ScenePersistenceTests, RoundTripsFieldsAndRejectsTraversalWithoutOverwritin
   EXPECT_FLOAT_EQ(loaded.document.unitsPerMeter, 0.25F);
   EXPECT_EQ(loaded.document.entities.front().id, 23U);
   EXPECT_EQ(loaded.document.entities.front().name, "persisted entity");
+  ASSERT_TRUE(loaded.document.entities.front().primitiveType.has_value());
+  EXPECT_EQ(*loaded.document.entities.front().primitiveType, "cube");
   EXPECT_EQ(loaded.document.entities.front().position, (std::array<float, 3>{1.0F, -2.0F, 3.5F}));
   EXPECT_TRUE(loaded.document.entities.front().forceWireframe);
 }
@@ -110,9 +112,27 @@ TEST(ScenePersistenceTests, PersistsCameraResolutionAndUsesFullHdDefaultsForOlde
   Engine::SceneDocument document;
   Engine::SceneCameraDocument camera;
   camera.id = 7;
+  camera.name = "Main View";
+  camera.rotation = {0.0F, 0.70710677F, 0.0F, 0.70710677F};
+  camera.scale = {1.2F, 1.3F, 1.4F};
   camera.outputWidth = 2560;
   camera.outputHeight = 1440;
+  camera.priority = -4;
+  camera.active = false;
   document.cameras.push_back(camera);
+  Engine::SceneEntityDocument mesh;
+  mesh.id = 9;
+  mesh.name = "Hidden Mesh";
+  mesh.primitiveType = "cube";
+  mesh.meshVisible = false;
+  document.entities.push_back(mesh);
+  Engine::SceneLightDocument light;
+  light.id = 8;
+  light.name = "Fill Light";
+  light.position = {3.0F, 4.0F, 5.0F};
+  light.rotation = {0.0F, 0.0F, 0.38268343F, 0.9238795F};
+  light.scale = {2.0F, 2.0F, 2.0F};
+  document.lights.push_back(light);
 
   std::string error;
   ASSERT_TRUE(assets.SaveScene("camera.scene.json", document, error)) << error;
@@ -121,6 +141,18 @@ TEST(ScenePersistenceTests, PersistsCameraResolutionAndUsesFullHdDefaultsForOlde
   ASSERT_EQ(loaded.document.cameras.size(), 1U);
   EXPECT_EQ(loaded.document.cameras.front().outputWidth, 2560U);
   EXPECT_EQ(loaded.document.cameras.front().outputHeight, 1440U);
+  EXPECT_EQ(loaded.document.cameras.front().name, "Main View");
+  EXPECT_EQ(loaded.document.cameras.front().rotation, camera.rotation);
+  EXPECT_EQ(loaded.document.cameras.front().scale, camera.scale);
+  EXPECT_EQ(loaded.document.cameras.front().priority, -4);
+  EXPECT_FALSE(loaded.document.cameras.front().active);
+  ASSERT_EQ(loaded.document.lights.size(), 1U);
+  EXPECT_EQ(loaded.document.lights.front().name, "Fill Light");
+  EXPECT_EQ(loaded.document.lights.front().position, light.position);
+  EXPECT_EQ(loaded.document.lights.front().rotation, light.rotation);
+  EXPECT_EQ(loaded.document.lights.front().scale, light.scale);
+  ASSERT_EQ(loaded.document.entities.size(), 1U);
+  EXPECT_FALSE(loaded.document.entities.front().meshVisible);
 
   const auto legacyPath = project.Root() / "legacy-camera.scene.json";
   {
@@ -133,6 +165,10 @@ TEST(ScenePersistenceTests, PersistsCameraResolutionAndUsesFullHdDefaultsForOlde
   ASSERT_EQ(legacy.document.cameras.size(), 1U);
   EXPECT_EQ(legacy.document.cameras.front().outputWidth, 1920U);
   EXPECT_EQ(legacy.document.cameras.front().outputHeight, 1080U);
+  EXPECT_EQ(legacy.document.cameras.front().name, "Camera");
+  EXPECT_EQ(legacy.document.cameras.front().scale, (std::array<float, 3>{1.0F, 1.0F, 1.0F}));
+  EXPECT_EQ(legacy.document.cameras.front().priority, 0);
+  EXPECT_TRUE(legacy.document.cameras.front().active);
 }
 
 TEST(ScenePersistenceTests, FailedAtomicReplacementPreservesDestinationAndRemovesTemporaryFile) {
@@ -210,12 +246,12 @@ TEST(ScenePersistenceTests, RejectsUnsupportedSchemaVersion) {
   Engine::AssetManager assets(project.Root());
   {
     std::ofstream scene(project.Root() / "future-schema.scene.json", std::ios::binary);
-    scene << R"({"schemaVersion":3,"unitsPerMeter":1.0,"entities":[]})";
+    scene << R"({"schemaVersion":4,"unitsPerMeter":1.0,"entities":[]})";
   }
 
   const auto loaded = assets.LoadScene("future-schema.scene.json");
   EXPECT_FALSE(loaded);
-  EXPECT_NE(loaded.error.find("unsupported scene schema version 3"), std::string::npos);
+  EXPECT_NE(loaded.error.find("unsupported scene schema version 4"), std::string::npos);
 }
 
 TEST(ScenePersistenceTests, RejectsMalformedEntityLightAndCameraFields) {
@@ -265,8 +301,6 @@ TEST(ScenePersistenceTests, RejectsMalformedEntityLightAndCameraFields) {
                 "modelGuid is not a valid GUID");
   checkRejected("invalid-primitive-type.json", root("\"entities\":[{\"id\":1,\"primitiveType\":7}]"),
                 "primitiveType must be a string or null");
-  checkRejected("entity-needs-asset.json", root("\"entities\":[{\"id\":1}]"),
-                "must specify exactly one of modelGuid or primitiveType");
   checkRejected("entity-has-two-assets.json",
                 root("\"entities\":[{\"id\":1,\"modelGuid\":"
                      "\"11111111-1111-4111-8111-111111111111\",\"primitiveType\":\"cube\"}]"),

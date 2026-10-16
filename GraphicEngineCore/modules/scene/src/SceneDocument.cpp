@@ -389,6 +389,7 @@ auto EntityJson(const SceneEntityDocument& entity) -> Json {
   item.emplace("rotation", entity.rotation);
   item.emplace("scale", entity.scale);
   Json render = Json::object();
+  render.emplace("visible", entity.meshVisible);
   render.emplace("forceWireframe", entity.forceWireframe);
   render.emplace("disableDepthTest", entity.disableDepthTest);
   render.emplace("castShadows", entity.castShadows);
@@ -410,11 +411,14 @@ auto EntityJson(const SceneEntityDocument& entity) -> Json {
 auto LightJson(const SceneLightDocument& light) -> Json {
   return {
       {"id", light.id},
+      {"name", light.name},
       {"identityGuid", GuidJson(light.identityGuid)},
       {"parentGuid", GuidJson(light.parentGuid)},
       {"visible", light.visible},
       {"direction", light.direction},
       {"position", light.position},
+      {"rotation", light.rotation},
+      {"scale", light.scale},
       {"color", light.color},
       {"intensity", light.intensity},
       {"range", light.range},
@@ -430,16 +434,20 @@ auto LightJson(const SceneLightDocument& light) -> Json {
 auto CameraJson(const SceneCameraDocument& camera) -> Json {
   return {
       {"id", camera.id},
+      {"name", camera.name},
       {"identityGuid", GuidJson(camera.identityGuid)},
       {"parentGuid", GuidJson(camera.parentGuid)},
       {"visible", camera.visible},
       {"position", camera.position},
       {"rotation", camera.rotation},
+      {"scale", camera.scale},
       {"fovRadians", camera.fovRadians},
       {"nearPlane", camera.nearPlane},
       {"farPlane", camera.farPlane},
       {"outputWidth", camera.outputWidth},
       {"outputHeight", camera.outputHeight},
+      {"priority", camera.priority},
+      {"active", camera.active},
   };
 }
 
@@ -546,8 +554,13 @@ auto ValidateLight(const SceneLightDocument& light, std::set<uint64_t>& ids) -> 
   const float directionLengthSquared = (light.direction.at(0) * light.direction.at(0)) +
                                        (light.direction.at(1) * light.direction.at(1)) +
                                        (light.direction.at(2) * light.direction.at(2));
-  return std::isfinite(directionLengthSquared) && directionLengthSquared > 1.0e-12F && light.color.at(0) >= 0.0F &&
-         light.color.at(1) >= 0.0F && light.color.at(2) >= 0.0F;
+  const float rotationLengthSquared =
+      (light.rotation.at(0) * light.rotation.at(0)) + (light.rotation.at(1) * light.rotation.at(1)) +
+      (light.rotation.at(2) * light.rotation.at(2)) + (light.rotation.at(3) * light.rotation.at(3));
+  return std::isfinite(directionLengthSquared) && directionLengthSquared > 1.0e-12F &&
+         std::isfinite(rotationLengthSquared) && rotationLengthSquared > 1.0e-12F &&
+         std::ranges::all_of(light.scale, [](float value) { return std::isfinite(value) && value > 0.0F; }) &&
+         light.color.at(0) >= 0.0F && light.color.at(1) >= 0.0F && light.color.at(2) >= 0.0F;
 }
 
 auto ValidateLights(const std::filesystem::path& path, const SceneDocument& document, std::string& error) -> bool {
@@ -573,7 +586,8 @@ auto ValidateCamera(const SceneCameraDocument& camera, std::set<uint64_t>& ids) 
          std::ranges::all_of(values, [](float value) -> bool { return std::isfinite(value); }) &&
          camera.fovRadians > 0.0F && camera.fovRadians < std::numbers::pi_v<float> && camera.nearPlane > 0.0F &&
          camera.farPlane > camera.nearPlane && camera.outputWidth > 0 && camera.outputHeight > 0 &&
-         std::isfinite(rotationLengthSquared) && rotationLengthSquared > 1.0e-12F;
+         std::isfinite(rotationLengthSquared) && rotationLengthSquared > 1.0e-12F &&
+         std::ranges::all_of(camera.scale, [](float value) { return std::isfinite(value) && value > 0.0F; });
 }
 
 auto ValidateCameras(const std::filesystem::path& path, const SceneDocument& document, std::string& error) -> bool {
@@ -732,9 +746,10 @@ auto ReadEntityRenderSettings(const Json& item, SceneEntityDocument& entity, Sce
     fieldError = context + ".render must be an object";
     return false;
   }
-  KnownKeys(render, {"forceWireframe", "disableDepthTest", "castShadows", "receiveShadows"}, result.warnings,
+  KnownKeys(render, {"visible", "forceWireframe", "disableDepthTest", "castShadows", "receiveShadows"}, result.warnings,
             context + ".render");
-  if (!ReadBool(render, "forceWireframe", entity.forceWireframe, fieldError) ||
+  if (!ReadBool(render, "visible", entity.meshVisible, fieldError) ||
+      !ReadBool(render, "forceWireframe", entity.forceWireframe, fieldError) ||
       !ReadBool(render, "disableDepthTest", entity.disableDepthTest, fieldError) ||
       !ReadBool(render, "castShadows", entity.castShadows, fieldError) ||
       !ReadBool(render, "receiveShadows", entity.receiveShadows, fieldError)) {
@@ -833,11 +848,14 @@ auto LoadLightArray(const Json& root, SceneDocumentResult& result, const std::fi
       KnownKeys(item,
                 {
                     "id",
+                    "name",
                     "identityGuid",
                     "parentGuid",
                     "visible",
                     "direction",
                     "position",
+                    "rotation",
+                    "scale",
                     "color",
                     "intensity",
                     "range",
@@ -850,12 +868,21 @@ auto LoadLightArray(const Json& root, SceneDocumentResult& result, const std::fi
                 },
                 result.warnings, context);
       SceneLightDocument light;
+      if (item.contains("name")) {
+        if (!item.at("name").is_string()) {
+          result.error = FileContext(path, context + ".name must be a string");
+          return false;
+        }
+        light.name = item.at("name").get<std::string>();
+      }
       if (!ReadId(item, light.id, fieldError) || !lightIds.insert(light.id).second ||
           !ReadGuid(item, "identityGuid", light.identityGuid, fieldError) ||
           !ReadGuid(item, "parentGuid", light.parentGuid, fieldError) ||
           !ReadBool(item, "visible", light.visible, fieldError) ||
           !ReadArrayField(item, "direction", light.direction, fieldError) ||
           !ReadArrayField(item, "position", light.position, fieldError) ||
+          !ReadArrayField(item, "rotation", light.rotation, fieldError) ||
+          !ReadArrayField(item, "scale", light.scale, fieldError) ||
           !ReadArrayField(item, "color", light.color, fieldError) ||
           !ReadNumber(item, "intensity", light.intensity, fieldError) ||
           !ReadNumber(item, "range", light.range, fieldError) ||
@@ -871,9 +898,14 @@ auto LoadLightArray(const Json& root, SceneDocumentResult& result, const std::fi
       const float directionLengthSquared = (light.direction.at(0) * light.direction.at(0)) +
                                            (light.direction.at(1) * light.direction.at(1)) +
                                            (light.direction.at(2) * light.direction.at(2));
-      if (!std::isfinite(directionLengthSquared) || directionLengthSquared <= 1.0e-12F || light.color.at(0) < 0.0F ||
-          light.color.at(1) < 0.0F || light.color.at(2) < 0.0F || light.intensity < 0.0F || light.range <= 0.0F ||
-          light.innerAngleDegrees < 0.0F || light.outerAngleDegrees < light.innerAngleDegrees ||
+      const float rotationLengthSquared =
+          (light.rotation.at(0) * light.rotation.at(0)) + (light.rotation.at(1) * light.rotation.at(1)) +
+          (light.rotation.at(2) * light.rotation.at(2)) + (light.rotation.at(3) * light.rotation.at(3));
+      if (!std::isfinite(directionLengthSquared) || directionLengthSquared <= 1.0e-12F ||
+          !std::isfinite(rotationLengthSquared) || rotationLengthSquared <= 1.0e-12F ||
+          std::ranges::any_of(light.scale, [](float value) { return !std::isfinite(value) || value <= 0.0F; }) ||
+          light.color.at(0) < 0.0F || light.color.at(1) < 0.0F || light.color.at(2) < 0.0F || light.intensity < 0.0F ||
+          light.range <= 0.0F || light.innerAngleDegrees < 0.0F || light.outerAngleDegrees < light.innerAngleDegrees ||
           light.outerAngleDegrees > 89.5F || light.shadowBias < 0.0F || light.shadowNormalBias < 0.0F) {
         result.error = FileContext(path, context + " contains out-of-range light settings");
         return false;
@@ -902,25 +934,37 @@ auto LoadCameraArray(const Json& root, SceneDocumentResult& result, const std::f
       KnownKeys(item,
                 {
                     "id",
+                    "name",
                     "identityGuid",
                     "parentGuid",
                     "visible",
                     "position",
                     "rotation",
+                    "scale",
                     "fovRadians",
                     "nearPlane",
                     "farPlane",
                     "outputWidth",
                     "outputHeight",
+                    "priority",
+                    "active",
                 },
                 result.warnings, context);
       SceneCameraDocument camera;
+      if (item.contains("name")) {
+        if (!item.at("name").is_string()) {
+          result.error = FileContext(path, context + ".name must be a string");
+          return false;
+        }
+        camera.name = item.at("name").get<std::string>();
+      }
       if (!ReadId(item, camera.id, fieldError) || !cameraIds.insert(camera.id).second ||
           !ReadGuid(item, "identityGuid", camera.identityGuid, fieldError) ||
           !ReadGuid(item, "parentGuid", camera.parentGuid, fieldError) ||
           !ReadBool(item, "visible", camera.visible, fieldError) ||
           !ReadArrayField(item, "position", camera.position, fieldError) ||
           !ReadArrayField(item, "rotation", camera.rotation, fieldError) ||
+          !ReadArrayField(item, "scale", camera.scale, fieldError) ||
           !ReadNumber(item, "fovRadians", camera.fovRadians, fieldError) ||
           !ReadNumber(item, "nearPlane", camera.nearPlane, fieldError) ||
           !ReadNumber(item, "farPlane", camera.farPlane, fieldError) ||
@@ -929,12 +973,30 @@ auto LoadCameraArray(const Json& root, SceneDocumentResult& result, const std::f
         result.error = FileContext(path, context + ": " + (fieldError.empty() ? "duplicate camera ID" : fieldError));
         return false;
       }
+      if (item.contains("priority")) {
+        const Json& priority = item.at("priority");
+        const bool isOutOfRange =
+            priority.is_number_unsigned()
+                ? priority.get<uint64_t>() > static_cast<uint64_t>(std::numeric_limits<int32_t>::max())
+                : !priority.is_number_integer() || priority.get<int64_t>() < std::numeric_limits<int32_t>::min() ||
+                      priority.get<int64_t>() > std::numeric_limits<int32_t>::max();
+        if (isOutOfRange) {
+          result.error = FileContext(path, context + ".priority must be a 32-bit integer");
+          return false;
+        }
+        camera.priority = item.at("priority").get<int32_t>();
+      }
+      if (!ReadBool(item, "active", camera.active, fieldError)) {
+        result.error = FileContext(path, context + "." + fieldError);
+        return false;
+      }
       const float rotationLengthSquared =
           (camera.rotation.at(0) * camera.rotation.at(0)) + (camera.rotation.at(1) * camera.rotation.at(1)) +
           (camera.rotation.at(2) * camera.rotation.at(2)) + (camera.rotation.at(3) * camera.rotation.at(3));
       if (camera.fovRadians <= 0.0F || camera.fovRadians >= std::numbers::pi_v<float> || camera.nearPlane <= 0.0F ||
           camera.farPlane <= camera.nearPlane || camera.outputWidth == 0 || camera.outputHeight == 0 ||
-          rotationLengthSquared <= 1.0e-12F) {
+          rotationLengthSquared <= 1.0e-12F ||
+          std::ranges::any_of(camera.scale, [](float value) { return !std::isfinite(value) || value <= 0.0F; })) {
         result.error = FileContext(path, context + " contains invalid projection or rotation values");
         return false;
       }

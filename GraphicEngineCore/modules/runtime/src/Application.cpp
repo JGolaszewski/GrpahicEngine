@@ -455,11 +455,11 @@ auto Application::LoadSceneDocument(const SceneDocument& document, std::string& 
   }
   if (document.schemaVersion == 1) {
     for (const auto& light : document.lights) {
-      (void)stagedScene->QueueCreate("Spot Light");
+      (void)stagedScene->QueueCreate(light.name);
       lightsToCreate.push_back(&light);
     }
     for (const auto& camera : document.cameras) {
-      (void)stagedScene->QueueCreate("Camera");
+      (void)stagedScene->QueueCreate(camera.name);
       camerasToCreate.push_back(&camera);
     }
   }
@@ -568,6 +568,7 @@ auto Application::LoadSceneDocument(const SceneDocument& document, std::string& 
       (void)stagedScene->QueueAdd(pending.Handle, Ecs::MeshRenderer{
                                                       .ModelGuid = source.modelGuid.value_or(""),
                                                       .PrimitiveType = source.primitiveType.value_or(""),
+                                                      .Visible = source.meshVisible,
                                                       .CastShadows = source.castShadows,
                                                       .ReceiveShadows = source.receiveShadows,
                                                       .Wireframe = source.forceWireframe,
@@ -577,7 +578,7 @@ auto Application::LoadSceneDocument(const SceneDocument& document, std::string& 
   }
   for (const PendingLight& pending : lights) {
     const SceneLightDocument& source = *pending.Document;
-    Ecs::LocalTransform transform{.Position = source.position};
+    Ecs::LocalTransform transform{.Position = source.position, .Rotation = source.rotation, .Scale = source.scale};
     Ecs::SpotLight light{
         .Direction = source.direction,
         .Color = source.color,
@@ -602,13 +603,15 @@ auto Application::LoadSceneDocument(const SceneDocument& document, std::string& 
   }
   for (const PendingCamera& pending : cameras) {
     const SceneCameraDocument& source = *pending.Document;
-    Ecs::LocalTransform transform{.Position = source.position, .Rotation = source.rotation};
+    Ecs::LocalTransform transform{.Position = source.position, .Rotation = source.rotation, .Scale = source.scale};
     Ecs::Camera camera{
         .FieldOfViewDegrees = DirectX::XMConvertToDegrees(source.fovRadians),
         .NearPlane = source.nearPlane,
         .FarPlane = source.farPlane,
         .OutputWidth = source.outputWidth,
         .OutputHeight = source.outputHeight,
+        .Priority = source.priority,
+        .Active = source.active,
     };
     (void)stagedScene->QueueSet(pending.Handle, transform);
     const SceneGuidDocument cameraGuid = source.identityGuid.value_or(SceneGuidDocument{.high = 2, .low = source.id});
@@ -689,6 +692,7 @@ auto Application::CreateSceneDocument(const Scene& scene) const -> SceneDocument
           entity.scale = transforms[row].Scale;
           if (mesh != nullptr) {
             entity.forceWireframe = mesh->Wireframe;
+            entity.meshVisible = mesh->Visible;
             entity.disableDepthTest = mesh->DisableDepthTest;
             entity.castShadows = mesh->CastShadows;
             entity.receiveShadows = mesh->ReceiveShadows;
@@ -706,6 +710,7 @@ auto Application::CreateSceneDocument(const Scene& scene) const -> SceneDocument
         for (size_t row = 0; row < handles.size(); ++row) {
           SceneLightDocument light;
           light.id = identities[row].Guid.Low;
+          light.name = names[row].Value;
           light.identityGuid = SceneGuidDocument{.high = identities[row].Guid.High, .low = identities[row].Guid.Low};
           light.visible = visibility[row].IsVisible;
           if (const auto* parent = world.Get<Ecs::Parent>(handles[row]);
@@ -716,6 +721,8 @@ auto Application::CreateSceneDocument(const Scene& scene) const -> SceneDocument
           }
           light.direction = components[row].Direction;
           light.position = transforms[row].Position;
+          light.rotation = transforms[row].Rotation;
+          light.scale = transforms[row].Scale;
           light.color = components[row].Color;
           light.intensity = components[row].Intensity;
           light.range = components[row].Range;
@@ -726,7 +733,6 @@ auto Application::CreateSceneDocument(const Scene& scene) const -> SceneDocument
           light.usePosition = components[row].UsePosition;
           light.castShadows = components[row].CastShadows;
           document.lights.push_back(light);
-          (void)names;
         }
       });
 
@@ -739,6 +745,7 @@ auto Application::CreateSceneDocument(const Scene& scene) const -> SceneDocument
             for (size_t row = 0; row < handles.size(); ++row) {
               SceneCameraDocument camera;
               camera.id = identities[row].Guid.Low;
+              camera.name = names[row].Value;
               camera.identityGuid =
                   SceneGuidDocument{.high = identities[row].Guid.High, .low = identities[row].Guid.Low};
               camera.visible = visibility[row].IsVisible;
@@ -750,13 +757,15 @@ auto Application::CreateSceneDocument(const Scene& scene) const -> SceneDocument
               }
               camera.position = transforms[row].Position;
               camera.rotation = transforms[row].Rotation;
+              camera.scale = transforms[row].Scale;
               camera.fovRadians = DirectX::XMConvertToRadians(components[row].FieldOfViewDegrees);
               camera.nearPlane = components[row].NearPlane;
               camera.farPlane = components[row].FarPlane;
               camera.outputWidth = components[row].OutputWidth;
               camera.outputHeight = components[row].OutputHeight;
+              camera.priority = components[row].Priority;
+              camera.active = components[row].Active;
               document.cameras.push_back(camera);
-              (void)names;
             }
           });
   return document;

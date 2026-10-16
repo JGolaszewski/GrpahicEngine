@@ -58,6 +58,7 @@ struct SceneEntityDocument {
   std::array<float, 4> rotation = {0.0f, 0.0f, 0.0f, 1.0f};            ///< Local rotation as an XYZW quaternion.
   std::array<float, 3> scale = {1.0f, 1.0f, 1.0f};                     ///< Local scale on each axis.
   bool forceWireframe = false;                                         ///< Whether this entity is drawn in wireframe.
+  bool meshVisible = true;                                             ///< Whether its mesh renderer is submitted.
   bool disableDepthTest = false; ///< Whether depth testing is disabled for this entity.
   bool castShadows = true;       ///< Whether this entity contributes to shadow maps.
   bool receiveShadows = true;    ///< Whether this entity receives shadows.
@@ -65,19 +66,22 @@ struct SceneEntityDocument {
 
 /// Authored light state stored in a scene document.
 struct SceneLightDocument {
-  uint64_t id = 0;                                      ///< Document-local numeric light identifier.
-  std::optional<SceneGuidDocument> identityGuid;        ///< Optional persistent identity.
-  std::optional<SceneGuidDocument> parentGuid;          ///< Optional persistent identity of the parent entity.
-  bool visible = true;                                  ///< Whether the light is enabled in scene views.
-  std::array<float, 3> direction = {0.0f, -1.0f, 0.0f}; ///< World-space direction for directional lights.
-  std::array<float, 3> position = {0.0f, 3.0f, 0.0f};   ///< Local position for positional lights.
-  std::array<float, 3> color = {1.0f, 1.0f, 1.0f};      ///< Linear RGB light color.
-  float intensity = 1.0f;                               ///< Radiometric intensity multiplier.
-  float range = 20.0f;                                  ///< Maximum influence distance for positional lights.
-  float innerAngleDegrees = 15.0f;                      ///< Inner spotlight cone angle in degrees.
-  float outerAngleDegrees = 25.0f;                      ///< Outer spotlight cone angle in degrees.
-  float shadowBias = 0.0015f;                           ///< Constant shadow-map depth bias.
-  float shadowNormalBias = 0.0015f;                     ///< Slope-scaled shadow-map bias.
+  uint64_t id = 0;                                          ///< Document-local numeric light identifier.
+  std::string name = "Spot Light";                          ///< User-facing light entity name.
+  std::optional<SceneGuidDocument> identityGuid;            ///< Optional persistent identity.
+  std::optional<SceneGuidDocument> parentGuid;              ///< Optional persistent identity of the parent entity.
+  bool visible = true;                                      ///< Whether the light is enabled in scene views.
+  std::array<float, 3> direction = {0.0f, -1.0f, 0.0f};     ///< World-space direction for directional lights.
+  std::array<float, 3> position = {0.0f, 3.0f, 0.0f};       ///< Local position for positional lights.
+  std::array<float, 4> rotation = {0.0f, 0.0f, 0.0f, 1.0f}; ///< Local entity rotation as an XYZW quaternion.
+  std::array<float, 3> scale = {1.0f, 1.0f, 1.0f};          ///< Local entity scale.
+  std::array<float, 3> color = {1.0f, 1.0f, 1.0f};          ///< Linear RGB light color.
+  float intensity = 1.0f;                                   ///< Radiometric intensity multiplier.
+  float range = 20.0f;                                      ///< Maximum influence distance for positional lights.
+  float innerAngleDegrees = 15.0f;                          ///< Inner spotlight cone angle in degrees.
+  float outerAngleDegrees = 25.0f;                          ///< Outer spotlight cone angle in degrees.
+  float shadowBias = 0.0015f;                               ///< Constant shadow-map depth bias.
+  float shadowNormalBias = 0.0015f;                         ///< Slope-scaled shadow-map bias.
   bool usePosition = false; ///< Whether the light uses positional rather than directional behavior.
   bool castShadows = true;  ///< Whether the light produces shadows.
 };
@@ -85,17 +89,21 @@ struct SceneLightDocument {
 /// Authored camera state stored in a scene document.
 struct SceneCameraDocument {
   uint64_t id = 0;                                          ///< Document-local numeric camera identifier.
+  std::string name = "Camera";                              ///< User-facing camera entity name.
   std::optional<SceneGuidDocument> identityGuid;            ///< Optional persistent identity.
   std::optional<SceneGuidDocument> parentGuid;              ///< Optional persistent identity of the parent entity.
   bool visible = true;                                      ///< Whether the camera is available for selection.
   std::array<float, 3> position{};                          ///< Local camera position.
   std::array<float, 4> rotation = {0.0f, 0.0f, 0.0f, 1.0f}; ///< Local rotation as an XYZW quaternion.
+  std::array<float, 3> scale = {1.0f, 1.0f, 1.0f};          ///< Local entity scale.
   float fovRadians = 0.785398163f;                          ///< Vertical field of view in radians.
   float nearPlane = 0.1f;                                   ///< Near clipping plane distance.
   float farPlane = 1000.0f;                                 ///< Far clipping plane distance.
   /// Render output dimensions; missing values in older files use 1920 x 1080.
   uint32_t outputWidth = 1920;
   uint32_t outputHeight = 1080; ///< Render output height in pixels.
+  int32_t priority = 0;         ///< Camera selection priority.
+  bool active = true;           ///< Whether this camera participates in camera selection.
 };
 
 /// Complete persistent scene state, including its schema, permanent root, and authored objects.
