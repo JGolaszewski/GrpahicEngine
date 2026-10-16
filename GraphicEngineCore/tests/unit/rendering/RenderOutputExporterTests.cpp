@@ -176,11 +176,15 @@ TEST(RenderOutputExporterTests, RejectsInvalidDimensionsAndNonFinitePngSamples) 
   TemporaryOutputDirectory directory;
   const std::array<float, 4> finalColor{0.0F, 0.0F, 0.0F, 1.0F};
   const std::array<float, 4> invalidColor{0.0F, 0.0F, std::numeric_limits<float>::quiet_NaN(), 1.0F};
+  const std::array<float, 4> invalidAlpha{0.0F, 0.0F, 0.0F, std::numeric_limits<float>::infinity()};
   const Engine::RenderOutputBackground invalidBackground{.Enabled = true,
                                                          .Color = {0.0F, std::numeric_limits<float>::infinity(), 0.0F}};
+  const Engine::RenderOutputBackground background{.Enabled = true, .Color = {0.0F, 0.0F, 1.0F}};
 
   EXPECT_FALSE(Engine::Rendering::Detail::WritePngFile(0, 1, finalColor, directory.File("zero.png")));
   EXPECT_FALSE(Engine::Rendering::Detail::WritePngFile(1, 1, invalidColor, directory.File("nan.png")));
+  EXPECT_FALSE(
+      Engine::Rendering::Detail::WritePngFile(1, 1, invalidAlpha, directory.File("infinite-alpha.png"), background));
   EXPECT_FALSE(Engine::Rendering::Detail::WritePngFile(1, 1, finalColor, directory.File("invalid-background.png"),
                                                        invalidBackground));
 }

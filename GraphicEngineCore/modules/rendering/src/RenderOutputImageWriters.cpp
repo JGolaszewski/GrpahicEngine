@@ -185,6 +185,13 @@ auto WritePngFile(uint32_t width, uint32_t height, std::span<const float> finalC
   if (!expectedSamples || finalColorRgba.size() != *expectedSamples) {
     return std::unexpected(IoError("Cannot write PNG", path, "final_color must contain width * height * 4 samples"));
   }
+  if (background.Enabled) {
+    for (size_t offset = 3U; offset < finalColorRgba.size(); offset += 4U) {
+      if (!std::isfinite(finalColorRgba[offset])) {
+        return std::unexpected(IoError("Cannot write PNG", path, "final_color contains a non-finite alpha sample"));
+      }
+    }
+  }
 
   const std::vector<float> composited = CompositeFinalColor(finalColorRgba, background);
   const std::span<const float> source(composited);
