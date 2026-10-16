@@ -68,11 +68,11 @@ try {
     Write-Host 'Linting Markdown sources.'
     Invoke-CheckedCommand $pymarkdownCommand @('--strict-config', 'scan', '--recurse', 'docs')
 
-    Write-Host 'Checking Core API documentation with strict Doxygen settings.'
+    Write-Host 'Checking whole-engine API documentation with strict Doxygen settings.'
     Remove-GeneratedDirectory $doxygenOutput
     Invoke-CheckedCommand $doxygenCommand.Source @('Doxyfile')
 
-    Write-Host 'Building the strict MkDocs site and generating the Core API from Doxygen XML.'
+    Write-Host 'Building the strict MkDocs site and generating the whole-engine API from Doxygen XML.'
     Invoke-CheckedCommand $mkdocsCommand @('build', '--strict', '--clean')
 
     Write-Host "Documentation site ready at $siteOutput"

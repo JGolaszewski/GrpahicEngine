@@ -160,12 +160,15 @@ MSVC, so coverage configuration is intentionally separate and must be validated
 with the installed clang-cl, LLVM runtime, and vcpkg triplet before relying on its
 results.
 
-## Core API documentation
+## Whole-engine API documentation
 
 The MkDocs build runs Doxygen through MkDoxy using the checked-in root
-configuration. Doxygen emits XML only; MkDoxy converts it into Markdown pages
-that MkDocs includes in the Material site. Undocumented public declarations,
-missing parameter documentation, and documentation errors fail the build:
+configuration. It scans first-party public headers in GraphicEngineCore,
+GraphicEngineEditor, and GraphicEngineBackends/D3D11. Doxygen emits XML only;
+MkDoxy converts it into Markdown pages that MkDocs includes in the Material
+site. Vendor code and test implementation details are excluded. Undocumented
+public declarations, missing parameter documentation, and documentation errors
+fail the build:
 
 ```powershell
 doxygen Doxyfile
