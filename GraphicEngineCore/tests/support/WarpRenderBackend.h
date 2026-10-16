@@ -3,6 +3,9 @@
 #include "rendering/include/RenderBackend.h"
 #include "runtime/include/Window.h"
 
+#ifndef NOMINMAX
+#  define NOMINMAX
+#endif
 #include <d3d11.h>
 #include <nvrhi/d3d11.h>
 #include <wrl/client.h>
