@@ -44,6 +44,19 @@ The pipeline follows these steps:
 5. Refresh the registry to discover sidecars and publish the known models and
    textures to the editor's Assets panel.
 
+```mermaid
+flowchart LR
+  Source[Model or texture file] --> Resolve[Resolve path and check project boundary]
+  Resolve --> Decode[Decode model or image]
+  Decode --> Sidecar{Adjacent .meta exists?}
+  Sidecar -->|Yes| Read[Read existing GUID and importer metadata]
+  Sidecar -->|No| Create[Create sidecar with new GUID]
+  Read --> Cache[Cache imported CPU asset by GUID]
+  Create --> Cache
+  Cache --> Registry[Refresh registry]
+  Registry --> Panel[Show asset in editor Assets panel]
+```
+
 During project startup or an explicit registry refresh, the asset manager
 scans `.meta` files recursively and loads valid referenced assets. Malformed
 or unsupported metadata and assets that cannot be loaded are reported as
