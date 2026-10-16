@@ -43,7 +43,8 @@ TEST(SceneEcsPersistenceTests, RoundTripsEntityIdentityHierarchyAndSupportedComp
   (void)source.QueueReparent(camera, light);
   (void)source.QueueSet(mesh, Engine::Ecs::LocalTransform{.Position = {2.0F, -3.0F, 4.0F},
                                                           .Rotation = {0.0F, 0.0F, 0.38268343F, 0.9238795F},
-                                                          .Scale = {2.0F, 3.0F, 4.0F}});
+                                                          .Scale = {2.0F, 3.0F, 4.0F},
+                                                          .FlipHorizontal = true});
   (void)source.QueueSet(
       mesh, Engine::Ecs::MeshRenderer{.ModelGuid = "",
                                       .PrimitiveType = "cube",
@@ -62,7 +63,8 @@ TEST(SceneEcsPersistenceTests, RoundTripsEntityIdentityHierarchyAndSupportedComp
   (void)source.QueueSet(mesh, Engine::Ecs::LocalVisibility{.IsVisible = false});
   (void)source.QueueSet(light, Engine::Ecs::LocalTransform{.Position = {1.0F, 2.0F, 3.0F},
                                                            .Rotation = {0.0F, 0.70710677F, 0.0F, 0.70710677F},
-                                                           .Scale = {1.5F, 1.5F, 1.5F}});
+                                                           .Scale = {1.5F, 1.5F, 1.5F},
+                                                           .FlipVertical = true});
   (void)source.QueueSet(light, Engine::Ecs::Name{.Value = "Key Light"});
   (void)source.QueueSet(light, Engine::Ecs::SpotLight{.Type = Engine::Ecs::LightType::Spot,
                                                       .Direction = {0.0F, -0.5F, 1.0F},
@@ -76,7 +78,9 @@ TEST(SceneEcsPersistenceTests, RoundTripsEntityIdentityHierarchyAndSupportedComp
                                                       .CastShadows = false});
   (void)source.QueueSet(camera, Engine::Ecs::LocalTransform{.Position = {-4.0F, 5.0F, 6.0F},
                                                             .Rotation = {0.1F, 0.2F, 0.3F, 0.9F},
-                                                            .Scale = {0.8F, 0.9F, 1.1F}});
+                                                            .Scale = {0.8F, 0.9F, 1.1F},
+                                                            .FlipHorizontal = true,
+                                                            .FlipVertical = true});
   (void)source.QueueSet(camera, Engine::Ecs::Camera{.FieldOfViewDegrees = 72.0F,
                                                     .NearPlane = 0.25F,
                                                     .FarPlane = 300.0F,
@@ -134,6 +138,8 @@ TEST(SceneEcsPersistenceTests, RoundTripsEntityIdentityHierarchyAndSupportedComp
     EXPECT_EQ(actual->position, expected.position);
     EXPECT_EQ(actual->rotation, expected.rotation);
     EXPECT_EQ(actual->scale, expected.scale);
+    EXPECT_EQ(actual->flipHorizontal, expected.flipHorizontal);
+    EXPECT_EQ(actual->flipVertical, expected.flipVertical);
     EXPECT_EQ(actual->meshVisible, expected.meshVisible);
     EXPECT_EQ(actual->forceWireframe, expected.forceWireframe);
     EXPECT_EQ(actual->disableDepthTest, expected.disableDepthTest);
@@ -148,6 +154,8 @@ TEST(SceneEcsPersistenceTests, RoundTripsEntityIdentityHierarchyAndSupportedComp
   EXPECT_EQ(loaded.lights.front().position, saved.lights.front().position);
   EXPECT_EQ(loaded.lights.front().rotation, saved.lights.front().rotation);
   EXPECT_EQ(loaded.lights.front().scale, saved.lights.front().scale);
+  EXPECT_EQ(loaded.lights.front().flipHorizontal, saved.lights.front().flipHorizontal);
+  EXPECT_EQ(loaded.lights.front().flipVertical, saved.lights.front().flipVertical);
   EXPECT_EQ(loaded.lights.front().direction, saved.lights.front().direction);
   EXPECT_EQ(loaded.lights.front().color, saved.lights.front().color);
   EXPECT_FLOAT_EQ(loaded.lights.front().intensity, saved.lights.front().intensity);
@@ -165,6 +173,8 @@ TEST(SceneEcsPersistenceTests, RoundTripsEntityIdentityHierarchyAndSupportedComp
   EXPECT_EQ(loaded.cameras.front().position, saved.cameras.front().position);
   EXPECT_EQ(loaded.cameras.front().rotation, saved.cameras.front().rotation);
   EXPECT_EQ(loaded.cameras.front().scale, saved.cameras.front().scale);
+  EXPECT_EQ(loaded.cameras.front().flipHorizontal, saved.cameras.front().flipHorizontal);
+  EXPECT_EQ(loaded.cameras.front().flipVertical, saved.cameras.front().flipVertical);
   EXPECT_EQ(loaded.cameras.front().priority, saved.cameras.front().priority);
   EXPECT_EQ(loaded.cameras.front().active, saved.cameras.front().active);
   EXPECT_FLOAT_EQ(loaded.cameras.front().fovRadians, saved.cameras.front().fovRadians);

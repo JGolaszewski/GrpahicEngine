@@ -28,6 +28,7 @@ private:
   Engine::EntityHandle m_CustomResolutionEntity = Engine::InvalidEntityHandle;
   Engine::EntityHandle m_MeshSourceSelectionEntity = Engine::InvalidEntityHandle;
   int m_MeshSourceSelectionIndex = 0;
+  bool m_LockTransformScale = false;
   std::vector<Engine::AssetManager::ModelAssetInfo> m_Models;
   std::vector<Engine::AssetManager::TextureAssetInfo> m_Textures;
   std::vector<Engine::AssetManager::MaterialAssetInfo> m_Materials;

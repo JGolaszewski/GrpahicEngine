@@ -462,7 +462,8 @@ auto Scene::UpdateDerivedState() -> Status {
       if (!shouldRecompute) {
         continue;
       }
-      const DirectX::XMFLOAT3 scaleValue{local->Scale[0], local->Scale[1], local->Scale[2]};
+      const DirectX::XMFLOAT3 scaleValue{local->FlipHorizontal ? -local->Scale[0] : local->Scale[0],
+                                         local->FlipVertical ? -local->Scale[1] : local->Scale[1], local->Scale[2]};
       const DirectX::XMFLOAT4 rotationValue{local->Rotation[0], local->Rotation[1], local->Rotation[2],
                                             local->Rotation[3]};
       const DirectX::XMFLOAT3 translationValue{local->Position[0], local->Position[1], local->Position[2]};
@@ -472,12 +473,14 @@ auto Scene::UpdateDerivedState() -> Status {
       const DirectX::XMMATRIX localMatrix =
           DirectX::XMMatrixAffineTransformation(scale, DirectX::XMVectorZero(), rotation, translation);
       DirectX::XMMATRIX result = localMatrix;
+      world->HasAxisFlip = local->FlipHorizontal || local->FlipVertical;
       if (hasParent) {
         const auto* parentWorld = m_World.Get<Ecs::WorldTransform>(m_HierarchyOrder[item.ParentWorkIndex].Entity);
         if (parentWorld == nullptr) {
           return std::unexpected(MakeError("Parent is missing world transform data"));
         }
         result = localMatrix * DirectX::XMLoadFloat4x4(&parentWorld->Matrix);
+        world->HasAxisFlip = world->HasAxisFlip || parentWorld->HasAxisFlip;
       }
       DirectX::XMStoreFloat4x4(&world->Matrix, result);
       local->IsDirty = false;

@@ -397,6 +397,8 @@ auto EntityJson(const SceneEntityDocument& entity) -> Json {
     item.emplace("position", entity.position);
     item.emplace("rotation", entity.rotation);
     item.emplace("scale", entity.scale);
+    item.emplace("flipHorizontal", entity.flipHorizontal);
+    item.emplace("flipVertical", entity.flipVertical);
     Json render = Json::object();
     render.emplace("visible", entity.meshVisible);
     render.emplace("forceWireframe", entity.forceWireframe);
@@ -429,6 +431,8 @@ auto LightJson(const SceneLightDocument& light) -> Json {
       {"position", light.position},
       {"rotation", light.rotation},
       {"scale", light.scale},
+      {"flipHorizontal", light.flipHorizontal},
+      {"flipVertical", light.flipVertical},
       {"color", light.color},
       {"intensity", light.intensity},
       {"range", light.range},
@@ -452,6 +456,8 @@ auto CameraJson(const SceneCameraDocument& camera) -> Json {
       {"position", camera.position},
       {"rotation", camera.rotation},
       {"scale", camera.scale},
+      {"flipHorizontal", camera.flipHorizontal},
+      {"flipVertical", camera.flipVertical},
       {"fovRadians", camera.fovRadians},
       {"nearPlane", camera.nearPlane},
       {"farPlane", camera.farPlane},
@@ -740,7 +746,9 @@ auto ReadEntityTransform(const Json& item, SceneEntityDocument& entity, const st
        !ReadFloatArray(item.at("position"), entity.position, context + ".position", fieldError)) ||
       (item.contains("rotation") &&
        !ReadFloatArray(item.at("rotation"), entity.rotation, context + ".rotation", fieldError)) ||
-      (item.contains("scale") && !ReadFloatArray(item.at("scale"), entity.scale, context + ".scale", fieldError))) {
+      (item.contains("scale") && !ReadFloatArray(item.at("scale"), entity.scale, context + ".scale", fieldError)) ||
+      !ReadBool(item, "flipHorizontal", entity.flipHorizontal, fieldError) ||
+      !ReadBool(item, "flipVertical", entity.flipVertical, fieldError)) {
     return false;
   }
   const float rotationLengthSquared =
@@ -795,6 +803,8 @@ auto ReadEntity(const Json& item, SceneEntityDocument& entity, std::set<uint64_t
                 "position",
                 "rotation",
                 "scale",
+                "flipHorizontal",
+                "flipVertical",
                 "render",
             },
             result.warnings, context);
@@ -817,7 +827,7 @@ auto ReadEntity(const Json& item, SceneEntityDocument& entity, std::set<uint64_t
       return false;
     }
     if (item.contains("visible") || item.contains("position") || item.contains("rotation") || item.contains("scale") ||
-        item.contains("render")) {
+        item.contains("flipHorizontal") || item.contains("flipVertical") || item.contains("render")) {
       result.warnings.push_back(context + " legacy scene root transform/visibility fields ignored");
     }
     return true;
@@ -896,6 +906,8 @@ auto LoadLightArray(const Json& root, SceneDocumentResult& result, const std::fi
                     "position",
                     "rotation",
                     "scale",
+                    "flipHorizontal",
+                    "flipVertical",
                     "color",
                     "intensity",
                     "range",
@@ -924,6 +936,8 @@ auto LoadLightArray(const Json& root, SceneDocumentResult& result, const std::fi
           !ReadArrayField(item, "position", light.position, fieldError) ||
           !ReadArrayField(item, "rotation", light.rotation, fieldError) ||
           !ReadArrayField(item, "scale", light.scale, fieldError) ||
+          !ReadBool(item, "flipHorizontal", light.flipHorizontal, fieldError) ||
+          !ReadBool(item, "flipVertical", light.flipVertical, fieldError) ||
           !ReadArrayField(item, "color", light.color, fieldError) ||
           !ReadNumber(item, "intensity", light.intensity, fieldError) ||
           !ReadNumber(item, "range", light.range, fieldError) ||
@@ -996,6 +1010,8 @@ auto LoadCameraArray(const Json& root, SceneDocumentResult& result, const std::f
                     "position",
                     "rotation",
                     "scale",
+                    "flipHorizontal",
+                    "flipVertical",
                     "fovRadians",
                     "nearPlane",
                     "farPlane",
@@ -1020,6 +1036,8 @@ auto LoadCameraArray(const Json& root, SceneDocumentResult& result, const std::f
           !ReadArrayField(item, "position", camera.position, fieldError) ||
           !ReadArrayField(item, "rotation", camera.rotation, fieldError) ||
           !ReadArrayField(item, "scale", camera.scale, fieldError) ||
+          !ReadBool(item, "flipHorizontal", camera.flipHorizontal, fieldError) ||
+          !ReadBool(item, "flipVertical", camera.flipVertical, fieldError) ||
           !ReadNumber(item, "fovRadians", camera.fovRadians, fieldError) ||
           !ReadNumber(item, "nearPlane", camera.nearPlane, fieldError) ||
           !ReadNumber(item, "farPlane", camera.farPlane, fieldError) ||

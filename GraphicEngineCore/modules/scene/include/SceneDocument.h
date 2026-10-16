@@ -62,6 +62,8 @@ struct SceneEntityDocument {
   std::array<float, 3> position{}; ///< Local translation in scene units; ignored for the structural root.
   std::array<float, 4> rotation = {0.0f, 0.0f, 0.0f, 1.0f}; ///< Local XYZW rotation; ignored for the structural root.
   std::array<float, 3> scale = {1.0f, 1.0f, 1.0f};          ///< Local scale; ignored for the structural root.
+  bool flipHorizontal = false;                              ///< Mirrors local geometry across X.
+  bool flipVertical = false;                                ///< Mirrors local geometry across Y.
   bool forceWireframe = false;                              ///< Whether this entity is drawn in wireframe.
   bool meshVisible = true;                                  ///< Whether its mesh renderer is submitted.
   bool disableDepthTest = false;                            ///< Whether depth testing is disabled for this entity.
@@ -80,6 +82,8 @@ struct SceneLightDocument {
   std::array<float, 3> position = {0.0f, 3.0f, 0.0f};       ///< Local position for positional lights.
   std::array<float, 4> rotation = {0.0f, 0.0f, 0.0f, 1.0f}; ///< Local entity rotation as an XYZW quaternion.
   std::array<float, 3> scale = {1.0f, 1.0f, 1.0f};          ///< Local entity scale.
+  bool flipHorizontal = false;                              ///< Mirrors local geometry across X.
+  bool flipVertical = false;                                ///< Mirrors local geometry across Y.
   std::array<float, 3> color = {1.0f, 1.0f, 1.0f};          ///< Linear RGB light color.
   float intensity = 1.0f;                                   ///< Radiometric intensity multiplier.
   float range = 20.0f;                                      ///< Maximum influence distance for positional lights.
@@ -102,6 +106,8 @@ struct SceneCameraDocument {
   std::array<float, 3> position{};                          ///< Local camera position.
   std::array<float, 4> rotation = {0.0f, 0.0f, 0.0f, 1.0f}; ///< Local rotation as an XYZW quaternion.
   std::array<float, 3> scale = {1.0f, 1.0f, 1.0f};          ///< Local entity scale.
+  bool flipHorizontal = false;                              ///< Mirrors local geometry across X.
+  bool flipVertical = false;                                ///< Mirrors local geometry across Y.
   float fovRadians = 0.785398163f;                          ///< Vertical field of view in radians.
   float nearPlane = 0.1f;                                   ///< Near clipping plane distance.
   float farPlane = 1000.0f;                                 ///< Far clipping plane distance.

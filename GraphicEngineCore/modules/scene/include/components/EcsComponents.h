@@ -44,8 +44,10 @@ struct alignas(16) LocalTransform {
   std::array<float, 3> Position = {0.0F, 0.0F, 0.0F};       ///< Local translation.
   std::array<float, 4> Rotation = {0.0F, 0.0F, 0.0F, 1.0F}; ///< Local XYZW rotation quaternion.
   std::array<float, 3> Scale = {1.0F, 1.0F, 1.0F};          ///< Positive local scale per axis.
+  bool FlipHorizontal = false;                              ///< Mirrors geometry across the local X axis.
+  bool FlipVertical = false;                                ///< Mirrors geometry across the local Y axis.
   bool IsDirty = true;                                      ///< Whether the cached world transform needs recomputation.
-  std::array<std::byte, 7> Padding{}; ///< Padding that preserves the component's 16-byte alignment.
+  std::array<std::byte, 5> Padding{}; ///< Padding that preserves the component's 16-byte alignment.
 };
 
 /// Parent link maintained by Scene hierarchy operations.
@@ -65,6 +67,8 @@ struct ChildList {
 struct alignas(16) WorldTransform {
   DirectX::XMFLOAT4X4 Matrix = {1.0F, 0.0F, 0.0F, 0.0F, 0.0F, 1.0F, 0.0F, 0.0F,
                                 0.0F, 0.0F, 1.0F, 0.0F, 0.0F, 0.0F, 0.0F, 1.0F}; ///< Cached world matrix.
+  bool HasAxisFlip = false;            ///< Whether this entity or an ancestor has an authored axis flip.
+  std::array<std::byte, 15> Padding{}; ///< Padding that preserves the component's 16-byte alignment.
 };
 
 /// Per-entity visibility input.
