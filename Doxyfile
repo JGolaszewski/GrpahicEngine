@@ -1,13 +1,13 @@
 PROJECT_NAME           = GraphicEngine Core API
 OUTPUT_DIRECTORY       = out/docs/doxygen
 
-INPUT                  = GraphicEngineCore/modules docs/api-reference.md
-FILE_PATTERNS          = *.h *.hpp *.md
+INPUT                  = GraphicEngineCore/modules
+FILE_PATTERNS          = *.h *.hpp
 RECURSIVE              = YES
 EXCLUDE_PATTERNS       = */src/* */tests/*
 EXCLUDE                = vendor out build
 
-GENERATE_HTML          = YES
+GENERATE_HTML          = NO
 HTML_OUTPUT            = html
 GENERATE_XML           = YES
 XML_OUTPUT             = xml
@@ -16,16 +16,16 @@ GENERATE_RTF            = NO
 GENERATE_MAN            = NO
 GENERATE_DOCSET         = NO
 
-USE_MDFILE_AS_MAINPAGE = docs/api-reference.md
 EXTRACT_ALL             = NO
 EXTRACT_PRIVATE         = NO
 EXTRACT_STATIC          = NO
 HIDE_UNDOC_CLASSES      = YES
 HIDE_UNDOC_MEMBERS      = YES
 WARNINGS                = YES
-WARN_IF_UNDOCUMENTED    = NO
+WARN_IF_UNDOCUMENTED    = YES
+WARN_NO_PARAMDOC        = NO
 WARN_IF_DOC_ERROR       = YES
-WARN_AS_ERROR           = NO
+WARN_AS_ERROR           = YES
 QUIET                   = NO
 
 ENABLE_PREPROCESSING    = YES
