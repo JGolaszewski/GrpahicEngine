@@ -11,7 +11,8 @@
 
 namespace Engine::Renderer {
 class Camera;
-}
+class RenderView;
+} // namespace Engine::Renderer
 
 namespace Engine {
 class ViewportTarget;
@@ -44,10 +45,15 @@ public:
   void* GetFramebufferHandle() const noexcept { return m_Framebuffer; }
 
 private:
+  void* GetSceneFramebufferHandle() const noexcept;
+  void* GetDisplayColorTextureHandle() const noexcept;
+
   uint32_t m_Width;
   uint32_t m_Height;
   void* m_Framebuffer;
   std::shared_ptr<ViewportTarget> m_Target;
+
+  friend class Renderer::RenderView;
 };
 
 } // namespace Engine

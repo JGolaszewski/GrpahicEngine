@@ -18,6 +18,7 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
@@ -25,6 +26,57 @@
 #include <vector>
 
 namespace {
+auto ReadViewportPixel(nvrhi::IDevice* device, Engine::Viewport& viewport, uint32_t x, uint32_t y)
+    -> std::array<uint8_t, 4> {
+  auto* framebuffer = static_cast<nvrhi::IFramebuffer*>(viewport.GetFramebufferHandle());
+  if (device == nullptr || framebuffer == nullptr || x >= viewport.GetWidth() || y >= viewport.GetHeight() ||
+      framebuffer->getDesc().colorAttachments.empty()) {
+    return {};
+  }
+  auto* source = framebuffer->getDesc().colorAttachments.front().texture;
+  if (source == nullptr) {
+    return {};
+  }
+  const nvrhi::TextureDesc sourceDesc = source->getDesc();
+  nvrhi::TextureDesc stagingDesc;
+  stagingDesc.width = sourceDesc.width;
+  stagingDesc.height = sourceDesc.height;
+  stagingDesc.format = sourceDesc.format;
+  stagingDesc.dimension = sourceDesc.dimension;
+  auto staging = device->createStagingTexture(stagingDesc, nvrhi::CpuAccessMode::Read);
+  if (staging == nullptr) {
+    return {};
+  }
+  auto commandList = device->createCommandList();
+  if (commandList == nullptr) {
+    return {};
+  }
+  commandList->open();
+  commandList->setTextureState(source, nvrhi::AllSubresources, nvrhi::ResourceStates::CopySource);
+  commandList->commitBarriers();
+  commandList->copyTexture(staging, nvrhi::TextureSlice(), source, nvrhi::TextureSlice());
+  commandList->setTextureState(source, nvrhi::AllSubresources, nvrhi::ResourceStates::ShaderResource);
+  commandList->commitBarriers();
+  commandList->close();
+  device->executeCommandList(commandList);
+  device->waitForIdle();
+  size_t rowPitch = 0;
+  auto* mapped = static_cast<const uint8_t*>(
+      device->mapStagingTexture(staging, nvrhi::TextureSlice(), nvrhi::CpuAccessMode::Read, &rowPitch));
+  if (mapped == nullptr) {
+    return {};
+  }
+  std::array<uint8_t, 4> pixel{};
+  std::copy_n(mapped + static_cast<size_t>(y) * rowPitch + static_cast<size_t>(x) * 4U, pixel.size(), pixel.begin());
+  device->unmapStagingTexture(staging);
+  return pixel;
+}
+
+auto LinearToDisplay(float linear) -> float {
+  const float reinhard = std::max(linear, 0.0F) / (1.0F + std::max(linear, 0.0F));
+  return reinhard <= 0.0031308F ? 12.92F * reinhard : 1.055F * std::pow(reinhard, 1.0F / 2.4F) - 0.055F;
+}
+
 TEST(RenderFinalTests, WARPFinalOutputUsesRequestedDimensionsAndOmitsDebugPass) {
   EngineTests::WarpDevice device;
   if (!device.Initialize()) {
@@ -75,6 +127,90 @@ TEST(RenderFinalTests, WARPFinalOutputUsesRequestedDimensionsAndOmitsDebugPass) 
   renderer.SubmitViews({editorBinding});
   renderer.EndFrame();
   EXPECT_NE(renderer.GetRenderGraph()->Dump().find("DebugPass"), std::string::npos);
+}
+
+TEST(RenderFinalTests, WARPSceneViewportAndPipMatchPngDisplayTransformWhileFinalAovStaysLinear) {
+  EngineTests::WarpDevice device;
+  if (!device.Initialize()) {
+    GTEST_SKIP() << "D3D11 WARP device could not be created on this host";
+  }
+  EngineTests::WarpRenderBackend backend(device.GetDevice());
+  Engine::RenderSystem renderer(&backend);
+  ASSERT_TRUE(renderer.IsValid());
+
+  Engine::Renderer::MaterialProperties opaqueProperties;
+  opaqueProperties.BaseColor = {0.0F, 0.0F, 0.0F, 1.0F};
+  opaqueProperties.Emissive = {0.5F, 0.0F, 0.0F};
+  const auto opaqueMaterial = renderer.CreateMaterial(opaqueProperties);
+  ASSERT_NE(opaqueMaterial, nullptr);
+  ASSERT_TRUE(renderer.CreatePrimitive(Engine::PrimitiveShape::Cube, opaqueMaterial));
+  Engine::Renderer::MaterialProperties transparentProperties;
+  transparentProperties.BaseColor = {0.0F, 0.0F, 0.0F, 0.5F};
+  transparentProperties.Emissive = {0.0F, 0.5F, 0.0F};
+  transparentProperties.AlphaMode = Engine::Renderer::MaterialAlphaMode::Blend;
+  const auto transparentMaterial = renderer.CreateMaterial(transparentProperties);
+  ASSERT_NE(transparentMaterial, nullptr);
+  ASSERT_TRUE(renderer.CreatePrimitive(Engine::PrimitiveShape::Sphere, transparentMaterial));
+
+  Engine::Scene scene;
+  const uint64_t opaqueSequence = scene.QueueCreate("Opaque display target");
+  const uint64_t transparentSequence = scene.QueueCreate("Transparent display target");
+  const auto created = scene.sync();
+  ASSERT_EQ(created.size(), 2U);
+  ASSERT_EQ(created.at(0).Sequence, opaqueSequence);
+  ASSERT_EQ(created.at(1).Sequence, transparentSequence);
+  ASSERT_TRUE(created.front().Outcome);
+  ASSERT_TRUE(created.at(1).Outcome);
+  (void)scene.QueueAdd(created.at(0).Entity, Engine::Ecs::MeshRenderer{.PrimitiveType = "cube"});
+  (void)scene.QueueAdd(created.at(1).Entity, Engine::Ecs::MeshRenderer{.PrimitiveType = "sphere"});
+  Engine::Ecs::LocalTransform opaqueTransform;
+  opaqueTransform.Scale = {2.0F, 2.0F, 2.0F};
+  (void)scene.QueueSet(created.at(0).Entity, opaqueTransform);
+  Engine::Ecs::LocalTransform transparentTransform;
+  transparentTransform.Position = {0.0F, 0.0F, -1.0F};
+  transparentTransform.Scale = {1.0F, 1.0F, 1.0F};
+  (void)scene.QueueSet(created.at(1).Entity, transparentTransform);
+  ASSERT_TRUE(scene.Update(0.0F));
+
+  Engine::Renderer::CameraView camera;
+  camera.Position = {0.0F, 0.0F, -5.0F};
+  constexpr uint32_t imageSize = 32;
+  const auto finalOutput = renderer.RenderFinal(scene, camera, imageSize, imageSize);
+  ASSERT_TRUE(finalOutput.has_value()) << (finalOutput.has_value() ? "" : finalOutput.error().Message);
+  const auto finalPixels = finalOutput->GetPixels(Engine::RenderAov::FinalColor);
+  const size_t centerOffset = (static_cast<size_t>(imageSize / 2U) * imageSize + imageSize / 2U) * 4U;
+  ASSERT_GT(finalPixels.size(), centerOffset + 2U);
+  const std::array<float, 3> linearColor = {finalPixels[centerOffset], finalPixels[centerOffset + 1U],
+                                            finalPixels[centerOffset + 2U]};
+  EXPECT_NEAR(linearColor[0], 0.25F, 0.02F);
+  EXPECT_NEAR(linearColor[1], 0.25F, 0.02F);
+  EXPECT_NEAR(linearColor[2], 0.0F, 0.02F);
+
+  auto target = renderer.CreateViewportTarget(imageSize, imageSize);
+  ASSERT_NE(target, nullptr);
+  Engine::Viewport viewport(target);
+  Engine::ViewportBinding binding;
+  binding.TargetScene = &scene;
+  binding.TargetViewport = &viewport;
+  binding.Camera = camera;
+  for (const Engine::ViewportBinding::Mode mode :
+       {Engine::ViewportBinding::Mode::Preview, Engine::ViewportBinding::Mode::Editor}) {
+    binding.RenderMode = mode;
+    renderer.BeginFrame();
+    renderer.SubmitViews({binding});
+    renderer.EndFrame();
+
+    const auto displayPixel = ReadViewportPixel(device.GetDevice(), viewport, imageSize / 2U, imageSize / 2U);
+    for (size_t channel = 0; channel < linearColor.size(); ++channel) {
+      const uint8_t expected = static_cast<uint8_t>(std::lround(LinearToDisplay(linearColor[channel]) * 255.0F));
+      EXPECT_NEAR(displayPixel[channel], expected, 2U)
+          << "mode " << static_cast<int>(mode) << " RGB channel " << channel;
+      if (linearColor[channel] > 0.0F) {
+        EXPECT_GT(displayPixel[channel], static_cast<uint8_t>(std::lround(linearColor[channel] * 255.0F)))
+            << "display output should encode linear AOV values for channel " << channel;
+      }
+    }
+  }
 }
 
 TEST(RenderFinalTests, WARPSubmitsIndependentEditorAndPreviewViewsAndSkipsInvalidTargets) {

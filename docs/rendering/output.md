@@ -18,6 +18,8 @@ Transparent materials are composited source-over in `FinalColor`, `SpecularLight
 
 `RenderOutputExporter::WritePng` writes the `final_color` plane as 8-bit RGBA PNG. It applies a fixed Reinhard mapping `x / (1 + x)` to each finite RGB sample, then the sRGB transfer function and 8-bit quantization. Negative RGB values map to zero. Alpha is clamped to `[0, 1]` and quantized without a transfer function. PNG therefore stores a display-oriented result; it does not preserve the source float values.
 
+The editor scene viewport and its in-scene camera picture-in-picture (PiP) render into a linear floating-point color target, composite transparent surfaces there, then apply the same Reinhard and sRGB display transform used by PNG output. This keeps live viewport color consistent with exported images without transforming individual transparent fragments before blending. Full-resolution float AOVs remain linear; the display transform affects only the viewport color output and is not applied to depth, normals, or lighting AOVs.
+
 The export reports invalid dimensions or samples, unsupported paths, and OpenImageIO create, open, write, or close failures through `Engine::Status`.
 
 `RenderOutputExportService` runs camera output export asynchronously. Start a

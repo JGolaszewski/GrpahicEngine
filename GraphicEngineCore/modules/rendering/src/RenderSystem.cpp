@@ -106,6 +106,17 @@ RenderSystem::RenderSystem(IRenderBackend* backend)
   auto m_DefaultVS = m_ShaderFactory->GetShader("shaders/color_vs.dxbc", nvrhi::ShaderType::Vertex);
   auto m_DefaultPS = m_ShaderFactory->GetShader("shaders/color_ps.dxbc", nvrhi::ShaderType::Pixel);
   auto m_TexturedPS = m_ShaderFactory->GetShader("shaders/color_textured_ps.dxbc", nvrhi::ShaderType::Pixel);
+  m_DisplayTransformResources = std::make_shared<::Engine::Renderer::DisplayTransformResources>();
+  m_DisplayTransformResources->Device = GetNvrhiDevice(m_RenderBackend);
+  m_DisplayTransformResources->VertexShader =
+      m_ShaderFactory->GetShader("shaders/display_vs.dxbc", nvrhi::ShaderType::Vertex);
+  m_DisplayTransformResources->PixelShader =
+      m_ShaderFactory->GetShader("shaders/display_ps.dxbc", nvrhi::ShaderType::Pixel);
+  nvrhi::BindingLayoutDesc displayTransformLayoutDesc;
+  displayTransformLayoutDesc.visibility = nvrhi::ShaderType::Pixel;
+  displayTransformLayoutDesc.bindings = {nvrhi::BindingLayoutItem::Texture_SRV(0)};
+  m_DisplayTransformResources->BindingLayout =
+      GetNvrhiDevice(m_RenderBackend)->createBindingLayout(displayTransformLayoutDesc);
 
   m_ResourceManager = std::make_unique<::Engine::Renderer::ResourceManager>(GetNvrhiDevice(m_RenderBackend));
   m_MaterialSystem = std::make_unique<::Engine::Renderer::MaterialSystem>(
@@ -305,8 +316,15 @@ void RenderSystem::SubmitViews(const std::vector<Engine::ViewportBinding>& views
   const bool hasEditorView = std::ranges::any_of(bb.GetSceneViews(), [](const ::Engine::Renderer::RenderView* view) {
     return view != nullptr && view->RenderMode == Engine::ViewportBinding::Mode::Editor;
   });
+  const bool hasDisplayView = std::ranges::any_of(bb.GetSceneViews(), [](const ::Engine::Renderer::RenderView* view) {
+    return view != nullptr && view->RenderMode != Engine::ViewportBinding::Mode::Final &&
+           view->DisplayFramebuffer != nullptr && view->DisplayColorTexture != nullptr;
+  });
   if (hasEditorView) {
     m_RenderGraph->AddPass(std::make_unique<::Engine::Renderer::DebugPass>(m_SceneRenderer.get()));
+  }
+  if (hasDisplayView) {
+    m_RenderGraph->AddPass(std::make_unique<::Engine::Renderer::DisplayTransformPass>(m_DisplayTransformResources));
   }
 }
 

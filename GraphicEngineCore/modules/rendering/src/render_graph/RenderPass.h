@@ -5,6 +5,7 @@
 #include "rendering/src/render_graph/RGBuilder.h"
 #include "rendering/src/render_graph/RenderContext.h"
 #include "runtime/include/CoreExport.h"
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -21,6 +22,7 @@ namespace Engine::Renderer {
 
 class FrameBlackboard;
 class RenderContext;
+class RenderView;
 
 class ENGINE_API IRenderPass {
 public:
@@ -76,6 +78,35 @@ public:
 
 private:
   Engine::SceneRenderer* m_SceneRenderer = nullptr;
+};
+
+struct DisplayTransformResources {
+  nvrhi::DeviceHandle Device;
+  nvrhi::ShaderHandle VertexShader;
+  nvrhi::ShaderHandle PixelShader;
+  nvrhi::BindingLayoutHandle BindingLayout;
+  nvrhi::GraphicsPipelineHandle Pipeline;
+};
+
+class ENGINE_API DisplayTransformPass : public ::Engine::Renderer::IRenderPass {
+public:
+  explicit DisplayTransformPass(std::shared_ptr<DisplayTransformResources> resources);
+
+  std::string GetName() const override { return "DisplayTransformPass"; }
+  bool HasSideEffect() const override { return true; }
+
+  void Setup(::Engine::Renderer::RGBuilder& builder, ::Engine::Renderer::FrameBlackboard& blackboard) override;
+  bool Execute(nvrhi::ICommandList* cmd, const ::Engine::Renderer::RenderContext& ctx) override;
+
+private:
+  struct ViewResources {
+    RenderView* View = nullptr;
+    RGResourceID SceneColor;
+    RGResourceID DisplayColor;
+  };
+
+  std::shared_ptr<DisplayTransformResources> m_Resources;
+  std::vector<ViewResources> m_Views;
 };
 } // namespace Engine::Renderer
 

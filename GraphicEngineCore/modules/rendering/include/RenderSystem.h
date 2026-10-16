@@ -37,6 +37,7 @@ struct FrameDiagnostics;
 struct GpuFrameTiming;
 class ResourceManager;
 class ShaderFactory;
+struct DisplayTransformResources;
 class FrameContext;
 class RenderGraph;
 } // namespace Renderer
@@ -292,6 +293,7 @@ private:
   std::unique_ptr<::Engine::Renderer::ModelResourceLibrary> m_ModelResources;
   std::unique_ptr<::Engine::Renderer::ResourceManager> m_ResourceManager;
   std::unique_ptr<::Engine::Renderer::ShaderFactory> m_ShaderFactory;
+  std::shared_ptr<::Engine::Renderer::DisplayTransformResources> m_DisplayTransformResources;
   std::unique_ptr<Engine::PrimitiveFactory> m_PrimitiveFactory;
 };
 } // namespace Engine

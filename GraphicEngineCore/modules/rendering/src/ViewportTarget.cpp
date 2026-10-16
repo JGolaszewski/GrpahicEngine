@@ -11,9 +11,11 @@ struct ViewportTarget::Impl {
   uint32_t Height = 0;
 
   nvrhi::TextureHandle ColorTexture;
+  nvrhi::TextureHandle SceneColorTexture;
   std::vector<nvrhi::TextureHandle> OutputTextures;
   nvrhi::TextureHandle DepthTexture;
   nvrhi::FramebufferHandle Framebuffer;
+  nvrhi::FramebufferHandle SceneFramebuffer;
 };
 
 ViewportTarget::ViewportTarget(void* device, uint32_t width, uint32_t height, bool finalOutput)
@@ -51,6 +53,7 @@ ViewportTarget::ViewportTarget(void* device, uint32_t width, uint32_t height, bo
       m_Impl->OutputTextures.push_back(std::move(texture));
     }
     m_Impl->ColorTexture = m_Impl->OutputTextures.front();
+    m_Impl->SceneColorTexture = m_Impl->ColorTexture;
   } else {
     nvrhi::TextureDesc colorDesc;
     colorDesc.width = width;
@@ -66,6 +69,14 @@ ViewportTarget::ViewportTarget(void* device, uint32_t width, uint32_t height, bo
       return;
     }
     m_Impl->OutputTextures.push_back(m_Impl->ColorTexture);
+
+    nvrhi::TextureDesc sceneColorDesc = colorDesc;
+    sceneColorDesc.format = nvrhi::Format::RGBA32_FLOAT;
+    sceneColorDesc.debugName = "ViewportSceneColor";
+    m_Impl->SceneColorTexture = nvrhiDevice->createTexture(sceneColorDesc);
+    if (m_Impl->SceneColorTexture == nullptr) {
+      return;
+    }
   }
 
   nvrhi::TextureDesc depthDesc;
@@ -88,13 +99,24 @@ ViewportTarget::ViewportTarget(void* device, uint32_t width, uint32_t height, bo
     return;
   }
 
-  nvrhi::FramebufferDesc framebufferDesc;
-  for (const auto& output : m_Impl->OutputTextures) {
-    framebufferDesc.addColorAttachment(output);
+  nvrhi::FramebufferDesc sceneFramebufferDesc;
+  if (finalOutput) {
+    for (const auto& output : m_Impl->OutputTextures) {
+      sceneFramebufferDesc.addColorAttachment(output);
+    }
+    sceneFramebufferDesc.setDepthAttachment(m_Impl->DepthTexture);
+    m_Impl->Framebuffer = nvrhiDevice->createFramebuffer(sceneFramebufferDesc);
+    m_Impl->SceneFramebuffer = m_Impl->Framebuffer;
+  } else {
+    sceneFramebufferDesc.addColorAttachment(m_Impl->SceneColorTexture);
+    sceneFramebufferDesc.setDepthAttachment(m_Impl->DepthTexture);
+    m_Impl->SceneFramebuffer = nvrhiDevice->createFramebuffer(sceneFramebufferDesc);
+
+    nvrhi::FramebufferDesc displayFramebufferDesc;
+    displayFramebufferDesc.addColorAttachment(m_Impl->ColorTexture);
+    m_Impl->Framebuffer = nvrhiDevice->createFramebuffer(displayFramebufferDesc);
   }
-  framebufferDesc.setDepthAttachment(m_Impl->DepthTexture);
-  m_Impl->Framebuffer = nvrhiDevice->createFramebuffer(framebufferDesc);
-  if (m_Impl->Framebuffer == nullptr) {
+  if (m_Impl->Framebuffer == nullptr || m_Impl->SceneFramebuffer == nullptr) {
     return;
   }
 }
@@ -105,7 +127,8 @@ auto ViewportTarget::operator=(ViewportTarget&&) noexcept -> ViewportTarget& = d
 
 auto ViewportTarget::IsValid() const noexcept -> bool {
   return m_Impl && (m_Impl->ColorTexture != nullptr) && (m_Impl->DepthTexture != nullptr) &&
-         (m_Impl->Framebuffer != nullptr);
+         (m_Impl->Framebuffer != nullptr) && (m_Impl->SceneFramebuffer != nullptr) &&
+         (m_Impl->SceneColorTexture != nullptr);
 }
 
 auto ViewportTarget::GetWidth() const noexcept -> uint32_t { return m_Impl ? m_Impl->Width : 0; }
@@ -118,6 +141,10 @@ auto ViewportTarget::GetColorTextureHandle() const noexcept -> void* {
 
 auto ViewportTarget::GetFramebufferHandle() const noexcept -> void* {
   return m_Impl ? static_cast<void*>(m_Impl->Framebuffer.Get()) : nullptr;
+}
+
+auto ViewportTarget::GetSceneFramebufferHandle() const noexcept -> void* {
+  return m_Impl ? static_cast<void*>(m_Impl->SceneFramebuffer.Get()) : nullptr;
 }
 
 auto ViewportTarget::GetOutputTextureHandle(uint32_t index) const noexcept -> void* {
