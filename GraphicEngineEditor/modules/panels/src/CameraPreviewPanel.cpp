@@ -298,7 +298,14 @@ void CameraPreviewPanel::Draw() {
         ImGui::SetCursorPos(cursor);
         void* texture = m_GetTexture ? m_GetTexture() : nullptr;
         if (texture != nullptr) {
-          ImGui::Image(texture, ImVec2(imageSize.Width, imageSize.Height));
+          const ImVec2 imageMinimum = ImGui::GetCursorScreenPos();
+          const ImVec2 imageExtent(imageSize.Width, imageSize.Height);
+          // ImGui::Image has no interactive ID, so dragging its background can
+          // start moving the parent window. Give the displayed image an item
+          // that captures the pointer, then draw the texture into the same rect.
+          ImGui::InvisibleButton("PreviewImage", imageExtent);
+          ImGui::GetWindowDrawList()->AddImage(texture, imageMinimum,
+                                               ImVec2(imageMinimum.x + imageExtent.x, imageMinimum.y + imageExtent.y));
           const bool imageHovered = ImGui::IsItemHovered();
           if (imageHovered) {
             ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
