@@ -17,6 +17,10 @@ auto EncodeChannel(float sample) -> uint8_t {
   return static_cast<uint8_t>(std::lround(std::clamp(srgb, 0.0F, 1.0F) * 255.0F));
 }
 
+auto SrgbToLinear(float channel) -> float {
+  return channel <= 0.04045F ? channel / 12.92F : std::pow((channel + 0.055F) / 1.055F, 2.4F);
+}
+
 auto ConvertFinalColorToRgba8(const Engine::RenderOutput& output) -> std::vector<uint8_t> {
   const auto pixels = output.GetPixels(Engine::RenderAov::FinalColor);
   const size_t expected = static_cast<size_t>(output.Width) * output.Height * 4U;
@@ -143,7 +147,11 @@ void CameraPreviewPanel::StartExport(bool exr) {
     return;
   }
 
-  auto request = m_StartExport(m_Camera, exr, std::move(selectedAovs), std::move(*path));
+  Engine::RenderOutputBackground background = m_ExportBackground;
+  for (float& channel : background.Color) {
+    channel = SrgbToLinear(channel);
+  }
+  auto request = m_StartExport(m_Camera, exr, std::move(selectedAovs), std::move(*path), background);
   if (!request) {
     m_ExportRequest.reset();
     m_ExportMessage = std::string(exr ? "EXR" : "PNG") + " export failed to start: " + request.error().Message;
@@ -235,6 +243,10 @@ void CameraPreviewPanel::Draw() {
     }
     if (exportBusy) {
       ImGui::EndDisabled();
+    }
+    ImGui::Checkbox("Composite transparent pixels over solid color", &m_ExportBackground.Enabled);
+    if (m_ExportBackground.Enabled) {
+      ImGui::ColorEdit3("Export background", m_ExportBackground.Color.data(), ImGuiColorEditFlags_Float);
     }
     ImGui::SeparatorText("EXR AOVs");
     constexpr std::array<Engine::RenderAov, 5> aovs = {

@@ -75,6 +75,36 @@ TEST(RenderOutputExporterTests, WritesToneMappedSrgbPngWithDimensionsAndDecodabl
   EXPECT_NEAR(decoded[11], 128.0F / 255.0F, 1.0F / 255.0F);
 }
 
+TEST(RenderOutputExporterTests, PngBackgroundCompositesInLinearSpaceAndPreservesAlphaWhenDisabled) {
+  TemporaryOutputDirectory directory;
+  const std::array<float, 8> transparentAndPartial{1.0F, 0.0F, 0.0F, 0.0F, 1.0F, 0.0F, 0.0F, 0.5F};
+  const Engine::RenderOutputBackground background{.Enabled = true, .Color = {0.0F, 0.0F, 1.0F}};
+  const auto compositedPath = directory.File("composited.png");
+  ASSERT_TRUE(Engine::Rendering::Detail::WritePngFile(2, 1, transparentAndPartial, compositedPath, background));
+  auto compositedInput = ReadInput(compositedPath);
+  ASSERT_NE(compositedInput, nullptr) << OIIO::geterror();
+  std::array<float, 8> composited{};
+  ASSERT_TRUE(compositedInput->read_image(0, 0, 0, -1, OIIO::span<float>(composited.data(), composited.size())))
+      << compositedInput->geterror();
+  EXPECT_NEAR(composited[0], 0.0F, 1.0F / 255.0F);
+  EXPECT_NEAR(composited[2], 188.0F / 255.0F, 2.0F / 255.0F);
+  EXPECT_FLOAT_EQ(composited[3], 1.0F);
+  // The second pixel is 50% red over blue in linear RGB before tone mapping.
+  EXPECT_NEAR(composited[4], 156.0F / 255.0F, 2.0F / 255.0F);
+  EXPECT_NEAR(composited[6], 156.0F / 255.0F, 2.0F / 255.0F);
+  EXPECT_FLOAT_EQ(composited[7], 1.0F);
+
+  const auto unchangedPath = directory.File("unchanged.png");
+  ASSERT_TRUE(Engine::Rendering::Detail::WritePngFile(2, 1, transparentAndPartial, unchangedPath));
+  auto unchangedInput = ReadInput(unchangedPath);
+  ASSERT_NE(unchangedInput, nullptr) << OIIO::geterror();
+  std::array<float, 8> unchanged{};
+  ASSERT_TRUE(unchangedInput->read_image(0, 0, 0, -1, OIIO::span<float>(unchanged.data(), unchanged.size())))
+      << unchangedInput->geterror();
+  EXPECT_FLOAT_EQ(unchanged[3], 0.0F);
+  EXPECT_NEAR(unchanged[7], 128.0F / 255.0F, 1.0F / 255.0F);
+}
+
 TEST(RenderOutputExporterTests, WritesSelectedAovsAsNamedFloat32ExrParts) {
   TemporaryOutputDirectory directory;
   const std::vector<Engine::RenderOutputPlane> planes{
@@ -146,9 +176,47 @@ TEST(RenderOutputExporterTests, RejectsInvalidDimensionsAndNonFinitePngSamples) 
   TemporaryOutputDirectory directory;
   const std::array<float, 4> finalColor{0.0F, 0.0F, 0.0F, 1.0F};
   const std::array<float, 4> invalidColor{0.0F, 0.0F, std::numeric_limits<float>::quiet_NaN(), 1.0F};
+  const Engine::RenderOutputBackground invalidBackground{.Enabled = true,
+                                                         .Color = {0.0F, std::numeric_limits<float>::infinity(), 0.0F}};
 
   EXPECT_FALSE(Engine::Rendering::Detail::WritePngFile(0, 1, finalColor, directory.File("zero.png")));
   EXPECT_FALSE(Engine::Rendering::Detail::WritePngFile(1, 1, invalidColor, directory.File("nan.png")));
+  EXPECT_FALSE(Engine::Rendering::Detail::WritePngFile(1, 1, finalColor, directory.File("invalid-background.png"),
+                                                       invalidBackground));
+}
+
+TEST(RenderOutputExporterTests, ExrBackgroundChangesOnlyFinalColorAndLeavesDisabledOutputUntouched) {
+  TemporaryOutputDirectory directory;
+  const std::vector<Engine::RenderOutputPlane> planes{
+      {Engine::RenderAov::Depth, 1, {0.25F, 0.75F}},
+      {Engine::RenderAov::FinalColor, 4, {1.0F, 0.0F, 0.0F, 0.0F, 1.0F, 0.0F, 0.0F, 0.5F}},
+  };
+  const std::array selected{Engine::RenderAov::Depth, Engine::RenderAov::FinalColor};
+  const Engine::RenderOutputBackground background{.Enabled = true, .Color = {0.0F, 0.0F, 1.0F}};
+  const auto compositedPath = directory.File("composited.exr");
+  ASSERT_TRUE(Engine::Rendering::Detail::WriteMultilayerExrFile(2, 1, planes, selected, compositedPath, background));
+  auto input = ReadInput(compositedPath);
+  ASSERT_NE(input, nullptr) << OIIO::geterror();
+  ASSERT_TRUE(input->seek_subimage(0, 0));
+  std::array<float, 2> depth{};
+  ASSERT_TRUE(input->read_image(0, 0, 0, -1, OIIO::span<float>(depth.data(), depth.size()))) << input->geterror();
+  EXPECT_EQ(depth, (std::array<float, 2>{0.25F, 0.75F}));
+  ASSERT_TRUE(input->seek_subimage(1, 0));
+  std::array<float, 8> finalColor{};
+  ASSERT_TRUE(input->read_image(1, 0, 0, -1, OIIO::span<float>(finalColor.data(), finalColor.size()))
+              << input->geterror());
+  EXPECT_EQ(finalColor, (std::array<float, 8>{0.0F, 0.0F, 1.0F, 1.0F, 0.5F, 0.0F, 0.5F, 1.0F}));
+  ASSERT_TRUE(input->close());
+
+  const auto unchangedPath = directory.File("unchanged.exr");
+  ASSERT_TRUE(Engine::Rendering::Detail::WriteMultilayerExrFile(2, 1, planes, selected, unchangedPath));
+  auto unchangedInput = ReadInput(unchangedPath);
+  ASSERT_NE(unchangedInput, nullptr) << OIIO::geterror();
+  ASSERT_TRUE(unchangedInput->seek_subimage(1, 0));
+  std::array<float, 8> unchanged{};
+  ASSERT_TRUE(unchangedInput->read_image(1, 0, 0, -1, OIIO::span<float>(unchanged.data(), unchanged.size()))
+              << unchangedInput->geterror());
+  EXPECT_EQ(unchanged, (std::array<float, 8>{1.0F, 0.0F, 0.0F, 0.0F, 1.0F, 0.0F, 0.0F, 0.5F}));
 }
 
 } // namespace

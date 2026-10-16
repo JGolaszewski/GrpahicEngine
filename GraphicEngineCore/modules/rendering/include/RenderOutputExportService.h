@@ -53,15 +53,17 @@ public:
 
   /// Start a final-color PNG export. Rendering is submitted immediately; GPU
   /// completion and image writing are advanced by Update on later frames.
+  /// An enabled background is composited into final_color by the writer thread.
   Engine::Result<RequestId> StartPng(RenderSystem& renderer, Scene& scene, const ::Engine::Renderer::CameraView& camera,
                                      uint32_t width, uint32_t height, std::filesystem::path destination,
-                                     const FinalColorPostProcess& postProcess = {});
+                                     const FinalColorPostProcess& postProcess = {},
+                                     const RenderOutputBackground& background = {});
   /// Start a multipart EXR export containing exactly the selected AOV planes.
-  Engine::Result<RequestId> StartMultilayerExr(RenderSystem& renderer, Scene& scene,
-                                               const ::Engine::Renderer::CameraView& camera, uint32_t width,
-                                               uint32_t height, std::vector<RenderAov> selectedAovs,
-                                               std::filesystem::path destination,
-                                               const FinalColorPostProcess& postProcess = {});
+  /// An enabled background is composited into final_color only when selected.
+  Engine::Result<RequestId>
+  StartMultilayerExr(RenderSystem& renderer, Scene& scene, const ::Engine::Renderer::CameraView& camera, uint32_t width,
+                     uint32_t height, std::vector<RenderAov> selectedAovs, std::filesystem::path destination,
+                     const FinalColorPostProcess& postProcess = {}, const RenderOutputBackground& background = {});
 
   /// Poll GPU readback and queue ready CPU-owned output for background writing.
   void Update();
@@ -76,11 +78,13 @@ private:
     uint64_t RenderTicket = 0;
     bool IsExr = false;
     std::vector<RenderAov> SelectedAovs;
+    RenderOutputBackground Background;
   };
   struct WriteTask {
     RequestId Id = 0;
     bool IsExr = false;
     std::vector<RenderAov> SelectedAovs;
+    RenderOutputBackground Background;
     std::filesystem::path Destination;
     RenderOutput Output;
   };
@@ -88,7 +92,7 @@ private:
   Engine::Result<RequestId> Start(RenderSystem& renderer, Engine::Scene& scene,
                                   const ::Engine::Renderer::CameraView& camera, uint32_t width, uint32_t height,
                                   bool exr, std::vector<RenderAov> selectedAovs, std::filesystem::path destination,
-                                  const FinalColorPostProcess& postProcess);
+                                  const FinalColorPostProcess& postProcess, const RenderOutputBackground& background);
   void WorkerMain();
 
   mutable std::mutex m_Mutex;

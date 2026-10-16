@@ -178,7 +178,8 @@ void Editor::OnInit() {
         return EditorPlatform::ChooseRenderOutputFile(exr, initialPath);
       },
       [this](Engine::EntityHandle entity, bool exr, std::vector<Engine::RenderAov> selectedAovs,
-             std::filesystem::path destination) -> Engine::Result<Engine::RenderOutputExportService::RequestId> {
+             std::filesystem::path destination, Engine::RenderOutputBackground background)
+          -> Engine::Result<Engine::RenderOutputExportService::RequestId> {
         Engine::RenderSystem* renderer = GetRenderSystem();
         if (!m_ActiveScene || renderer == nullptr || m_RenderOutputExportService == nullptr) {
           return std::unexpected(Engine::MakeError("No active scene or render system is available"));
@@ -188,12 +189,12 @@ void Editor::OnInit() {
           return std::unexpected(request.error());
         }
         if (exr) {
-          return m_RenderOutputExportService->StartMultilayerExr(*renderer, *m_ActiveScene, request->View,
-                                                                 request->Width, request->Height,
-                                                                 std::move(selectedAovs), std::move(destination));
+          return m_RenderOutputExportService->StartMultilayerExr(
+              *renderer, *m_ActiveScene, request->View, request->Width, request->Height, std::move(selectedAovs),
+              std::move(destination), {}, background);
         }
         return m_RenderOutputExportService->StartPng(*renderer, *m_ActiveScene, request->View, request->Width,
-                                                     request->Height, std::move(destination));
+                                                     request->Height, std::move(destination), {}, background);
       },
       [this](
           Engine::RenderOutputExportService::RequestId requestId) -> std::optional<Engine::RenderOutputExportStatus> {

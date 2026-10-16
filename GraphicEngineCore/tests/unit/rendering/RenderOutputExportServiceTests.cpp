@@ -102,6 +102,71 @@ TEST(RenderOutputExportServiceTests, WritesPngAsynchronouslyAtRequestedDimension
   EXPECT_TRUE(input->close());
 }
 
+TEST(RenderOutputExportServiceTests, CarriesSolidBackgroundThroughAsyncPngAndExrExports) {
+  EngineTests::WarpDevice device;
+  if (!device.Initialize()) {
+    GTEST_SKIP() << "D3D11 WARP device could not be created on this host";
+  }
+  EngineTests::WarpRenderBackend backend(device.GetDevice());
+  Engine::RenderSystem renderer(&backend);
+  Engine::Scene scene;
+  Engine::Renderer::CameraView camera;
+  Engine::RenderOutputExportService exports;
+  TemporaryOutputDirectory directory;
+  const Engine::RenderOutputBackground background{.Enabled = true, .Color = {0.0F, 0.0F, 1.0F}};
+  const Engine::FinalColorPostProcess transparentRed = [](uint32_t, uint32_t, std::span<float> finalColor) {
+    for (size_t offset = 0; offset < finalColor.size(); offset += 4U) {
+      finalColor[offset] = 1.0F;
+      finalColor[offset + 1U] = 0.0F;
+      finalColor[offset + 2U] = 0.0F;
+      finalColor[offset + 3U] = 0.0F;
+    }
+    return Engine::Status{};
+  };
+
+  const auto pngPath = directory.File("async.png");
+  auto png = exports.StartPng(renderer, scene, camera, 2, 2, pngPath, transparentRed, background);
+  ASSERT_TRUE(png) << (png ? "" : png.error().Message);
+  const auto pngStatus = FinishExport(exports, *png);
+  ASSERT_EQ(pngStatus.Phase, Engine::RenderOutputExportPhase::Completed) << pngStatus.Message;
+  auto pngInput = OIIO::ImageInput::open(pngPath.wstring());
+  ASSERT_NE(pngInput, nullptr) << OIIO::geterror();
+  std::vector<float> pngPixels(2U * 2U * 4U);
+  ASSERT_TRUE(pngInput->read_image(0, 0, 0, -1, OIIO::span<float>(pngPixels.data(), pngPixels.size())))
+      << pngInput->geterror();
+  for (size_t offset = 0; offset < pngPixels.size(); offset += 4U) {
+    EXPECT_NEAR(pngPixels[offset], 0.0F, 1.0F / 255.0F);
+    EXPECT_NEAR(pngPixels[offset + 1U], 0.0F, 1.0F / 255.0F);
+    EXPECT_NEAR(pngPixels[offset + 2U], 188.0F / 255.0F, 2.0F / 255.0F);
+    EXPECT_FLOAT_EQ(pngPixels[offset + 3U], 1.0F);
+  }
+  ASSERT_TRUE(pngInput->close());
+
+  const auto exrPath = directory.File("async.exr");
+  auto exr = exports.StartMultilayerExr(renderer, scene, camera, 2, 2,
+                                        {Engine::RenderAov::Depth, Engine::RenderAov::FinalColor}, exrPath,
+                                        transparentRed, background);
+  ASSERT_TRUE(exr) << (exr ? "" : exr.error().Message);
+  const auto exrStatus = FinishExport(exports, *exr);
+  ASSERT_EQ(exrStatus.Phase, Engine::RenderOutputExportPhase::Completed) << exrStatus.Message;
+  auto exrInput = OIIO::ImageInput::open(exrPath.wstring());
+  ASSERT_NE(exrInput, nullptr) << OIIO::geterror();
+  std::vector<float> depth(2U * 2U);
+  ASSERT_TRUE(exrInput->read_image(0, 0, 0, -1, OIIO::span<float>(depth.data(), depth.size()))) << exrInput->geterror();
+  ASSERT_TRUE(exrInput->seek_subimage(1, 0));
+  std::vector<float> exrPixels(2U * 2U * 4U);
+  ASSERT_TRUE(exrInput->read_image(1, 0, 0, -1, OIIO::span<float>(exrPixels.data(), exrPixels.size())))
+      << exrInput->geterror();
+  for (size_t pixel = 0; pixel < depth.size(); ++pixel) {
+    EXPECT_FLOAT_EQ(depth[pixel], 1.0F);
+    EXPECT_FLOAT_EQ(exrPixels[pixel * 4U], 0.0F);
+    EXPECT_FLOAT_EQ(exrPixels[pixel * 4U + 1U], 0.0F);
+    EXPECT_FLOAT_EQ(exrPixels[pixel * 4U + 2U], 1.0F);
+    EXPECT_FLOAT_EQ(exrPixels[pixel * 4U + 3U], 1.0F);
+  }
+  EXPECT_TRUE(exrInput->close());
+}
+
 TEST(RenderOutputExportServiceTests, WritesOnlySelectedAovsToExrAndReportsWriteFailure) {
   EngineTests::WarpDevice device;
   if (!device.Initialize()) {

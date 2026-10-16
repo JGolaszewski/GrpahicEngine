@@ -15,25 +15,24 @@ RenderOutputExportService::~RenderOutputExportService() { Shutdown(); }
 
 auto RenderOutputExportService::StartPng(RenderSystem& renderer, Scene& scene,
                                          const ::Engine::Renderer::CameraView& camera, uint32_t width, uint32_t height,
-                                         std::filesystem::path destination, const FinalColorPostProcess& postProcess)
-    -> Engine::Result<RequestId> {
-  return Start(renderer, scene, camera, width, height, false, {}, std::move(destination), postProcess);
+                                         std::filesystem::path destination, const FinalColorPostProcess& postProcess,
+                                         const RenderOutputBackground& background) -> Engine::Result<RequestId> {
+  return Start(renderer, scene, camera, width, height, false, {}, std::move(destination), postProcess, background);
 }
 
-auto RenderOutputExportService::StartMultilayerExr(RenderSystem& renderer, Scene& scene,
-                                                   const ::Engine::Renderer::CameraView& camera, uint32_t width,
-                                                   uint32_t height, std::vector<RenderAov> selectedAovs,
-                                                   std::filesystem::path destination,
-                                                   const FinalColorPostProcess& postProcess)
-    -> Engine::Result<RequestId> {
+auto RenderOutputExportService::StartMultilayerExr(
+    RenderSystem& renderer, Scene& scene, const ::Engine::Renderer::CameraView& camera, uint32_t width, uint32_t height,
+    std::vector<RenderAov> selectedAovs, std::filesystem::path destination, const FinalColorPostProcess& postProcess,
+    const RenderOutputBackground& background) -> Engine::Result<RequestId> {
   return Start(renderer, scene, camera, width, height, true, std::move(selectedAovs), std::move(destination),
-               postProcess);
+               postProcess, background);
 }
 
 auto RenderOutputExportService::Start(RenderSystem& renderer, Scene& scene,
                                       const ::Engine::Renderer::CameraView& camera, uint32_t width, uint32_t height,
                                       bool exr, std::vector<RenderAov> selectedAovs, std::filesystem::path destination,
-                                      const FinalColorPostProcess& postProcess) -> Engine::Result<RequestId> {
+                                      const FinalColorPostProcess& postProcess,
+                                      const RenderOutputBackground& background) -> Engine::Result<RequestId> {
   {
     std::lock_guard lock(m_Mutex);
     if (m_ShuttingDown) {
@@ -65,6 +64,7 @@ auto RenderOutputExportService::Start(RenderSystem& renderer, Scene& scene,
   request.RenderTicket = *renderTicket;
   request.IsExr = exr;
   request.SelectedAovs = std::move(selectedAovs);
+  request.Background = background;
   const RequestId id = request.Status.RequestId;
   m_Requests.push_back(std::move(request));
   m_ActiveReadback = id;
@@ -120,6 +120,7 @@ void RenderOutputExportService::Update() {
   m_WriteQueue.push_back({.Id = requestId,
                           .IsExr = request->IsExr,
                           .SelectedAovs = std::move(request->SelectedAovs),
+                          .Background = request->Background,
                           .Destination = request->Status.Destination,
                           .Output = std::move(result->value())});
   m_ActiveReadback.reset();
@@ -184,8 +185,9 @@ void RenderOutputExportService::WorkerMain() {
     }
 
     const Engine::Status writeStatus =
-        task.IsExr ? RenderOutputExporter::WriteMultilayerExr(task.Output, task.SelectedAovs, task.Destination)
-                   : RenderOutputExporter::WritePng(task.Output, task.Destination);
+        task.IsExr ? RenderOutputExporter::WriteMultilayerExr(task.Output, task.SelectedAovs, task.Destination,
+                                                              task.Background)
+                   : RenderOutputExporter::WritePng(task.Output, task.Destination, task.Background);
     std::lock_guard lock(m_Mutex);
     const auto request =
         std::ranges::find_if(m_Requests, [&task](const Request& item) { return item.Status.RequestId == task.Id; });

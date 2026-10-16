@@ -88,6 +88,28 @@ auto ToByte(float value) -> uint8_t {
   return static_cast<uint8_t>(std::lround(clamped * 255.0F));
 }
 
+auto ValidBackground(const RenderOutputBackground& background) -> bool {
+  return !background.Enabled || std::all_of(background.Color.begin(), background.Color.end(), [](float channel) {
+    return std::isfinite(channel) && channel >= 0.0F && channel <= 1.0F;
+  });
+}
+
+auto CompositeFinalColor(std::span<const float> source, const RenderOutputBackground& background)
+    -> std::vector<float> {
+  std::vector<float> result(source.begin(), source.end());
+  if (!background.Enabled) {
+    return result;
+  }
+  for (size_t offset = 0; offset < result.size(); offset += 4U) {
+    const float alpha = std::clamp(source[offset + 3U], 0.0F, 1.0F);
+    for (size_t channel = 0; channel < 3U; ++channel) {
+      result[offset + channel] = source[offset + channel] * alpha + background.Color[channel] * (1.0F - alpha);
+    }
+    result[offset + 3U] = 1.0F;
+  }
+  return result;
+}
+
 auto FindPlane(std::span<const RenderOutputPlane> planes, RenderAov aov) -> const RenderOutputPlane* {
   for (const auto& plane : planes) {
     if (plane.Aov == aov) {
@@ -149,29 +171,34 @@ auto MakeExrSpec(uint32_t width, uint32_t height, const RenderAovDescriptor& des
 } // namespace
 
 auto WritePngFile(uint32_t width, uint32_t height, std::span<const float> finalColorRgba,
-                  const std::filesystem::path& path) -> Status {
+                  const std::filesystem::path& path, const RenderOutputBackground& background) -> Status {
   if (!ValidDimensions(width, height)) {
     return std::unexpected(IoError("Cannot write PNG", path, "image dimensions must be non-zero and supported"));
   }
   if (path.empty() || !PngExtension(path)) {
     return std::unexpected(IoError("Cannot write PNG", path, "destination must have a .png extension"));
   }
+  if (!ValidBackground(background)) {
+    return std::unexpected(IoError("Cannot write PNG", path, "background color must be finite linear RGB in [0,1]"));
+  }
   const auto expectedSamples = CheckedSampleCount(width, height, 4);
   if (!expectedSamples || finalColorRgba.size() != *expectedSamples) {
     return std::unexpected(IoError("Cannot write PNG", path, "final_color must contain width * height * 4 samples"));
   }
 
+  const std::vector<float> composited = CompositeFinalColor(finalColorRgba, background);
+  const std::span<const float> source(composited);
   std::vector<uint8_t> pixels(*expectedSamples);
   for (size_t pixel = 0; pixel < finalColorRgba.size() / 4; ++pixel) {
     const size_t offset = pixel * 4;
     for (size_t channel = 0; channel < 3; ++channel) {
-      const float sample = finalColorRgba[offset + channel];
+      const float sample = source[offset + channel];
       if (!std::isfinite(sample)) {
         return std::unexpected(IoError("Cannot write PNG", path, "final_color contains a non-finite RGB sample"));
       }
       pixels[offset + channel] = ToByte(LinearToSrgb(sample));
     }
-    const float alpha = finalColorRgba[offset + 3];
+    const float alpha = source[offset + 3];
     if (!std::isfinite(alpha)) {
       return std::unexpected(IoError("Cannot write PNG", path, "final_color contains a non-finite alpha sample"));
     }
@@ -201,18 +228,23 @@ auto WritePngFile(uint32_t width, uint32_t height, std::span<const float> finalC
 }
 
 auto WriteMultilayerExrFile(uint32_t width, uint32_t height, std::span<const RenderOutputPlane> planes,
-                            std::span<const RenderAov> selectedAovs, const std::filesystem::path& path) -> Status {
+                            std::span<const RenderAov> selectedAovs, const std::filesystem::path& path,
+                            const RenderOutputBackground& background) -> Status {
   if (!ValidDimensions(width, height)) {
     return std::unexpected(IoError("Cannot write EXR", path, "image dimensions must be non-zero and supported"));
   }
   if (path.empty() || !ExrExtension(path)) {
     return std::unexpected(IoError("Cannot write EXR", path, "destination must have an .exr extension"));
   }
+  if (!ValidBackground(background)) {
+    return std::unexpected(IoError("Cannot write EXR", path, "background color must be finite linear RGB in [0,1]"));
+  }
   if (selectedAovs.empty()) {
     return std::unexpected(IoError("Cannot write EXR", path, "select at least one AOV"));
   }
 
   std::vector<const RenderOutputPlane*> selectedPlanes;
+  std::vector<float> compositedFinalColor;
   std::vector<RenderAov> seenAovs;
   std::vector<OIIO::ImageSpec> specs;
   selectedPlanes.reserve(selectedAovs.size());
@@ -237,6 +269,9 @@ auto WriteMultilayerExrFile(uint32_t width, uint32_t height, std::span<const Ren
       return status;
     }
     selectedPlanes.push_back(plane);
+    if (background.Enabled && aov == RenderAov::FinalColor) {
+      compositedFinalColor = CompositeFinalColor(plane->Pixels, background);
+    }
     specs.push_back(MakeExrSpec(width, height, descriptor));
   }
 
@@ -262,7 +297,10 @@ auto WriteMultilayerExrFile(uint32_t width, uint32_t height, std::span<const Ren
       (void)output->close();
       return std::unexpected(IoError("Cannot append EXR part", path, detail));
     }
-    const auto& samples = selectedPlanes[index]->Pixels;
+    const auto& plane = *selectedPlanes[index];
+    const std::span<const float> samples = background.Enabled && plane.Aov == RenderAov::FinalColor
+                                               ? std::span<const float>(compositedFinalColor)
+                                               : std::span<const float>(plane.Pixels);
     if (!output->write_image(OIIO::span<const float>(samples.data(), samples.size()))) {
       const auto detail = output->geterror();
       (void)output->close();
