@@ -388,7 +388,7 @@ Result<std::string> AssetManager::CreateMaterial(std::string_view name, const Sc
   if (ec) {
     return std::unexpected(MakeError(path.generic_string() + ": could not inspect material path: " + ec.message()));
   }
-  const std::string guid = NewGuid();
+  std::string guid = NewGuid();
   SceneDocument document;
   SceneEntityDocument entity;
   entity.id = 1;

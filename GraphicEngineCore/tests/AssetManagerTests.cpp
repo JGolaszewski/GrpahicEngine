@@ -319,7 +319,7 @@ void TestReusableMaterialAssets(const std::filesystem::path& project) {
   std::string error;
   const auto created = assets.CreateMaterial("Shared", source);
   Require(created.has_value(), "material asset creation failed");
-  const std::string guid = *created;
+  const auto& guid = *created;
   Require(assets.GetMaterial(guid) == source, "new material asset is not cached with its authored properties");
   auto edited = source;
   edited.roughness = 0.8F;
