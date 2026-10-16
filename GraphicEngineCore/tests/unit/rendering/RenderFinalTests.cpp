@@ -11,7 +11,9 @@
 #include <gtest/gtest.h>
 
 #include <DirectXMath.h>
+#include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstddef>
 
 #include <string>
@@ -298,6 +300,120 @@ TEST(RenderFinalTests, WARPAllEditorExposedPrimitivesRender) {
         }
       }
     }
+  }
+}
+
+TEST(RenderFinalTests, WARPAllLightTypesChangeReceivingGeometryWhenShadowsAreEnabled) {
+  EngineTests::WarpDevice device;
+  if (!device.Initialize()) {
+    GTEST_SKIP() << "D3D11 WARP device could not be created on this host";
+  }
+
+  EngineTests::WarpRenderBackend backend(device.GetDevice());
+  Engine::RenderSystem renderer(&backend);
+  ASSERT_TRUE(renderer.IsValid());
+
+  Engine::Renderer::MaterialProperties receiverProperties;
+  receiverProperties.BaseColor = {0.8F, 0.8F, 0.8F, 1.0F};
+  receiverProperties.Roughness = 1.0F;
+  const auto receiverMaterial = renderer.CreateMaterial(receiverProperties);
+  ASSERT_NE(receiverMaterial, nullptr);
+  ASSERT_TRUE(renderer.CreatePrimitive(Engine::PrimitiveShape::Plane, receiverMaterial));
+
+  Engine::Renderer::MaterialProperties casterProperties;
+  casterProperties.BaseColor = {0.8F, 0.2F, 0.1F, 1.0F};
+  casterProperties.Roughness = 1.0F;
+  const auto casterMaterial = renderer.CreateMaterial(casterProperties);
+  ASSERT_NE(casterMaterial, nullptr);
+  ASSERT_TRUE(renderer.CreatePrimitive(Engine::PrimitiveShape::Cube, casterMaterial));
+
+  constexpr std::array lightTypes = {Engine::Ecs::LightType::Directional, Engine::Ecs::LightType::Point,
+                                     Engine::Ecs::LightType::Spot};
+  constexpr std::array lightNames = {"Directional", "Point", "Spot"};
+  for (size_t lightIndex = 0; lightIndex < lightTypes.size(); ++lightIndex) {
+    Engine::Scene scene;
+    const uint64_t receiverSequence = scene.QueueCreate("Shadow receiver");
+    const uint64_t casterSequence = scene.QueueCreate("Shadow caster");
+    const uint64_t lightSequence =
+        scene.QueueCreate("Shadow light", Engine::InvalidEntityHandle, Engine::Scene::EntityPreset::SpotLight);
+    const auto created = scene.sync();
+    ASSERT_EQ(created.size(), 3U);
+    ASSERT_EQ(created.at(0).Sequence, receiverSequence);
+    ASSERT_EQ(created.at(1).Sequence, casterSequence);
+    ASSERT_EQ(created.at(2).Sequence, lightSequence);
+    for (const auto& result : created) {
+      ASSERT_TRUE(result.Outcome);
+    }
+    const Engine::EntityHandle receiver = created.at(0).Entity;
+    const Engine::EntityHandle caster = created.at(1).Entity;
+    const Engine::EntityHandle lightEntity = created.at(2).Entity;
+
+    Engine::Ecs::LocalTransform receiverTransform;
+    receiverTransform.Scale = {10.0F, 1.0F, 10.0F};
+    (void)scene.QueueSet(receiver, receiverTransform);
+    (void)scene.QueueAdd(receiver, Engine::Ecs::MeshRenderer{.PrimitiveType = "plane"});
+
+    Engine::Ecs::LocalTransform casterTransform;
+    casterTransform.Position = {0.0F, 0.9F, 0.0F};
+    casterTransform.Scale = {1.2F, 1.2F, 1.2F};
+    (void)scene.QueueSet(caster, casterTransform);
+    (void)scene.QueueAdd(caster, Engine::Ecs::MeshRenderer{.PrimitiveType = "cube", .ReceiveShadows = false});
+
+    Engine::Ecs::Light light;
+    light.Type = lightTypes[lightIndex];
+    light.Intensity = 12.0F;
+    light.Range = 12.0F;
+    light.Direction = light.Type == Engine::Ecs::LightType::Directional
+                          ? std::array<float, 3>{0.45F, -1.0F, 0.2F}
+                          : std::array<float, 3>{0.0F, -0.573462F, 0.819232F};
+    light.InnerAngleDegrees = 35.0F;
+    light.OuterAngleDegrees = 55.0F;
+    (void)scene.QueueSet(lightEntity, light);
+    Engine::Ecs::LocalTransform lightTransform;
+    lightTransform.Position = light.Type == Engine::Ecs::LightType::Directional
+                                  ? std::array<float, 3>{0.0F, 4.0F, -3.0F}
+                                  : std::array<float, 3>{0.0F, 3.0F, -3.0F};
+    (void)scene.QueueSet(lightEntity, lightTransform);
+    ASSERT_TRUE(scene.Update(0.0F));
+
+    Engine::Renderer::CameraView camera;
+    camera.Position = {0.0F, 5.0F, -9.0F};
+    DirectX::XMFLOAT4 cameraRotation{};
+    DirectX::XMStoreFloat4(&cameraRotation, DirectX::XMQuaternionRotationRollPitchYaw(0.45F, 0.0F, 0.0F));
+    camera.Rotation = {cameraRotation.x, cameraRotation.y, cameraRotation.z, cameraRotation.w};
+
+    const auto enabledOutput = renderer.RenderFinal(scene, camera, 96, 96);
+    ASSERT_TRUE(enabledOutput.has_value()) << (enabledOutput.has_value() ? "" : enabledOutput.error().Message);
+    const auto enabledPixels = enabledOutput->GetPixels(Engine::RenderAov::FinalColor);
+    const auto enabledNormals = enabledOutput->GetPixels(Engine::RenderAov::WorldNormal);
+    ASSERT_FALSE(enabledPixels.empty());
+    ASSERT_EQ(enabledNormals.size(), enabledPixels.size() / 4U * 3U);
+
+    light.CastShadows = false;
+    (void)scene.QueueSet(lightEntity, light);
+    ASSERT_TRUE(scene.Update(0.0F));
+    const auto disabledOutput = renderer.RenderFinal(scene, camera, 96, 96);
+    ASSERT_TRUE(disabledOutput.has_value()) << (disabledOutput.has_value() ? "" : disabledOutput.error().Message);
+    const auto disabledPixels = disabledOutput->GetPixels(Engine::RenderAov::FinalColor);
+    ASSERT_EQ(enabledPixels.size(), disabledPixels.size());
+
+    size_t changedPixels = 0;
+    float largestChannelDifference = 0.0F;
+    for (size_t pixel = 0; pixel + 3U < enabledPixels.size(); pixel += 4U) {
+      const size_t normalOffset = (pixel / 4U) * 3U;
+      if (enabledNormals[normalOffset + 1U] < 0.8F) {
+        continue;
+      }
+      const float difference = std::max({std::abs(enabledPixels[pixel] - disabledPixels[pixel]),
+                                         std::abs(enabledPixels[pixel + 1U] - disabledPixels[pixel + 1U]),
+                                         std::abs(enabledPixels[pixel + 2U] - disabledPixels[pixel + 2U])});
+      largestChannelDifference = std::max(largestChannelDifference, difference);
+      if (difference > 0.05F) {
+        ++changedPixels;
+      }
+    }
+    EXPECT_GT(changedPixels, 4U) << lightNames[lightIndex] << " shadows should visibly darken receiver pixels";
+    EXPECT_GT(largestChannelDifference, 0.1F) << lightNames[lightIndex] << " shadow contrast should be visible";
   }
 }
 } // namespace
