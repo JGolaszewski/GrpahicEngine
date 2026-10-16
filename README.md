@@ -39,7 +39,7 @@ For tests, other build configurations, and toolchain details, see [Testing and p
 - [Windows build and renderer validation](docs/validation/windows.md)
 - [Logging](docs/logging.md)
 - [Rendering: shadows](docs/rendering/shadows.md)
-- [Core API reference](docs/api-reference.md)
+- [Engine API reference](docs/api-reference.md)
 
 ## Contributing
 
