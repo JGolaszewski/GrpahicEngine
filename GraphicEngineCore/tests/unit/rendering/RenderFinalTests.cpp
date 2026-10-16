@@ -10,6 +10,9 @@
 
 #include <gtest/gtest.h>
 
+#include <DirectXMath.h>
+#include <array>
+
 #include <string>
 
 namespace {
@@ -213,5 +216,62 @@ TEST(RenderFinalTests, WARPTransparentLightingAovsCompositeLikeFinalColor) {
   }
   EXPECT_NEAR(finalColor[center * 4U], 0.5F, 1.0e-2F);
   EXPECT_NEAR(finalColor[center * 4U + 2U], 0.5F, 1.0e-2F);
+}
+
+TEST(RenderFinalTests, WARPAllEditorExposedPrimitivesRender) {
+  EngineTests::WarpDevice device;
+  if (!device.Initialize()) {
+    GTEST_SKIP() << "D3D11 WARP device could not be created on this host";
+  }
+
+  EngineTests::WarpRenderBackend backend(device.GetDevice());
+  Engine::RenderSystem renderer(&backend);
+  ASSERT_TRUE(renderer.IsValid());
+
+  Engine::Renderer::MaterialProperties properties;
+  properties.BaseColor = {0.0F, 0.0F, 0.0F, 1.0F};
+  properties.Emissive = {1.0F, 0.0F, 0.0F};
+  const auto material = renderer.CreateMaterial(properties);
+  ASSERT_NE(material, nullptr);
+
+  constexpr std::array shapes = {Engine::PrimitiveShape::Cube, Engine::PrimitiveShape::Sphere,
+                                 Engine::PrimitiveShape::Plane, Engine::PrimitiveShape::Cone};
+  constexpr std::array names = {"cube", "sphere", "plane", "cone"};
+  for (const auto shape : shapes) {
+    ASSERT_TRUE(renderer.CreatePrimitive(shape, material));
+  }
+
+  for (size_t index = 0; index < shapes.size(); ++index) {
+    Engine::Scene scene;
+    const uint64_t sequence = scene.QueueCreate(names[index]);
+    const auto created = scene.sync();
+    ASSERT_EQ(created.size(), 1U);
+    ASSERT_EQ(created.front().Sequence, sequence);
+    ASSERT_TRUE(created.front().Outcome);
+
+    Engine::Ecs::LocalTransform transform;
+    transform.Position = {0.0F, 0.0F, 0.0F};
+    if (shapes[index] == Engine::PrimitiveShape::Plane) {
+      DirectX::XMFLOAT4 rotation{};
+      DirectX::XMStoreFloat4(&rotation, DirectX::XMQuaternionRotationRollPitchYaw(DirectX::XM_PIDIV2, 0.0F, 0.0F));
+      transform.Rotation = {rotation.x, rotation.y, rotation.z, rotation.w};
+    }
+    (void)scene.QueueSet(created.front().Entity, transform);
+    (void)scene.QueueAdd(created.front().Entity, Engine::Ecs::MeshRenderer{.PrimitiveType = names[index]});
+    ASSERT_TRUE(scene.Update(0.0F));
+
+    Engine::Renderer::CameraView camera;
+    camera.Position = {0.0F, 0.0F, -5.0F};
+    const auto output = renderer.RenderFinal(scene, camera, 32, 32);
+    ASSERT_TRUE(output.has_value()) << (output.has_value() ? "" : output.error().Message);
+    const auto pixels = output->GetPixels(Engine::RenderAov::FinalColor);
+    size_t illuminatedPixelCount = 0;
+    for (size_t pixel = 0; pixel + 3 < pixels.size(); pixel += 4) {
+      if (pixels[pixel] > 0.1F) {
+        ++illuminatedPixelCount;
+      }
+    }
+    EXPECT_GT(illuminatedPixelCount, 4U) << names[index];
+  }
 }
 } // namespace

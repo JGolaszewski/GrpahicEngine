@@ -1,10 +1,9 @@
 ﻿#include "panels/include/InspectorPanel.h"
+#include "panels/include/TransformRotation.h"
 
-#include <DirectXMath.h>
 #include <algorithm>
 #include <array>
 #include <cctype>
-#include <cmath>
 #include <functional>
 #include <imgui.h>
 #include <limits>
@@ -24,28 +23,6 @@ auto Matches(const char* name, const char* filter) -> bool {
   std::ranges::transform(needle, needle.begin(),
                          [](unsigned char value) -> char { return static_cast<char>(std::tolower(value)); });
   return haystack.contains(needle);
-}
-
-auto QuaternionToPitchYawRoll(const std::array<float, 4>& quaternion) -> std::array<float, 3> {
-  using namespace DirectX;
-  const XMVECTOR rotation =
-      XMQuaternionNormalize(XMVectorSet(quaternion[0], quaternion[1], quaternion[2], quaternion[3]));
-  const XMVECTOR forward = XMVector3Rotate(XMVectorSet(0.0F, 0.0F, 1.0F, 0.0F), rotation);
-  const float pitch = std::asin(std::clamp(-XMVectorGetY(forward), -1.0F, 1.0F));
-  const float yaw = std::atan2(XMVectorGetX(forward), XMVectorGetZ(forward));
-  const XMVECTOR noRollRotation = XMQuaternionRotationRollPitchYaw(pitch, yaw, 0.0F);
-  const XMVECTOR baseUp = XMVector3Rotate(XMVectorSet(0.0F, 1.0F, 0.0F, 0.0F), noRollRotation);
-  const XMVECTOR baseRight = XMVector3Rotate(XMVectorSet(1.0F, 0.0F, 0.0F, 0.0F), noRollRotation);
-  const XMVECTOR actualUp = XMVector3Rotate(XMVectorSet(0.0F, 1.0F, 0.0F, 0.0F), rotation);
-  const float roll =
-      std::atan2(XMVectorGetX(XMVector3Dot(actualUp, baseRight)), XMVectorGetX(XMVector3Dot(actualUp, baseUp)));
-  return {pitch, yaw, roll};
-}
-
-void SetQuaternionFromPitchYawRoll(std::array<float, 4>& quaternion, const std::array<float, 3>& angles) {
-  DirectX::XMFLOAT4 result{};
-  DirectX::XMStoreFloat4(&result, DirectX::XMQuaternionRotationRollPitchYaw(angles[0], angles[1], angles[2]));
-  quaternion = {result.x, result.y, result.z, result.w};
 }
 
 void DrawRemoveButton(const char* id, Mutation::Component component,
@@ -129,19 +106,9 @@ void InspectorPanel::DrawEntityInspector() {
       storedTransform != nullptr && ImGui::CollapsingHeader("Transform", ImGuiTreeNodeFlags_DefaultOpen)) {
     Engine::Ecs::LocalTransform transform = *storedTransform;
     bool changed = ImGui::DragFloat3("Local position", transform.Position.data(), 0.05F);
-    std::array<float, 3> pitchYawRoll = QuaternionToPitchYawRoll(transform.Rotation);
-    std::array<float, 3> anglesDegrees = {
-        DirectX::XMConvertToDegrees(pitchYawRoll[0]),
-        DirectX::XMConvertToDegrees(pitchYawRoll[1]),
-        DirectX::XMConvertToDegrees(pitchYawRoll[2]),
-    };
+    std::array<float, 3> anglesDegrees = Editor::TransformRotation::ToPitchYawRollDegrees(transform.Rotation);
     if (ImGui::DragFloat3("Pitch / Yaw / Roll", anglesDegrees.data(), 0.25F, -360.0F, 360.0F, "%.1f deg")) {
-      pitchYawRoll = {
-          DirectX::XMConvertToRadians(anglesDegrees[0]),
-          DirectX::XMConvertToRadians(anglesDegrees[1]),
-          DirectX::XMConvertToRadians(anglesDegrees[2]),
-      };
-      SetQuaternionFromPitchYawRoll(transform.Rotation, pitchYawRoll);
+      transform.Rotation = Editor::TransformRotation::FromPitchYawRollDegrees(anglesDegrees);
       changed = true;
     }
     if (ImGui::TreeNode("Quaternion (advanced)")) {

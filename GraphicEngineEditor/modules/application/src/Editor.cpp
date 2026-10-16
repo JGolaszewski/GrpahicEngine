@@ -116,7 +116,13 @@ void Editor::OnInit() {
   if (Engine::RenderSystem* renderSystem = GetRenderSystem()) {
     auto material = renderSystem->CreateMaterial({});
     if (material) {
-      (void)renderSystem->CreatePrimitive(Engine::PrimitiveShape::Cube, std::move(material));
+      constexpr std::array primitiveShapes = {Engine::PrimitiveShape::Cube, Engine::PrimitiveShape::Sphere,
+                                              Engine::PrimitiveShape::Plane, Engine::PrimitiveShape::Cone};
+      for (const Engine::PrimitiveShape shape : primitiveShapes) {
+        if (!renderSystem->CreatePrimitive(shape, material)) {
+          ENGINE_LOG_WARN("Render", "Editor primitive resource setup failed | shape: {}", static_cast<uint32_t>(shape));
+        }
+      }
     }
   }
 
