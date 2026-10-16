@@ -381,20 +381,22 @@ auto EntityJson(const SceneEntityDocument& entity) -> Json {
   item.emplace("sceneRoot", entity.sceneRoot);
   item.emplace("identityGuid", GuidJson(entity.identityGuid));
   item.emplace("parentGuid", GuidJson(entity.parentGuid));
-  item.emplace("visible", entity.visible);
   item.emplace("modelGuid", entity.modelGuid ? Json(*entity.modelGuid) : Json(nullptr));
   item.emplace("materialGuid", entity.materialGuid ? Json(*entity.materialGuid) : Json(nullptr));
   item.emplace("primitiveType", entity.primitiveType ? Json(*entity.primitiveType) : Json(nullptr));
-  item.emplace("position", entity.position);
-  item.emplace("rotation", entity.rotation);
-  item.emplace("scale", entity.scale);
-  Json render = Json::object();
-  render.emplace("visible", entity.meshVisible);
-  render.emplace("forceWireframe", entity.forceWireframe);
-  render.emplace("disableDepthTest", entity.disableDepthTest);
-  render.emplace("castShadows", entity.castShadows);
-  render.emplace("receiveShadows", entity.receiveShadows);
-  item.emplace("render", std::move(render));
+  if (!entity.sceneRoot) {
+    item.emplace("visible", entity.visible);
+    item.emplace("position", entity.position);
+    item.emplace("rotation", entity.rotation);
+    item.emplace("scale", entity.scale);
+    Json render = Json::object();
+    render.emplace("visible", entity.meshVisible);
+    render.emplace("forceWireframe", entity.forceWireframe);
+    render.emplace("disableDepthTest", entity.disableDepthTest);
+    render.emplace("castShadows", entity.castShadows);
+    render.emplace("receiveShadows", entity.receiveShadows);
+    item.emplace("render", std::move(render));
+  }
   if (entity.material) {
     item.emplace("material", MaterialJson(*entity.material));
   }
@@ -504,17 +506,20 @@ auto ValidateEntity(const SceneEntityDocument& entity, std::set<uint64_t>& ids, 
     error = "document contains an invalid model material override";
     return false;
   }
-  const std::array<float, 10> values = {
-      entity.position.at(0), entity.position.at(1), entity.position.at(2), entity.rotation.at(0), entity.rotation.at(1),
-      entity.rotation.at(2), entity.rotation.at(3), entity.scale.at(0),    entity.scale.at(1),    entity.scale.at(2),
-  };
-  const float rotationLengthSquared =
-      (entity.rotation.at(0) * entity.rotation.at(0)) + (entity.rotation.at(1) * entity.rotation.at(1)) +
-      (entity.rotation.at(2) * entity.rotation.at(2)) + (entity.rotation.at(3) * entity.rotation.at(3));
-  if (!std::ranges::all_of(values, [](float value) -> bool { return std::isfinite(value); }) ||
-      !std::isfinite(rotationLengthSquared) || rotationLengthSquared <= 1.0e-12F) {
-    error = "document contains an invalid entity transform";
-    return false;
+  if (!entity.sceneRoot) {
+    const std::array<float, 10> values = {
+        entity.position.at(0), entity.position.at(1), entity.position.at(2), entity.rotation.at(0),
+        entity.rotation.at(1), entity.rotation.at(2), entity.rotation.at(3), entity.scale.at(0),
+        entity.scale.at(1),    entity.scale.at(2),
+    };
+    const float rotationLengthSquared =
+        (entity.rotation.at(0) * entity.rotation.at(0)) + (entity.rotation.at(1) * entity.rotation.at(1)) +
+        (entity.rotation.at(2) * entity.rotation.at(2)) + (entity.rotation.at(3) * entity.rotation.at(3));
+    if (!std::ranges::all_of(values, [](float value) -> bool { return std::isfinite(value); }) ||
+        !std::isfinite(rotationLengthSquared) || rotationLengthSquared <= 1.0e-12F) {
+      error = "document contains an invalid entity transform";
+      return false;
+    }
   }
   return true;
 }
@@ -780,10 +785,27 @@ auto ReadEntity(const Json& item, SceneEntityDocument& entity, std::set<uint64_t
                 "render",
             },
             result.warnings, context);
-  const bool loaded = ReadEntityIdentity(item, entity, entityIds, context, fieldError) &&
-                      ReadGuid(item, "identityGuid", entity.identityGuid, fieldError) &&
-                      ReadGuid(item, "parentGuid", entity.parentGuid, fieldError) &&
-                      ReadBool(item, "visible", entity.visible, fieldError) &&
+  const bool identityLoaded = ReadEntityIdentity(item, entity, entityIds, context, fieldError) &&
+                              ReadGuid(item, "identityGuid", entity.identityGuid, fieldError) &&
+                              ReadGuid(item, "parentGuid", entity.parentGuid, fieldError);
+  if (!identityLoaded) {
+    return false;
+  }
+  if (entity.sceneRoot) {
+    const bool hasMaterial = (item.contains("material") && !item.at("material").is_null()) ||
+                             (item.contains("materialOverrides") &&
+                              (!item.at("materialOverrides").is_array() || !item.at("materialOverrides").empty()));
+    if (entity.parentGuid || entity.materialGuid || hasMaterial) {
+      fieldError = context + " scene root cannot have a parent or material";
+      return false;
+    }
+    if (item.contains("visible") || item.contains("position") || item.contains("rotation") || item.contains("scale") ||
+        item.contains("render")) {
+      result.warnings.push_back(context + " legacy scene root transform/visibility fields ignored");
+    }
+    return true;
+  }
+  const bool loaded = ReadBool(item, "visible", entity.visible, fieldError) &&
                       ReadEntityMaterials(item, entity, result, context, fieldError) &&
                       ReadEntityTransform(item, entity, context, fieldError) &&
                       ReadEntityRenderSettings(item, entity, result, context, fieldError);

@@ -43,25 +43,25 @@ struct SceneMaterialDocument {
 
 /// Persistent entity state stored in a scene document.
 struct SceneEntityDocument {
-  uint64_t id = 0;                               ///< Document-local numeric entity identifier.
-  std::string name;                              ///< Human-readable entity name.
-  bool sceneRoot = false;                        ///< Marks the permanent scene root entity.
+  uint64_t id = 0;        ///< Document-local numeric entity identifier.
+  std::string name;       ///< Human-readable entity name.
+  bool sceneRoot = false; ///< Marks the structural root; its authored transform/visibility are omitted.
   std::optional<SceneGuidDocument> identityGuid; ///< Optional persistent identity.
   std::optional<SceneGuidDocument> parentGuid;   ///< Optional persistent identity of the parent entity.
-  bool visible = true;                           ///< Whether the entity is visible in scene views.
-  std::optional<std::string> modelGuid;          ///< Optional imported model identity.
-  std::optional<std::string> materialGuid;       ///< Optional shared material identity.
-  std::optional<std::string> primitiveType;      ///< Optional built-in primitive shape name.
-  std::optional<SceneMaterialDocument> material; ///< Optional entity-owned material data.
+  bool visible = true; ///< Whether the entity is visible in scene views; ignored for the structural root.
+  std::optional<std::string> modelGuid;                                ///< Optional imported model identity.
+  std::optional<std::string> materialGuid;                             ///< Optional shared material identity.
+  std::optional<std::string> primitiveType;                            ///< Optional built-in primitive shape name.
+  std::optional<SceneMaterialDocument> material;                       ///< Optional entity-owned material data.
   std::vector<std::optional<SceneMaterialDocument>> materialOverrides; ///< Per-submesh material overrides.
-  std::array<float, 3> position{};                                     ///< Local translation in scene units.
-  std::array<float, 4> rotation = {0.0f, 0.0f, 0.0f, 1.0f};            ///< Local rotation as an XYZW quaternion.
-  std::array<float, 3> scale = {1.0f, 1.0f, 1.0f};                     ///< Local scale on each axis.
-  bool forceWireframe = false;                                         ///< Whether this entity is drawn in wireframe.
-  bool meshVisible = true;                                             ///< Whether its mesh renderer is submitted.
-  bool disableDepthTest = false; ///< Whether depth testing is disabled for this entity.
-  bool castShadows = true;       ///< Whether this entity contributes to shadow maps.
-  bool receiveShadows = true;    ///< Whether this entity receives shadows.
+  std::array<float, 3> position{}; ///< Local translation in scene units; ignored for the structural root.
+  std::array<float, 4> rotation = {0.0f, 0.0f, 0.0f, 1.0f}; ///< Local XYZW rotation; ignored for the structural root.
+  std::array<float, 3> scale = {1.0f, 1.0f, 1.0f};          ///< Local scale; ignored for the structural root.
+  bool forceWireframe = false;                              ///< Whether this entity is drawn in wireframe.
+  bool meshVisible = true;                                  ///< Whether its mesh renderer is submitted.
+  bool disableDepthTest = false;                            ///< Whether depth testing is disabled for this entity.
+  bool castShadows = true;                                  ///< Whether this entity contributes to shadow maps.
+  bool receiveShadows = true;                               ///< Whether this entity receives shadows.
 };
 
 /// Authored light state stored in a scene document.

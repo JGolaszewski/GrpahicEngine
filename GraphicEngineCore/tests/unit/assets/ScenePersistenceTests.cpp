@@ -1,6 +1,7 @@
 #include "assets/include/AssetManager.h"
 
 #include <gtest/gtest.h>
+#include <nlohmann/json.hpp>
 
 #include <chrono>
 #include <cstdio>
@@ -87,6 +88,11 @@ TEST(ScenePersistenceTests, SchemaThreeRoundTripsSceneRootAndEmptyHierarchyEntit
   root.identityGuid = Engine::SceneGuidDocument{.high = 8, .low = 1};
   root.name = "Level One";
   root.sceneRoot = true;
+  root.visible = false;
+  root.position = {8.0F, 9.0F, 10.0F};
+  root.rotation = {0.0F, 0.0F, 0.0F, 0.0F};
+  root.scale = {2.0F, 3.0F, 4.0F};
+  root.meshVisible = false;
   document.entities.push_back(root);
   Engine::SceneEntityDocument emptyEntity;
   emptyEntity.id = 2;
@@ -97,13 +103,51 @@ TEST(ScenePersistenceTests, SchemaThreeRoundTripsSceneRootAndEmptyHierarchyEntit
 
   std::string error;
   ASSERT_TRUE(assets.SaveScene("scene-root.scene.json", document, error)) << error;
+  nlohmann::json saved;
+  {
+    std::ifstream input(project.Root() / "scene-root.scene.json", std::ios::binary);
+    input >> saved;
+  }
+  const auto& savedRoot = saved.at("entities").at(0);
+  EXPECT_FALSE(savedRoot.contains("visible"));
+  EXPECT_FALSE(savedRoot.contains("position"));
+  EXPECT_FALSE(savedRoot.contains("rotation"));
+  EXPECT_FALSE(savedRoot.contains("scale"));
+  EXPECT_FALSE(savedRoot.contains("render"));
   const auto loaded = assets.LoadScene("scene-root.scene.json");
   ASSERT_TRUE(loaded) << loaded.error;
   ASSERT_EQ(loaded.document.entities.size(), 2U);
   EXPECT_TRUE(loaded.document.entities[0].sceneRoot);
   EXPECT_EQ(loaded.document.entities[0].name, "Level One");
+  EXPECT_TRUE(loaded.document.entities[0].visible);
+  EXPECT_EQ(loaded.document.entities[0].position, (std::array<float, 3>{0.0F, 0.0F, 0.0F}));
+  EXPECT_EQ(loaded.document.entities[0].rotation, (std::array<float, 4>{0.0F, 0.0F, 0.0F, 1.0F}));
+  EXPECT_EQ(loaded.document.entities[0].scale, (std::array<float, 3>{1.0F, 1.0F, 1.0F}));
   EXPECT_FALSE(loaded.document.entities[1].sceneRoot);
   EXPECT_EQ(loaded.document.entities[1].parentGuid, root.identityGuid);
+}
+
+TEST(ScenePersistenceTests, LegacySceneRootTransformAndVisibilityAreIgnoredWithWarning) {
+  TemporaryProject project;
+  Engine::AssetManager assets(project.Root());
+  {
+    std::ofstream legacy(project.Root() / "legacy-root.scene.json", std::ios::binary);
+    legacy
+        << R"({"schemaVersion":1,"unitsPerMeter":1,"entities":[{"id":1,"sceneRoot":true,"name":"Old Root","visible":false,"position":"obsolete","rotation":[0,0,0,0],"scale":[2,2,2],"render":{"visible":false}}]})";
+  }
+
+  const auto loaded = assets.LoadScene("legacy-root.scene.json");
+  ASSERT_TRUE(loaded) << loaded.error;
+  ASSERT_EQ(loaded.document.entities.size(), 1U);
+  const auto& root = loaded.document.entities.front();
+  EXPECT_TRUE(root.sceneRoot);
+  EXPECT_EQ(root.name, "Old Root");
+  EXPECT_TRUE(root.visible);
+  EXPECT_EQ(root.position, (std::array<float, 3>{0.0F, 0.0F, 0.0F}));
+  EXPECT_EQ(root.rotation, (std::array<float, 4>{0.0F, 0.0F, 0.0F, 1.0F}));
+  EXPECT_EQ(root.scale, (std::array<float, 3>{1.0F, 1.0F, 1.0F}));
+  ASSERT_EQ(loaded.warnings.size(), 1U);
+  EXPECT_NE(loaded.warnings.front().find("legacy scene root transform/visibility fields ignored"), std::string::npos);
 }
 
 TEST(ScenePersistenceTests, PersistsCameraResolutionAndUsesFullHdDefaultsForOlderScenes) {

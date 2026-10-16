@@ -555,12 +555,17 @@ auto Application::LoadSceneDocument(const SceneDocument& document, std::string& 
 
   for (const PendingEntity& pending : entities) {
     const SceneEntityDocument& source = *pending.Document;
-    Ecs::LocalTransform transform{.Position = source.position, .Rotation = source.rotation, .Scale = source.scale};
-    (void)stagedScene->QueueSet(pending.Handle, transform);
+    if (stagedScene->IsSceneRoot(pending.Handle)) {
+      (void)stagedScene->QueueSet(pending.Handle, Ecs::Name{.Value = source.name});
+    }
     const SceneGuidDocument entityGuid = source.identityGuid.value_or(SceneGuidDocument{.high = 0, .low = source.id});
     (void)stagedScene->QueueSet(pending.Handle,
                                 Ecs::PersistentIdentity{.Guid = {.High = entityGuid.high, .Low = entityGuid.low}});
-    (void)stagedScene->QueueSet(pending.Handle, Ecs::LocalVisibility{.IsVisible = source.visible});
+    if (!stagedScene->IsSceneRoot(pending.Handle)) {
+      Ecs::LocalTransform transform{.Position = source.position, .Rotation = source.rotation, .Scale = source.scale};
+      (void)stagedScene->QueueSet(pending.Handle, transform);
+      (void)stagedScene->QueueSet(pending.Handle, Ecs::LocalVisibility{.IsVisible = source.visible});
+    }
     if (!queueParent(pending.Handle, source.parentGuid)) {
       return false;
     }
@@ -674,7 +679,12 @@ auto Application::CreateSceneDocument(const Scene& scene) const -> SceneDocument
           entity.identityGuid = SceneGuidDocument{.high = identities[row].Guid.High, .low = identities[row].Guid.Low};
           entity.name = names[row].Value;
           entity.sceneRoot = world.Get<Ecs::SceneRoot>(handles[row]) != nullptr;
-          entity.visible = visibility[row].IsVisible;
+          if (!entity.sceneRoot) {
+            entity.visible = visibility[row].IsVisible;
+            entity.position = transforms[row].Position;
+            entity.rotation = transforms[row].Rotation;
+            entity.scale = transforms[row].Scale;
+          }
           if (const auto* parent = world.Get<Ecs::Parent>(handles[row]);
               parent != nullptr && parent->Id != InvalidEntityHandle) {
             if (const auto* identity = world.Get<Ecs::PersistentIdentity>(parent->Id); identity != nullptr) {
@@ -687,9 +697,6 @@ auto Application::CreateSceneDocument(const Scene& scene) const -> SceneDocument
           if (mesh != nullptr && !mesh->PrimitiveType.empty()) {
             entity.primitiveType = mesh->PrimitiveType;
           }
-          entity.position = transforms[row].Position;
-          entity.rotation = transforms[row].Rotation;
-          entity.scale = transforms[row].Scale;
           if (mesh != nullptr) {
             entity.forceWireframe = mesh->Wireframe;
             entity.meshVisible = mesh->Visible;

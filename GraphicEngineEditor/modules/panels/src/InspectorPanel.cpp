@@ -102,30 +102,32 @@ void InspectorPanel::DrawEntityInspector() {
     }
   }
 
-  if (const auto* storedTransform = world.Get<Engine::Ecs::LocalTransform>(entity);
-      storedTransform != nullptr && ImGui::CollapsingHeader("Transform", ImGuiTreeNodeFlags_DefaultOpen)) {
-    Engine::Ecs::LocalTransform transform = *storedTransform;
-    bool changed = ImGui::DragFloat3("Local position", transform.Position.data(), 0.05F);
-    std::array<float, 3> anglesDegrees = Editor::TransformRotation::ToPitchYawRollDegrees(transform.Rotation);
-    if (ImGui::DragFloat3("Pitch / Yaw / Roll", anglesDegrees.data(), 0.25F, -360.0F, 360.0F, "%.1f deg")) {
-      transform.Rotation = Editor::TransformRotation::FromPitchYawRollDegrees(anglesDegrees);
-      changed = true;
+  if (!isSceneRoot) {
+    if (const auto* storedTransform = world.Get<Engine::Ecs::LocalTransform>(entity);
+        storedTransform != nullptr && ImGui::CollapsingHeader("Transform", ImGuiTreeNodeFlags_DefaultOpen)) {
+      Engine::Ecs::LocalTransform transform = *storedTransform;
+      bool changed = ImGui::DragFloat3("Local position", transform.Position.data(), 0.05F);
+      std::array<float, 3> anglesDegrees = Editor::TransformRotation::ToPitchYawRollDegrees(transform.Rotation);
+      if (ImGui::DragFloat3("Pitch / Yaw / Roll", anglesDegrees.data(), 0.25F, -360.0F, 360.0F, "%.1f deg")) {
+        transform.Rotation = Editor::TransformRotation::FromPitchYawRollDegrees(anglesDegrees);
+        changed = true;
+      }
+      if (ImGui::TreeNode("Quaternion (advanced)")) {
+        changed |= ImGui::DragFloat4("Raw quaternion", transform.Rotation.data(), 0.01F);
+        ImGui::TreePop();
+      }
+      changed |= ImGui::DragFloat3("Local scale", transform.Scale.data(), 0.05F, 0.01F, 1000.0F);
+      if (changed) {
+        emitSet(Mutation::Component::Transform, transform);
+      }
     }
-    if (ImGui::TreeNode("Quaternion (advanced)")) {
-      changed |= ImGui::DragFloat4("Raw quaternion", transform.Rotation.data(), 0.01F);
-      ImGui::TreePop();
-    }
-    changed |= ImGui::DragFloat3("Local scale", transform.Scale.data(), 0.05F, 0.01F, 1000.0F);
-    if (changed) {
-      emitSet(Mutation::Component::Transform, transform);
-    }
-  }
 
-  if (const auto* storedVisibility = world.Get<Engine::Ecs::LocalVisibility>(entity);
-      storedVisibility != nullptr && ImGui::CollapsingHeader("Visibility")) {
-    Engine::Ecs::LocalVisibility visibility = *storedVisibility;
-    if (ImGui::Checkbox("Visible in scene", &visibility.IsVisible)) {
-      emitSet(Mutation::Component::LocalVisibility, visibility);
+    if (const auto* storedVisibility = world.Get<Engine::Ecs::LocalVisibility>(entity);
+        storedVisibility != nullptr && ImGui::CollapsingHeader("Visibility")) {
+      Engine::Ecs::LocalVisibility visibility = *storedVisibility;
+      if (ImGui::Checkbox("Visible in scene", &visibility.IsVisible)) {
+        emitSet(Mutation::Component::LocalVisibility, visibility);
+      }
     }
   }
 

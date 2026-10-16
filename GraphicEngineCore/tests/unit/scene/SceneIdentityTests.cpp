@@ -67,6 +67,25 @@ TEST(SceneIdentityTests, RootRejectsRenderableAndAuthoredComponents) {
   EXPECT_FALSE(scene.World().Has<Engine::Ecs::Camera>(root));
 }
 
+TEST(SceneIdentityTests, RootRejectsTransformAndVisibilityEdits) {
+  Engine::Scene scene;
+  const Engine::EntityHandle root = scene.SceneRootEntity();
+  Engine::Ecs::LocalTransform transform;
+  transform.Position = {4.0F, 5.0F, 6.0F};
+  Engine::Ecs::LocalVisibility visibility{.IsVisible = false};
+
+  (void)scene.QueueSet(root, transform);
+  (void)scene.QueueSet(root, visibility);
+  const auto results = scene.sync();
+  ASSERT_EQ(results.size(), 2U);
+  EXPECT_FALSE(results[0].Outcome);
+  EXPECT_FALSE(results[1].Outcome);
+  EXPECT_EQ(scene.World().Get<Engine::Ecs::LocalTransform>(root)->Position, (std::array<float, 3>{0.0F, 0.0F, 0.0F}));
+  EXPECT_TRUE(scene.World().Get<Engine::Ecs::LocalVisibility>(root)->IsVisible);
+  EXPECT_FALSE(scene.SetInPlace(root, transform));
+  EXPECT_FALSE(scene.SetInPlace(root, visibility));
+}
+
 TEST(SceneIdentityTests, PersistentIdentityIsStoredAsAnEcsComponent) {
   Engine::Scene scene;
   (void)scene.QueueCreate("Entity");
