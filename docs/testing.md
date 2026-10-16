@@ -162,16 +162,30 @@ results.
 
 ## Core API documentation
 
-Install Doxygen and generate the core API reference from the checked-in
-configuration. Undocumented public declarations and documentation errors fail
-the run:
+The MkDocs build runs Doxygen through MkDoxy using the checked-in root
+configuration. Doxygen emits XML only; MkDoxy converts it into Markdown pages
+that MkDocs includes in the Material site. Undocumented public declarations,
+missing parameter documentation, and documentation errors fail the build:
 
 ```powershell
-doxygen docs/Doxyfile
+doxygen Doxyfile
 ```
 
-HTML is written to `out/build/doxygen/html`; the warning log is written to
-`out/build/doxygen-warnings.log`.
+The standalone command writes XML under `out/docs/doxygen/xml`. The regular
+documentation build uses MkDoxy's generated XML cache under `out/docs/site/`.
+
+## Markdown documentation lint
+
+The documentation build scans source Markdown with the pinned PyMarkdown
+configuration before generating the site. Run the same check directly from the
+repository root when reviewing Markdown changes:
+
+```powershell
+.\.venv-docs\Scripts\pymarkdown.exe --strict-config scan --recurse docs
+```
+
+Line-length checking is disabled because the existing documentation uses long
+Markdown paragraphs; heading, spacing, list, and whitespace rules remain active.
 
 ## CI guidance
 
