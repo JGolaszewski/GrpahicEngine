@@ -3,6 +3,7 @@
 #include <gtest/gtest.h>
 
 #include <chrono>
+#include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -25,6 +26,7 @@ public:
     try {
       std::filesystem::remove_all(m_Root, ignored);
     } catch (...) {
+      std::fputs("Could not remove editor settings test directory\n", stderr);
     }
   }
 

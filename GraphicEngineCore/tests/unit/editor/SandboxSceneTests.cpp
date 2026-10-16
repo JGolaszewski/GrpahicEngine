@@ -5,6 +5,7 @@
 #include <gtest/gtest.h>
 
 #include <chrono>
+#include <cstdio>
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -19,9 +20,13 @@ public:
     std::filesystem::copy(ENGINE_SANDBOX_PROJECT_ROOT, m_Path,
                           std::filesystem::copy_options::recursive | std::filesystem::copy_options::overwrite_existing);
   }
-  ~SandboxProjectCopy() {
+  ~SandboxProjectCopy() noexcept {
     std::error_code error;
-    std::filesystem::remove_all(m_Path, error);
+    try {
+      std::filesystem::remove_all(m_Path, error);
+    } catch (...) {
+      std::fputs("Could not remove Sandbox test project copy\n", stderr);
+    }
   }
   const std::filesystem::path& Path() const noexcept { return m_Path; }
 

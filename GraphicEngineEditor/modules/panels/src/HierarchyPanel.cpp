@@ -109,7 +109,7 @@ void HierarchyPanel::DrawEntityNode(const Engine::Scene::EntitySnapshot& entity,
     return;
   }
   const std::string name = entity.Name.empty() ? "Entity " + std::to_string(entity.Handle.Index) : entity.Name;
-  const std::string label = name;
+  const std::string& label = name;
   ImGui::PushID(static_cast<int>(entity.Handle.Index));
   ImGui::PushID(static_cast<int>(entity.Handle.Generation));
   const ImGuiTreeNodeFlags flags =
