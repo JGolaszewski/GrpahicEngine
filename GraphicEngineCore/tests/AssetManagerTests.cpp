@@ -356,6 +356,13 @@ void TestReusableMaterialAssets(const std::filesystem::path& project) {
           "material asset did not load in a later manager session");
   Require(!reopened.LoadMaterial("not-a-guid", error) && error.contains("invalid"),
           "invalid material identity did not produce a useful diagnostic");
+
+  const auto materialPath = project / reopened.GetKnownMaterials().front().sourcePath;
+  std::ofstream(materialPath, std::ios::binary | std::ios::trunc) << "{not valid JSON";
+  Engine::AssetManager corruptedAsset(project);
+  Require(!corruptedAsset.LoadMaterial(guid, error) && error.contains("invalid material asset document") &&
+              error.contains(materialPath.generic_string()),
+          "malformed registered material did not identify the invalid asset document");
 }
 
 void TestStableSceneIds() {
