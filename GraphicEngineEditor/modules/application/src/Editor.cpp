@@ -617,7 +617,7 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
       if (request.GetTargetEntity() != Engine::InvalidEntityHandle && m_ActiveScene &&
           m_ActiveScene->World().IsAlive(request.GetTargetEntity())) {
         std::string error;
-        const auto guid = created.value();
+        const auto& guid = created.value();
         if (!GetAssetManager()->LoadMaterial(guid, error)) {
           AssetWorkflowFeedbackEvent feedback(false, error);
           BroadcastEvent(feedback);

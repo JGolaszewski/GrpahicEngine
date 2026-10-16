@@ -91,12 +91,12 @@ TEST(AssetDropAssignmentTests, ReusableMaterialCreationCanBeAssignedAndSharedEdi
   Engine::AssetManager assets(root);
   const auto result = assets.CreateMaterial("Custom");
   ASSERT_TRUE(result) << result.error().Message;
-  const std::string guid = result.value();
+  const std::string& guid = result.value();
   std::string error;
   ASSERT_TRUE(assets.LoadMaterial(guid, error)) << error;
   const auto createdAsset = assets.GetMaterial(guid);
   ASSERT_TRUE(createdAsset);
-  const Engine::SceneMaterialDocument created = *createdAsset;
+  const Engine::SceneMaterialDocument& created = *createdAsset;
   Engine::Ecs::MeshRenderer first;
   Engine::Ecs::MeshRenderer second;
   Engine::Ecs::MeshRenderer unrelated;
