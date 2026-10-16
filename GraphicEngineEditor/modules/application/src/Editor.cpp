@@ -436,7 +436,17 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
   Engine::Events::EventDispatcher dispatcher(*event);
   dispatcher.Dispatch<SceneFileActionRequestedEvent>([this](const auto& request) -> bool {
     if (GetAssetManager() == nullptr) {
-      ENGINE_LOG_ERROR("Asset", "Cannot open a project or scene because the asset manager is unavailable");
+      ENGINE_LOG_ERROR("Asset", "Cannot process the file action because the asset manager is unavailable");
+      return true;
+    }
+    if (request.GetAction() == SceneFileActionRequestedEvent::Action::NewScene) {
+      std::string error;
+      std::vector<std::string> warnings;
+      if (!LoadSceneDocument(Engine::SceneDocument{}, error, warnings)) {
+        ENGINE_LOG_ERROR("Scene", "Could not create a new scene | reason: {}", error);
+      } else {
+        m_ActiveSceneDocument.Reset();
+      }
       return true;
     }
     if (request.GetAction() == SceneFileActionRequestedEvent::Action::OpenProject) {
@@ -486,6 +496,32 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
         for (const std::string& warning : warnings) {
           ENGINE_LOG_WARN("Scene", "Scene loaded with warning | {}", warning);
         }
+      }
+      return true;
+    }
+    if (request.GetAction() == SceneFileActionRequestedEvent::Action::SaveScene ||
+        request.GetAction() == SceneFileActionRequestedEvent::Action::SaveSceneAs) {
+      if (m_ActiveScene == nullptr) {
+        ENGINE_LOG_ERROR("Scene", "Cannot save a scene because no scene is active");
+        return true;
+      }
+      const bool saveAs = request.GetAction() == SceneFileActionRequestedEvent::Action::SaveSceneAs ||
+                          m_ActiveSceneDocument.GetPath().empty();
+      const std::filesystem::path destination =
+          saveAs ? EditorPlatform::ChooseSceneFile(true, m_ActiveSceneDocument.GetPath(),
+                                                   GetAssetManager()->GetProjectRoot())
+                       .value_or(std::filesystem::path{})
+                 : m_ActiveSceneDocument.GetPath();
+      if (destination.empty()) {
+        return true;
+      }
+      const Engine::SceneDocument snapshot = CreateSceneDocument(*m_ActiveScene);
+      const Engine::Status saveStatus = m_ActiveSceneDocument.Save(*GetAssetManager(), snapshot, destination);
+      if (!saveStatus) {
+        ENGINE_LOG_ERROR("Scene", "Scene save failed | path: {} | reason: {}", destination.generic_string(),
+                         saveStatus.error().Message);
+      } else {
+        ENGINE_LOG_INFO("Scene", "Scene saved | path: {}", destination.generic_string());
       }
       return true;
     }

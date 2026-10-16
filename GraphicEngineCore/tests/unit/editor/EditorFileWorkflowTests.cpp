@@ -5,6 +5,7 @@
 #include <gtest/gtest.h>
 
 #include <chrono>
+#include <cstdio>
 #include <filesystem>
 #include <string>
 #include <system_error>
@@ -27,6 +28,7 @@ public:
     try {
       std::filesystem::remove_all(m_Root, ignored);
     } catch (...) {
+      std::fputs("Could not remove editor workflow test directory\n", stderr);
     }
   }
 
@@ -127,5 +129,36 @@ TEST(EditorSceneDocumentTests, FailedSceneActivationKeepsExistingPathAndDiagnost
             EditorSceneDocument::OpenResult::Failed);
   EXPECT_EQ(activeDocument.GetPath(), previousPath);
   EXPECT_EQ(error, "scene document could not be read");
+}
+
+TEST(EditorSceneDocumentTests, SavePersistsDocumentAndCommitsPathOnlyAfterSuccess) {
+  TemporaryProjectDirectory directory;
+  Engine::AssetManager assets(directory.Root());
+  Engine::SceneDocument scene;
+  Engine::SceneEntityDocument entity;
+  entity.id = 7;
+  entity.name = "saved entity";
+  entity.position = {1.0F, 2.0F, 3.0F};
+  scene.entities.push_back(entity);
+
+  EditorSceneDocument activeDocument;
+  const auto original = directory.Root() / "initial" / "original.scene.json";
+  const auto selected = directory.Root() / "selected" / "saved.scene.json";
+  activeDocument.CommitPath(original);
+
+  const Engine::Status saveStatus = activeDocument.Save(assets, scene, selected);
+  ASSERT_TRUE(saveStatus);
+  EXPECT_EQ(activeDocument.GetPath(), std::filesystem::weakly_canonical(selected));
+  const auto loaded = assets.LoadScene(selected);
+  ASSERT_TRUE(loaded) << loaded.error;
+  ASSERT_EQ(loaded.document.entities.size(), 1U);
+  EXPECT_EQ(loaded.document.entities.front().name, entity.name);
+  EXPECT_EQ(loaded.document.entities.front().position, entity.position);
+
+  const auto previousPath = activeDocument.GetPath();
+  const Engine::Status failedSave =
+      activeDocument.Save(assets, scene, directory.Root().parent_path() / "outside.scene.json");
+  EXPECT_FALSE(failedSave);
+  EXPECT_EQ(activeDocument.GetPath(), previousPath);
 }
 } // namespace

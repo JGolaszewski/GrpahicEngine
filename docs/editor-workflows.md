@@ -19,6 +19,11 @@ The project assets and scene template are included in source control. The unit
 test also saves the instantiated scene to a temporary project and reloads it to
 check that the content remains restorable.
 
+Use **File > New** to start an empty scene. **File > Open...** loads a scene from
+the current project. **File > Save** writes the active scene to its current
+path; for a new scene, it opens the save dialog. **File > Save As...** always
+opens that dialog. Scene files must be saved inside the active project.
+
 The scene contains one imported model with a checker texture, cube/sphere/plane/
 cone primitives with distinct material settings, three light types, and a
 camera. It is intended for manual checks of selection, transform editing,
