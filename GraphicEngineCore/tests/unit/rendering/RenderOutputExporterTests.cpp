@@ -203,8 +203,8 @@ TEST(RenderOutputExporterTests, ExrBackgroundChangesOnlyFinalColorAndLeavesDisab
   EXPECT_EQ(depth, (std::array<float, 2>{0.25F, 0.75F}));
   ASSERT_TRUE(input->seek_subimage(1, 0));
   std::array<float, 8> finalColor{};
-  ASSERT_TRUE(input->read_image(1, 0, 0, -1, OIIO::span<float>(finalColor.data(), finalColor.size()))
-              << input->geterror());
+  ASSERT_TRUE(input->read_image(1, 0, 0, -1, OIIO::span<float>(finalColor.data(), finalColor.size())))
+      << input->geterror();
   EXPECT_EQ(finalColor, (std::array<float, 8>{0.0F, 0.0F, 1.0F, 1.0F, 0.5F, 0.0F, 0.5F, 1.0F}));
   ASSERT_TRUE(input->close());
 
@@ -214,8 +214,8 @@ TEST(RenderOutputExporterTests, ExrBackgroundChangesOnlyFinalColorAndLeavesDisab
   ASSERT_NE(unchangedInput, nullptr) << OIIO::geterror();
   ASSERT_TRUE(unchangedInput->seek_subimage(1, 0));
   std::array<float, 8> unchanged{};
-  ASSERT_TRUE(unchangedInput->read_image(1, 0, 0, -1, OIIO::span<float>(unchanged.data(), unchanged.size()))
-              << unchangedInput->geterror());
+  ASSERT_TRUE(unchangedInput->read_image(1, 0, 0, -1, OIIO::span<float>(unchanged.data(), unchanged.size())))
+      << unchangedInput->geterror();
   EXPECT_EQ(unchanged, (std::array<float, 8>{1.0F, 0.0F, 0.0F, 0.0F, 1.0F, 0.0F, 0.0F, 0.5F}));
 }
 
