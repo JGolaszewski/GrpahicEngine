@@ -1,10 +1,10 @@
-PROJECT_NAME           = GraphicEngine Core API
+PROJECT_NAME           = GraphicEngine API
 OUTPUT_DIRECTORY       = out/docs/doxygen
 
-INPUT                  = GraphicEngineCore/modules
+INPUT                  = GraphicEngineCore/modules GraphicEngineEditor/modules GraphicEngineBackends/D3D11/include
 FILE_PATTERNS          = *.h *.hpp
 RECURSIVE              = YES
-EXCLUDE_PATTERNS       = */src/* */tests/*
+EXCLUDE_PATTERNS       = */src/* */tests/* */vendor/*
 EXCLUDE                = vendor out build
 
 GENERATE_HTML          = NO

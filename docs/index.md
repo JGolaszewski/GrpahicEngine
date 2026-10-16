@@ -9,7 +9,7 @@ Use this site to find project conventions and development workflows:
 - [Logging](logging.md)
 - [Testing and performance](testing.md)
 - [Windows build and renderer validation](validation/windows.md)
-- [GraphicEngineCore API reference](api-reference.md)
+- [GraphicEngine API reference](api-reference.md)
 
 ## Build the documentation
 
