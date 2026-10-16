@@ -568,9 +568,9 @@ auto Application::LoadSceneDocument(const SceneDocument& document, std::string& 
       (void)stagedScene->QueueAdd(pending.Handle, Ecs::MeshRenderer{
                                                       .ModelGuid = source.modelGuid.value_or(""),
                                                       .PrimitiveType = source.primitiveType.value_or(""),
-                                                      .Visible = source.meshVisible,
                                                       .CastShadows = source.castShadows,
                                                       .ReceiveShadows = source.receiveShadows,
+                                                      .Visible = source.meshVisible,
                                                       .Wireframe = source.forceWireframe,
                                                       .DisableDepthTest = source.disableDepthTest,
                                                   });
