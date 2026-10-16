@@ -25,6 +25,11 @@ active. The scene document path is updated only after activation succeeds.
 
 ## Asset rename and assignment
 
+Use **Create material** in the Assets panel to create a reusable default material. Materials appear alongside models
+and textures and can be renamed with **Rename selected**; the editor moves the material document and metadata sidecar
+together while preserving its GUID. Material properties and shared material GUID references are stored in project
+assets and scene documents, respectively.
+
 Select a model or texture in the Assets panel and use **Rename selected** to change its filename. The editor moves the
 asset and its adjacent metadata sidecar together, preserving the asset GUID used by saved scene references.
 

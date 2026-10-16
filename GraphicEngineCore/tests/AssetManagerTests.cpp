@@ -240,6 +240,7 @@ void TestSceneJsonRoundTrip(const std::filesystem::path& project) {
   entity.id = 17;
   entity.name = "serialized entity";
   entity.modelGuid = "e6f7e48a-1d3b-4f65-9d61-5c78d4413001";
+  entity.materialGuid = "00000000-0000-4000-8000-000000000003";
   Engine::SceneMaterialDocument overrideMaterial;
   overrideMaterial.baseColor = {0.2F, 0.4F, 0.6F, 1.0F};
   overrideMaterial.metallic = 0.7F;
@@ -279,6 +280,7 @@ void TestSceneJsonRoundTrip(const std::filesystem::path& project) {
   const auto& result = loaded.document.entities.front();
   Require(result.id == entity.id && result.name == entity.name, "scene round-trip changed durable entity data");
   Require(result.modelGuid == entity.modelGuid, "scene round-trip changed an asset GUID");
+  Require(result.materialGuid == entity.materialGuid, "scene round-trip changed a reusable material GUID");
   Require(result.materialOverrides.size() == 1 && result.materialOverrides.at(0).has_value(),
           "scene round-trip lost a model material override");
   const Engine::SceneMaterialDocument loadedOverride =
@@ -304,6 +306,56 @@ void TestSceneJsonRoundTrip(const std::filesystem::path& project) {
           "scene round-trip changed camera state");
 
   Require(!assets.SaveScene("../escaped.scene.json", document, error), "scene save escaped the project root");
+}
+
+void TestReusableMaterialAssets(const std::filesystem::path& project) {
+  Engine::AssetManager assets(project);
+  Engine::SceneMaterialDocument source;
+  source.baseColor = {0.2F, 0.4F, 0.6F, 1.0F};
+  source.metallic = 0.7F;
+  source.roughness = 0.3F;
+  std::string error;
+  const auto created = assets.CreateMaterial("Shared", source);
+  Require(created.has_value(), "material asset creation failed");
+  const std::string guid = *created;
+  Require(assets.GetMaterial(guid) == source, "new material asset is not cached with its authored properties");
+  auto edited = source;
+  edited.roughness = 0.8F;
+  Require(assets.SaveMaterial(guid, edited, error) && assets.GetMaterial(guid) == edited,
+          "material asset property edits were not persisted");
+
+  Engine::SceneDocument scene;
+  for (uint64_t id = 1; id <= 2; ++id) {
+    Engine::SceneEntityDocument entity;
+    entity.id = id;
+    entity.name = "mesh " + std::to_string(id);
+    entity.modelGuid = "e6f7e48a-1d3b-4f65-9d61-5c78d4413001";
+    entity.materialGuid = guid;
+    scene.entities.push_back(entity);
+  }
+  Require(assets.SaveScene("shared.scene.json", scene, error), "could not save shared material references");
+  const auto loadedScene = assets.LoadScene("shared.scene.json");
+  Require(loadedScene && loadedScene.document.entities.size() == 2 &&
+              loadedScene.document.entities[0].materialGuid == guid &&
+              loadedScene.document.entities[1].materialGuid == guid,
+          "scene round-trip did not preserve shared material references");
+
+  Require(assets.RenameAsset(guid, "RenamedShared", error), "material asset rename failed");
+  Require(assets.GetKnownMaterials().size() == 1 && assets.GetKnownMaterials().front().guid == guid &&
+              assets.GetKnownMaterials().front().name == "RenamedShared",
+          "renaming a material changed or lost its stable identity");
+  const auto persistedScene = assets.LoadScene("shared.scene.json");
+  Require(persistedScene && persistedScene.document.entities.front().materialGuid == guid,
+          "renaming a material invalidated existing scene references");
+
+  Engine::AssetManager reopened(project);
+  std::vector<std::string> warnings;
+  Require(reopened.RefreshRegistry(warnings, error) && warnings.empty(), "material asset registry reload failed");
+  Require(reopened.GetKnownMaterials().size() == 1 && reopened.LoadMaterial(guid, error) &&
+              reopened.GetMaterial(guid) == edited,
+          "material asset did not load in a later manager session");
+  Require(!reopened.LoadMaterial("not-a-guid", error) && error.contains("invalid"),
+          "invalid material identity did not produce a useful diagnostic");
 }
 
 void TestStableSceneIds() {
@@ -358,6 +410,7 @@ auto main() -> int {
     TestTextureImportAndRegistry(workspace.Project());
     TestDuplicateGuidAndProjectBoundary(workspace.Path(), workspace.Project());
     TestSceneJsonRoundTrip(workspace.Project());
+    TestReusableMaterialAssets(workspace.Project());
     TestStableSceneIds();
     TestInvalidInputs(workspace.Project());
     return EXIT_SUCCESS;

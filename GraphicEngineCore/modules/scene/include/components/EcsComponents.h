@@ -84,6 +84,7 @@ static_assert(alignof(WorldTransform) >= 16);
 struct MeshRenderer {
   std::string ModelGuid;                         ///< Imported model identity, when using a model asset.
   std::string PrimitiveType;                     ///< Built-in primitive name, when not using a model asset.
+  std::string MaterialGuid;                      ///< Optional reusable material asset identity.
   bool CastShadows = true;                       ///< Whether this mesh contributes to shadow maps.
   bool ReceiveShadows = true;                    ///< Whether this mesh receives shadows.
   bool Visible = true;                           ///< Whether this mesh is submitted for rendering.

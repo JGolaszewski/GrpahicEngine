@@ -453,12 +453,21 @@ auto Application::LoadSceneDocument(const SceneDocument& document, std::string& 
       setEntityError("cannot specify both modelGuid and primitiveType");
       return false;
     }
+    auto effectiveMaterial = entity.material;
     if (entity.materialGuid) {
-      setEntityError("references an unsupported standalone material asset");
-      return false;
+      std::string materialError;
+      if (m_AssetManager == nullptr) {
+        materialError = "asset manager is unavailable";
+      }
+      if (m_AssetManager == nullptr || !m_AssetManager->LoadMaterial(*entity.materialGuid, materialError)) {
+        warnings.push_back("entity '" + entity.name + "': material asset " + *entity.materialGuid +
+                           " could not be loaded: " + materialError);
+      } else if (const auto assetMaterial = m_AssetManager->GetMaterial(*entity.materialGuid)) {
+        effectiveMaterial = *assetMaterial;
+      }
     }
-    if (entity.material) {
-      prepareMaterialTextures(*entity.material, entity.name);
+    if (effectiveMaterial) {
+      prepareMaterialTextures(*effectiveMaterial, entity.name);
     }
     for (const auto& material : entity.materialOverrides) {
       if (material) {
@@ -624,18 +633,23 @@ auto Application::LoadSceneDocument(const SceneDocument& document, std::string& 
     if (!queueParent(pending.Handle, source.parentGuid)) {
       return false;
     }
-    if (source.hasMeshRenderer || source.modelGuid || source.primitiveType) {
-      (void)stagedScene->QueueAdd(pending.Handle, Ecs::MeshRenderer{
-                                                      .ModelGuid = source.modelGuid.value_or(""),
-                                                      .PrimitiveType = source.primitiveType.value_or(""),
-                                                      .CastShadows = source.castShadows,
-                                                      .ReceiveShadows = source.receiveShadows,
-                                                      .Visible = source.meshVisible,
-                                                      .Wireframe = source.forceWireframe,
-                                                      .DisableDepthTest = source.disableDepthTest,
-                                                      .Material = source.material,
-                                                      .MaterialOverrides = source.materialOverrides,
-                                                  });
+    if (source.hasMeshRenderer || source.modelGuid || source.materialGuid || source.primitiveType) {
+      (void)stagedScene->QueueAdd(pending.Handle,
+                                  Ecs::MeshRenderer{
+                                      .ModelGuid = source.modelGuid.value_or(""),
+                                      .PrimitiveType = source.primitiveType.value_or(""),
+                                      .MaterialGuid = source.materialGuid.value_or(""),
+                                      .CastShadows = source.castShadows,
+                                      .ReceiveShadows = source.receiveShadows,
+                                      .Visible = source.meshVisible,
+                                      .Wireframe = source.forceWireframe,
+                                      .DisableDepthTest = source.disableDepthTest,
+                                      .Material = source.materialGuid && m_AssetManager != nullptr
+                                                      ? m_AssetManager->GetMaterial(*source.materialGuid)
+                                                            .value_or(source.material.value_or(SceneMaterialDocument{}))
+                                                      : source.material,
+                                      .MaterialOverrides = source.materialOverrides,
+                                  });
     }
   }
   for (const PendingLight& pending : lights) {
@@ -757,6 +771,9 @@ auto Application::CreateSceneDocument(const Scene& scene) const -> SceneDocument
           }
           if (mesh != nullptr && !mesh->PrimitiveType.empty()) {
             entity.primitiveType = mesh->PrimitiveType;
+          }
+          if (mesh != nullptr && !mesh->MaterialGuid.empty()) {
+            entity.materialGuid = mesh->MaterialGuid;
           }
           if (mesh != nullptr) {
             entity.hasMeshRenderer = true;

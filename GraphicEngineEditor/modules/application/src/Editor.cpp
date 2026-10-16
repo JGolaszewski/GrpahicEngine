@@ -209,7 +209,8 @@ void Editor::OnInit() {
         *panel, [this](std::unique_ptr<Engine::Events::Event> event) -> void { ProcessPanelEvent(std::move(event)); }));
   }
   BroadcastSceneChanged();
-  AssetRegistryChangedEvent assets(GetAssetManager()->GetKnownModels(), GetAssetManager()->GetKnownTextures());
+  AssetRegistryChangedEvent assets(GetAssetManager()->GetKnownModels(), GetAssetManager()->GetKnownTextures(),
+                                   GetAssetManager()->GetKnownMaterials());
   BroadcastEvent(assets);
 }
 
@@ -462,7 +463,8 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
         for (const std::string& warning : warnings) {
           ENGINE_LOG_WARN("Asset", "Project asset warning | {}", warning);
         }
-        AssetRegistryChangedEvent changed(GetAssetManager()->GetKnownModels(), GetAssetManager()->GetKnownTextures());
+        AssetRegistryChangedEvent changed(GetAssetManager()->GetKnownModels(), GetAssetManager()->GetKnownTextures(),
+                                          GetAssetManager()->GetKnownMaterials());
         BroadcastEvent(changed);
       }
       return true;
@@ -601,6 +603,20 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
     if (GetAssetManager() == nullptr) {
       return true;
     }
+    if (request.GetAssetType() == AssetImportRequestedEvent::AssetType::Material) {
+      auto created = GetAssetManager()->CreateMaterial("Material");
+      if (!created) {
+        AssetWorkflowFeedbackEvent feedback(false, created.error().Message);
+        BroadcastEvent(feedback);
+        return true;
+      }
+      AssetRegistryChangedEvent changed(GetAssetManager()->GetKnownModels(), GetAssetManager()->GetKnownTextures(),
+                                        GetAssetManager()->GetKnownMaterials());
+      BroadcastEvent(changed);
+      AssetWorkflowFeedbackEvent feedback(true, "Material asset created");
+      BroadcastEvent(feedback);
+      return true;
+    }
     const auto path = request.GetAssetType() == AssetImportRequestedEvent::AssetType::Texture
                           ? EditorPlatform::ChooseTextureFile(GetAssetManager()->GetProjectRoot())
                           : EditorPlatform::ChooseModelFile(GetAssetManager()->GetProjectRoot());
@@ -621,7 +637,8 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
       ENGINE_LOG_ERROR("Asset", "Asset registry refresh failed after import | reason: {}", error);
       return true;
     }
-    AssetRegistryChangedEvent changed(GetAssetManager()->GetKnownModels(), GetAssetManager()->GetKnownTextures());
+    AssetRegistryChangedEvent changed(GetAssetManager()->GetKnownModels(), GetAssetManager()->GetKnownTextures(),
+                                      GetAssetManager()->GetKnownMaterials());
     BroadcastEvent(changed);
     return true;
   });
@@ -640,7 +657,8 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
       BroadcastEvent(feedback);
       return true;
     }
-    AssetRegistryChangedEvent changed(GetAssetManager()->GetKnownModels(), GetAssetManager()->GetKnownTextures());
+    AssetRegistryChangedEvent changed(GetAssetManager()->GetKnownModels(), GetAssetManager()->GetKnownTextures(),
+                                      GetAssetManager()->GetKnownMaterials());
     BroadcastEvent(changed);
     AssetWorkflowFeedbackEvent feedback(true, "Asset renamed; scene references remain valid");
     BroadcastEvent(feedback);

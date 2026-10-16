@@ -10,6 +10,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -34,6 +35,13 @@ public:
     std::string guid;                 ///< Stable identifier used by material documents.
     std::string name;                 ///< Display name derived from the source image.
     std::filesystem::path sourcePath; ///< Resolved source file path.
+  };
+
+  /// Registry information for a reusable material asset.
+  struct MaterialAssetInfo {
+    std::string guid;                 ///< Stable identifier used by scene documents.
+    std::string name;                 ///< Display name derived from the asset filename.
+    std::filesystem::path sourcePath; ///< Project-relative material document path.
   };
 
   /// Creates a manager without a project root; call SetProjectRoot before importing.
@@ -63,6 +71,25 @@ public:
   /// @return Asset identifier on success, otherwise an error message.
   Result<std::string> ImportTexture(const std::filesystem::path& sourcePath);
 
+  /// Creates a reusable material asset initialized with the supplied properties.
+  /// @param name Display name and filename stem for the new material.
+  /// @param material Material properties to persist.
+  /// @return Asset identifier on success, otherwise an error message.
+  Result<std::string> CreateMaterial(std::string_view name, const SceneMaterialDocument& material = {});
+
+  /// Loads and caches the material document associated with an asset identifier.
+  /// @param guid Registered material identifier.
+  /// @param error Receives a diagnostic when lookup or parsing fails.
+  /// @return True when the material is available in the cache.
+  bool LoadMaterial(const std::string& guid, std::string& error);
+
+  /// Replaces the persisted properties of a registered material without changing its identity.
+  /// @param guid Stable material identifier.
+  /// @param material New properties to persist.
+  /// @param error Receives a diagnostic when lookup or saving fails.
+  /// @return True when the asset document and cache are updated.
+  bool SaveMaterial(const std::string& guid, const SceneMaterialDocument& material, std::string& error);
+
   /// Imports a model using output parameters for the identifier and diagnostic.
   /// @param sourcePath Model file to import.
   /// @param guid Receives the registered model identifier.
@@ -77,7 +104,7 @@ public:
   /// @return True when import and registry update succeed.
   bool ImportTexture(const std::filesystem::path& sourcePath, std::string& guid, std::string& error);
 
-  /// Renames an imported model or texture while retaining its persistent asset identifier.
+  /// Renames a registered model, texture, or material while retaining its persistent asset identifier.
   /// @param guid Stable identifier of the registered asset.
   /// @param newName New filename without an extension.
   /// @param error Receives a diagnostic when validation or either file rename fails.
@@ -130,6 +157,15 @@ public:
   /// @return A snapshot of the registered texture assets.
   std::vector<TextureAssetInfo> GetKnownTextures() const;
 
+  /// Lists the known reusable material assets.
+  /// @return A snapshot of the registered material assets.
+  std::vector<MaterialAssetInfo> GetKnownMaterials() const;
+
+  /// Returns the cached material document, or empty when it has not been loaded.
+  /// @param guid Registered material identifier.
+  /// @return The material document, or empty when it is not loaded.
+  std::optional<SceneMaterialDocument> GetMaterial(const std::string& guid) const;
+
   /// Creates the stable identity for an image embedded in a model file.
   /// @param modelGuid Identifier of the parent model asset.
   /// @param imageIndex Zero-based image index within the imported model.
@@ -159,10 +195,15 @@ private:
     std::shared_ptr<const ImportedImage> image;
     uint64_t generation = 1;
   };
+  struct MaterialRecord {
+    std::filesystem::path sourcePath;
+    SceneMaterialDocument material;
+  };
 
   std::filesystem::path m_ProjectRoot;
   std::unordered_map<std::string, ModelRecord> m_Models;
   std::unordered_map<std::string, TextureRecord> m_Textures;
+  std::unordered_map<std::string, MaterialRecord> m_Materials;
   AssetImporter m_Importer;
   SceneSerializer m_SceneSerializer;
 };

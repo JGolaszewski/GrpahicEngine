@@ -20,11 +20,24 @@ void AssetBrowserPanel::Draw() {
     EmitEvent(std::make_unique<AssetImportRequestedEvent>(AssetImportRequestedEvent::AssetType::Texture));
   }
   ImGui::SameLine();
-  if (ImGui::Button("Reimport selected") && !m_SelectedGuid.empty()) {
-    EmitEvent(std::make_unique<AssetReimportRequestedEvent>(m_SelectedGuid));
+  if (ImGui::Button("Create material")) {
+    EmitEvent(std::make_unique<AssetImportRequestedEvent>(AssetImportRequestedEvent::AssetType::Material));
   }
+  ImGui::SameLine();
   const bool selectedModel =
       std::ranges::any_of(m_Models, [this](const auto& model) -> auto { return model.guid == m_SelectedGuid; });
+  const auto selectedTexture =
+      std::ranges::find(m_Textures, m_SelectedGuid, &Engine::AssetManager::TextureAssetInfo::guid);
+  const bool selectedImportableAsset = selectedModel || selectedTexture != m_Textures.end();
+  if (!selectedImportableAsset) {
+    ImGui::BeginDisabled();
+  }
+  if (ImGui::Button("Reimport selected") && selectedImportableAsset) {
+    EmitEvent(std::make_unique<AssetReimportRequestedEvent>(m_SelectedGuid));
+  }
+  if (!selectedImportableAsset) {
+    ImGui::EndDisabled();
+  }
   ImGui::SameLine();
   if (!selectedModel) {
     ImGui::BeginDisabled();
@@ -35,12 +48,13 @@ void AssetBrowserPanel::Draw() {
   if (!selectedModel) {
     ImGui::EndDisabled();
   }
-  const auto selectedTexture =
-      std::ranges::find(m_Textures, m_SelectedGuid, &Engine::AssetManager::TextureAssetInfo::guid);
   const std::string* selectedName =
       selectedModel ? &std::ranges::find(m_Models, m_SelectedGuid, &Engine::AssetManager::ModelAssetInfo::guid)->name
       : selectedTexture != m_Textures.end() ? &selectedTexture->name
-                                            : nullptr;
+      : std::ranges::find(m_Materials, m_SelectedGuid, &Engine::AssetManager::MaterialAssetInfo::guid) !=
+              m_Materials.end()
+          ? &std::ranges::find(m_Materials, m_SelectedGuid, &Engine::AssetManager::MaterialAssetInfo::guid)->name
+          : nullptr;
   ImGui::SameLine();
   if (selectedName == nullptr) {
     ImGui::BeginDisabled();
@@ -71,7 +85,7 @@ void AssetBrowserPanel::Draw() {
     ImGui::TextColored(m_StatusSucceeded ? ImVec4(0.45F, 0.85F, 0.5F, 1.0F) : ImVec4(0.95F, 0.4F, 0.35F, 1.0F), "%s",
                        m_StatusMessage.c_str());
   }
-  if (m_Models.empty() && m_Textures.empty()) {
+  if (m_Models.empty() && m_Textures.empty() && m_Materials.empty()) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) // Dear ImGui formats text through its documented variadic API.
     ImGui::TextDisabled("No assets found in this project.");
   }
@@ -122,6 +136,20 @@ void AssetBrowserPanel::Draw() {
     }
     ImGui::PopID();
   }
+  if (!m_Materials.empty()) {
+    ImGui::TextDisabled("Materials");
+  }
+  for (const auto& material : m_Materials) {
+    ImGui::PushID(material.guid.c_str());
+    const std::string label = material.name + "  [Material]";
+    if (ImGui::Selectable(label.c_str(), m_SelectedGuid == material.guid)) {
+      m_SelectedGuid = material.guid;
+    }
+    if (ImGui::IsItemHovered()) {
+      ImGui::SetTooltip("Material\n%s\n%s", material.guid.c_str(), material.sourcePath.generic_string().c_str());
+    }
+    ImGui::PopID();
+  }
   ImGui::End();
 }
 
@@ -130,11 +158,15 @@ void AssetBrowserPanel::OnEvent(Engine::Events::Event& event) {
   dispatcher.Dispatch<AssetRegistryChangedEvent>([this](const auto& update) -> auto {
     m_Models = update.GetModels();
     m_Textures = update.GetTextures();
+    m_Materials = update.GetMaterials();
     if (std::none_of(m_Models.begin(), m_Models.end(),
                      [this](const auto& model) -> auto { return model.guid == m_SelectedGuid; })) {
       if (std::none_of(m_Textures.begin(), m_Textures.end(),
                        [this](const auto& texture) -> auto { return texture.guid == m_SelectedGuid; })) {
-        m_SelectedGuid.clear();
+        if (std::none_of(m_Materials.begin(), m_Materials.end(),
+                         [this](const auto& material) -> auto { return material.guid == m_SelectedGuid; })) {
+          m_SelectedGuid.clear();
+        }
       }
     }
     return false;

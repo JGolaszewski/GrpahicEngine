@@ -109,13 +109,15 @@ bool ReadMetadata(const std::filesystem::path& path, std::string& guid, std::str
       return false;
     }
     const Json metadata = Json::parse(input);
-    const std::string importer = expectedType == "model" ? "tinygltf" : "stb_image";
+    const std::string importer = expectedType == "model"     ? "tinygltf"
+                                 : expectedType == "texture" ? "stb_image"
+                                                             : "native";
     const uint32_t importerVersion = expectedType == "model" ? ModelImporterVersion : TextureImporterVersion;
     if (!metadata.is_object() || metadata.value("assetType", std::string{}) != expectedType ||
         metadata.value("schemaVersion", 0u) != 1 || metadata.value("importer", std::string{}) != importer ||
         metadata.value("importerVersion", 0u) != importerVersion || !metadata.contains("guid") ||
         !metadata["guid"].is_string()) {
-      error = path.generic_string() + ": expected model metadata with a GUID";
+      error = path.generic_string() + ": expected " + expectedType + " metadata with a GUID";
       return false;
     }
     guid = metadata["guid"].get<std::string>();
@@ -140,7 +142,7 @@ bool WriteMetadata(const std::filesystem::path& path, const std::string& guid, s
         error = path.generic_string() + ": could not create metadata temporary file";
         return false;
       }
-      const std::string importer = assetType == "model" ? "tinygltf" : "stb_image";
+      const std::string importer = assetType == "model" ? "tinygltf" : assetType == "texture" ? "stb_image" : "native";
       const uint32_t importerVersion = assetType == "model" ? ModelImporterVersion : TextureImporterVersion;
       output << Json{{"schemaVersion", 1},
                      {"assetType", assetType},
@@ -325,6 +327,7 @@ bool AssetManager::SetProjectRoot(const std::filesystem::path& projectRoot, std:
   m_ProjectRoot = std::move(root);
   m_Models.clear();
   m_Textures.clear();
+  m_Materials.clear();
   ENGINE_LOG_INFO("Asset",
                   "Project root updated | canonical_path: {} | model_cache_cleared: true | texture_cache_cleared: true",
                   m_ProjectRoot.generic_string());
@@ -356,6 +359,51 @@ Result<std::string> AssetManager::ImportTexture(const std::filesystem::path& sou
     return std::unexpected(MakeError(std::move(error)));
   }
   ENGINE_LOG_INFO("Asset", "Texture imported | path: {} | guid: {}", sourcePath.generic_string(), guid);
+  return guid;
+}
+
+Result<std::string> AssetManager::CreateMaterial(std::string_view name, const SceneMaterialDocument& material) {
+  if (m_ProjectRoot.empty()) {
+    return std::unexpected(MakeError("project root must be set before creating material assets"));
+  }
+  const std::string materialName(name);
+  if (materialName.empty() || materialName == "." || materialName == ".." ||
+      materialName.find_first_of("<>:\"/\\|?*") != std::string::npos || materialName.back() == ' ' ||
+      materialName.back() == '.' || std::ranges::any_of(materialName, [](unsigned char c) { return c < 32; })) {
+    return std::unexpected(MakeError("material name must be a valid filename without a path or extension"));
+  }
+  const auto directory = m_ProjectRoot / "Assets" / "Materials";
+  auto assetName = materialName;
+  auto path = directory / (assetName + ".mat");
+  std::error_code ec;
+  std::filesystem::create_directories(directory, ec);
+  if (ec) {
+    return std::unexpected(
+        MakeError(directory.generic_string() + ": could not create material directory: " + ec.message()));
+  }
+  for (uint32_t suffix = 2; std::filesystem::exists(path, ec) && !ec; ++suffix) {
+    assetName = materialName + " " + std::to_string(suffix);
+    path = directory / (assetName + ".mat");
+  }
+  if (ec) {
+    return std::unexpected(MakeError(path.generic_string() + ": could not inspect material path: " + ec.message()));
+  }
+  const std::string guid = NewGuid();
+  SceneDocument document;
+  SceneEntityDocument entity;
+  entity.id = 1;
+  entity.name = assetName;
+  entity.material = material;
+  document.entities.push_back(std::move(entity));
+  std::string error;
+  if (!SceneSerializer::SaveAtomic(path, document, error)) {
+    return std::unexpected(MakeError(std::move(error)));
+  }
+  if (!WriteMetadata(std::filesystem::path(path.generic_string() + ".meta"), guid, error, "material")) {
+    std::filesystem::remove(path, ec);
+    return std::unexpected(MakeError(std::move(error)));
+  }
+  m_Materials.emplace(guid, MaterialRecord{path, material});
   return guid;
 }
 
@@ -481,6 +529,78 @@ bool AssetManager::ImportTexture(const std::filesystem::path& sourcePath, std::s
   return true;
 }
 
+bool AssetManager::LoadMaterial(const std::string& guid, std::string& error) {
+  error.clear();
+  if (m_Materials.contains(guid)) {
+    return true;
+  }
+  if (m_ProjectRoot.empty() || !IsGuid(guid)) {
+    error =
+        m_ProjectRoot.empty() ? "project root must be set before loading material assets" : "material GUID is invalid";
+    return false;
+  }
+  std::optional<std::filesystem::path> sourcePath;
+  std::error_code ec;
+  for (std::filesystem::recursive_directory_iterator it(m_ProjectRoot, ec), end; it != end && !ec; it.increment(ec)) {
+    if (!it->is_regular_file(ec) || it->path().extension() != ".meta") {
+      continue;
+    }
+    std::string metadataGuid;
+    std::string metadataError;
+    if (!ReadMetadata(it->path(), metadataGuid, metadataError, "material") || metadataGuid != guid) {
+      continue;
+    }
+    if (sourcePath) {
+      error = "duplicate material GUID " + guid;
+      return false;
+    }
+    auto source = it->path();
+    source.replace_extension();
+    sourcePath = std::move(source);
+  }
+  if (ec) {
+    error = m_ProjectRoot.generic_string() + ": could not scan material metadata: " + ec.message();
+    return false;
+  }
+  if (!sourcePath) {
+    error = "material GUID " + guid + " was not found in project metadata";
+    return false;
+  }
+  const auto loaded = SceneSerializer::Load(*sourcePath);
+  if (!loaded || loaded.document.entities.size() != 1 || !loaded.document.entities.front().material) {
+    error = sourcePath->generic_string() + ": invalid material asset document";
+    if (!loaded.error.empty()) {
+      error += ": " + loaded.error;
+    }
+    return false;
+  }
+  m_Materials.insert_or_assign(guid, MaterialRecord{*sourcePath, *loaded.document.entities.front().material});
+  return true;
+}
+
+bool AssetManager::SaveMaterial(const std::string& guid, const SceneMaterialDocument& material, std::string& error) {
+  error.clear();
+  if (!LoadMaterial(guid, error)) {
+    return false;
+  }
+  const auto found = m_Materials.find(guid);
+  if (found == m_Materials.end()) {
+    error = "material GUID is not registered: " + guid;
+    return false;
+  }
+  SceneDocument document;
+  SceneEntityDocument entity;
+  entity.id = 1;
+  entity.name = found->second.sourcePath.stem().string();
+  entity.material = material;
+  document.entities.push_back(std::move(entity));
+  if (!SceneSerializer::SaveAtomic(found->second.sourcePath, document, error)) {
+    return false;
+  }
+  found->second.material = material;
+  return true;
+}
+
 bool AssetManager::RenameAsset(const std::string& guid, const std::string& newName, std::string& error) {
   error.clear();
   if (newName.empty() || newName == "." || newName == ".." ||
@@ -498,6 +618,8 @@ bool AssetManager::RenameAsset(const std::string& guid, const std::string& newNa
     sourcePath = &model->second.sourcePath;
   } else if (const auto texture = m_Textures.find(guid); texture != m_Textures.end()) {
     sourcePath = &texture->second.sourcePath;
+  } else if (const auto material = m_Materials.find(guid); material != m_Materials.end()) {
+    sourcePath = &material->second.sourcePath;
   }
   if (sourcePath == nullptr) {
     error = "asset GUID is not registered: " + guid;
@@ -683,7 +805,7 @@ bool AssetManager::RefreshRegistry(std::vector<std::string>& warnings, std::stri
       const std::string assetType = metadata.value("assetType", std::string{});
       std::string guid;
       std::string metadataError;
-      if ((assetType != "model" && assetType != "texture") ||
+      if ((assetType != "model" && assetType != "texture" && assetType != "material") ||
           !ReadMetadata(it->path(), guid, metadataError, assetType)) {
         warnings.push_back(it->path().generic_string() + ": " +
                            (metadataError.empty() ? "unsupported asset metadata type" : metadataError));
@@ -695,7 +817,9 @@ bool AssetManager::RefreshRegistry(std::vector<std::string>& warnings, std::stri
         continue;
       }
       seen.emplace(guid, it->path());
-      const bool loaded = assetType == "model" ? LoadModel(guid, metadataError) : LoadTexture(guid, metadataError);
+      const bool loaded = assetType == "model"     ? LoadModel(guid, metadataError)
+                          : assetType == "texture" ? LoadTexture(guid, metadataError)
+                                                   : LoadMaterial(guid, metadataError);
       if (!loaded)
         warnings.push_back(metadataError);
     } catch (const std::exception& exception) {
@@ -764,6 +888,23 @@ std::vector<AssetManager::TextureAssetInfo> AssetManager::GetKnownTextures() con
     return left.name == right.name ? left.guid < right.guid : left.name < right.name;
   });
   return result;
+}
+
+std::vector<AssetManager::MaterialAssetInfo> AssetManager::GetKnownMaterials() const {
+  std::vector<MaterialAssetInfo> result;
+  result.reserve(m_Materials.size());
+  for (const auto& [guid, record] : m_Materials) {
+    result.push_back({guid, record.sourcePath.stem().string(), record.sourcePath.lexically_relative(m_ProjectRoot)});
+  }
+  std::sort(result.begin(), result.end(), [](const auto& left, const auto& right) {
+    return left.name == right.name ? left.guid < right.guid : left.name < right.name;
+  });
+  return result;
+}
+
+std::optional<SceneMaterialDocument> AssetManager::GetMaterial(const std::string& guid) const {
+  const auto found = m_Materials.find(guid);
+  return found == m_Materials.end() ? std::nullopt : std::optional(found->second.material);
 }
 
 std::string AssetManager::GetEmbeddedImageIdentity(const std::string& modelGuid, std::size_t imageIndex) {

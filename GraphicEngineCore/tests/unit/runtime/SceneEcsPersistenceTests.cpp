@@ -174,6 +174,34 @@ TEST(SceneEcsPersistenceTests, RoundTripsEntityIdentityHierarchyAndSupportedComp
   EXPECT_EQ(loaded.cameras.front().outputHeight, saved.cameras.front().outputHeight);
 }
 
+TEST(SceneEcsPersistenceTests, MissingMaterialReferenceKeepsSceneUsableAndPreservesLegacyValues) {
+  Engine::Application application;
+  Engine::SceneDocument document;
+  Engine::SceneEntityDocument mesh;
+  mesh.id = 7;
+  mesh.name = "Missing material mesh";
+  mesh.hasMeshRenderer = true;
+  mesh.materialGuid = "00000000-0000-4000-8000-000000000099";
+  Engine::SceneMaterialDocument legacy;
+  legacy.baseColor = {0.3F, 0.5F, 0.7F, 1.0F};
+  mesh.material = legacy;
+  document.entities.push_back(mesh);
+
+  std::string error;
+  std::vector<std::string> warnings;
+  ASSERT_TRUE(application.LoadSceneDocument(document, error, warnings)) << error;
+  ASSERT_FALSE(warnings.empty());
+  EXPECT_NE(warnings.front().find(*mesh.materialGuid), std::string::npos);
+  ASSERT_EQ(application.GetScenes().size(), 1U);
+  const Engine::SceneDocument saved = application.CreateSceneDocument(*application.GetScenes().front());
+  ASSERT_EQ(saved.entities.size(), 2U);
+  const auto restored = std::ranges::find(saved.entities, mesh.name, &Engine::SceneEntityDocument::name);
+  ASSERT_NE(restored, saved.entities.end());
+  EXPECT_EQ(restored->materialGuid, mesh.materialGuid);
+  ASSERT_TRUE(restored->material.has_value());
+  EXPECT_EQ(restored->material->baseColor, legacy.baseColor);
+}
+
 TEST(SceneEcsPersistenceTests, PersistsEmptyMeshRendererComponents) {
   Engine::Scene source;
   const uint64_t sequence = source.QueueCreate("Empty Mesh");

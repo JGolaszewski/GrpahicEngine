@@ -6,7 +6,7 @@
 
 class AssetImportRequestedEvent final : public Engine::Events::Event {
 public:
-  enum class AssetType { Model, Texture };
+  enum class AssetType { Model, Texture, Material };
   enum class TextureSemantic { BaseColor, Normal };
   explicit AssetImportRequestedEvent(AssetType type = AssetType::Model,
                                      Engine::EntityHandle targetEntity = Engine::InvalidEntityHandle,

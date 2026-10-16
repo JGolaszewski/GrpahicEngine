@@ -375,9 +375,10 @@ auto GuidJson(const std::optional<SceneGuidDocument>& guid) -> Json {
 }
 
 auto HasMeshRenderer(const SceneEntityDocument& entity) -> bool {
-  return entity.hasMeshRenderer || entity.modelGuid.has_value() || entity.primitiveType.has_value() ||
-         entity.material.has_value() || !entity.materialOverrides.empty() || entity.forceWireframe ||
-         !entity.meshVisible || entity.disableDepthTest || !entity.castShadows || !entity.receiveShadows;
+  return entity.hasMeshRenderer || entity.modelGuid.has_value() || entity.materialGuid.has_value() ||
+         entity.primitiveType.has_value() || entity.material.has_value() || !entity.materialOverrides.empty() ||
+         entity.forceWireframe || !entity.meshVisible || entity.disableDepthTest || !entity.castShadows ||
+         !entity.receiveShadows;
 }
 
 auto EntityJson(const SceneEntityDocument& entity) -> Json {
