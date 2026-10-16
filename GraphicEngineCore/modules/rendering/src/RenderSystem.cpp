@@ -640,6 +640,7 @@ void RenderSystem::EndFrame() {
   if (!IsValid() || !m_FrameActive) {
     return;
   }
+  bool finalReadbackSubmittedThisFrame = false;
 
   if (!m_RenderGraph->Compile()) {
     const std::string failure = "compile: " + m_RenderGraph->GetLastError();
@@ -652,7 +653,7 @@ void RenderSystem::EndFrame() {
     m_FrameContext->EndGpuTiming(m_CommandList->Handle);
     m_CommandList->Handle->close();
     GetNvrhiDevice(m_RenderBackend)->executeCommandList(m_CommandList->Handle);
-    if (m_FinalReadbackCapture != nullptr) {
+    if (m_FinalReadbackCapture != nullptr && !m_FinalReadbackCapture->Submitted) {
       GetNvrhiDevice(m_RenderBackend)->waitForIdle();
     }
     m_RenderBackend->EndGpuEvent();
@@ -675,7 +676,7 @@ void RenderSystem::EndFrame() {
     ClearSubmittedTargets();
   } else {
     m_LastRenderGraphFailure.clear();
-    if (m_FinalReadbackCapture != nullptr) {
+    if (m_FinalReadbackCapture != nullptr && !m_FinalReadbackCapture->Submitted) {
       if (m_FinalReadbackCapture->Sources.size() != m_FinalReadbackCapture->Staging.size()) {
         m_LastRenderGraphFailure = "final output readback setup is incomplete";
       } else {
@@ -691,6 +692,7 @@ void RenderSystem::EndFrame() {
           m_LastRenderGraphFailure = "failed to allocate final render completion query";
         } else {
           m_FinalReadbackCapture->Submitted = true;
+          finalReadbackSubmittedThisFrame = true;
         }
       }
     }
@@ -699,10 +701,10 @@ void RenderSystem::EndFrame() {
   m_FrameContext->EndGpuTiming(m_CommandList->Handle);
   m_CommandList->Handle->close();
   GetNvrhiDevice(m_RenderBackend)->executeCommandList(m_CommandList->Handle);
-  if (m_FinalReadbackCapture != nullptr && m_FinalReadbackCapture->Submitted) {
+  if (finalReadbackSubmittedThisFrame) {
     GetNvrhiDevice(m_RenderBackend)
         ->setEventQuery(m_FinalReadbackCapture->CompletionQuery, nvrhi::CommandQueue::Graphics);
-  } else if (m_FinalReadbackCapture != nullptr) {
+  } else if (m_FinalReadbackCapture != nullptr && !m_FinalReadbackCapture->Submitted) {
     GetNvrhiDevice(m_RenderBackend)->waitForIdle();
   }
   m_RenderBackend->EndGpuEvent();
