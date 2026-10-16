@@ -1,4 +1,6 @@
 #include "panels/include/InspectorPanel.h"
+#include "panels/include/AssetDragDropPayload.h"
+#include "panels/include/AssetDropAssignment.h"
 #include "panels/include/TransformRotation.h"
 
 #include <algorithm>

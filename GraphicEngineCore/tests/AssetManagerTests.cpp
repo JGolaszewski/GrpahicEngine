@@ -131,8 +131,10 @@ void TestImportAndGuidReload(const std::filesystem::path& project) {
 }
 
 void TestAssetRenamePreservesGuidAndSceneReferences(const std::filesystem::path& project) {
-  WriteMinimalModel(project / "model.gltf");
-  Engine::AssetManager assets(project);
+  const auto renameProject = project.parent_path() / "rename-test-project";
+  std::filesystem::create_directories(renameProject);
+  WriteMinimalModel(renameProject / "model.gltf");
+  Engine::AssetManager assets(renameProject);
   std::string guid;
   std::string error;
   Require(assets.ImportModel("model.gltf", guid, error), "model import for rename test failed");
@@ -144,19 +146,24 @@ void TestAssetRenamePreservesGuidAndSceneReferences(const std::filesystem::path&
   document.entities.push_back(entity);
   Require(assets.SaveScene("reference.scene.json", document, error), "could not save model reference fixture");
 
-  std::ifstream metadataInput(project / "model.gltf.meta", std::ios::binary);
+  std::ifstream metadataInput(renameProject / "model.gltf.meta", std::ios::binary);
   const std::string metadataBefore((std::istreambuf_iterator<char>(metadataInput)), std::istreambuf_iterator<char>());
-  Require(assets.RenameAsset(guid, "renamed", error), "asset rename failed");
-  Require(!std::filesystem::exists(project / "model.gltf") && !std::filesystem::exists(project / "model.gltf.meta"),
+  metadataInput.close();
+  const bool renameSucceeded = assets.RenameAsset(guid, "renamed", error);
+  Require(renameSucceeded, ("asset rename failed: " + error).c_str());
+  Require(!std::filesystem::exists(renameProject / "model.gltf") &&
+              !std::filesystem::exists(renameProject / "model.gltf.meta"),
           "asset rename left the previous source or metadata file behind");
-  Require(std::filesystem::exists(project / "renamed.gltf") && std::filesystem::exists(project / "renamed.gltf.meta"),
+  Require(std::filesystem::exists(renameProject / "renamed.gltf") &&
+              std::filesystem::exists(renameProject / "renamed.gltf.meta"),
           "asset rename did not move both source and metadata files");
-  Require(assets.GetSourcePath(guid) == project / "renamed.gltf", "asset rename changed or lost its registered GUID");
+  Require(assets.GetSourcePath(guid) == renameProject / "renamed.gltf",
+          "asset rename changed or lost its registered GUID");
   const auto knownModels = assets.GetKnownModels();
   Require(knownModels.size() == 1 && knownModels.front().guid == guid && knownModels.front().name == "renamed",
           "asset registry did not update the renamed asset's display name");
 
-  std::ifstream renamedMetadataInput(project / "renamed.gltf.meta", std::ios::binary);
+  std::ifstream renamedMetadataInput(renameProject / "renamed.gltf.meta", std::ios::binary);
   const std::string metadataAfter((std::istreambuf_iterator<char>(renamedMetadataInput)),
                                   std::istreambuf_iterator<char>());
   Require(metadataBefore == metadataAfter, "asset rename changed persistent metadata identity");
@@ -164,34 +171,36 @@ void TestAssetRenamePreservesGuidAndSceneReferences(const std::filesystem::path&
   Require(loadedReference && loadedReference.document.entities.front().modelGuid == guid,
           "scene reference no longer points to the renamed asset GUID");
 
-  std::ofstream(project / "occupied.gltf") << "occupied";
+  std::ofstream(renameProject / "occupied.gltf") << "occupied";
   Require(!assets.RenameAsset(guid, "occupied", error) && !error.empty(),
           "asset rename overwrote an existing destination");
-  Require(std::filesystem::exists(project / "renamed.gltf") && assets.GetSourcePath(guid) == project / "renamed.gltf",
+  Require(std::filesystem::exists(renameProject / "renamed.gltf") &&
+              assets.GetSourcePath(guid) == renameProject / "renamed.gltf",
           "failed asset rename changed the registered asset state");
   Require(!assets.RenameAsset(guid, "../outside", error) && !error.empty(),
           "asset rename accepted a path traversal name");
 
-  WriteMinimalPng(project / "color.png");
+  WriteMinimalPng(renameProject / "color.png");
   std::string textureGuid;
   Require(assets.ImportTexture("color.png", textureGuid, error), "texture import for rename test failed");
-  std::ifstream textureMetadataInput(project / "color.png.meta", std::ios::binary);
+  std::ifstream textureMetadataInput(renameProject / "color.png.meta", std::ios::binary);
   const std::string textureMetadataBefore((std::istreambuf_iterator<char>(textureMetadataInput)),
                                           std::istreambuf_iterator<char>());
+  textureMetadataInput.close();
   Engine::SceneMaterialDocument material;
   material.baseColorTextureGuid = textureGuid;
   document.entities.front().material = material;
   Require(assets.SaveScene("texture-reference.scene.json", document, error),
           "could not save texture reference fixture");
   Require(assets.RenameAsset(textureGuid, "albedo", error), "texture rename failed");
-  Require(assets.GetSourcePath(textureGuid) == project / "albedo.png" &&
-              std::filesystem::exists(project / "albedo.png.meta"),
+  Require(assets.GetSourcePath(textureGuid) == renameProject / "albedo.png" &&
+              std::filesystem::exists(renameProject / "albedo.png.meta"),
           "texture rename did not preserve its registered identity and metadata");
   const auto knownTextures = assets.GetKnownTextures();
   Require(knownTextures.size() == 1 && knownTextures.front().guid == textureGuid &&
               knownTextures.front().name == "albedo",
           "texture registry did not update the renamed asset's display name");
-  std::ifstream renamedTextureMetadataInput(project / "albedo.png.meta", std::ios::binary);
+  std::ifstream renamedTextureMetadataInput(renameProject / "albedo.png.meta", std::ios::binary);
   const std::string textureMetadataAfter((std::istreambuf_iterator<char>(renamedTextureMetadataInput)),
                                          std::istreambuf_iterator<char>());
   Require(textureMetadataBefore == textureMetadataAfter, "texture rename changed persistent metadata identity");
