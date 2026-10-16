@@ -309,7 +309,9 @@ void TestSceneJsonRoundTrip(const std::filesystem::path& project) {
 }
 
 void TestReusableMaterialAssets(const std::filesystem::path& project) {
-  Engine::AssetManager assets(project);
+  const auto materialProject = project / "material-assets";
+  std::filesystem::create_directories(materialProject);
+  Engine::AssetManager assets(materialProject);
   Engine::SceneMaterialDocument source;
   source.baseColor = {0.2F, 0.4F, 0.6F, 1.0F};
   source.metallic = 0.7F;
@@ -348,7 +350,7 @@ void TestReusableMaterialAssets(const std::filesystem::path& project) {
   Require(persistedScene && persistedScene.document.entities.front().materialGuid == guid,
           "renaming a material invalidated existing scene references");
 
-  Engine::AssetManager reopened(project);
+  Engine::AssetManager reopened(materialProject);
   std::vector<std::string> warnings;
   Require(reopened.RefreshRegistry(warnings, error) && warnings.empty(), "material asset registry reload failed");
   Require(reopened.GetKnownMaterials().size() == 1 && reopened.LoadMaterial(guid, error) &&
@@ -357,9 +359,9 @@ void TestReusableMaterialAssets(const std::filesystem::path& project) {
   Require(!reopened.LoadMaterial("not-a-guid", error) && error.contains("invalid"),
           "invalid material identity did not produce a useful diagnostic");
 
-  const auto materialPath = project / reopened.GetKnownMaterials().front().sourcePath;
+  const auto materialPath = materialProject / reopened.GetKnownMaterials().front().sourcePath;
   std::ofstream(materialPath, std::ios::binary | std::ios::trunc) << "{not valid JSON";
-  Engine::AssetManager corruptedAsset(project);
+  Engine::AssetManager corruptedAsset(materialProject);
   Require(!corruptedAsset.LoadMaterial(guid, error) && error.contains("invalid material asset document") &&
               error.contains(materialPath.generic_string()),
           "malformed registered material did not identify the invalid asset document");
