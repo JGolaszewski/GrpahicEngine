@@ -15,6 +15,30 @@ struct ImageSize {
   float ScrollMaxY = 0.0F;
 };
 
+struct PanState {
+  bool IsPanning = false;
+  float OffsetX = 0.0F;
+  float OffsetY = 0.0F;
+};
+
+/// Updates image panning from a press, drag, and release sequence.
+/// A press starts panning only when it begins over the image; an active pan
+/// continues outside the image and applies its final drag delta before release.
+inline auto UpdatePan(PanState state, bool pressed, bool released, bool overImage, bool dragging, float deltaX,
+                      float deltaY) noexcept -> PanState {
+  if (!state.IsPanning && pressed && overImage) {
+    state.IsPanning = true;
+  }
+  if (state.IsPanning && dragging) {
+    state.OffsetX += deltaX;
+    state.OffsetY += deltaY;
+  }
+  if (state.IsPanning && released) {
+    state.IsPanning = false;
+  }
+  return state;
+}
+
 /// Returns the aspect-preserving scale that fits an image in the available area.
 inline auto ComputeFitScale(uint32_t imageWidth, uint32_t imageHeight, float availableWidth,
                             float availableHeight) noexcept -> float {

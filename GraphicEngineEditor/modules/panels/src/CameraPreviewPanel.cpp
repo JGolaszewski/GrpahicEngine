@@ -201,7 +201,9 @@ void CameraPreviewPanel::Draw() {
   const ImVec2 displaySize = mainViewport == nullptr ? ImVec2(1280.0F, 720.0F) : mainViewport->WorkSize;
   ImGui::SetNextWindowSize(ImVec2(displaySize.x * 0.78F, displaySize.y * 0.78F), ImGuiCond_FirstUseEver);
   ImGui::SetNextWindowSizeConstraints(ImVec2(320.0F, 240.0F), ImVec2(displaySize.x, displaySize.y));
-  if (ImGui::Begin("Preview", &m_Open, ImGuiWindowFlags_NoCollapse)) {
+  const ImGuiWindowFlags previewWindowFlags =
+      m_IsPanning ? ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove : ImGuiWindowFlags_NoCollapse;
+  if (ImGui::Begin("Preview", &m_Open, previewWindowFlags)) {
     if (ImGui::Button("Refresh")) {
       (void)RenderSelectedCamera();
     }
@@ -297,28 +299,31 @@ void CameraPreviewPanel::Draw() {
         void* texture = m_GetTexture ? m_GetTexture() : nullptr;
         if (texture != nullptr) {
           ImGui::Image(texture, ImVec2(imageSize.Width, imageSize.Height));
-          if (ImGui::IsItemHovered()) {
+          const bool imageHovered = ImGui::IsItemHovered();
+          if (imageHovered) {
             ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
             if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
-              m_IsPanning = true;
               const ImVec2 mouse = ImGui::GetIO().MousePos;
               m_LastMousePosition = {mouse.x, mouse.y};
             }
           }
+          const ImVec2 mouse = ImGui::GetIO().MousePos;
+          const bool clickedImage = imageHovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left);
+          const bool dragging = ImGui::IsMouseDragging(ImGuiMouseButton_Left);
+          const auto pan =
+              CameraPreviewImageLayout::UpdatePan({m_IsPanning, m_ImageOffset[0], m_ImageOffset[1]}, clickedImage,
+                                                  ImGui::IsMouseReleased(ImGuiMouseButton_Left), imageHovered, dragging,
+                                                  mouse.x - m_LastMousePosition[0], mouse.y - m_LastMousePosition[1]);
+          m_IsPanning = pan.IsPanning;
+          m_ImageOffset = {pan.OffsetX, pan.OffsetY};
+          if (m_IsPanning) {
+            if (dragging) {
+              m_LastMousePosition = {mouse.x, mouse.y};
+            }
+            ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+          }
         } else {
           ImGui::TextDisabled("Preview texture is unavailable.");
-        }
-        if (m_IsPanning) {
-          ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
-          if (ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
-            const ImVec2 mouse = ImGui::GetIO().MousePos;
-            m_ImageOffset[0] += mouse.x - m_LastMousePosition[0];
-            m_ImageOffset[1] += mouse.y - m_LastMousePosition[1];
-            m_LastMousePosition = {mouse.x, mouse.y};
-          }
-          if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
-            m_IsPanning = false;
-          }
         }
       } else if (!m_HasImage) {
         ImGui::TextDisabled("No full-resolution preview is available.");

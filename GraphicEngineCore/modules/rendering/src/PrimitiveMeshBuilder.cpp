@@ -1,5 +1,6 @@
 #include "rendering/src/PrimitiveMeshBuilder.h"
 #include "MeshBackend.h"
+#include "PrimitiveMeshGeometry.h"
 #include "rendering/include/renderer/RenderResources.h"
 #include "runtime/include/LogMacros.h"
 #include <algorithm>
@@ -55,7 +56,7 @@ auto PrimitiveMeshBuilder::Build() -> std::optional<::Engine::Renderer::Submesh>
   if (m_Shape == Shape::Cube) {
     GenerateCubeData(vertices, indices);
   } else if (m_Shape == Shape::Cone) {
-    GenerateConeData(vertices, indices, m_ConeSegments);
+    PrimitiveMeshGeometry::GenerateConeData(vertices, indices, m_ConeSegments);
   } else if (m_Shape == Shape::Sphere) {
     GenerateSphereData(vertices, indices, m_SphereStacks, m_SphereSlices);
   } else if (m_Shape == Shape::Plane) {
@@ -127,43 +128,6 @@ void PrimitiveMeshBuilder::GenerateCubeData(std::vector<::Engine::Renderer::Vert
     outIndices.push_back(offset + 0);
     outIndices.push_back(offset + 2);
     outIndices.push_back(offset + 3);
-  }
-}
-
-void PrimitiveMeshBuilder::GenerateConeData(std::vector<::Engine::Renderer::Vertex>& outVertices,
-                                            std::vector<uint32_t>& outIndices, uint32_t segments) {
-  outVertices.clear();
-  outIndices.clear();
-
-  // Szczyt stożka (Apex)
-  outVertices.push_back({{0.0F, 0.0F, 0.0F}, {0.0F, 0.0F, -1.0F}, {0.5F, 0.0F}});
-
-  constexpr float twoPi = 6.2831853071795864769F;
-  for (uint32_t i = 0; i < segments; ++i) {
-    const float u = static_cast<float>(i) / static_cast<float>(segments);
-    const float t = u * twoPi;
-    const float x = std::cos(t);
-    const float y = std::sin(t);
-    const DirectX::XMFLOAT3 normal = DirectX::XMFLOAT3(x, y, 1.0F);
-
-    outVertices.push_back({{x, y, 1.0F}, normal, {u, 1.0F}});
-  }
-
-  // Środek podstawy
-  outVertices.push_back({{0.0F, 0.0F, 1.0F}, {0.0F, 0.0F, 1.0F}, {0.5F, 0.5F}});
-  const uint32_t baseCenter = static_cast<uint32_t>(outVertices.size() - 1);
-
-  for (uint32_t i = 0; i < segments; ++i) {
-    const uint32_t a = 1 + i;
-    const uint32_t b = 1 + ((i + 1) % segments);
-
-    outIndices.push_back(0);
-    outIndices.push_back(a);
-    outIndices.push_back(b);
-
-    outIndices.push_back(baseCenter);
-    outIndices.push_back(b);
-    outIndices.push_back(a);
   }
 }
 

@@ -27,3 +27,22 @@ TEST(CameraPreviewImageLayoutTests, InvalidImageOrViewportHasNoDisplayScale) {
   EXPECT_FLOAT_EQ(CameraPreviewImageLayout::ClampZoom(-1.0F), 0.05F);
   EXPECT_FLOAT_EQ(CameraPreviewImageLayout::ClampZoom(100.0F), 32.0F);
 }
+
+TEST(CameraPreviewImageLayoutTests, PanStartsOnlyOnTheImageAndContinuesUntilReleaseOutsideIt) {
+  CameraPreviewImageLayout::PanState state;
+
+  state = CameraPreviewImageLayout::UpdatePan(state, true, false, false, true, 8.0F, -3.0F);
+  EXPECT_FALSE(state.IsPanning);
+  EXPECT_FLOAT_EQ(state.OffsetX, 0.0F);
+  EXPECT_FLOAT_EQ(state.OffsetY, 0.0F);
+
+  state = CameraPreviewImageLayout::UpdatePan(state, true, false, true, false, 0.0F, 0.0F);
+  ASSERT_TRUE(state.IsPanning);
+  state = CameraPreviewImageLayout::UpdatePan(state, false, false, false, true, 8.0F, -3.0F);
+  EXPECT_TRUE(state.IsPanning);
+  EXPECT_FLOAT_EQ(state.OffsetX, 8.0F);
+  EXPECT_FLOAT_EQ(state.OffsetY, -3.0F);
+
+  state = CameraPreviewImageLayout::UpdatePan(state, false, true, false, false, 0.0F, 0.0F);
+  EXPECT_FALSE(state.IsPanning);
+}
