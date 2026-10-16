@@ -30,6 +30,8 @@ TEST(SceneIdentityTests, SceneRootIsPermanentAndOwnsTopLevelEntities) {
   const Engine::EntityHandle root = scene.SceneRootEntity();
   ASSERT_TRUE(scene.World().IsAlive(root));
   ASSERT_TRUE(scene.IsSceneRoot(root));
+  ASSERT_NE(scene.World().Get<Engine::Ecs::LocalVisibility>(root), nullptr);
+  EXPECT_TRUE(scene.World().Get<Engine::Ecs::LocalVisibility>(root)->IsVisible);
 
   (void)scene.QueueCreate("Child");
   const auto created = scene.sync();
