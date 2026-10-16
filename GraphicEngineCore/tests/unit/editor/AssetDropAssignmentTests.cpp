@@ -4,6 +4,7 @@
 #include <gtest/gtest.h>
 
 #include <chrono>
+#include <cstdio>
 #include <filesystem>
 #include <string>
 #include <system_error>
@@ -84,8 +85,12 @@ TEST(AssetDropAssignmentTests, ReusableMaterialCreationCanBeAssignedAndSharedEdi
   struct Cleanup final {
     std::filesystem::path path;
     ~Cleanup() noexcept {
-      std::error_code ignored;
-      std::filesystem::remove_all(path, ignored);
+      try {
+        std::error_code ignored;
+        std::filesystem::remove_all(path, ignored);
+      } catch (...) {
+        std::fputs("Material assignment test workspace cleanup failed\n", stderr);
+      }
     }
   } cleanup{root};
   Engine::AssetManager assets(root);
