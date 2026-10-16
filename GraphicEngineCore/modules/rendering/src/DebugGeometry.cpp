@@ -181,8 +181,8 @@ void DebugGeometryBuilder::AddLight(Engine::EntityHandle entity, const Engine::E
                      StoreFloat3(DirectX::XMVectorSubtract(arrowBack, DirectX::XMVectorScale(side, 0.16F))), color);
   } else if (light.Type == Engine::Ecs::LightType::Point) {
     for (int plane = 0; plane < 3; ++plane) {
-      DirectX::XMVECTOR firstAxis = plane == 0 ? right : (plane == 1 ? right : side);
-      DirectX::XMVECTOR secondAxis = plane == 0 ? side : (plane == 1 ? normalizedDirection : normalizedDirection);
+      const DirectX::XMVECTOR firstAxis = plane == 2 ? side : right;
+      const DirectX::XMVECTOR secondAxis = plane == 0 ? side : normalizedDirection;
       DirectX::XMFLOAT3 previous = {};
       for (uint32_t segment = 0; segment <= LightRingSegments; ++segment) {
         const float angle = TwoPi * static_cast<float>(segment) / static_cast<float>(LightRingSegments);
