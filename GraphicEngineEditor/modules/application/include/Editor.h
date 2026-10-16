@@ -1,6 +1,7 @@
 #pragma once
 
 #include "application/include/EditorEventRouter.h"
+#include "application/include/EditorSceneDocument.h"
 #include "panels/include/EditorConsole.h"
 #include "panels/include/EditorPanel.h"
 #include "platform/include/EditorFileDialogs.h"
@@ -58,6 +59,7 @@ private:
   [[nodiscard]] auto GetViewportTextureID() const -> void*;
 
   std::shared_ptr<Engine::Scene> m_ActiveScene;
+  EditorSceneDocument m_ActiveSceneDocument;
   std::shared_ptr<Engine::Viewport> m_EditorViewport;
   std::shared_ptr<Engine::ViewportTarget> m_EditorViewportTarget;
   std::shared_ptr<Engine::Viewport> m_CameraPreviewViewport;

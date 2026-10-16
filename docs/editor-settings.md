@@ -12,3 +12,13 @@ Settings use versioned JSON categories:
 Invalid or unreadable settings are reported in the editor log and defaults are used so the editor can still launch.
 Out-of-range numeric values are clamped to the supported editor ranges. Existing `editor-settings.txt` preferences
 are read once and migrated to JSON when possible; the old file is left untouched.
+
+## Project and scene selection
+
+Use **File > Open Project** to select a project folder. The editor refreshes its asset registry before remembering the
+new project. Cancelling leaves the current project active; an invalid folder or registry error is reported in the
+editor log and leaves the previous project active.
+
+Use **File > Open Scene** to load a `.scene.json` file into the editor. After a successful load, the scene hierarchy
+and inspector refresh to show the new scene. Cancelling or selecting an unreadable scene keeps the current scene
+active. The scene document path is updated only after activation succeeds.

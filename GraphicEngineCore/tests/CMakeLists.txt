@@ -18,6 +18,8 @@ if(BUILD_TESTING)
     # exercise them without exporting implementation details from the engine DLL.
     target_sources(GraphicEngineUnitTests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/../modules/rendering/src/RenderOutputImageWriters.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../../GraphicEngineEditor/modules/application/src/EditorProjectWorkflow.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../../GraphicEngineEditor/modules/application/src/EditorSceneDocument.cpp"
     )
     target_link_libraries(GraphicEngineUnitTests PRIVATE
         GraphicEngineCore

@@ -1,5 +1,6 @@
 ﻿#include "application/include/Editor.h"
 
+#include "application/include/EditorProjectWorkflow.h"
 #include "events/include/AssetRegistryChangedEvent.h"
 #include "events/include/EcsComponentMutationRequestedEvent.h"
 #include "events/include/EcsEntityCreateRequestedEvent.h"
@@ -428,10 +429,70 @@ void Editor::OnResize(uint32_t width, uint32_t height) { CreateViewport(width, h
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
 void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
-  if (!event || !m_ActiveScene) {
+  if (!event) {
     return;
   }
   Engine::Events::EventDispatcher dispatcher(*event);
+  dispatcher.Dispatch<SceneFileActionRequestedEvent>([this](const auto& request) -> bool {
+    if (GetAssetManager() == nullptr) {
+      ENGINE_LOG_ERROR("Asset", "Cannot open a project or scene because the asset manager is unavailable");
+      return true;
+    }
+    if (request.GetAction() == SceneFileActionRequestedEvent::Action::OpenProject) {
+      const auto selected = EditorPlatform::ChooseProjectFolder(GetAssetManager()->GetProjectRoot());
+      std::vector<std::string> warnings;
+      std::string error;
+      const EditorWorkflow::ProjectOpenResult result =
+          EditorWorkflow::OpenProject(*GetAssetManager(), selected, warnings, error);
+      if (result == EditorWorkflow::ProjectOpenResult::Failed) {
+        ENGINE_LOG_ERROR("Asset", "Project selection failed | reason: {}", error);
+      } else if (result == EditorWorkflow::ProjectOpenResult::Opened) {
+        EditorPlatform::RememberProjectRoot(GetAssetManager()->GetProjectRoot());
+        for (const std::string& warning : warnings) {
+          ENGINE_LOG_WARN("Asset", "Project asset warning | {}", warning);
+        }
+        AssetRegistryChangedEvent changed(GetAssetManager()->GetKnownModels(), GetAssetManager()->GetKnownTextures());
+        BroadcastEvent(changed);
+      }
+      return true;
+    }
+    if (request.GetAction() == SceneFileActionRequestedEvent::Action::OpenScene) {
+      const auto selected =
+          EditorPlatform::ChooseSceneFile(false, m_ActiveSceneDocument.GetPath(), GetAssetManager()->GetProjectRoot());
+      std::string error;
+      std::vector<std::string> warnings;
+      const auto result = m_ActiveSceneDocument.Open(
+          selected,
+          [this](const std::filesystem::path& path, std::string& loadError,
+                 std::vector<std::string>& loadWarnings) -> bool {
+            const Engine::SceneDocumentResult loaded = GetAssetManager()->LoadScene(path);
+            if (!loaded) {
+              loadError = loaded.error;
+              loadWarnings.clear();
+              return false;
+            }
+            std::vector<std::string> parseWarnings = loaded.warnings;
+            if (!LoadSceneDocument(loaded.document, loadError, loadWarnings)) {
+              return false;
+            }
+            loadWarnings.insert(loadWarnings.end(), parseWarnings.begin(), parseWarnings.end());
+            return true;
+          },
+          error, warnings);
+      if (result == EditorSceneDocument::OpenResult::Failed) {
+        ENGINE_LOG_ERROR("Scene", "Scene selection failed | path: {} | reason: {}", selected->generic_string(), error);
+      } else if (result == EditorSceneDocument::OpenResult::Opened) {
+        for (const std::string& warning : warnings) {
+          ENGINE_LOG_WARN("Scene", "Scene loaded with warning | {}", warning);
+        }
+      }
+      return true;
+    }
+    return false;
+  });
+  if (!m_ActiveScene) {
+    return;
+  }
   dispatcher.Dispatch<ViewportResizeRequestedEvent>([this](const auto& request) -> bool {
     const uint32_t width = request.GetWidth();
     const uint32_t height = request.GetHeight();
