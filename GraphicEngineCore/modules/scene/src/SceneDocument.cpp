@@ -1028,7 +1028,9 @@ auto LoadCameraArray(const Json& root, SceneDocumentResult& result, const std::f
         camera.priority = item.at("priority").get<int32_t>();
       }
       if (!ReadBool(item, "active", camera.active, fieldError)) {
-        result.error = FileContext(path, context + "." + fieldError);
+        std::string fieldContext = context;
+        fieldContext.append(".").append(fieldError);
+        result.error = FileContext(path, fieldContext);
         return false;
       }
       const float rotationLengthSquared =
