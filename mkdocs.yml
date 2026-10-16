@@ -56,18 +56,23 @@ nav:
   - Home: index.md
   - Architecture and guides:
       - Architecture: architecture.md
+      - Editor guide: editor-guide.md
+      - Asset pipeline: asset-pipeline.md
       - C++ guidelines: cpp-guidelines.md
       - Logging: logging.md
       - Rendering:
+          - Pipeline: rendering/pipeline.md
           - Cameras: rendering/cameras.md
           - Editor render panel: rendering/editor-render-panel.md
           - Render output and image export: rendering/output.md
           - Shadows: rendering/shadows.md
           - Final rendering: rendering/final-render.md
   - Workflows:
+      - Getting started: getting-started.md
       - Development workflow: development-workflow.md
       - Testing: testing.md
       - Windows validation: validation/windows.md
+      - Profiling, debugging, and QA: profiling-qa.md
   - Engine API:
       - Overview: api-reference.md
       - API index: engineApi/links.md
