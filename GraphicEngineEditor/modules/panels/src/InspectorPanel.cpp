@@ -365,6 +365,9 @@ void InspectorPanel::DrawEntityInspector() {
         material.brdfModel = brdfIndex == 1 ? "ggx" : brdfIndex == 2 ? "gtr" : "legacy";
         materialChanged = true;
       }
+      if (material.brdfModel == "gtr") {
+        materialChanged |= ImGui::SliderFloat("GTR gamma", &material.gtrGamma, 1.0F, 8.0F, "%.2f");
+      }
       constexpr const char* alphaNames[] = {"Opaque", "Mask", "Blend"};
       int alphaIndex = material.alphaMode == "mask" ? 1 : material.alphaMode == "blend" ? 2 : 0;
       if (ImGui::Combo("Alpha mode", &alphaIndex, alphaNames, 3)) {

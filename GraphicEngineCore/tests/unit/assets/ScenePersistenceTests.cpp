@@ -52,6 +52,10 @@ TEST(ScenePersistenceTests, RoundTripsFieldsAndRejectsTraversalWithoutOverwritin
   entity.primitiveType = "cube";
   entity.position = {1.0F, -2.0F, 3.5F};
   entity.forceWireframe = true;
+  Engine::SceneMaterialDocument material;
+  material.brdfModel = "gtr";
+  material.gtrGamma = 3.5F;
+  entity.material = material;
   document.entities.push_back(entity);
 
   std::string error;
@@ -77,6 +81,9 @@ TEST(ScenePersistenceTests, RoundTripsFieldsAndRejectsTraversalWithoutOverwritin
   EXPECT_EQ(*loaded.document.entities.front().primitiveType, "cube");
   EXPECT_EQ(loaded.document.entities.front().position, (std::array<float, 3>{1.0F, -2.0F, 3.5F}));
   EXPECT_TRUE(loaded.document.entities.front().forceWireframe);
+  ASSERT_TRUE(loaded.document.entities.front().material.has_value());
+  EXPECT_EQ(loaded.document.entities.front().material->brdfModel, "gtr");
+  EXPECT_FLOAT_EQ(loaded.document.entities.front().material->gtrGamma, 3.5F);
   EXPECT_TRUE(loaded.document.entities.front().hasMeshRenderer);
 }
 
@@ -507,6 +514,10 @@ TEST(ScenePersistenceTests, RejectsInvalidSchemaAndMaterialValues) {
   checkRejected("bad-material-number.json", sceneWithMaterial("{\"metallic\":\"high\"}"), "metallic must be numeric");
   checkRejected("bad-material-number-range.json", sceneWithMaterial("{\"metallic\":1e40}"),
                 "metallic contains a non-finite or unrepresentable value");
+  checkRejected("bad-material-gtr-gamma-low.json", sceneWithMaterial("{\"brdfModel\":\"gtr\",\"gtrGamma\":0.9}"),
+                "out-of-range BRDF settings");
+  checkRejected("bad-material-gtr-gamma-high.json", sceneWithMaterial("{\"brdfModel\":\"gtr\",\"gtrGamma\":8.1}"),
+                "out-of-range BRDF settings");
   checkRejected("bad-material-brdf-type.json", sceneWithMaterial("{\"brdfModel\":7}"), "brdfModel must be a string");
   checkRejected("bad-material-brdf-value.json", sceneWithMaterial("{\"brdfModel\":\"phong\"}"),
                 "brdfModel has an unsupported value");
