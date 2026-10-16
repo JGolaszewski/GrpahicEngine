@@ -72,7 +72,8 @@ public:
   static void BuildLighting(Engine::Scene* scene, const std::vector<::Engine::Renderer::RenderView*>& shadowViews,
                             std::vector<::Engine::Renderer::DirectionalLightData>& lights);
   static void BuildShadowData(Engine::Scene* scene, const std::vector<::Engine::Renderer::RenderView*>& shadowViews,
-                              uint32_t firstShadowSlot, uint32_t maxShadowedLights);
+                              uint32_t firstShadowSlot, uint32_t maxShadowedLights,
+                              const ::Engine::Renderer::ModelResourceLibrary* modelResources = nullptr);
   static uint32_t CountShadowCasters(const Engine::Scene* scene, uint32_t limit);
   /// Counts depth views needed by the selected shadow-casting lights (point lights use six faces).
   /// @param scene Scene whose light components are counted.

@@ -273,7 +273,8 @@ void RenderSystem::SubmitViews(const std::vector<Engine::ViewportBinding>& views
       shadowViews.push_back(view.get());
       m_FrameContext->GetViews().push_back(std::move(view));
     }
-    ::Engine::SceneRenderer::BuildShadowData(scene, shadowViews, firstShadowSlot, shadowCasterCount);
+    ::Engine::SceneRenderer::BuildShadowData(scene, shadowViews, firstShadowSlot, shadowCasterCount,
+                                             m_ModelResources.get());
   }
   bb.SetShadowViews(std::move(shadowViews));
   bb.Set<uint32_t>("ShadowMapSize", m_ShadowSettings.Resolution);
