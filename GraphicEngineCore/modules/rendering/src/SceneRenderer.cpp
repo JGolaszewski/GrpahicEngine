@@ -42,6 +42,33 @@ auto NormalizeOrDefault(const DirectX::XMFLOAT3& value) -> DirectX::XMVECTOR {
   return DirectX::XMVector3Normalize(vector);
 }
 
+auto MaterialPropertiesFromDocument(const ::Engine::SceneMaterialDocument& document)
+    -> ::Engine::Renderer::MaterialProperties {
+  ::Engine::Renderer::MaterialProperties properties;
+  properties.BaseColor = {document.baseColor[0], document.baseColor[1], document.baseColor[2], document.baseColor[3]};
+  properties.Emissive = {document.emissive[0], document.emissive[1], document.emissive[2]};
+  properties.Metallic = document.metallic;
+  properties.Roughness = document.roughness;
+  properties.GtrGamma = document.gtrGamma;
+  properties.Ior = document.ior;
+  properties.SpecularF0 = {document.specularF0[0], document.specularF0[1], document.specularF0[2]};
+  properties.Model = document.brdfModel == "ggx"   ? ::Engine::Renderer::BrdfModel::GGX
+                     : document.brdfModel == "gtr" ? ::Engine::Renderer::BrdfModel::GTR
+                                                   : ::Engine::Renderer::BrdfModel::Legacy;
+  properties.Workflow = document.workflow == "specularGlossiness"
+                            ? ::Engine::Renderer::MaterialWorkflow::SpecularGlossiness
+                            : ::Engine::Renderer::MaterialWorkflow::MetallicRoughness;
+  properties.SpecularMode = document.specularMode == "explicitF0"
+                                ? ::Engine::Renderer::DielectricSpecularMode::ExplicitF0
+                                : ::Engine::Renderer::DielectricSpecularMode::IndexOfRefraction;
+  properties.AlphaMode = document.alphaMode == "mask"    ? ::Engine::Renderer::MaterialAlphaMode::Mask
+                         : document.alphaMode == "blend" ? ::Engine::Renderer::MaterialAlphaMode::Blend
+                                                         : ::Engine::Renderer::MaterialAlphaMode::Opaque;
+  properties.AlphaCutoff = document.alphaCutoff;
+  properties.DoubleSided = document.doubleSided;
+  return properties;
+}
+
 static_assert(sizeof(::Engine::Renderer::PerObjectGpuData) == Engine::SceneRenderer::PerObjectDataStride);
 
 auto ComputeSpotLightViewProj(const ::Engine::Renderer::DirectionalLightData& lightData) -> DirectX::XMMATRIX {
@@ -87,12 +114,14 @@ auto ToDirectionalLightData(const ::Engine::Ecs::SpotLight& light, const ::Engin
   DirectX::XMFLOAT3 direction{};
   DirectX::XMStoreFloat3(&direction, worldDirection);
   data.DirectionIntensity = {direction.x, direction.y, direction.z, light.Intensity};
-  data.ColorUsePosition = {light.Color[0], light.Color[1], light.Color[2], light.UsePosition ? 1.0F : 0.0F};
+  const bool positional = light.Type != ::Engine::Ecs::LightType::Directional;
+  const bool point = light.Type == ::Engine::Ecs::LightType::Point;
+  data.ColorUsePosition = {light.Color[0], light.Color[1], light.Color[2], positional ? 1.0F : 0.0F};
   DirectX::XMFLOAT3 position{};
   DirectX::XMStoreFloat3(
       &position, DirectX::XMVector3TransformCoord(DirectX::XMVectorZero(), DirectX::XMLoadFloat4x4(&transform.Matrix)));
   data.PositionRange = {position.x, position.y, position.z, light.Range};
-  data.ConeParams = {std::cos(innerRadians), std::cos(outerRadians), 0.0F, 0.0F};
+  data.ConeParams = {std::cos(innerRadians), std::cos(outerRadians), point ? 1.0F : 0.0F, 0.0F};
   data.ShadowParams = {-1.0F, light.ShadowBias, light.ShadowNormalBias, light.CastShadows ? 1.0F : 0.0F};
   return data;
 }
@@ -647,7 +676,7 @@ auto Engine::SceneRenderer::ConfigureAndQueuePacket(::Engine::Renderer::RenderVi
 }
 
 void Engine::SceneRenderer::SubmitSubmesh(::Engine::Renderer::RenderView* view,
-                                          const ::Engine::Ecs::WorldTransform& transform,
+                                          const ::Engine::Ecs::WorldTransform& transform, ::Engine::EntityHandle entity,
                                           const ::Engine::Ecs::MeshRenderer& meshRenderer,
                                           const ::Engine::Renderer::Submesh& submesh, DirectX::FXMMATRIX viewProjection,
                                           const nvrhi::FramebufferInfoEx& framebufferInfo) {
@@ -676,13 +705,68 @@ void Engine::SceneRenderer::SubmitSubmesh(::Engine::Renderer::RenderView* view,
   DirectX::XMStoreFloat4x4(&perObjectData.Normal, DirectX::XMMatrixTranspose(normal));
   perObjectData.ObjectParams = {meshRenderer.ReceiveShadows ? 1.0F : 0.0F, meshRenderer.Wireframe ? 1.0F : 0.0F, 0.0F,
                                 0.0F};
-  auto packet = CreateRenderPacket(submesh.mesh.get(), submesh.material.get());
+  const auto material = MaterialForSubmesh(view, entity, meshRenderer, submesh);
+  auto packet = CreateRenderPacket(submesh.mesh.get(), material.get());
   packet.PerObjectData = perObjectData;
-  if (ConfigureAndQueuePacket(view, meshRenderer, submesh, submesh.material->GetProperties(), framebufferInfo,
-                              packet)) {
+  if (ConfigureAndQueuePacket(view, meshRenderer, submesh, material->GetProperties(), framebufferInfo, packet)) {
     m_SubmissionStats.PacketBuildTimeMs +=
         std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - packetBuildStart).count();
   }
+}
+
+auto Engine::SceneRenderer::MaterialForSubmesh(const ::Engine::Renderer::RenderView* view,
+                                               ::Engine::EntityHandle entity,
+                                               const ::Engine::Ecs::MeshRenderer& meshRenderer,
+                                               const ::Engine::Renderer::Submesh& submesh)
+    -> std::shared_ptr<::Engine::Renderer::Material> {
+  const uint32_t slot = submesh.MaterialSlot < 0 ? 0U : static_cast<uint32_t>(submesh.MaterialSlot);
+  const std::string resourceKey =
+      meshRenderer.ModelGuid.empty() ? "primitive:" + meshRenderer.PrimitiveType : meshRenderer.ModelGuid;
+  const std::optional<::Engine::SceneMaterialDocument>* selectedOverride = nullptr;
+  if (submesh.MaterialSlot >= 0 && static_cast<size_t>(submesh.MaterialSlot) < meshRenderer.MaterialOverrides.size()) {
+    selectedOverride = &meshRenderer.MaterialOverrides[static_cast<size_t>(submesh.MaterialSlot)];
+  }
+  const ::Engine::SceneMaterialDocument* source = selectedOverride != nullptr && selectedOverride->has_value()
+                                                      ? &selectedOverride->value()
+                                                      : (meshRenderer.Material ? &*meshRenderer.Material : nullptr);
+  const uintptr_t sceneKey = reinterpret_cast<uintptr_t>(view->TargetScene);
+  const uintptr_t sourceMaterialKey = reinterpret_cast<uintptr_t>(submesh.material.get());
+  const auto belongsToEntity = [sceneKey, entity](const auto& item) -> bool {
+    const auto& [key, unused] = item;
+    (void)unused;
+    return std::get<0>(key) == sceneKey && std::get<1>(key) == entity.Index && std::get<2>(key) == entity.Generation;
+  };
+  const auto belongsToSlot = [&belongsToEntity, slot, sourceMaterialKey](const auto& item) -> bool {
+    return belongsToEntity(item) && std::get<4>(item.first) == static_cast<int32_t>(slot) &&
+           std::get<5>(item.first) == sourceMaterialKey;
+  };
+  std::erase_if(m_MaterialOverrideCache, [&belongsToEntity, &resourceKey](const auto& item) -> bool {
+    return belongsToEntity(item) && std::get<3>(item.first) != resourceKey;
+  });
+  if (source == nullptr || m_MaterialSystem == nullptr) {
+    std::erase_if(m_MaterialOverrideCache, belongsToSlot);
+    return submesh.material;
+  }
+
+  const MaterialOverrideKey key{
+      sceneKey, entity.Index, entity.Generation, resourceKey, static_cast<int32_t>(slot), sourceMaterialKey};
+  std::erase_if(m_MaterialOverrideCache,
+                [&belongsToSlot, &key](const auto& item) -> bool { return belongsToSlot(item) && item.first != key; });
+  const auto found = m_MaterialOverrideCache.find(key);
+  if (found != m_MaterialOverrideCache.end() && found->second.Source == *source) {
+    return found->second.Material;
+  }
+
+  auto material = m_MaterialSystem->CreateMaterial(MaterialPropertiesFromDocument(*source));
+  if (material == nullptr || !m_MaterialSystem->SetPbrTextureBindings(material, submesh.material->GetBaseColorTexture(),
+                                                                      submesh.material->GetNormalTexture(),
+                                                                      submesh.material->GetMetallicRoughnessTexture(),
+                                                                      submesh.material->GetOcclusionTexture(),
+                                                                      submesh.material->GetEmissiveTexture(), true)) {
+    return submesh.material;
+  }
+  m_MaterialOverrideCache.insert_or_assign(key, MaterialOverrideCacheEntry{.Source = *source, .Material = material});
+  return material;
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
@@ -690,6 +774,16 @@ void Engine::SceneRenderer::CullAndFillView(::Engine::Renderer::RenderView* view
   if ((view == nullptr) || (view->TargetScene == nullptr)) {
     return;
   }
+
+  const uintptr_t sceneKey = reinterpret_cast<uintptr_t>(view->TargetScene);
+  const auto& world = view->TargetScene->World();
+  std::erase_if(m_MaterialOverrideCache, [&sceneKey, &world](const auto& item) -> bool {
+    const auto& key = item.first;
+    if (std::get<0>(key) != sceneKey) {
+      return false;
+    }
+    return !world.IsAlive({.Index = std::get<1>(key), .Generation = std::get<2>(key)});
+  });
 
   DirectX::XMMATRIX viewProj = view->ViewProjection;
   nvrhi::IFramebuffer* framebuffer = view->TargetFramebuffer; // FIXME
@@ -706,7 +800,7 @@ void Engine::SceneRenderer::CullAndFillView(::Engine::Renderer::RenderView* view
   view->TargetScene->World()
       .ForEachChunkReadOnly<::Engine::Ecs::MeshRenderer, ::Engine::Ecs::WorldTransform,
                             ::Engine::Ecs::GlobalVisibility>(
-          [this, view, viewProj, &fbInfo](std::span<const Engine::EntityHandle>,
+          [this, view, viewProj, &fbInfo](std::span<const Engine::EntityHandle> entities,
                                           std::span<const ::Engine::Ecs::MeshRenderer> meshRenderers,
                                           std::span<const ::Engine::Ecs::WorldTransform> transforms,
                                           std::span<const ::Engine::Ecs::GlobalVisibility> visibility) -> void {
@@ -727,7 +821,7 @@ void Engine::SceneRenderer::CullAndFillView(::Engine::Renderer::RenderView* view
                 continue;
               }
               for (const auto& submesh : *submeshes) {
-                SubmitSubmesh(view, transforms[row], meshRenderer, submesh, viewProj, fbInfo);
+                SubmitSubmesh(view, transforms[row], entities[row], meshRenderer, submesh, viewProj, fbInfo);
               }
             }
           });
@@ -886,7 +980,7 @@ auto Engine::SceneRenderer::CountShadowCasters(const Engine::Scene* scene, uint3
           if (count >= limit || count >= MaxShadowedLights) {
             return;
           }
-          if (light.UsePosition && light.CastShadows) {
+          if (light.Type == ::Engine::Ecs::LightType::Spot && light.CastShadows) {
             ++count;
           }
         }

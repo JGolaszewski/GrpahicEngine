@@ -3,8 +3,13 @@
 #include "runtime/include/CoreExport.h"
 #include <DirectXMath.h>
 #include <cstddef>
+#include <cstdint>
+#include <map>
+#include <memory>
 #include <nvrhi/nvrhi.h>
 #include <optional>
+#include <string>
+#include <tuple>
 #include <unordered_map>
 #include <vector>
 
@@ -85,8 +90,12 @@ public:
 private:
   void CullAndFillView(::Engine::Renderer::RenderView* view);
   void SubmitSubmesh(::Engine::Renderer::RenderView* view, const ::Engine::Ecs::WorldTransform& transform,
-                     const ::Engine::Ecs::MeshRenderer& meshRenderer, const ::Engine::Renderer::Submesh& submesh,
-                     DirectX::FXMMATRIX viewProjection, const nvrhi::FramebufferInfoEx& framebufferInfo);
+                     ::Engine::EntityHandle entity, const ::Engine::Ecs::MeshRenderer& meshRenderer,
+                     const ::Engine::Renderer::Submesh& submesh, DirectX::FXMMATRIX viewProjection,
+                     const nvrhi::FramebufferInfoEx& framebufferInfo);
+  auto MaterialForSubmesh(const ::Engine::Renderer::RenderView* view, ::Engine::EntityHandle entity,
+                          const ::Engine::Ecs::MeshRenderer& meshRenderer, const ::Engine::Renderer::Submesh& submesh)
+      -> std::shared_ptr<::Engine::Renderer::Material>;
   bool IsSubmeshVisible(::Engine::Renderer::RenderView* view, const ::Engine::Renderer::Submesh& submesh,
                         DirectX::FXMMATRIX world, const DirectX::XMFLOAT4X4& worldTransform);
   bool ConfigureAndQueuePacket(::Engine::Renderer::RenderView* view, const ::Engine::Ecs::MeshRenderer& meshRenderer,
@@ -135,6 +144,12 @@ private:
 
   ::Engine::Renderer::MaterialSystem* m_MaterialSystem = nullptr;
   const ::Engine::Renderer::ModelResourceLibrary* m_ModelResources = nullptr;
+  using MaterialOverrideKey = std::tuple<uintptr_t, uint32_t, uint32_t, std::string, int32_t, uintptr_t>;
+  struct MaterialOverrideCacheEntry {
+    ::Engine::SceneMaterialDocument Source;
+    std::shared_ptr<::Engine::Renderer::Material> Material;
+  };
+  std::map<MaterialOverrideKey, MaterialOverrideCacheEntry> m_MaterialOverrideCache;
   SubmissionStats m_SubmissionStats;
 };
 

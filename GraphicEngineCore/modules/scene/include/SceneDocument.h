@@ -39,6 +39,10 @@ struct SceneMaterialDocument {
   bool doubleSided = false;                                ///< Whether the material renders both face orientations.
   std::optional<std::string> baseColorTextureGuid;         ///< Optional base-color texture identity.
   std::optional<std::string> normalTextureGuid;            ///< Optional tangent-space normal texture identity.
+  /// Compares every serialized material property.
+  /// @param other Material document to compare with.
+  /// @return True when all properties match.
+  auto operator==(const SceneMaterialDocument& other) const noexcept -> bool = default;
 };
 
 /// Persistent entity state stored in a scene document.
@@ -82,8 +86,9 @@ struct SceneLightDocument {
   float outerAngleDegrees = 25.0f;                          ///< Outer spotlight cone angle in degrees.
   float shadowBias = 0.0015f;                               ///< Constant shadow-map depth bias.
   float shadowNormalBias = 0.0015f;                         ///< Slope-scaled shadow-map bias.
-  bool usePosition = false; ///< Whether the light uses positional rather than directional behavior.
-  bool castShadows = true;  ///< Whether the light produces shadows.
+  bool usePosition = false;         ///< Whether the light uses positional rather than directional behavior.
+  std::string type = "directional"; ///< Authored light type: directional, point, or spot.
+  bool castShadows = true;          ///< Whether the light produces shadows.
 };
 
 /// Authored camera state stored in a scene document.

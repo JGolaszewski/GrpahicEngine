@@ -428,6 +428,7 @@ auto LightJson(const SceneLightDocument& light) -> Json {
       {"outerAngleDegrees", light.outerAngleDegrees},
       {"shadowBias", light.shadowBias},
       {"shadowNormalBias", light.shadowNormalBias},
+      {"type", light.type},
       {"usePosition", light.usePosition},
       {"castShadows", light.castShadows},
   };
@@ -542,18 +543,20 @@ auto ValidateEntities(const std::filesystem::path& path, const SceneDocument& do
 }
 
 auto ValidateLight(const SceneLightDocument& light, std::set<uint64_t>& ids) -> bool {
-  const std::array<float, 15> values = {
-      light.direction.at(0),   light.direction.at(1), light.direction.at(2),
-      light.position.at(0),    light.position.at(1),  light.position.at(2),
-      light.color.at(0),       light.color.at(1),     light.color.at(2),
-      light.intensity,         light.range,           light.innerAngleDegrees,
-      light.outerAngleDegrees, light.shadowBias,      light.shadowNormalBias,
+  const bool validType = light.type == "directional" || light.type == "point" || light.type == "spot";
+  const std::array<float, 14> commonValues = {
+      light.direction.at(0), light.direction.at(1),  light.direction.at(2), light.position.at(0), light.position.at(1),
+      light.position.at(2),  light.color.at(0),      light.color.at(1),     light.color.at(2),    light.intensity,
+      light.shadowBias,      light.shadowNormalBias, light.rotation.at(0),  light.rotation.at(1),
   };
-  if (light.id == 0 || !ids.insert(light.id).second ||
-      !std::ranges::all_of(values, [](float value) -> bool { return std::isfinite(value); }) ||
-      light.intensity < 0.0F || light.range <= 0.0F || light.innerAngleDegrees < 0.0F ||
-      light.outerAngleDegrees < light.innerAngleDegrees || light.outerAngleDegrees > 89.5F || light.shadowBias < 0.0F ||
-      light.shadowNormalBias < 0.0F) {
+  if (light.id == 0 || !ids.insert(light.id).second || !validType ||
+      !std::ranges::all_of(commonValues, [](float value) -> bool { return std::isfinite(value); }) ||
+      light.intensity < 0.0F ||
+      ((light.type == "point" || light.type == "spot") && (!std::isfinite(light.range) || light.range <= 0.0F)) ||
+      (light.type == "spot" && (!std::isfinite(light.innerAngleDegrees) || !std::isfinite(light.outerAngleDegrees) ||
+                                light.innerAngleDegrees < 0.0F || light.outerAngleDegrees <= light.innerAngleDegrees ||
+                                light.outerAngleDegrees > 89.5F)) ||
+      light.shadowBias < 0.0F || light.shadowNormalBias < 0.0F) {
     return false;
   }
   const float directionLengthSquared = (light.direction.at(0) * light.direction.at(0)) +
@@ -562,8 +565,9 @@ auto ValidateLight(const SceneLightDocument& light, std::set<uint64_t>& ids) -> 
   const float rotationLengthSquared =
       (light.rotation.at(0) * light.rotation.at(0)) + (light.rotation.at(1) * light.rotation.at(1)) +
       (light.rotation.at(2) * light.rotation.at(2)) + (light.rotation.at(3) * light.rotation.at(3));
-  return std::isfinite(directionLengthSquared) && directionLengthSquared > 1.0e-12F &&
-         std::isfinite(rotationLengthSquared) && rotationLengthSquared > 1.0e-12F &&
+  const bool validDirection =
+      std::isfinite(directionLengthSquared) && (light.type == "point" || directionLengthSquared > 1.0e-12F);
+  return validDirection && std::isfinite(rotationLengthSquared) && rotationLengthSquared > 1.0e-12F &&
          std::ranges::all_of(light.scale, [](float value) { return std::isfinite(value) && value > 0.0F; }) &&
          light.color.at(0) >= 0.0F && light.color.at(1) >= 0.0F && light.color.at(2) >= 0.0F;
 }
@@ -885,6 +889,7 @@ auto LoadLightArray(const Json& root, SceneDocumentResult& result, const std::fi
                     "outerAngleDegrees",
                     "shadowBias",
                     "shadowNormalBias",
+                    "type",
                     "usePosition",
                     "castShadows",
                 },
@@ -917,18 +922,32 @@ auto LoadLightArray(const Json& root, SceneDocumentResult& result, const std::fi
         result.error = FileContext(path, context + ": " + (fieldError.empty() ? "duplicate light ID" : fieldError));
         return false;
       }
+      if (item.contains("type")) {
+        if (!item.at("type").is_string()) {
+          result.error = FileContext(path, context + ".type must be a string");
+          return false;
+        }
+        light.type = item.at("type").get<std::string>();
+      } else {
+        light.type = light.usePosition ? "spot" : "directional";
+      }
       const float directionLengthSquared = (light.direction.at(0) * light.direction.at(0)) +
                                            (light.direction.at(1) * light.direction.at(1)) +
                                            (light.direction.at(2) * light.direction.at(2));
       const float rotationLengthSquared =
           (light.rotation.at(0) * light.rotation.at(0)) + (light.rotation.at(1) * light.rotation.at(1)) +
           (light.rotation.at(2) * light.rotation.at(2)) + (light.rotation.at(3) * light.rotation.at(3));
-      if (!std::isfinite(directionLengthSquared) || directionLengthSquared <= 1.0e-12F ||
-          !std::isfinite(rotationLengthSquared) || rotationLengthSquared <= 1.0e-12F ||
+      const bool invalidDirection =
+          !std::isfinite(directionLengthSquared) || (light.type != "point" && directionLengthSquared <= 1.0e-12F);
+      if (invalidDirection || !std::isfinite(rotationLengthSquared) || rotationLengthSquared <= 1.0e-12F ||
+          (light.type != "directional" && light.type != "point" && light.type != "spot") ||
           std::ranges::any_of(light.scale, [](float value) { return !std::isfinite(value) || value <= 0.0F; }) ||
           light.color.at(0) < 0.0F || light.color.at(1) < 0.0F || light.color.at(2) < 0.0F || light.intensity < 0.0F ||
-          light.range <= 0.0F || light.innerAngleDegrees < 0.0F || light.outerAngleDegrees < light.innerAngleDegrees ||
-          light.outerAngleDegrees > 89.5F || light.shadowBias < 0.0F || light.shadowNormalBias < 0.0F) {
+          ((light.type == "point" || light.type == "spot") && light.range <= 0.0F) ||
+          (light.type == "spot" &&
+           (light.innerAngleDegrees < 0.0F || light.outerAngleDegrees <= light.innerAngleDegrees ||
+            light.outerAngleDegrees > 89.5F)) ||
+          light.shadowBias < 0.0F || light.shadowNormalBias < 0.0F) {
         result.error = FileContext(path, context + " contains out-of-range light settings");
         return false;
       }

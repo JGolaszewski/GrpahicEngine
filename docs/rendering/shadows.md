@@ -1,3 +1,5 @@
 # Shadow caster behavior
 
 Opaque materials cast solid shadows when their entity has `CastShadows` enabled. Masked materials sample base-color alpha and use the material alpha cutoff, so cutouts match forward rendering. Blended materials do not cast shadows; they represent partial coverage that this depth-only shadow map cannot model. Shadow culling follows the material's double-sided setting.
+
+The scene light component supports **Directional**, **Point**, and **Spot** types. Directional lights use the entity's rotated emission direction and do not use a range or cone. Point lights illuminate from the entity position within their configured range. Spot lights use the entity position, emission direction, range, and inner/outer cone angles. The current shadow-map path supports spot lights; point and directional lights do not cast shadows. The Inspector only shows controls that apply to the selected type. Mesh material overrides are authored inline on the mesh entity and are saved with the scene.

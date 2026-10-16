@@ -114,7 +114,7 @@ void Editor::OnInit() {
     Engine::Ecs::SpotLight light;
     light.Direction = {-0.4F, -0.7F, 0.2F};
     light.Intensity = 8.0F;
-    light.UsePosition = true;
+    light.Type = Engine::Ecs::LightType::Spot;
     (void)m_ActiveScene->QueueSet(lightEntity, lightTransform);
     (void)m_ActiveScene->QueueAdd(lightEntity, light);
   }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "scene/include/ArchetypeWorld.h"
+#include "scene/include/SceneDocument.h"
 
 #include <DirectXMath.h>
 
@@ -8,6 +9,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -80,17 +82,23 @@ static_assert(alignof(WorldTransform) >= 16);
 
 /// Rendering settings and model identity for a mesh entity.
 struct MeshRenderer {
-  std::string ModelGuid;         ///< Imported model identity, when using a model asset.
-  std::string PrimitiveType;     ///< Built-in primitive name, when not using a model asset.
-  bool CastShadows = true;       ///< Whether this mesh contributes to shadow maps.
-  bool ReceiveShadows = true;    ///< Whether this mesh receives shadows.
-  bool Visible = true;           ///< Whether this mesh is submitted for rendering.
-  bool Wireframe = false;        ///< Whether this mesh uses wireframe rasterization.
-  bool DisableDepthTest = false; ///< Whether depth testing is disabled for this mesh.
+  std::string ModelGuid;                         ///< Imported model identity, when using a model asset.
+  std::string PrimitiveType;                     ///< Built-in primitive name, when not using a model asset.
+  bool CastShadows = true;                       ///< Whether this mesh contributes to shadow maps.
+  bool ReceiveShadows = true;                    ///< Whether this mesh receives shadows.
+  bool Visible = true;                           ///< Whether this mesh is submitted for rendering.
+  bool Wireframe = false;                        ///< Whether this mesh uses wireframe rasterization.
+  bool DisableDepthTest = false;                 ///< Whether depth testing is disabled for this mesh.
+  std::optional<SceneMaterialDocument> Material; ///< Optional material override applied to all mesh slots.
+  std::vector<std::optional<SceneMaterialDocument>> MaterialOverrides; ///< Optional per-submesh material overrides.
 };
 
-/// Parameters for a spot light attached to an entity.
-struct SpotLight {
+/// Supported authored light types.
+enum class LightType : uint8_t { Directional, Point, Spot };
+
+/// Parameters for a directional, point, or spot light attached to an entity.
+struct Light {
+  LightType Type = LightType::Spot;                     ///< Light shape used by the renderer.
   std::array<float, 3> Direction = {0.0F, -1.0F, 0.0F}; ///< Local emission direction.
   std::array<float, 3> Color = {1.0F, 1.0F, 1.0F};      ///< Linear RGB light color.
   float Intensity = 1.0F;                               ///< Radiometric intensity multiplier.
@@ -99,9 +107,10 @@ struct SpotLight {
   float OuterAngleDegrees = 30.0F;                      ///< Outer spotlight cone angle in degrees.
   float ShadowBias = 0.0015F;                           ///< Constant shadow-map depth bias.
   float ShadowNormalBias = 0.0015F;                     ///< Slope-scaled shadow-map bias.
-  bool UsePosition = true;                              ///< Whether the light uses its entity position.
-  bool CastShadows = true;                              ///< Whether the light produces shadows.
+  bool CastShadows = true;                              ///< Whether the light produces shadows when supported.
 };
+/// Source-compatible alias for the previous spot-light component name.
+using SpotLight = Light;
 
 /// Projection, output resolution, and activation settings for an authored scene camera.
 struct Camera {
@@ -141,25 +150,47 @@ inline auto Validate(const LocalTransform& component) -> Status {
   return {};
 }
 
-/// Validates finite spot-light values and a valid cone and range.
+/// Validates finite light values and the fields applicable to the selected light type.
 /// @param component Light component to validate.
 /// @return Success, or an error describing the invalid setting.
-inline auto Validate(const SpotLight& component) -> Status {
+inline auto Validate(const Light& component) -> Status {
+  if (component.Type != LightType::Directional && component.Type != LightType::Point &&
+      component.Type != LightType::Spot) {
+    return std::unexpected(MakeError("Light type is unsupported"));
+  }
+  float directionLengthSquared = 0.0F;
   for (float value : component.Direction) {
     if (!std::isfinite(value)) {
-      return std::unexpected(MakeError("Spot light direction must contain finite values"));
+      return std::unexpected(MakeError("Light direction must contain finite values"));
     }
+    directionLengthSquared += value * value;
+  }
+  if (!std::isfinite(directionLengthSquared)) {
+    return std::unexpected(MakeError("Light direction magnitude must be finite"));
+  }
+  if (component.Type != LightType::Point && directionLengthSquared <= 1.0e-12F) {
+    return std::unexpected(MakeError("Light direction must be nonzero"));
   }
   for (float value : component.Color) {
     if (!std::isfinite(value) || value < 0.0F) {
-      return std::unexpected(MakeError("Spot light color must contain finite nonnegative values"));
+      return std::unexpected(MakeError("Light color must contain finite nonnegative values"));
     }
   }
-  if (!std::isfinite(component.Intensity) || component.Intensity < 0.0F || !std::isfinite(component.Range) ||
-      component.Range <= 0.0F || !std::isfinite(component.InnerAngleDegrees) ||
-      !std::isfinite(component.OuterAngleDegrees) || component.InnerAngleDegrees < 0.0F ||
-      component.OuterAngleDegrees <= component.InnerAngleDegrees || component.OuterAngleDegrees >= 90.0F) {
-    return std::unexpected(MakeError("Spot light range, intensity, or cone angles are invalid"));
+  if (!std::isfinite(component.Intensity) || component.Intensity < 0.0F) {
+    return std::unexpected(MakeError("Light intensity must be finite and nonnegative"));
+  }
+  if (component.Type != LightType::Directional && (!std::isfinite(component.Range) || component.Range <= 0.0F)) {
+    return std::unexpected(MakeError("Point and spot light ranges must be finite and positive"));
+  }
+  if (component.Type == LightType::Spot &&
+      (!std::isfinite(component.InnerAngleDegrees) || !std::isfinite(component.OuterAngleDegrees) ||
+       component.InnerAngleDegrees < 0.0F || component.OuterAngleDegrees <= component.InnerAngleDegrees ||
+       component.OuterAngleDegrees >= 90.0F)) {
+    return std::unexpected(MakeError("Spot light cone angles are invalid"));
+  }
+  if (!std::isfinite(component.ShadowBias) || component.ShadowBias < 0.0F ||
+      !std::isfinite(component.ShadowNormalBias) || component.ShadowNormalBias < 0.0F) {
+    return std::unexpected(MakeError("Light shadow bias values must be finite and nonnegative"));
   }
   return {};
 }

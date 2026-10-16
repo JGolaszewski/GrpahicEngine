@@ -196,25 +196,71 @@ void InspectorPanel::DrawEntityInspector() {
     changed |= ImGui::Checkbox("Receive shadows", &mesh.ReceiveShadows);
     changed |= ImGui::Checkbox("Wireframe", &mesh.Wireframe);
     changed |= ImGui::Checkbox("Disable depth test", &mesh.DisableDepthTest);
+    bool hasMaterialOverride = mesh.Material.has_value();
+    if (ImGui::Checkbox("Override material", &hasMaterialOverride)) {
+      if (hasMaterialOverride) {
+        mesh.Material.emplace();
+      } else {
+        mesh.Material.reset();
+      }
+      changed = true;
+    }
+    if (mesh.Material) {
+      auto& material = *mesh.Material;
+      ImGui::SeparatorText("Material");
+      changed |= ImGui::ColorEdit4("Base color", material.baseColor.data());
+      changed |= ImGui::ColorEdit3("Emissive", material.emissive.data());
+      changed |= ImGui::SliderFloat("Metallic", &material.metallic, 0.0F, 1.0F);
+      changed |= ImGui::SliderFloat("Roughness", &material.roughness, 0.0F, 1.0F);
+      constexpr const char* brdfNames[] = {"Legacy", "GGX", "GTR"};
+      int brdfIndex = material.brdfModel == "ggx" ? 1 : material.brdfModel == "gtr" ? 2 : 0;
+      if (ImGui::Combo("BRDF", &brdfIndex, brdfNames, 3)) {
+        material.brdfModel = brdfIndex == 1 ? "ggx" : brdfIndex == 2 ? "gtr" : "legacy";
+        changed = true;
+      }
+      constexpr const char* alphaNames[] = {"Opaque", "Mask", "Blend"};
+      int alphaIndex = material.alphaMode == "mask" ? 1 : material.alphaMode == "blend" ? 2 : 0;
+      if (ImGui::Combo("Alpha mode", &alphaIndex, alphaNames, 3)) {
+        material.alphaMode = alphaIndex == 1 ? "mask" : alphaIndex == 2 ? "blend" : "opaque";
+        changed = true;
+      }
+      if (material.alphaMode == "mask") {
+        changed |= ImGui::SliderFloat("Alpha cutoff", &material.alphaCutoff, 0.0F, 1.0F);
+      }
+      changed |= ImGui::Checkbox("Double sided", &material.doubleSided);
+    }
     if (changed) {
       emitSet(Mutation::Component::MeshRenderer, std::move(mesh));
     }
   }
 
-  if (const auto* storedLight = world.Get<Engine::Ecs::SpotLight>(entity);
-      storedLight != nullptr && ImGui::CollapsingHeader("Spot Light")) {
-    DrawRemoveButton("Remove Spot Light Component", Mutation::Component::SpotLight, emitRemove);
-    Engine::Ecs::SpotLight light = *storedLight;
-    bool changed = ImGui::DragFloat3("Direction", light.Direction.data(), 0.01F, -1.0F, 1.0F);
+  if (const auto* storedLight = world.Get<Engine::Ecs::Light>(entity);
+      storedLight != nullptr && ImGui::CollapsingHeader("Light")) {
+    DrawRemoveButton("Remove Light Component", Mutation::Component::SpotLight, emitRemove);
+    Engine::Ecs::Light light = *storedLight;
+    constexpr const char* lightTypeNames[] = {"Directional", "Point", "Spot"};
+    int typeIndex = static_cast<int>(light.Type);
+    bool changed = ImGui::Combo("Type", &typeIndex, lightTypeNames, 3);
+    if (changed) {
+      light.Type = static_cast<Engine::Ecs::LightType>(typeIndex);
+    }
+    if (light.Type != Engine::Ecs::LightType::Point) {
+      changed |= ImGui::DragFloat3("Direction", light.Direction.data(), 0.01F, -1.0F, 1.0F);
+    }
     changed |= ImGui::ColorEdit3("Light color", light.Color.data());
     changed |= ImGui::DragFloat("Intensity", &light.Intensity, 0.05F, 0.0F, 100000.0F);
-    changed |= ImGui::DragFloat("Range", &light.Range, 0.05F, 0.01F, 100000.0F);
-    changed |= ImGui::DragFloat("Inner cone", &light.InnerAngleDegrees, 0.1F, 0.0F, 89.0F);
-    changed |= ImGui::DragFloat("Outer cone", &light.OuterAngleDegrees, 0.1F, 0.1F, 89.9F);
+    if (light.Type != Engine::Ecs::LightType::Directional) {
+      changed |= ImGui::DragFloat("Range", &light.Range, 0.05F, 0.01F, 100000.0F);
+    }
+    if (light.Type == Engine::Ecs::LightType::Spot) {
+      changed |= ImGui::DragFloat("Inner cone", &light.InnerAngleDegrees, 0.1F, 0.0F, 88.9F);
+      changed |= ImGui::DragFloat("Outer cone", &light.OuterAngleDegrees, 0.1F, light.InnerAngleDegrees + 0.1F, 89.9F);
+    }
     changed |= ImGui::DragFloat("Shadow bias", &light.ShadowBias, 0.0001F, 0.0F, 0.1F);
     changed |= ImGui::DragFloat("Shadow normal bias", &light.ShadowNormalBias, 0.0001F, 0.0F, 0.1F);
-    changed |= ImGui::Checkbox("Use position", &light.UsePosition);
-    changed |= ImGui::Checkbox("Cast shadows", &light.CastShadows);
+    if (light.Type == Engine::Ecs::LightType::Spot) {
+      changed |= ImGui::Checkbox("Cast shadows", &light.CastShadows);
+    }
     if (changed) {
       emitSet(Mutation::Component::SpotLight, light);
     }

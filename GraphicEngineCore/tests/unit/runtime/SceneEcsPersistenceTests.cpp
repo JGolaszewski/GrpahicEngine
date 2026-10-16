@@ -5,6 +5,11 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <array>
+#include <chrono>
+#include <filesystem>
+#include <string>
+#include <utility>
 
 namespace {
 
@@ -39,19 +44,28 @@ TEST(SceneEcsPersistenceTests, RoundTripsEntityIdentityHierarchyAndSupportedComp
   (void)source.QueueSet(mesh, Engine::Ecs::LocalTransform{.Position = {2.0F, -3.0F, 4.0F},
                                                           .Rotation = {0.0F, 0.0F, 0.38268343F, 0.9238795F},
                                                           .Scale = {2.0F, 3.0F, 4.0F}});
-  (void)source.QueueSet(mesh, Engine::Ecs::MeshRenderer{.ModelGuid = "",
-                                                        .PrimitiveType = "cube",
-                                                        .CastShadows = false,
-                                                        .ReceiveShadows = false,
-                                                        .Visible = false,
-                                                        .Wireframe = true,
-                                                        .DisableDepthTest = true});
+  (void)source.QueueSet(
+      mesh, Engine::Ecs::MeshRenderer{.ModelGuid = "",
+                                      .PrimitiveType = "cube",
+                                      .CastShadows = false,
+                                      .ReceiveShadows = false,
+                                      .Visible = false,
+                                      .Wireframe = true,
+                                      .DisableDepthTest = true,
+                                      .Material = Engine::SceneMaterialDocument{.baseColor = {0.2F, 0.4F, 0.6F, 1.0F},
+                                                                                .metallic = 0.7F,
+                                                                                .roughness = 0.25F,
+                                                                                .brdfModel = "ggx",
+                                                                                .alphaMode = "mask",
+                                                                                .alphaCutoff = 0.35F,
+                                                                                .doubleSided = true}});
   (void)source.QueueSet(mesh, Engine::Ecs::LocalVisibility{.IsVisible = false});
   (void)source.QueueSet(light, Engine::Ecs::LocalTransform{.Position = {1.0F, 2.0F, 3.0F},
                                                            .Rotation = {0.0F, 0.70710677F, 0.0F, 0.70710677F},
                                                            .Scale = {1.5F, 1.5F, 1.5F}});
   (void)source.QueueSet(light, Engine::Ecs::Name{.Value = "Key Light"});
-  (void)source.QueueSet(light, Engine::Ecs::SpotLight{.Direction = {0.0F, -0.5F, 1.0F},
+  (void)source.QueueSet(light, Engine::Ecs::SpotLight{.Type = Engine::Ecs::LightType::Spot,
+                                                      .Direction = {0.0F, -0.5F, 1.0F},
                                                       .Color = {0.25F, 0.5F, 0.75F},
                                                       .Intensity = 3.0F,
                                                       .Range = 42.0F,
@@ -59,7 +73,6 @@ TEST(SceneEcsPersistenceTests, RoundTripsEntityIdentityHierarchyAndSupportedComp
                                                       .OuterAngleDegrees = 32.0F,
                                                       .ShadowBias = 0.002F,
                                                       .ShadowNormalBias = 0.003F,
-                                                      .UsePosition = false,
                                                       .CastShadows = false});
   (void)source.QueueSet(camera, Engine::Ecs::LocalTransform{.Position = {-4.0F, 5.0F, 6.0F},
                                                             .Rotation = {0.1F, 0.2F, 0.3F, 0.9F},
@@ -84,9 +97,25 @@ TEST(SceneEcsPersistenceTests, RoundTripsEntityIdentityHierarchyAndSupportedComp
   EXPECT_EQ(saved.cameras.front().priority, -7);
   EXPECT_FALSE(saved.cameras.front().active);
 
+  const auto scenePath = std::filesystem::temp_directory_path() /
+                         ("GraphicEngineMaterialRoundTrip-" +
+                          std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + ".json");
   std::string error;
+  ASSERT_TRUE(Engine::SceneSerializer::SaveAtomic(scenePath, saved, error)) << error;
+  const auto serialized = Engine::SceneSerializer::Load(scenePath);
+  std::error_code filesystemError;
+  std::filesystem::remove(scenePath, filesystemError);
+  ASSERT_TRUE(serialized) << serialized.error;
+  const auto serializedMesh =
+      std::ranges::find(serialized.document.entities, std::string("Mesh Entity"), &Engine::SceneEntityDocument::name);
+  ASSERT_NE(serializedMesh, serialized.document.entities.end());
+  ASSERT_TRUE(serializedMesh->material.has_value());
+  EXPECT_EQ(serializedMesh->material->baseColor, (std::array<float, 4>{0.2F, 0.4F, 0.6F, 1.0F}));
+  EXPECT_EQ(serializedMesh->material->alphaMode, "mask");
+  EXPECT_EQ(serialized.document.lights.front().type, "spot");
+
   std::vector<std::string> warnings;
-  ASSERT_TRUE(application.LoadSceneDocument(saved, error, warnings)) << error;
+  ASSERT_TRUE(application.LoadSceneDocument(serialized.document, error, warnings)) << error;
   ASSERT_EQ(application.GetScenes().size(), 1U);
   const Engine::SceneDocument loaded = application.CreateSceneDocument(*application.GetScenes().front());
   ASSERT_EQ(loaded.entities.size(), saved.entities.size());
@@ -109,6 +138,8 @@ TEST(SceneEcsPersistenceTests, RoundTripsEntityIdentityHierarchyAndSupportedComp
     EXPECT_EQ(actual->disableDepthTest, expected.disableDepthTest);
     EXPECT_EQ(actual->castShadows, expected.castShadows);
     EXPECT_EQ(actual->receiveShadows, expected.receiveShadows);
+    EXPECT_EQ(actual->material, expected.material);
+    EXPECT_EQ(actual->materialOverrides, expected.materialOverrides);
   }
   EXPECT_EQ(loaded.lights.front().name, saved.lights.front().name);
   EXPECT_EQ(loaded.lights.front().identityGuid, saved.lights.front().identityGuid);
@@ -125,6 +156,7 @@ TEST(SceneEcsPersistenceTests, RoundTripsEntityIdentityHierarchyAndSupportedComp
   EXPECT_FLOAT_EQ(loaded.lights.front().shadowBias, saved.lights.front().shadowBias);
   EXPECT_FLOAT_EQ(loaded.lights.front().shadowNormalBias, saved.lights.front().shadowNormalBias);
   EXPECT_EQ(loaded.lights.front().usePosition, saved.lights.front().usePosition);
+  EXPECT_EQ(loaded.lights.front().type, "spot");
   EXPECT_EQ(loaded.lights.front().castShadows, saved.lights.front().castShadows);
   EXPECT_EQ(loaded.cameras.front().name, saved.cameras.front().name);
   EXPECT_EQ(loaded.cameras.front().identityGuid, saved.cameras.front().identityGuid);
@@ -139,6 +171,110 @@ TEST(SceneEcsPersistenceTests, RoundTripsEntityIdentityHierarchyAndSupportedComp
   EXPECT_FLOAT_EQ(loaded.cameras.front().farPlane, saved.cameras.front().farPlane);
   EXPECT_EQ(loaded.cameras.front().outputWidth, saved.cameras.front().outputWidth);
   EXPECT_EQ(loaded.cameras.front().outputHeight, saved.cameras.front().outputHeight);
+}
+
+TEST(SceneEcsPersistenceTests, LightTypeSwitchingValidatesAndPersistsDirectionalPointAndSpot) {
+  Engine::Scene source;
+  (void)source.QueueCreate("Editable Light", Engine::InvalidEntityHandle, Engine::Scene::EntityPreset::SpotLight);
+  const auto created = source.sync();
+  ASSERT_EQ(created.size(), 1U);
+  ASSERT_TRUE(created.front().Outcome);
+  const Engine::EntityHandle lightEntity = created.front().Entity;
+  Engine::Ecs::Light light;
+  light.Type = Engine::Ecs::LightType::Directional;
+  light.Range = -2.0F;
+  light.InnerAngleDegrees = 20.0F;
+  light.OuterAngleDegrees = 5.0F;
+  EXPECT_TRUE(Engine::Ecs::Validate(light));
+  light.Type = Engine::Ecs::LightType::Point;
+  light.Range = 25.0F;
+  light.Direction = {0.0F, 0.0F, 0.0F};
+  light.InnerAngleDegrees = 20.0F;
+  light.OuterAngleDegrees = 5.0F;
+  EXPECT_TRUE(Engine::Ecs::Validate(light));
+  light.Type = Engine::Ecs::LightType::Spot;
+  light.Direction = {0.0F, -1.0F, 0.0F};
+  light.InnerAngleDegrees = 15.0F;
+  light.OuterAngleDegrees = 35.0F;
+  EXPECT_TRUE(Engine::Ecs::Validate(light));
+  light.OuterAngleDegrees = light.InnerAngleDegrees;
+  EXPECT_FALSE(Engine::Ecs::Validate(light));
+  light.OuterAngleDegrees = 35.0F;
+  (void)source.QueueSet(lightEntity, light);
+  ASSERT_TRUE(source.sync().front().Outcome);
+
+  Engine::Application application;
+  const auto saved = application.CreateSceneDocument(source);
+  ASSERT_EQ(saved.lights.size(), 1U);
+  EXPECT_EQ(saved.lights.front().type, "spot");
+  std::string error;
+  std::vector<std::string> warnings;
+  ASSERT_TRUE(application.LoadSceneDocument(saved, error, warnings)) << error;
+  const auto loaded = application.CreateSceneDocument(*application.GetScenes().front());
+  ASSERT_EQ(loaded.lights.size(), 1U);
+  EXPECT_EQ(loaded.lights.front().type, "spot");
+  EXPECT_FLOAT_EQ(loaded.lights.front().innerAngleDegrees, 15.0F);
+  EXPECT_FLOAT_EQ(loaded.lights.front().outerAngleDegrees, 35.0F);
+}
+
+TEST(SceneEcsPersistenceTests, SceneJsonRoundTripsEachLightTypeAndTypeSpecificValidation) {
+  const auto nonce = std::chrono::steady_clock::now().time_since_epoch().count();
+  const auto directory = std::filesystem::temp_directory_path() / ("GraphicEngineLightTypes-" + std::to_string(nonce));
+  std::error_code filesystemError;
+  ASSERT_TRUE(std::filesystem::create_directories(directory, filesystemError));
+  const auto cleanup = [&directory]() {
+    std::error_code ignored;
+    std::filesystem::remove_all(directory, ignored);
+  };
+  const std::array<std::pair<Engine::Ecs::LightType, std::string>, 3> types = {
+      {{Engine::Ecs::LightType::Directional, "directional"},
+       {Engine::Ecs::LightType::Point, "point"},
+       {Engine::Ecs::LightType::Spot, "spot"}}};
+  for (const auto& [type, expectedName] : types) {
+    Engine::SceneDocument document;
+    Engine::SceneLightDocument light;
+    light.id = 1;
+    light.name = "Test Light";
+    light.type = expectedName;
+    if (type == Engine::Ecs::LightType::Directional) {
+      light.range = -1.0F;
+      light.innerAngleDegrees = 25.0F;
+      light.outerAngleDegrees = 10.0F;
+    } else if (type == Engine::Ecs::LightType::Point) {
+      light.direction = {0.0F, 0.0F, 0.0F};
+      light.innerAngleDegrees = 25.0F;
+      light.outerAngleDegrees = 10.0F;
+    }
+    document.lights.push_back(light);
+    std::string error;
+    const auto path = directory / (expectedName + ".json");
+    ASSERT_TRUE(Engine::SceneSerializer::SaveAtomic(path, document, error)) << error;
+    const auto loaded = Engine::SceneSerializer::Load(path);
+    ASSERT_TRUE(loaded) << loaded.error;
+    ASSERT_EQ(loaded.document.lights.size(), 1U);
+    EXPECT_EQ(loaded.document.lights.front().type, expectedName);
+  }
+  cleanup();
+}
+
+TEST(SceneEcsPersistenceTests, UnsupportedLightTypeDoesNotReplaceActiveScene) {
+  Engine::Application application;
+  Engine::SceneDocument initial;
+  std::string error;
+  std::vector<std::string> warnings;
+  ASSERT_TRUE(application.LoadSceneDocument(initial, error, warnings)) << error;
+  const auto activeBefore = application.GetScenes().front();
+
+  Engine::SceneDocument invalid;
+  Engine::SceneLightDocument light;
+  light.id = 9;
+  light.name = "Invalid Light";
+  light.type = "area";
+  invalid.lights.push_back(light);
+  EXPECT_FALSE(application.LoadSceneDocument(invalid, error, warnings));
+  EXPECT_NE(error.find("unsupported light type"), std::string::npos) << error;
+  ASSERT_EQ(application.GetScenes().size(), 1U);
+  EXPECT_EQ(application.GetScenes().front(), activeBefore);
 }
 
 TEST(SceneEcsPersistenceTests, FailedInstantiationPreservesActiveScene) {

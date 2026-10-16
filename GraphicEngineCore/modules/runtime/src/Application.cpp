@@ -370,6 +370,29 @@ auto Application::LoadSceneDocument(const SceneDocument& document, std::string& 
                                     std::vector<std::string>& warnings) -> bool {
   error.clear();
   warnings.clear();
+  for (const SceneLightDocument& source : document.lights) {
+    if (source.type != "directional" && source.type != "point" && source.type != "spot") {
+      error = "light '" + source.name + "': unsupported light type '" + source.type + "'";
+      return false;
+    }
+    const Ecs::LightType type = source.type == "point"                        ? Ecs::LightType::Point
+                                : source.type == "spot" || source.usePosition ? Ecs::LightType::Spot
+                                                                              : Ecs::LightType::Directional;
+    const Ecs::Light candidate{.Type = type,
+                               .Direction = source.direction,
+                               .Color = source.color,
+                               .Intensity = source.intensity,
+                               .Range = source.range,
+                               .InnerAngleDegrees = source.innerAngleDegrees,
+                               .OuterAngleDegrees = source.outerAngleDegrees,
+                               .ShadowBias = source.shadowBias,
+                               .ShadowNormalBias = source.shadowNormalBias,
+                               .CastShadows = source.castShadows};
+    if (const Status lightValidation = Ecs::Validate(candidate); !lightValidation) {
+      error = "light '" + source.name + "': " + lightValidation.error().Message;
+      return false;
+    }
+  }
   auto stagedScene = std::make_shared<Scene>();
   stagedScene->SetUnitsPerMeter(document.unitsPerMeter);
 
@@ -578,13 +601,20 @@ auto Application::LoadSceneDocument(const SceneDocument& document, std::string& 
                                                       .Visible = source.meshVisible,
                                                       .Wireframe = source.forceWireframe,
                                                       .DisableDepthTest = source.disableDepthTest,
+                                                      .Material = source.material,
+                                                      .MaterialOverrides = source.materialOverrides,
                                                   });
     }
   }
   for (const PendingLight& pending : lights) {
     const SceneLightDocument& source = *pending.Document;
     Ecs::LocalTransform transform{.Position = source.position, .Rotation = source.rotation, .Scale = source.scale};
-    Ecs::SpotLight light{
+    const Ecs::LightType lightType = source.type == "point" ? Ecs::LightType::Point
+                                     : source.type == "spot"
+                                         ? Ecs::LightType::Spot
+                                         : (source.usePosition ? Ecs::LightType::Spot : Ecs::LightType::Directional);
+    Ecs::Light light{
+        .Type = lightType,
         .Direction = source.direction,
         .Color = source.color,
         .Intensity = source.intensity,
@@ -593,7 +623,6 @@ auto Application::LoadSceneDocument(const SceneDocument& document, std::string& 
         .OuterAngleDegrees = source.outerAngleDegrees,
         .ShadowBias = source.shadowBias,
         .ShadowNormalBias = source.shadowNormalBias,
-        .UsePosition = source.usePosition,
         .CastShadows = source.castShadows,
     };
     (void)stagedScene->QueueSet(pending.Handle, transform);
@@ -703,6 +732,8 @@ auto Application::CreateSceneDocument(const Scene& scene) const -> SceneDocument
             entity.disableDepthTest = mesh->DisableDepthTest;
             entity.castShadows = mesh->CastShadows;
             entity.receiveShadows = mesh->ReceiveShadows;
+            entity.material = mesh->Material;
+            entity.materialOverrides = mesh->MaterialOverrides;
           }
           document.entities.push_back(std::move(entity));
         }
@@ -737,7 +768,10 @@ auto Application::CreateSceneDocument(const Scene& scene) const -> SceneDocument
           light.outerAngleDegrees = components[row].OuterAngleDegrees;
           light.shadowBias = components[row].ShadowBias;
           light.shadowNormalBias = components[row].ShadowNormalBias;
-          light.usePosition = components[row].UsePosition;
+          light.type = components[row].Type == Ecs::LightType::Directional ? "directional"
+                       : components[row].Type == Ecs::LightType::Point     ? "point"
+                                                                           : "spot";
+          light.usePosition = components[row].Type != Ecs::LightType::Directional;
           light.castShadows = components[row].CastShadows;
           document.lights.push_back(light);
         }

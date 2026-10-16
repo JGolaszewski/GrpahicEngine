@@ -370,7 +370,7 @@ TEST(ScenePersistenceTests, RejectsMalformedEntityLightAndCameraFields) {
   checkRejected("lights-not-array.json", root("\"lights\":{}"), "lights must be an array");
   checkRejected("light-not-object.json", root("\"lights\":[null]"), "lights[0] must be an object");
   checkRejected("invalid-light-range.json",
-                root("\"lights\":[{\"id\":1,\"direction\":[0,-1,0],\"position\":[0,0,0],"
+                root("\"lights\":[{\"id\":1,\"type\":\"spot\",\"direction\":[0,-1,0],\"position\":[0,0,0],"
                      "\"color\":[1,1,1],\"intensity\":1,\"range\":0,"
                      "\"innerAngleDegrees\":0,\"outerAngleDegrees\":45,\"shadowBias\":0,"
                      "\"shadowNormalBias\":0,\"usePosition\":false,\"castShadows\":true}]"),
@@ -384,6 +384,8 @@ TEST(ScenePersistenceTests, RejectsMalformedEntityLightAndCameraFields) {
       json.replace(position, oldValue.size(), newValue);
     return json;
   };
+  const std::string validSpotLight =
+      replaceField(validLight, "\"usePosition\":false", "\"type\":\"spot\",\"usePosition\":true");
   checkRejected("light-invalid-direction.json",
                 root("\"lights\":[" + replaceField(validLight, "[0,-1,0]", "[0,0,0]") + "]"),
                 "out-of-range light settings");
@@ -392,7 +394,7 @@ TEST(ScenePersistenceTests, RejectsMalformedEntityLightAndCameraFields) {
                 "out-of-range light settings");
   checkRejected(
       "light-invalid-cone.json",
-      root("\"lights\":[" + replaceField(validLight, "\"outerAngleDegrees\":45", "\"outerAngleDegrees\":-1") + "]"),
+      root("\"lights\":[" + replaceField(validSpotLight, "\"outerAngleDegrees\":45", "\"outerAngleDegrees\":-1") + "]"),
       "out-of-range light settings");
   checkRejected("light-negative-shadow-bias.json",
                 root("\"lights\":[" + replaceField(validLight, "\"shadowBias\":0", "\"shadowBias\":-1") + "]"),
