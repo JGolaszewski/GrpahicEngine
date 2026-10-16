@@ -626,7 +626,11 @@ auto Application::LoadSceneDocument(const SceneDocument& document, std::string& 
     (void)stagedScene->QueueSet(pending.Handle,
                                 Ecs::PersistentIdentity{.Guid = {.High = entityGuid.high, .Low = entityGuid.low}});
     if (!stagedScene->IsSceneRoot(pending.Handle)) {
-      Ecs::LocalTransform transform{.Position = source.position, .Rotation = source.rotation, .Scale = source.scale};
+      Ecs::LocalTransform transform{.Position = source.position,
+                                    .Rotation = source.rotation,
+                                    .Scale = source.scale,
+                                    .FlipHorizontal = source.flipHorizontal,
+                                    .FlipVertical = source.flipVertical};
       (void)stagedScene->QueueSet(pending.Handle, transform);
       (void)stagedScene->QueueSet(pending.Handle, Ecs::LocalVisibility{.IsVisible = source.visible});
     }
@@ -654,7 +658,11 @@ auto Application::LoadSceneDocument(const SceneDocument& document, std::string& 
   }
   for (const PendingLight& pending : lights) {
     const SceneLightDocument& source = *pending.Document;
-    Ecs::LocalTransform transform{.Position = source.position, .Rotation = source.rotation, .Scale = source.scale};
+    Ecs::LocalTransform transform{.Position = source.position,
+                                  .Rotation = source.rotation,
+                                  .Scale = source.scale,
+                                  .FlipHorizontal = source.flipHorizontal,
+                                  .FlipVertical = source.flipVertical};
     const Ecs::LightType lightType = source.type == "point" ? Ecs::LightType::Point
                                      : source.type == "spot"
                                          ? Ecs::LightType::Spot
@@ -683,7 +691,11 @@ auto Application::LoadSceneDocument(const SceneDocument& document, std::string& 
   }
   for (const PendingCamera& pending : cameras) {
     const SceneCameraDocument& source = *pending.Document;
-    Ecs::LocalTransform transform{.Position = source.position, .Rotation = source.rotation, .Scale = source.scale};
+    Ecs::LocalTransform transform{.Position = source.position,
+                                  .Rotation = source.rotation,
+                                  .Scale = source.scale,
+                                  .FlipHorizontal = source.flipHorizontal,
+                                  .FlipVertical = source.flipVertical};
     Ecs::Camera camera{
         .FieldOfViewDegrees = DirectX::XMConvertToDegrees(source.fovRadians),
         .NearPlane = source.nearPlane,
@@ -759,6 +771,8 @@ auto Application::CreateSceneDocument(const Scene& scene) const -> SceneDocument
             entity.position = transforms[row].Position;
             entity.rotation = transforms[row].Rotation;
             entity.scale = transforms[row].Scale;
+            entity.flipHorizontal = transforms[row].FlipHorizontal;
+            entity.flipVertical = transforms[row].FlipVertical;
           }
           if (const auto* parent = world.Get<Ecs::Parent>(handles[row]);
               parent != nullptr && parent->Id != InvalidEntityHandle) {
@@ -811,6 +825,8 @@ auto Application::CreateSceneDocument(const Scene& scene) const -> SceneDocument
           light.position = transforms[row].Position;
           light.rotation = transforms[row].Rotation;
           light.scale = transforms[row].Scale;
+          light.flipHorizontal = transforms[row].FlipHorizontal;
+          light.flipVertical = transforms[row].FlipVertical;
           light.color = components[row].Color;
           light.intensity = components[row].Intensity;
           light.range = components[row].Range;
@@ -849,6 +865,8 @@ auto Application::CreateSceneDocument(const Scene& scene) const -> SceneDocument
               camera.position = transforms[row].Position;
               camera.rotation = transforms[row].Rotation;
               camera.scale = transforms[row].Scale;
+              camera.flipHorizontal = transforms[row].FlipHorizontal;
+              camera.flipVertical = transforms[row].FlipVertical;
               camera.fovRadians = DirectX::XMConvertToRadians(components[row].FieldOfViewDegrees);
               camera.nearPlane = components[row].NearPlane;
               camera.farPlane = components[row].FarPlane;

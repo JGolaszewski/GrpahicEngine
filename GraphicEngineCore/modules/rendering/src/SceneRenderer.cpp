@@ -592,7 +592,8 @@ auto Engine::SceneRenderer::ConfigureAndQueuePacket(::Engine::Renderer::RenderVi
                                                     const ::Engine::Renderer::Submesh& submesh,
                                                     const ::Engine::Renderer::MaterialProperties& materialProperties,
                                                     const nvrhi::FramebufferInfoEx& framebufferInfo,
-                                                    ::Engine::Renderer::RenderPacket& packet) -> bool {
+                                                    ::Engine::Renderer::RenderPacket& packet,
+                                                    bool disableFaceCulling) -> bool {
   if (view->ViewType == ::Engine::Renderer::RenderView::Type::Shadow &&
       materialProperties.AlphaMode == ::Engine::Renderer::MaterialAlphaMode::Blend) {
     return false;
@@ -638,14 +639,17 @@ auto Engine::SceneRenderer::ConfigureAndQueuePacket(::Engine::Renderer::RenderVi
     key.MaterialLayout = packet.ShadowAlphaTest ? m_MaterialSystem->GetStandardMaterialLayout() : nullptr;
     key.Wireframe = false;
     key.DepthTest = true;
-    key.CullMode = materialProperties.DoubleSided ? nvrhi::RasterCullMode::None : nvrhi::RasterCullMode::Back;
+    key.CullMode =
+        (materialProperties.DoubleSided || disableFaceCulling) ? nvrhi::RasterCullMode::None
+                                                              : nvrhi::RasterCullMode::Back;
   } else {
     key.PS =
         submesh.material->HasTextureOverrides() ? m_MaterialSystem->GetTexturedPS() : m_MaterialSystem->GetStandardPS();
     key.Wireframe = meshRenderer.Wireframe;
     key.DepthTest = !meshRenderer.DisableDepthTest;
-    key.CullMode = meshRenderer.Wireframe || materialProperties.DoubleSided ? nvrhi::RasterCullMode::None
-                                                                            : nvrhi::RasterCullMode::Back;
+    key.CullMode = (meshRenderer.Wireframe || materialProperties.DoubleSided || disableFaceCulling)
+                       ? nvrhi::RasterCullMode::None
+                       : nvrhi::RasterCullMode::Back;
     if (packet.Queue == ::Engine::Renderer::RenderQueueType::Transparent) {
       nvrhi::BlendState::RenderTarget blendTarget;
       blendTarget.enableBlend()
@@ -713,7 +717,10 @@ void Engine::SceneRenderer::SubmitSubmesh(::Engine::Renderer::RenderView* view,
   const auto material = MaterialForSubmesh(view, entity, meshRenderer, submesh);
   auto packet = CreateRenderPacket(submesh.mesh.get(), material.get());
   packet.PerObjectData = perObjectData;
-  if (ConfigureAndQueuePacket(view, meshRenderer, submesh, material->GetProperties(), framebufferInfo, packet)) {
+  const bool disableFaceCulling =
+      transform.HasAxisFlip || DirectX::XMVectorGetX(DirectX::XMMatrixDeterminant(world)) < 0.0F;
+  if (ConfigureAndQueuePacket(view, meshRenderer, submesh, material->GetProperties(), framebufferInfo, packet,
+                              disableFaceCulling)) {
     m_SubmissionStats.PacketBuildTimeMs +=
         std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - packetBuildStart).count();
   }

@@ -88,6 +88,47 @@ TEST(SceneIdentityTests, RootRejectsTransformAndVisibilityEdits) {
   EXPECT_FALSE(scene.SetInPlace(root, visibility));
 }
 
+TEST(SceneIdentityTests, TransformFlipsMirrorLocalAxesWhileKeepingScalePositive) {
+  Engine::Scene scene;
+  (void)scene.QueueCreate("Mirrored entity");
+  const auto created = scene.sync();
+  ASSERT_EQ(created.size(), 1U);
+  ASSERT_TRUE(created.front().Outcome);
+  const Engine::EntityHandle entity = created.front().Entity;
+
+  Engine::Ecs::LocalTransform transform;
+  transform.Scale = {2.0F, 3.0F, 4.0F};
+  transform.FlipHorizontal = true;
+  transform.FlipVertical = false;
+  (void)scene.QueueSet(entity, transform);
+  const auto horizontalFlip = scene.sync();
+  ASSERT_EQ(horizontalFlip.size(), 1U);
+  ASSERT_TRUE(horizontalFlip.front().Outcome);
+  ASSERT_TRUE(scene.Update(0.0F));
+
+  const auto* local = scene.World().Get<Engine::Ecs::LocalTransform>(entity);
+  const auto* world = scene.World().Get<Engine::Ecs::WorldTransform>(entity);
+  ASSERT_NE(local, nullptr);
+  ASSERT_NE(world, nullptr);
+  EXPECT_EQ(local->Scale, (std::array<float, 3>{2.0F, 3.0F, 4.0F}));
+  EXPECT_LT(world->Matrix._11, 0.0F);
+  EXPECT_GT(world->Matrix._22, 0.0F);
+  EXPECT_GT(world->Matrix._33, 0.0F);
+
+  transform.FlipVertical = true;
+  (void)scene.QueueSet(entity, transform);
+  const auto bothFlips = scene.sync();
+  ASSERT_EQ(bothFlips.size(), 1U);
+  ASSERT_TRUE(bothFlips.front().Outcome);
+  ASSERT_TRUE(scene.Update(0.0F));
+  world = scene.World().Get<Engine::Ecs::WorldTransform>(entity);
+  ASSERT_NE(world, nullptr);
+  EXPECT_LT(world->Matrix._11, 0.0F);
+  EXPECT_LT(world->Matrix._22, 0.0F);
+  EXPECT_GT(world->Matrix._33, 0.0F);
+  EXPECT_TRUE(world->HasAxisFlip);
+}
+
 TEST(SceneIdentityTests, PersistentIdentityIsStoredAsAnEcsComponent) {
   Engine::Scene scene;
   (void)scene.QueueCreate("Entity");

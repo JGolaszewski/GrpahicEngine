@@ -12,6 +12,7 @@
 
 #include <DirectXMath.h>
 #include <array>
+#include <cstddef>
 
 #include <string>
 
@@ -237,41 +238,66 @@ TEST(RenderFinalTests, WARPAllEditorExposedPrimitivesRender) {
   constexpr std::array shapes = {Engine::PrimitiveShape::Cube, Engine::PrimitiveShape::Sphere,
                                  Engine::PrimitiveShape::Plane, Engine::PrimitiveShape::Cone};
   constexpr std::array names = {"cube", "sphere", "plane", "cone"};
+  constexpr std::array flipStates = {std::array<bool, 2>{false, false}, std::array<bool, 2>{true, false},
+                                     std::array<bool, 2>{false, true}, std::array<bool, 2>{true, true}};
   for (const auto shape : shapes) {
     ASSERT_TRUE(renderer.CreatePrimitive(shape, material));
   }
 
   for (size_t index = 0; index < shapes.size(); ++index) {
-    Engine::Scene scene;
-    const uint64_t sequence = scene.QueueCreate(names[index]);
-    const auto created = scene.sync();
-    ASSERT_EQ(created.size(), 1U);
-    ASSERT_EQ(created.front().Sequence, sequence);
-    ASSERT_TRUE(created.front().Outcome);
+    std::array<float, 3> unflippedCenterNormal{};
+    bool hasUnflippedCenterNormal = false;
+    for (const auto& [flipHorizontal, flipVertical] : flipStates) {
+      Engine::Scene scene;
+      const uint64_t sequence = scene.QueueCreate(names[index]);
+      const auto created = scene.sync();
+      ASSERT_EQ(created.size(), 1U);
+      ASSERT_EQ(created.front().Sequence, sequence);
+      ASSERT_TRUE(created.front().Outcome);
 
-    Engine::Ecs::LocalTransform transform;
-    transform.Position = {0.0F, 0.0F, 0.0F};
-    if (shapes[index] == Engine::PrimitiveShape::Plane) {
-      DirectX::XMFLOAT4 rotation{};
-      DirectX::XMStoreFloat4(&rotation, DirectX::XMQuaternionRotationRollPitchYaw(-DirectX::XM_PIDIV2, 0.0F, 0.0F));
-      transform.Rotation = {rotation.x, rotation.y, rotation.z, rotation.w};
-    }
-    (void)scene.QueueSet(created.front().Entity, transform);
-    (void)scene.QueueAdd(created.front().Entity, Engine::Ecs::MeshRenderer{.PrimitiveType = names[index]});
-    ASSERT_TRUE(scene.Update(0.0F));
+      Engine::Ecs::LocalTransform transform;
+      transform.Position = {0.0F, 0.0F, 0.0F};
+      transform.FlipHorizontal = flipHorizontal;
+      transform.FlipVertical = flipVertical;
+      if (shapes[index] == Engine::PrimitiveShape::Plane) {
+        DirectX::XMFLOAT4 rotation{};
+        DirectX::XMStoreFloat4(&rotation, DirectX::XMQuaternionRotationRollPitchYaw(-DirectX::XM_PIDIV2, 0.0F, 0.0F));
+        transform.Rotation = {rotation.x, rotation.y, rotation.z, rotation.w};
+      }
+      (void)scene.QueueSet(created.front().Entity, transform);
+      (void)scene.QueueAdd(created.front().Entity, Engine::Ecs::MeshRenderer{.PrimitiveType = names[index]});
+      ASSERT_TRUE(scene.Update(0.0F));
 
-    Engine::Renderer::CameraView camera;
-    camera.Position = {0.0F, 0.0F, -5.0F};
-    const auto output = renderer.RenderFinal(scene, camera, 32, 32);
-    ASSERT_TRUE(output.has_value()) << (output.has_value() ? "" : output.error().Message);
-    const auto pixels = output->GetPixels(Engine::RenderAov::FinalColor);
-    size_t illuminatedPixelCount = 0;
-    for (size_t pixel = 0; pixel + 3 < pixels.size(); pixel += 4) {
-      if (pixels[pixel] > 0.1F) {
-        ++illuminatedPixelCount;
+      Engine::Renderer::CameraView camera;
+      camera.Position = {0.0F, 0.0F, -5.0F};
+      const auto output = renderer.RenderFinal(scene, camera, 32, 32);
+      ASSERT_TRUE(output.has_value()) << (output.has_value() ? "" : output.error().Message);
+      const auto pixels = output->GetPixels(Engine::RenderAov::FinalColor);
+      size_t illuminatedPixelCount = 0;
+      for (size_t pixel = 0; pixel + 3 < pixels.size(); pixel += 4) {
+        if (pixels[pixel] > 0.1F) {
+          ++illuminatedPixelCount;
+        }
+      }
+      EXPECT_GT(illuminatedPixelCount, 4U)
+          << names[index] << " flipped X=" << flipHorizontal << " flipped Y=" << flipVertical;
+      if (shapes[index] == Engine::PrimitiveShape::Cube) {
+        const auto normals = output->GetPixels(Engine::RenderAov::WorldNormal);
+        constexpr size_t imageSide = 32U;
+        constexpr size_t centerNormalOffset = ((imageSide / 2U) * imageSide + (imageSide / 2U)) * 3U;
+        ASSERT_GT(normals.size(), centerNormalOffset + 2U);
+        if (!hasUnflippedCenterNormal) {
+          std::copy_n(normals.begin() + static_cast<std::ptrdiff_t>(centerNormalOffset), unflippedCenterNormal.size(),
+                      unflippedCenterNormal.begin());
+          hasUnflippedCenterNormal = true;
+        } else {
+          for (size_t channel = 0; channel < unflippedCenterNormal.size(); ++channel) {
+            EXPECT_NEAR(normals[centerNormalOffset + channel], unflippedCenterNormal[channel], 1.0e-2F)
+                << "flipped X=" << flipHorizontal << " flipped Y=" << flipVertical;
+          }
+        }
       }
     }
-    EXPECT_GT(illuminatedPixelCount, 4U) << names[index];
   }
 }
 } // namespace
