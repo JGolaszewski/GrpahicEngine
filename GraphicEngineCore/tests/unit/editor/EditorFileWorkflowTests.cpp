@@ -24,7 +24,10 @@ public:
   auto operator=(const TemporaryProjectDirectory&) -> TemporaryProjectDirectory& = delete;
   ~TemporaryProjectDirectory() noexcept {
     std::error_code ignored;
-    std::filesystem::remove_all(m_Root, ignored);
+    try {
+      std::filesystem::remove_all(m_Root, ignored);
+    } catch (...) {
+    }
   }
 
   [[nodiscard]] auto Root() const noexcept -> const std::filesystem::path& { return m_Root; }
