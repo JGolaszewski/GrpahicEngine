@@ -4,6 +4,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <array>
 #include <cctype>
 #include <fstream>
@@ -477,6 +478,73 @@ bool AssetManager::ImportTexture(const std::filesystem::path& sourcePath, std::s
   m_Textures.insert_or_assign(
       guid,
       TextureRecord{canonicalSource, std::make_shared<const ImportedImage>(std::move(imported.image)), generation});
+  return true;
+}
+
+bool AssetManager::RenameAsset(const std::string& guid, const std::string& newName, std::string& error) {
+  error.clear();
+  if (newName.empty() || newName == "." || newName == ".." ||
+      newName.find_first_of("<>:\"/\\|?*") != std::string::npos || newName.back() == ' ' || newName.back() == '.') {
+    error = "asset name must be a non-empty filename without a path or extension";
+    return false;
+  }
+  if (std::ranges::any_of(newName, [](unsigned char character) -> bool { return character < 32; })) {
+    error = "asset name contains a control character";
+    return false;
+  }
+
+  std::filesystem::path* sourcePath = nullptr;
+  if (const auto model = m_Models.find(guid); model != m_Models.end()) {
+    sourcePath = &model->second.sourcePath;
+  } else if (const auto texture = m_Textures.find(guid); texture != m_Textures.end()) {
+    sourcePath = &texture->second.sourcePath;
+  }
+  if (sourcePath == nullptr) {
+    error = "asset GUID is not registered: " + guid;
+    return false;
+  }
+
+  const std::filesystem::path previousPath = *sourcePath;
+  const std::filesystem::path destination = previousPath.parent_path() / (newName + previousPath.extension().string());
+  if (destination == previousPath) {
+    return true;
+  }
+  const std::filesystem::path previousMetadata(previousPath.generic_string() + ".meta");
+  const std::filesystem::path destinationMetadata(destination.generic_string() + ".meta");
+  std::error_code ec;
+  if (!std::filesystem::is_regular_file(previousPath, ec) || ec) {
+    error = previousPath.generic_string() + ": asset source is unavailable";
+    return false;
+  }
+  if (!std::filesystem::is_regular_file(previousMetadata, ec) || ec) {
+    error = previousMetadata.generic_string() + ": asset identity sidecar is unavailable";
+    return false;
+  }
+  if (std::filesystem::exists(destination, ec) || ec || std::filesystem::exists(destinationMetadata, ec) || ec) {
+    error = destination.generic_string() + ": rename destination already exists or cannot be inspected";
+    return false;
+  }
+
+  std::filesystem::rename(previousPath, destination, ec);
+  if (ec) {
+    error = previousPath.generic_string() + ": could not rename asset source: " + ec.message();
+    return false;
+  }
+  std::filesystem::rename(previousMetadata, destinationMetadata, ec);
+  if (ec) {
+    const std::string metadataError = ec.message();
+    std::error_code rollbackError;
+    std::filesystem::rename(destination, previousPath, rollbackError);
+    error = previousMetadata.generic_string() + ": could not rename asset identity sidecar: " + metadataError;
+    if (rollbackError) {
+      error += "; restoring the original asset filename failed: " + rollbackError.message();
+    }
+    return false;
+  }
+
+  *sourcePath = destination;
+  ENGINE_LOG_INFO("Asset", "Asset renamed | guid: {} | previous_path: {} | new_path: {}", guid,
+                  previousPath.generic_string(), destination.generic_string());
   return true;
 }
 

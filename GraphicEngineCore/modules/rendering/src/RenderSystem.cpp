@@ -132,6 +132,49 @@ RenderSystem::~RenderSystem() {
 
 bool RenderSystem::IsValid() const { return m_CommandList && m_CommandList->Handle != nullptr; }
 
+void RenderSystem::SetAssetManager(AssetManager* assets) {
+  m_AssetManager = assets;
+  if (m_SceneRenderer != nullptr) {
+    m_SceneRenderer->SetAssetTextureResolver(
+        [this](const std::string& guid, bool srgb) -> std::shared_ptr<::Engine::Renderer::TextureResource> {
+          return GetPreparedAssetTexture(guid, srgb);
+        });
+  }
+}
+
+bool RenderSystem::PrepareAssetTexture(const std::string& guid, bool srgb, std::string& error) {
+  error.clear();
+  if (m_FrameActive) {
+    error = "authored textures must be prepared between render frames";
+    return false;
+  }
+  if (m_AssetManager == nullptr || guid.empty()) {
+    error = "asset manager and a texture GUID are required to prepare an authored texture";
+    return false;
+  }
+  if (!m_AssetManager->LoadTexture(guid, error)) {
+    return false;
+  }
+  const auto image = m_AssetManager->GetTexture(guid);
+  const auto generation = m_AssetManager->GetGeneration(guid);
+  if (image == nullptr || !generation) {
+    error = "texture GUID is registered without a decoded image or generation: " + guid;
+    return false;
+  }
+  auto texture = GetOrCreateTexture(guid, *generation, *image, srgb, error);
+  if (texture == nullptr) {
+    return false;
+  }
+  m_AuthoredTextures.insert_or_assign({guid, srgb}, std::move(texture));
+  return true;
+}
+
+auto RenderSystem::GetPreparedAssetTexture(const std::string& guid, bool srgb) const
+    -> std::shared_ptr<::Engine::Renderer::TextureResource> {
+  const auto found = m_AuthoredTextures.find({guid, srgb});
+  return found == m_AuthoredTextures.end() ? nullptr : found->second;
+}
+
 auto RenderSystem::CreateViewportTarget(uint32_t width, uint32_t height) -> std::shared_ptr<Engine::ViewportTarget> {
   if ((m_RenderBackend == nullptr) || (GetNvrhiDevice(m_RenderBackend) == nullptr)) {
     return nullptr;

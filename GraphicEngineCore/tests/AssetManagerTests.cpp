@@ -130,6 +130,78 @@ void TestImportAndGuidReload(const std::filesystem::path& project) {
           "repeated GUID loads did not reuse the cached CPU asset");
 }
 
+void TestAssetRenamePreservesGuidAndSceneReferences(const std::filesystem::path& project) {
+  WriteMinimalModel(project / "model.gltf");
+  Engine::AssetManager assets(project);
+  std::string guid;
+  std::string error;
+  Require(assets.ImportModel("model.gltf", guid, error), "model import for rename test failed");
+
+  Engine::SceneDocument document;
+  Engine::SceneEntityDocument entity;
+  entity.id = 1;
+  entity.modelGuid = guid;
+  document.entities.push_back(entity);
+  Require(assets.SaveScene("reference.scene.json", document, error), "could not save model reference fixture");
+
+  std::ifstream metadataInput(project / "model.gltf.meta", std::ios::binary);
+  const std::string metadataBefore((std::istreambuf_iterator<char>(metadataInput)), std::istreambuf_iterator<char>());
+  Require(assets.RenameAsset(guid, "renamed", error), "asset rename failed");
+  Require(!std::filesystem::exists(project / "model.gltf") && !std::filesystem::exists(project / "model.gltf.meta"),
+          "asset rename left the previous source or metadata file behind");
+  Require(std::filesystem::exists(project / "renamed.gltf") && std::filesystem::exists(project / "renamed.gltf.meta"),
+          "asset rename did not move both source and metadata files");
+  Require(assets.GetSourcePath(guid) == project / "renamed.gltf", "asset rename changed or lost its registered GUID");
+  const auto knownModels = assets.GetKnownModels();
+  Require(knownModels.size() == 1 && knownModels.front().guid == guid && knownModels.front().name == "renamed",
+          "asset registry did not update the renamed asset's display name");
+
+  std::ifstream renamedMetadataInput(project / "renamed.gltf.meta", std::ios::binary);
+  const std::string metadataAfter((std::istreambuf_iterator<char>(renamedMetadataInput)),
+                                  std::istreambuf_iterator<char>());
+  Require(metadataBefore == metadataAfter, "asset rename changed persistent metadata identity");
+  const auto loadedReference = assets.LoadScene("reference.scene.json");
+  Require(loadedReference && loadedReference.document.entities.front().modelGuid == guid,
+          "scene reference no longer points to the renamed asset GUID");
+
+  std::ofstream(project / "occupied.gltf") << "occupied";
+  Require(!assets.RenameAsset(guid, "occupied", error) && !error.empty(),
+          "asset rename overwrote an existing destination");
+  Require(std::filesystem::exists(project / "renamed.gltf") && assets.GetSourcePath(guid) == project / "renamed.gltf",
+          "failed asset rename changed the registered asset state");
+  Require(!assets.RenameAsset(guid, "../outside", error) && !error.empty(),
+          "asset rename accepted a path traversal name");
+
+  WriteMinimalPng(project / "color.png");
+  std::string textureGuid;
+  Require(assets.ImportTexture("color.png", textureGuid, error), "texture import for rename test failed");
+  std::ifstream textureMetadataInput(project / "color.png.meta", std::ios::binary);
+  const std::string textureMetadataBefore((std::istreambuf_iterator<char>(textureMetadataInput)),
+                                          std::istreambuf_iterator<char>());
+  Engine::SceneMaterialDocument material;
+  material.baseColorTextureGuid = textureGuid;
+  document.entities.front().material = material;
+  Require(assets.SaveScene("texture-reference.scene.json", document, error),
+          "could not save texture reference fixture");
+  Require(assets.RenameAsset(textureGuid, "albedo", error), "texture rename failed");
+  Require(assets.GetSourcePath(textureGuid) == project / "albedo.png" &&
+              std::filesystem::exists(project / "albedo.png.meta"),
+          "texture rename did not preserve its registered identity and metadata");
+  const auto knownTextures = assets.GetKnownTextures();
+  Require(knownTextures.size() == 1 && knownTextures.front().guid == textureGuid &&
+              knownTextures.front().name == "albedo",
+          "texture registry did not update the renamed asset's display name");
+  std::ifstream renamedTextureMetadataInput(project / "albedo.png.meta", std::ios::binary);
+  const std::string textureMetadataAfter((std::istreambuf_iterator<char>(renamedTextureMetadataInput)),
+                                         std::istreambuf_iterator<char>());
+  Require(textureMetadataBefore == textureMetadataAfter, "texture rename changed persistent metadata identity");
+  const auto loadedTextureReference = assets.LoadScene("texture-reference.scene.json");
+  Require(loadedTextureReference && loadedTextureReference.document.entities.front().material &&
+              loadedTextureReference.document.entities.front().material->baseColorTextureGuid == textureGuid,
+          "material texture reference no longer resolves to the renamed texture GUID");
+  Require(assets.GetTexture(textureGuid) != nullptr, "texture rename invalidated its decoded image cache");
+}
+
 void TestDuplicateGuidAndProjectBoundary(const std::filesystem::path& workspace, const std::filesystem::path& project) {
   const auto source = project / "model.gltf";
   WriteMinimalModel(source);
@@ -273,6 +345,7 @@ auto main() -> int {
   try {
     TestWorkspace workspace;
     TestImportAndGuidReload(workspace.Project());
+    TestAssetRenamePreservesGuidAndSceneReferences(workspace.Project());
     TestTextureImportAndRegistry(workspace.Project());
     TestDuplicateGuidAndProjectBoundary(workspace.Path(), workspace.Project());
     TestSceneJsonRoundTrip(workspace.Project());

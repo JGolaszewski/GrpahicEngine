@@ -9,6 +9,7 @@
 #include "events/include/EcsEntitySelectedEvent.h"
 #include "events/include/EditorEvents.h"
 #include "panels/include/AssetBrowserPanel.h"
+#include "panels/include/AssetDropAssignment.h"
 #include "panels/include/CameraPreviewPanel.h"
 #include "panels/include/CameraPreviewRequest.h"
 #include "panels/include/EngineSettingsPanel.h"
@@ -555,6 +556,72 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
     BroadcastEvent(changed);
     return true;
   });
+  dispatcher.Dispatch<AssetRenameRequestedEvent>([this](const auto& request) -> bool {
+    if (GetAssetManager() == nullptr) {
+      const std::string error = "asset manager is unavailable; open a project before renaming assets";
+      ENGINE_LOG_ERROR("Asset", "Asset rename failed | reason: {}", error);
+      AssetWorkflowFeedbackEvent feedback(false, error);
+      BroadcastEvent(feedback);
+      return true;
+    }
+    std::string error;
+    if (!GetAssetManager()->RenameAsset(request.GetGuid(), request.GetNewName(), error)) {
+      ENGINE_LOG_ERROR("Asset", "Asset rename failed | guid: {} | reason: {}", request.GetGuid(), error);
+      AssetWorkflowFeedbackEvent feedback(false, error);
+      BroadcastEvent(feedback);
+      return true;
+    }
+    AssetRegistryChangedEvent changed(GetAssetManager()->GetKnownModels(), GetAssetManager()->GetKnownTextures());
+    BroadcastEvent(changed);
+    AssetWorkflowFeedbackEvent feedback(true, "Asset renamed; scene references remain valid");
+    BroadcastEvent(feedback);
+    return true;
+  });
+  dispatcher.Dispatch<ModelReassignmentRequestedEvent>([this](const auto& request) -> bool {
+    std::string error;
+    const auto fail = [this, &error](std::string message) -> bool {
+      error = std::move(message);
+      ENGINE_LOG_ERROR("Asset", "Model assignment failed | reason: {}", error);
+      AssetWorkflowFeedbackEvent feedback(false, error);
+      BroadcastEvent(feedback);
+      return true;
+    };
+    if (GetAssetManager() == nullptr) {
+      return fail("asset manager is unavailable; open a project before assigning models");
+    }
+    if (!m_ActiveScene || m_SelectedEntity == Engine::InvalidEntityHandle ||
+        !m_ActiveScene->World().IsAlive(m_SelectedEntity)) {
+      return fail("Select a live mesh entity before assigning a model");
+    }
+    auto* current = m_ActiveScene->World().Get<Engine::Ecs::MeshRenderer>(m_SelectedEntity);
+    if (current == nullptr) {
+      return fail("The selected entity does not have a Mesh Renderer component");
+    }
+    Engine::Ecs::MeshRenderer updated = *current;
+    const auto models = GetAssetManager()->GetKnownModels();
+    if (!AssignDroppedModel(updated, request.GetGuid(), models, error)) {
+      return fail(error);
+    }
+    if (!GetAssetManager()->LoadModel(request.GetGuid(), error)) {
+      return fail(error);
+    }
+    if (GetRenderSystem() != nullptr) {
+      const auto model = GetAssetManager()->GetModel(request.GetGuid());
+      const auto generation = GetAssetManager()->GetGeneration(request.GetGuid());
+      if (model == nullptr || !generation ||
+          !GetRenderSystem()->PrepareModelResources(request.GetGuid(), *generation, *model, {}, error)) {
+        return fail(error.empty() ? "Model resource preparation failed" : error);
+      }
+    }
+    const Engine::Status status = m_ActiveScene->SetInPlace(m_SelectedEntity, std::move(updated));
+    if (!status) {
+      return fail(status.error().Message);
+    }
+    BroadcastSceneChanged();
+    AssetWorkflowFeedbackEvent feedback(true, "Model assigned to selected Mesh Renderer");
+    BroadcastEvent(feedback);
+    return true;
+  });
   dispatcher.Dispatch<EcsEntityCreateRequestedEvent>([this](const auto& request) -> bool {
     (void)m_ActiveScene->QueueCreate(request.GetName(), request.GetParent(), request.GetPreset());
     return true;
@@ -579,6 +646,8 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
         const Engine::Status status = m_ActiveScene->SetInPlace(entity, std::move(component));
         if (!status) {
           ENGINE_LOG_WARN("Scene", "Editor component edit rejected | reason: {}", status.error().Message);
+          AssetWorkflowFeedbackEvent feedback(false, status.error().Message);
+          BroadcastEvent(feedback);
         }
       }
     };
@@ -608,6 +677,63 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
       if (operation == EcsComponentMutationRequestedEvent::Operation::Remove) {
         (void)m_ActiveScene->QueueRemove<Engine::Ecs::MeshRenderer>(entity);
       } else if (const auto* value = std::get_if<Engine::Ecs::MeshRenderer>(&payload)) {
+        const auto* previous = m_ActiveScene->World().Get<Engine::Ecs::MeshRenderer>(entity);
+        if (!value->ModelGuid.empty() && (previous == nullptr || previous->ModelGuid != value->ModelGuid)) {
+          std::string error;
+          if (GetAssetManager() == nullptr || !GetAssetManager()->LoadModel(value->ModelGuid, error)) {
+            if (error.empty()) {
+              error = "model asset manager is unavailable";
+            }
+          } else if (GetRenderSystem() != nullptr) {
+            const auto loadedModel = GetAssetManager()->GetModel(value->ModelGuid);
+            const auto loadedGeneration = GetAssetManager()->GetGeneration(value->ModelGuid);
+            if (loadedModel == nullptr || !loadedGeneration ||
+                !GetRenderSystem()->PrepareModelResources(value->ModelGuid, *loadedGeneration, *loadedModel, {},
+                                                          error)) {
+              if (error.empty()) {
+                error = "model resource preparation failed";
+              }
+            }
+          }
+          if (!error.empty()) {
+            ENGINE_LOG_ERROR("Asset", "Mesh model assignment rejected | guid: {} | reason: {}", value->ModelGuid,
+                             error);
+            AssetWorkflowFeedbackEvent feedback(false, error);
+            BroadcastEvent(feedback);
+            return true;
+          }
+        }
+        const auto prepareMaterial = [this](const Engine::SceneMaterialDocument& material) -> bool {
+          if (GetRenderSystem() == nullptr) {
+            return true;
+          }
+          const auto prepare = [this](const std::optional<std::string>& guid, bool srgb,
+                                      std::string_view semantic) -> bool {
+            if (!guid) {
+              return true;
+            }
+            std::string error;
+            if (!GetRenderSystem()->PrepareAssetTexture(*guid, srgb, error)) {
+              ENGINE_LOG_ERROR("Asset", "Material texture assignment rejected | slot: {} | guid: {} | reason: {}",
+                               semantic, *guid, error);
+              AssetWorkflowFeedbackEvent feedback(false, error);
+              BroadcastEvent(feedback);
+              return false;
+            }
+            return true;
+          };
+          return prepare(material.baseColorTextureGuid, true, "base-color") &&
+                 prepare(material.normalTextureGuid, false, "normal");
+        };
+        bool texturesReady = !value->Material || prepareMaterial(*value->Material);
+        for (const auto& material : value->MaterialOverrides) {
+          if (material) {
+            texturesReady = prepareMaterial(*material) && texturesReady;
+          }
+        }
+        if (!texturesReady) {
+          return true;
+        }
         queueMutation(*value);
       } else if (operation == EcsComponentMutationRequestedEvent::Operation::Add) {
         queueMutation(Engine::Ecs::MeshRenderer{});

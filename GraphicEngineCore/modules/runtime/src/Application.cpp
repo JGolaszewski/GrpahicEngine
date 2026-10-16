@@ -89,6 +89,7 @@ auto Application::InitializeCore() -> bool {
                      m_RenderBackend->GetDevice() != nullptr);
     return false;
   }
+  m_RenderSystem->SetAssetManager(m_AssetManager.get());
   m_DefaultViewport =
       std::make_shared<Viewport>(m_Window->GetWidth(), m_Window->GetHeight(), m_RenderBackend->GetDefaultFramebuffer());
 
@@ -413,6 +414,26 @@ auto Application::LoadSceneDocument(const SceneDocument& document, std::string& 
   std::vector<const SceneCameraDocument*> camerasToCreate;
   const SceneEntityDocument* rootDocument = nullptr;
 
+  const auto prepareMaterialTextures = [this, &warnings](const SceneMaterialDocument& material,
+                                                         const std::string& entityName) -> void {
+    if (m_RenderSystem == nullptr) {
+      return;
+    }
+    const auto prepare = [this, &warnings, &entityName](const std::optional<std::string>& guid, bool srgb,
+                                                        std::string_view slotName) -> void {
+      if (!guid) {
+        return;
+      }
+      std::string textureError;
+      if (!m_RenderSystem->PrepareAssetTexture(*guid, srgb, textureError)) {
+        warnings.push_back("entity '" + entityName + "': could not prepare " + std::string(slotName) + " texture " +
+                           *guid + ": " + textureError);
+      }
+    };
+    prepare(material.baseColorTextureGuid, true, "base-color");
+    prepare(material.normalTextureGuid, false, "normal");
+  };
+
   for (const auto& entity : document.entities) {
     if (entity.sceneRoot) {
       if (rootDocument != nullptr) {
@@ -435,6 +456,14 @@ auto Application::LoadSceneDocument(const SceneDocument& document, std::string& 
     if (entity.materialGuid) {
       setEntityError("references an unsupported standalone material asset");
       return false;
+    }
+    if (entity.material) {
+      prepareMaterialTextures(*entity.material, entity.name);
+    }
+    for (const auto& material : entity.materialOverrides) {
+      if (material) {
+        prepareMaterialTextures(*material, entity.name);
+      }
     }
     if (entity.modelGuid) {
       std::string assetError;

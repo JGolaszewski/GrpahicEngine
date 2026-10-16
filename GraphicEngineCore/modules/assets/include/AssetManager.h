@@ -77,6 +77,13 @@ public:
   /// @return True when import and registry update succeed.
   bool ImportTexture(const std::filesystem::path& sourcePath, std::string& guid, std::string& error);
 
+  /// Renames an imported model or texture while retaining its persistent asset identifier.
+  /// @param guid Stable identifier of the registered asset.
+  /// @param newName New filename without an extension.
+  /// @param error Receives a diagnostic when validation or either file rename fails.
+  /// @return True when the source file and adjacent metadata sidecar are renamed.
+  bool RenameAsset(const std::string& guid, const std::string& newName, std::string& error);
+
   /// Loads and caches the decoded model associated with an asset identifier.
   /// @param guid Registered model identifier.
   /// @param error Receives a diagnostic when lookup or decoding fails.

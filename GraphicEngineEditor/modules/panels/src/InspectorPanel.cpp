@@ -1,4 +1,4 @@
-﻿#include "panels/include/InspectorPanel.h"
+#include "panels/include/InspectorPanel.h"
 #include "panels/include/TransformRotation.h"
 
 #include <algorithm>
@@ -53,6 +53,12 @@ void InspectorPanel::OnEvent(Engine::Events::Event& event) {
   });
   dispatcher.Dispatch<AssetRegistryChangedEvent>([this](const auto& update) -> bool {
     m_Models = update.GetModels();
+    m_Textures = update.GetTextures();
+    return false;
+  });
+  dispatcher.Dispatch<AssetWorkflowFeedbackEvent>([this](const auto& update) -> bool {
+    m_AssetFeedbackSucceeded = update.Succeeded();
+    m_AssetFeedback = update.GetMessage();
     return false;
   });
 }
@@ -63,6 +69,10 @@ void InspectorPanel::Draw() {
     DrawEntityInspector();
   } else {
     ImGui::TextUnformatted("Select an entity from the scene hierarchy.");
+  }
+  if (!m_AssetFeedback.empty()) {
+    ImGui::TextColored(m_AssetFeedbackSucceeded ? ImVec4(0.45F, 0.85F, 0.5F, 1.0F) : ImVec4(0.95F, 0.4F, 0.35F, 1.0F),
+                       "%s", m_AssetFeedback.c_str());
   }
 
   ImGui::End();
@@ -153,6 +163,35 @@ void InspectorPanel::DrawEntityInspector() {
         changed = true;
       }
     }
+    ImGui::Button("Drop a model asset here", ImVec2(-1.0F, 0.0F));
+    if (ImGui::BeginDragDropTarget()) {
+      const auto handleModelPayload = [this, &mesh, &changed, &sourceIndex](const ImGuiPayload* payload) -> void {
+        if (payload == nullptr || !payload->IsDelivery()) {
+          return;
+        }
+        const auto guid = ReadAssetDragDropGuid(payload->Data, payload->DataSize);
+        std::string error;
+        if (!guid || !AssignDroppedModel(mesh, guid.value_or(std::string{}), m_Models, error)) {
+          m_AssetFeedbackSucceeded = false;
+          m_AssetFeedback = guid ? error : "Dropped model payload is malformed";
+          return;
+        }
+        m_MeshSourceSelectionIndex = 0;
+        sourceIndex = 0;
+        changed = true;
+        m_AssetFeedbackSucceeded = true;
+        m_AssetFeedback = "Model assigned to Mesh Renderer";
+      };
+      if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload(ModelAssetDragDropType)) {
+        handleModelPayload(payload);
+      }
+      if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload(TextureAssetDragDropType);
+          payload != nullptr && payload->IsDelivery()) {
+        m_AssetFeedbackSucceeded = false;
+        m_AssetFeedback = "Textures can only be dropped on a material texture slot";
+      }
+      ImGui::EndDragDropTarget();
+    }
     if (sourceIndex == 0) {
       const auto selected = std::ranges::find(m_Models, mesh.ModelGuid, &Engine::AssetManager::ModelAssetInfo::guid);
       const char* preview = selected == m_Models.end() ? "Select model..." : selected->name.c_str();
@@ -208,6 +247,41 @@ void InspectorPanel::DrawEntityInspector() {
     if (mesh.Material) {
       auto& material = *mesh.Material;
       ImGui::SeparatorText("Material");
+      const auto drawTextureTarget = [this, &material,
+                                      &changed](const char* label, MaterialTextureSlot slot,
+                                                const std::optional<std::string>& currentGuid) -> void {
+        std::string targetLabel = std::string(label) + ": Drop texture here";
+        if (currentGuid) {
+          const auto texture =
+              std::ranges::find(m_Textures, *currentGuid, &Engine::AssetManager::TextureAssetInfo::guid);
+          targetLabel = std::string(label) + ": " + (texture == m_Textures.end() ? *currentGuid : texture->name);
+        }
+        ImGui::Button(targetLabel.c_str(), ImVec2(-1.0F, 0.0F));
+        if (!ImGui::BeginDragDropTarget()) {
+          return;
+        }
+        if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload(TextureAssetDragDropType);
+            payload != nullptr && payload->IsDelivery()) {
+          const auto guid = ReadAssetDragDropGuid(payload->Data, payload->DataSize);
+          std::string error;
+          if (!guid || !AssignDroppedTexture(material, slot, guid.value_or(std::string{}), m_Textures, error)) {
+            m_AssetFeedbackSucceeded = false;
+            m_AssetFeedback = guid ? error : "Dropped texture payload is malformed";
+          } else {
+            changed = true;
+            m_AssetFeedbackSucceeded = true;
+            m_AssetFeedback = std::string(label) + " texture assigned";
+          }
+        }
+        if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload(ModelAssetDragDropType);
+            payload != nullptr && payload->IsDelivery()) {
+          m_AssetFeedbackSucceeded = false;
+          m_AssetFeedback = "Models cannot be assigned to material texture slots";
+        }
+        ImGui::EndDragDropTarget();
+      };
+      drawTextureTarget("Base color", MaterialTextureSlot::BaseColor, material.baseColorTextureGuid);
+      drawTextureTarget("Normal", MaterialTextureSlot::Normal, material.normalTextureGuid);
       changed |= ImGui::ColorEdit4("Base color", material.baseColor.data());
       changed |= ImGui::ColorEdit3("Emissive", material.emissive.data());
       changed |= ImGui::SliderFloat("Metallic", &material.metallic, 0.0F, 1.0F);

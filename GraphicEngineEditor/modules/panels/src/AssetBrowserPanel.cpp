@@ -3,7 +3,10 @@
 #include "events/include/AssetImportRequestedEvent.h"
 #include "events/include/AssetRegistryChangedEvent.h"
 #include "events/include/AssetReimportRequestedEvent.h"
+#include "events/include/AssetRenameRequestedEvent.h"
+#include "events/include/AssetWorkflowFeedbackEvent.h"
 #include "events/include/ModelReassignmentRequestedEvent.h"
+#include "panels/include/AssetDragDropPayload.h"
 #include <algorithm>
 #include <imgui.h>
 
@@ -32,7 +35,42 @@ void AssetBrowserPanel::Draw() {
   if (!selectedModel) {
     ImGui::EndDisabled();
   }
+  const auto selectedTexture =
+      std::ranges::find(m_Textures, m_SelectedGuid, &Engine::AssetManager::TextureAssetInfo::guid);
+  const std::string* selectedName =
+      selectedModel ? &std::ranges::find(m_Models, m_SelectedGuid, &Engine::AssetManager::ModelAssetInfo::guid)->name
+      : selectedTexture != m_Textures.end() ? &selectedTexture->name
+                                            : nullptr;
+  ImGui::SameLine();
+  if (selectedName == nullptr) {
+    ImGui::BeginDisabled();
+  }
+  if (ImGui::Button("Rename selected") && selectedName != nullptr) {
+    m_RenameBuffer.fill('\0');
+    const size_t length = (std::min)(selectedName->size(), m_RenameBuffer.size() - 1);
+    std::copy_n(selectedName->data(), length, m_RenameBuffer.data());
+    ImGui::OpenPopup("Rename asset");
+  }
+  if (selectedName == nullptr) {
+    ImGui::EndDisabled();
+  }
+  if (ImGui::BeginPopupModal("Rename asset", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+    (void)ImGui::InputText("New name", m_RenameBuffer.data(), m_RenameBuffer.size());
+    if (ImGui::Button("Rename") && m_RenameBuffer[0] != '\0') {
+      EmitEvent(std::make_unique<AssetRenameRequestedEvent>(m_SelectedGuid, m_RenameBuffer.data()));
+      ImGui::CloseCurrentPopup();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Cancel")) {
+      ImGui::CloseCurrentPopup();
+    }
+    ImGui::EndPopup();
+  }
   ImGui::Separator();
+  if (!m_StatusMessage.empty()) {
+    ImGui::TextColored(m_StatusSucceeded ? ImVec4(0.45F, 0.85F, 0.5F, 1.0F) : ImVec4(0.95F, 0.4F, 0.35F, 1.0F), "%s",
+                       m_StatusMessage.c_str());
+  }
   if (m_Models.empty() && m_Textures.empty()) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) // Dear ImGui formats text through its documented variadic API.
     ImGui::TextDisabled("No assets found in this project.");
@@ -46,6 +84,13 @@ void AssetBrowserPanel::Draw() {
     const bool selected = m_SelectedGuid == model.guid;
     if (ImGui::Selectable(model.name.c_str(), selected)) {
       m_SelectedGuid = model.guid;
+    }
+    if (ImGui::BeginDragDropSource()) {
+      if (const auto payload = MakeAssetDragDropPayload(model.guid)) {
+        ImGui::SetDragDropPayload(ModelAssetDragDropType, &*payload, sizeof(*payload));
+        ImGui::Text("Model: %s", model.name.c_str());
+      }
+      ImGui::EndDragDropSource();
     }
     if (ImGui::IsItemHovered()) {
       // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg)
@@ -63,6 +108,13 @@ void AssetBrowserPanel::Draw() {
     const std::string label = texture.name + "  [Texture]";
     if (ImGui::Selectable(label.c_str(), selected)) {
       m_SelectedGuid = texture.guid;
+    }
+    if (ImGui::BeginDragDropSource()) {
+      if (const auto payload = MakeAssetDragDropPayload(texture.guid)) {
+        ImGui::SetDragDropPayload(TextureAssetDragDropType, &*payload, sizeof(*payload));
+        ImGui::Text("Texture: %s", texture.name.c_str());
+      }
+      ImGui::EndDragDropSource();
     }
     if (ImGui::IsItemHovered()) {
       // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg)
@@ -85,6 +137,11 @@ void AssetBrowserPanel::OnEvent(Engine::Events::Event& event) {
         m_SelectedGuid.clear();
       }
     }
+    return false;
+  });
+  dispatcher.Dispatch<AssetWorkflowFeedbackEvent>([this](const auto& update) -> bool {
+    m_StatusSucceeded = update.Succeeded();
+    m_StatusMessage = update.GetMessage();
     return false;
   });
 }

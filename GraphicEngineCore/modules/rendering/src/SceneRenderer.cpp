@@ -248,6 +248,11 @@ void Engine::SceneRenderer::Init(nvrhi::IDevice* device, ::Engine::Renderer::Mat
   m_ShadowSampler = device->createSampler(shadowSamplerDesc);
 }
 
+void Engine::SceneRenderer::SetAssetTextureResolver(
+    std::function<std::shared_ptr<::Engine::Renderer::TextureResource>(const std::string&, bool)> resolver) {
+  m_AssetTextureResolver = std::move(resolver);
+}
+
 void Engine::SceneRenderer::EnsureDebugBuffer(nvrhi::BufferHandle& buffer, uint64_t& capacity, size_t vertexCount,
                                               const char* debugName) {
   if (vertexCount == 0) {
@@ -758,11 +763,25 @@ auto Engine::SceneRenderer::MaterialForSubmesh(const ::Engine::Renderer::RenderV
   }
 
   auto material = m_MaterialSystem->CreateMaterial(MaterialPropertiesFromDocument(*source));
-  if (material == nullptr || !m_MaterialSystem->SetPbrTextureBindings(material, submesh.material->GetBaseColorTexture(),
-                                                                      submesh.material->GetNormalTexture(),
-                                                                      submesh.material->GetMetallicRoughnessTexture(),
-                                                                      submesh.material->GetOcclusionTexture(),
-                                                                      submesh.material->GetEmissiveTexture(), true)) {
+  auto baseColorTexture = submesh.material->GetBaseColorTexture();
+  auto normalTexture = submesh.material->GetNormalTexture();
+  if (m_AssetTextureResolver != nullptr) {
+    if (source->baseColorTextureGuid) {
+      if (auto texture = m_AssetTextureResolver(*source->baseColorTextureGuid, true)) {
+        baseColorTexture = std::move(texture);
+      }
+    }
+    if (source->normalTextureGuid) {
+      if (auto texture = m_AssetTextureResolver(*source->normalTextureGuid, false)) {
+        normalTexture = std::move(texture);
+      }
+    }
+  }
+  if (material == nullptr ||
+      !m_MaterialSystem->SetPbrTextureBindings(material, std::move(baseColorTexture), std::move(normalTexture),
+                                               submesh.material->GetMetallicRoughnessTexture(),
+                                               submesh.material->GetOcclusionTexture(),
+                                               submesh.material->GetEmissiveTexture(), true)) {
     return submesh.material;
   }
   m_MaterialOverrideCache.insert_or_assign(key, MaterialOverrideCacheEntry{.Source = *source, .Material = material});

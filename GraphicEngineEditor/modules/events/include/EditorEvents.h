@@ -10,6 +10,8 @@
 #include "events/include/AssetImportRequestedEvent.h"
 #include "events/include/AssetRegistryChangedEvent.h"
 #include "events/include/AssetReimportRequestedEvent.h"
+#include "events/include/AssetRenameRequestedEvent.h"
+#include "events/include/AssetWorkflowFeedbackEvent.h"
 #include "events/include/CameraPreviewChangedEvent.h"
 #include "events/include/CameraPreviewOpenRequestedEvent.h"
 #include "events/include/CameraSettingsChangedEvent.h"

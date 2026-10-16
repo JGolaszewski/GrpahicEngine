@@ -4,6 +4,7 @@
 #include <DirectXMath.h>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <memory>
 #include <nvrhi/nvrhi.h>
@@ -59,6 +60,8 @@ public:
   void Init(nvrhi::IDevice* device, ::Engine::Renderer::MaterialSystem* materialSystem,
             ::Engine::Renderer::ShaderFactory* shaderFactory,
             const ::Engine::Renderer::ModelResourceLibrary* modelResources);
+  void SetAssetTextureResolver(
+      std::function<std::shared_ptr<::Engine::Renderer::TextureResource>(const std::string&, bool)> resolver);
 
   void BuildViews(::Engine::Renderer::FrameBlackboard& blackboard, nvrhi::ICommandList* commandList,
                   ::Engine::Renderer::FrameContext& frameContext, ::Engine::Renderer::FrameDiagnostics& diagnostics);
@@ -143,6 +146,7 @@ private:
   uint64_t m_DebugTriangleBufferCapacity = 0;
 
   ::Engine::Renderer::MaterialSystem* m_MaterialSystem = nullptr;
+  std::function<std::shared_ptr<::Engine::Renderer::TextureResource>(const std::string&, bool)> m_AssetTextureResolver;
   const ::Engine::Renderer::ModelResourceLibrary* m_ModelResources = nullptr;
   using MaterialOverrideKey = std::tuple<uintptr_t, uint32_t, uint32_t, std::string, int32_t, uintptr_t>;
   struct MaterialOverrideCacheEntry {

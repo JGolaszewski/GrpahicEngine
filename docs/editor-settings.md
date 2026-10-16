@@ -22,3 +22,12 @@ editor log and leaves the previous project active.
 Use **File > Open Scene** to load a `.scene.json` file into the editor. After a successful load, the scene hierarchy
 and inspector refresh to show the new scene. Cancelling or selecting an unreadable scene keeps the current scene
 active. The scene document path is updated only after activation succeeds.
+
+## Asset rename and assignment
+
+Select a model or texture in the Assets panel and use **Rename selected** to change its filename. The editor moves the
+asset and its adjacent metadata sidecar together, preserving the asset GUID used by saved scene references.
+
+Drag a model from the Assets panel onto **Drop a model asset here** in a mesh component to assign it. Drag a texture
+onto a material's **Base color** or **Normal** slot to assign that texture. Incompatible or stale drops are rejected,
+leave the component unchanged, and display a message in the Inspector.

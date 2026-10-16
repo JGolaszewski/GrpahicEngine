@@ -20,6 +20,7 @@ if(BUILD_TESTING)
         "${CMAKE_CURRENT_SOURCE_DIR}/../modules/rendering/src/RenderOutputImageWriters.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/../../GraphicEngineEditor/modules/application/src/EditorProjectWorkflow.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/../../GraphicEngineEditor/modules/application/src/EditorSceneDocument.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../../GraphicEngineEditor/modules/panels/src/AssetDropAssignment.cpp"
     )
     target_link_libraries(GraphicEngineUnitTests PRIVATE
         GraphicEngineCore

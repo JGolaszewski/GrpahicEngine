@@ -2,6 +2,7 @@
 
 #include "assets/include/AssetManager.h"
 #include "panels/include/EditorPanel.h"
+#include <array>
 #include <string>
 #include <vector>
 
@@ -14,4 +15,7 @@ private:
   std::vector<Engine::AssetManager::ModelAssetInfo> m_Models;
   std::vector<Engine::AssetManager::TextureAssetInfo> m_Textures;
   std::string m_SelectedGuid;
+  std::array<char, 256> m_RenameBuffer{};
+  std::string m_StatusMessage;
+  bool m_StatusSucceeded = true;
 };
