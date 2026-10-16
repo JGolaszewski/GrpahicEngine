@@ -70,4 +70,12 @@ TEST(AssetDropAssignmentTests, DragPayloadRequiresAWellFormedGuidAndFixedSize) {
   EXPECT_FALSE(MakeAssetDragDropPayload("bad-guid"));
   EXPECT_FALSE(ReadAssetDragDropGuid(&*payload, static_cast<int>(sizeof(*payload) - 1)));
 }
+
+TEST(AssetDropAssignmentTests, DragPayloadRejectsMalformedGuidBytes) {
+  auto payload = MakeAssetDragDropPayload(kModelGuid);
+  ASSERT_TRUE(payload);
+  payload->Guid[0] = 'x';
+
+  EXPECT_FALSE(ReadAssetDragDropGuid(&*payload, static_cast<int>(sizeof(*payload))));
+}
 } // namespace

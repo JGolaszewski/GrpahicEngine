@@ -165,39 +165,35 @@ void InspectorPanel::DrawEntityInspector() {
         changed = true;
       }
     }
-    ImGui::Button("Drop model here", ImVec2(-1.0F, 0.0F));
-    if (ImGui::BeginDragDropTarget()) {
-      const auto handleModelPayload = [this, &mesh, &changed, &sourceIndex](const ImGuiPayload* payload) -> void {
-        if (payload == nullptr || !payload->IsDelivery()) {
-          return;
-        }
-        const auto guid = ReadAssetDragDropGuid(payload->Data, payload->DataSize);
-        std::string error;
-        if (!guid || !AssignDroppedModel(mesh, guid.value_or(std::string{}), m_Models, error)) {
-          m_AssetFeedbackSucceeded = false;
-          m_AssetFeedback = guid ? error : "Dropped model payload is malformed";
-          return;
-        }
-        m_MeshSourceSelectionIndex = 0;
-        sourceIndex = 0;
-        changed = true;
-        m_AssetFeedbackSucceeded = true;
-        m_AssetFeedback = "Model assigned";
-      };
-      if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload(ModelAssetDragDropType)) {
-        handleModelPayload(payload);
-      }
-      if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload(TextureAssetDragDropType);
-          payload != nullptr && payload->IsDelivery()) {
-        m_AssetFeedbackSucceeded = false;
-        m_AssetFeedback = "Textures can only be dropped on a material texture slot";
-      }
-      ImGui::EndDragDropTarget();
-    }
     if (sourceIndex == 0) {
       const auto selected = std::ranges::find(m_Models, mesh.ModelGuid, &Engine::AssetManager::ModelAssetInfo::guid);
       const char* preview = selected == m_Models.end() ? "Select model..." : selected->name.c_str();
-      if (ImGui::BeginCombo("Model asset", preview)) {
+      const bool modelPickerOpen = ImGui::BeginCombo("Model asset", preview);
+      // The combo itself is the drop target, so models can be dropped directly
+      // onto the picker without a separate placeholder button.
+      if (ImGui::BeginDragDropTarget()) {
+        if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload(ModelAssetDragDropType);
+            payload != nullptr && payload->IsDelivery()) {
+          const auto guid = ReadAssetDragDropGuid(payload->Data, payload->DataSize);
+          std::string error;
+          if (!guid || !AssignDroppedModel(mesh, guid.value_or(std::string{}), m_Models, error)) {
+            m_AssetFeedbackSucceeded = false;
+            m_AssetFeedback = guid ? error : "Dropped model payload is malformed";
+          } else {
+            m_MeshSourceSelectionIndex = 0;
+            m_AssetFeedbackSucceeded = true;
+            m_AssetFeedback = "Model assigned";
+            changed = true;
+          }
+        }
+        if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload(TextureAssetDragDropType);
+            payload != nullptr && payload->IsDelivery()) {
+          m_AssetFeedbackSucceeded = false;
+          m_AssetFeedback = "Textures can only be dropped on a material texture slot";
+        }
+        ImGui::EndDragDropTarget();
+      }
+      if (modelPickerOpen) {
         for (const auto& model : m_Models) {
           const bool isSelected = model.guid == mesh.ModelGuid;
           if (ImGui::Selectable(model.name.c_str(), isSelected)) {
