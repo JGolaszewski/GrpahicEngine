@@ -398,7 +398,9 @@ TEST(RenderFinalTests, WARPAllLightTypesChangeReceivingGeometryWhenShadowsAreEna
     ASSERT_EQ(enabledPixels.size(), disabledPixels.size());
 
     size_t changedPixels = 0;
+    size_t darkenedPixels = 0;
     float largestChannelDifference = 0.0F;
+    float largestDarkening = 0.0F;
     for (size_t pixel = 0; pixel + 3U < enabledPixels.size(); pixel += 4U) {
       const size_t normalOffset = (pixel / 4U) * 3U;
       if (enabledNormals[normalOffset + 1U] < 0.8F) {
@@ -407,13 +409,24 @@ TEST(RenderFinalTests, WARPAllLightTypesChangeReceivingGeometryWhenShadowsAreEna
       const float difference = std::max({std::abs(enabledPixels[pixel] - disabledPixels[pixel]),
                                          std::abs(enabledPixels[pixel + 1U] - disabledPixels[pixel + 1U]),
                                          std::abs(enabledPixels[pixel + 2U] - disabledPixels[pixel + 2U])});
+      const float enabledLuminance =
+          enabledPixels[pixel] * 0.2126F + enabledPixels[pixel + 1U] * 0.7152F + enabledPixels[pixel + 2U] * 0.0722F;
+      const float disabledLuminance =
+          disabledPixels[pixel] * 0.2126F + disabledPixels[pixel + 1U] * 0.7152F + disabledPixels[pixel + 2U] * 0.0722F;
+      const float darkening = disabledLuminance - enabledLuminance;
       largestChannelDifference = std::max(largestChannelDifference, difference);
+      largestDarkening = std::max(largestDarkening, darkening);
       if (difference > 0.05F) {
         ++changedPixels;
+      }
+      if (darkening > 0.05F) {
+        ++darkenedPixels;
       }
     }
     EXPECT_GT(changedPixels, 4U) << lightNames[lightIndex] << " shadows should visibly darken receiver pixels";
     EXPECT_GT(largestChannelDifference, 0.1F) << lightNames[lightIndex] << " shadow contrast should be visible";
+    EXPECT_GT(darkenedPixels, 4U) << lightNames[lightIndex] << " shadows should darken receiver pixels";
+    EXPECT_GT(largestDarkening, 0.1F) << lightNames[lightIndex] << " shadow darkening should be visible";
   }
 }
 } // namespace
