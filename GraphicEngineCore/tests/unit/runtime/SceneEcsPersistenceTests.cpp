@@ -153,6 +153,11 @@ TEST(SceneEcsPersistenceTests, FailedInstantiationPreservesActiveScene) {
   std::vector<std::string> warnings;
   ASSERT_TRUE(application.LoadSceneDocument(initial, error, warnings)) << error;
   const auto activeBefore = application.GetScenes().front();
+  const Engine::SceneDocument stateBefore = application.CreateSceneDocument(*activeBefore);
+  ASSERT_EQ(stateBefore.entities.size(), 2U);
+  const auto existingBefore =
+      std::ranges::find(stateBefore.entities, std::string("Existing"), &Engine::SceneEntityDocument::name);
+  ASSERT_NE(existingBefore, stateBefore.entities.end());
 
   Engine::SceneDocument invalid;
   invalid.entities.push_back(entity);
@@ -163,8 +168,16 @@ TEST(SceneEcsPersistenceTests, FailedInstantiationPreservesActiveScene) {
   ASSERT_EQ(application.GetScenes().size(), 1U);
   EXPECT_EQ(application.GetScenes().front(), activeBefore);
   const Engine::SceneDocument stillActive = application.CreateSceneDocument(*activeBefore);
-  ASSERT_EQ(stillActive.entities.size(), 1U);
-  EXPECT_EQ(stillActive.entities.front().name, "Existing");
+  ASSERT_EQ(stillActive.entities.size(), stateBefore.entities.size());
+  const auto existingAfter =
+      std::ranges::find(stillActive.entities, std::string("Existing"), &Engine::SceneEntityDocument::name);
+  ASSERT_NE(existingAfter, stillActive.entities.end());
+  EXPECT_EQ(existingAfter->identityGuid, existingBefore->identityGuid);
+  const auto rootBefore = std::ranges::find(stateBefore.entities, true, &Engine::SceneEntityDocument::sceneRoot);
+  const auto rootAfter = std::ranges::find(stillActive.entities, true, &Engine::SceneEntityDocument::sceneRoot);
+  ASSERT_NE(rootBefore, stateBefore.entities.end());
+  ASSERT_NE(rootAfter, stillActive.entities.end());
+  EXPECT_EQ(rootAfter->identityGuid, rootBefore->identityGuid);
 }
 
 } // namespace

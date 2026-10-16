@@ -304,7 +304,7 @@ TEST(ScenePersistenceTests, RejectsMalformedEntityLightAndCameraFields) {
   checkRejected("entity-has-two-assets.json",
                 root("\"entities\":[{\"id\":1,\"modelGuid\":"
                      "\"11111111-1111-4111-8111-111111111111\",\"primitiveType\":\"cube\"}]"),
-                "must specify exactly one of modelGuid or primitiveType");
+                "cannot specify both modelGuid and primitiveType");
   checkRejected("invalid-material-overrides.json",
                 root("\"entities\":[{\"id\":1,\"modelGuid\":"
                      "\"11111111-1111-4111-8111-111111111111\",\"materialOverrides\":{}}]"),
