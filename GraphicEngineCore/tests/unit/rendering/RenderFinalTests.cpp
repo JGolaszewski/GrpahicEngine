@@ -2,6 +2,7 @@
 #include "rendering/include/renderer/Material.h"
 #include "rendering/include/renderer/Viewport.h"
 #include "rendering/src/render_graph/RenderGraph.h"
+#include "rendering/src/render_graph/RenderView.h"
 #include "scene/include/Scene.h"
 #include "scene/include/components/EcsComponents.h"
 
@@ -28,6 +29,12 @@ TEST(RenderFinalTests, WARPFinalOutputUsesRequestedDimensionsAndOmitsDebugPass) 
   constexpr uint32_t height = 7;
   auto result = renderer.RenderFinal(scene, camera, width, height);
   ASSERT_TRUE(result.has_value()) << (result.has_value() ? "" : result.error().Message);
+
+  const auto& finalViews = renderer.GetRenderGraph()->GetBlackboard().GetSceneViews();
+  ASSERT_EQ(finalViews.size(), 1U);
+  EXPECT_EQ(finalViews.front()->RenderMode, Engine::ViewportBinding::Mode::Final);
+  EXPECT_EQ(finalViews.front()->ViewportWidth, width);
+  EXPECT_EQ(finalViews.front()->ViewportHeight, height);
 
   const Engine::RenderOutput& output = result.value();
   EXPECT_EQ(output.Width, width);
@@ -56,6 +63,87 @@ TEST(RenderFinalTests, WARPFinalOutputUsesRequestedDimensionsAndOmitsDebugPass) 
   renderer.SubmitViews({editorBinding});
   renderer.EndFrame();
   EXPECT_NE(renderer.GetRenderGraph()->Dump().find("DebugPass"), std::string::npos);
+}
+
+TEST(RenderFinalTests, WARPSubmitsIndependentEditorAndPreviewViewsAndSkipsInvalidTargets) {
+  EngineTests::WarpDevice device;
+  if (!device.Initialize()) {
+    GTEST_SKIP() << "D3D11 WARP device could not be created on this host";
+  }
+
+  EngineTests::WarpRenderBackend backend(device.GetDevice());
+  Engine::RenderSystem renderer(&backend);
+  ASSERT_TRUE(renderer.IsValid());
+
+  Engine::Scene scene;
+  auto editorTarget = renderer.CreateViewportTarget(20, 10);
+  auto previewTarget = renderer.CreateViewportTarget(6, 3);
+  ASSERT_NE(editorTarget, nullptr);
+  ASSERT_NE(previewTarget, nullptr);
+  Engine::Viewport editorViewport(editorTarget);
+  Engine::Viewport previewViewport(previewTarget);
+
+  Engine::ViewportBinding editorBinding;
+  editorBinding.TargetScene = &scene;
+  editorBinding.TargetViewport = &editorViewport;
+  editorBinding.Camera.Position = {1.0F, 2.0F, 3.0F};
+  editorBinding.DebugSettings.ShowWireframePlane = true;
+
+  Engine::ViewportBinding previewBinding;
+  previewBinding.TargetScene = &scene;
+  previewBinding.TargetViewport = &previewViewport;
+  previewBinding.Camera.Position = {-4.0F, 5.0F, -6.0F};
+  previewBinding.RenderMode = Engine::ViewportBinding::Mode::Preview;
+  previewBinding.DebugSettings.ShowWireframePlane = true;
+
+  Engine::ViewportBinding releasedBinding = previewBinding;
+  Engine::Viewport releasedViewport(4, 4, nullptr);
+  releasedBinding.TargetViewport = &releasedViewport;
+
+  Engine::ViewportBinding zeroSizeBinding = editorBinding;
+  Engine::Viewport zeroSizeViewport(0, 4, nullptr);
+  zeroSizeBinding.TargetViewport = &zeroSizeViewport;
+
+  Engine::ViewportBinding mismatchedFinalBinding = editorBinding;
+  mismatchedFinalBinding.RenderMode = Engine::ViewportBinding::Mode::Final;
+  mismatchedFinalBinding.OutputWidth = 19;
+  mismatchedFinalBinding.OutputHeight = 10;
+
+  renderer.BeginFrame();
+  renderer.SubmitViews({editorBinding, previewBinding, releasedBinding, zeroSizeBinding, mismatchedFinalBinding});
+  EXPECT_EQ(renderer.GetRenderGraph()->GetBlackboard().GetSceneViews().size(), 2U);
+  renderer.EndFrame();
+
+  const auto& views = renderer.GetRenderGraph()->GetBlackboard().GetSceneViews();
+  ASSERT_EQ(views.size(), 2U);
+  const Engine::Renderer::RenderView* editorView = views.at(0);
+  const Engine::Renderer::RenderView* previewView = views.at(1);
+  EXPECT_EQ(editorView->RenderMode, Engine::ViewportBinding::Mode::Editor);
+  EXPECT_EQ(previewView->RenderMode, Engine::ViewportBinding::Mode::Preview);
+  EXPECT_EQ(editorView->ViewportWidth, 20U);
+  EXPECT_EQ(editorView->ViewportHeight, 10U);
+  EXPECT_EQ(previewView->ViewportWidth, 6U);
+  EXPECT_EQ(previewView->ViewportHeight, 3U);
+  EXPECT_NE(editorView->TargetFramebuffer, previewView->TargetFramebuffer);
+  EXPECT_NE(editorView->TargetFramebuffer->getDesc().colorAttachments.at(0).texture,
+            previewView->TargetFramebuffer->getDesc().colorAttachments.at(0).texture);
+  EXPECT_FLOAT_EQ(editorView->CameraPosition.x, 1.0F);
+  EXPECT_FLOAT_EQ(editorView->CameraPosition.y, 2.0F);
+  EXPECT_FLOAT_EQ(editorView->CameraPosition.z, 3.0F);
+  EXPECT_FLOAT_EQ(previewView->CameraPosition.x, -4.0F);
+  EXPECT_FLOAT_EQ(previewView->CameraPosition.y, 5.0F);
+  EXPECT_FLOAT_EQ(previewView->CameraPosition.z, -6.0F);
+  EXPECT_FALSE(editorView->DebugGeometryData.Empty());
+  EXPECT_TRUE(previewView->DebugGeometryData.Empty());
+  EXPECT_NE(renderer.GetRenderGraph()->Dump().find("DebugPass"), std::string::npos);
+
+  renderer.BeginFrame();
+  renderer.SubmitViews({previewBinding});
+  renderer.EndFrame();
+  EXPECT_EQ(renderer.GetRenderGraph()->GetBlackboard().GetSceneViews().size(), 1U);
+  EXPECT_EQ(renderer.GetRenderGraph()->GetBlackboard().GetSceneViews().front()->RenderMode,
+            Engine::ViewportBinding::Mode::Preview);
+  EXPECT_EQ(renderer.GetRenderGraph()->Dump().find("DebugPass"), std::string::npos);
 }
 
 TEST(RenderFinalTests, WARPTransparentLightingAovsCompositeLikeFinalColor) {

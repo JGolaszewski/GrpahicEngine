@@ -80,6 +80,10 @@ void EditorUiIntegration::EndFrame() {
   ID3D11DeviceContext* context = m_Backend->GetNativeContext();
   context->OMSetRenderTargets(1, &renderTarget, nullptr);
   ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+  if (m_ClearCameraPreviewAfterDraw) {
+    m_CameraPreviewTexture.reset();
+    m_ClearCameraPreviewAfterDraw = false;
+  }
 }
 
 void EditorUiIntegration::Shutdown() {
@@ -91,6 +95,8 @@ void EditorUiIntegration::Shutdown() {
   ImGui::DestroyContext();
   m_Backend = nullptr;
   m_PreviewTexture.reset();
+  m_CameraPreviewTexture.reset();
+  m_ClearCameraPreviewAfterDraw = false;
   m_Initialized = false;
 }
 
@@ -103,6 +109,16 @@ auto EditorUiIntegration::GetTextureId(const Engine::ViewportTarget* target) con
 
 auto EditorUiIntegration::SetRenderPreview(uint32_t width, uint32_t height, std::span<const uint8_t> rgbaPixels)
     -> bool {
+  return SetPreviewTexture(m_PreviewTexture, width, height, rgbaPixels);
+}
+
+auto EditorUiIntegration::SetCameraPreview(uint32_t width, uint32_t height, std::span<const uint8_t> rgbaPixels)
+    -> bool {
+  return SetPreviewTexture(m_CameraPreviewTexture, width, height, rgbaPixels);
+}
+
+auto EditorUiIntegration::SetPreviewTexture(std::unique_ptr<PreviewTexture>& target, uint32_t width, uint32_t height,
+                                            std::span<const uint8_t> rgbaPixels) -> bool {
   if (!m_Initialized || m_Backend == nullptr || width == 0 || height == 0 ||
       rgbaPixels.size() != static_cast<size_t>(width) * height * 4U) {
     return false;
@@ -125,10 +141,26 @@ auto EditorUiIntegration::SetRenderPreview(uint32_t width, uint32_t height, std:
       FAILED(device->CreateShaderResourceView(preview->Texture.Get(), nullptr, &preview->View))) {
     return false;
   }
-  m_PreviewTexture = std::move(preview);
+  if (&target == &m_CameraPreviewTexture) {
+    m_ClearCameraPreviewAfterDraw = false;
+  }
+  target = std::move(preview);
   return true;
 }
 
 auto EditorUiIntegration::GetRenderPreviewTextureId() const noexcept -> void* {
   return m_PreviewTexture == nullptr ? nullptr : m_PreviewTexture->View.Get();
+}
+
+auto EditorUiIntegration::GetCameraPreviewTextureId() const noexcept -> void* {
+  return m_CameraPreviewTexture == nullptr ? nullptr : m_CameraPreviewTexture->View.Get();
+}
+
+void EditorUiIntegration::ClearCameraPreview() noexcept {
+  if (m_Initialized) {
+    m_ClearCameraPreviewAfterDraw = true;
+  } else {
+    m_CameraPreviewTexture.reset();
+    m_ClearCameraPreviewAfterDraw = false;
+  }
 }

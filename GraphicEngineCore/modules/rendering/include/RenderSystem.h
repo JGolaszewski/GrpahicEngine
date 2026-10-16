@@ -9,6 +9,7 @@
 #include "rendering/include/renderer/Viewport.h"
 #include "rendering/include/renderer/ViewportBinding.h"
 #include "runtime/include/CoreExport.h"
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
@@ -39,13 +40,15 @@ class RenderGraph;
 } // namespace Renderer
 /// Configuration limits for the shadow rendering pass.
 struct ShadowSettings {
-  uint32_t Resolution = Engine::ShadowMapSize; ///< Shadow-map resolution in pixels.
+  uint32_t Resolution = Engine::ShadowMapSize;                   ///< Shadow-map resolution in pixels.
   uint32_t MaxShadowCastersPerScene = Engine::MaxShadowedLights; ///< Maximum shadow-casting lights per scene.
 };
 
 /// Coordinates frame rendering, resource management, and render graph execution.
 class ENGINE_API RenderSystem {
 public:
+  /// Opaque identifier for an asynchronous final-render readback request.
+  using FinalRenderTicket = uint64_t;
   /// Create a render system using the supplied backend.
   /// @param backend Backend that owns the device and command list.
   RenderSystem(IRenderBackend* backend);
@@ -78,9 +81,22 @@ public:
   /// @param height Target height in pixels.
   /// @return New target, or no value when creation fails.
   std::shared_ptr<Engine::ViewportTarget> CreateViewportTarget(uint32_t width, uint32_t height);
+  /// Submit a scene-camera render and GPU-to-staging copies without waiting for
+  /// the GPU. PollFinalRender must be called on the render thread until it
+  /// returns an output or an error. Only one final-render ticket may be active.
+  Engine::Result<FinalRenderTicket> BeginFinalRender(Engine::Scene& scene, const ::Engine::Renderer::CameraView& camera,
+                                                     uint32_t width, uint32_t height,
+                                                     const Engine::FinalColorPostProcess& postProcess = {});
+  /// Poll a submitted final render without blocking. An empty optional means
+  /// the GPU copy has not completed; the ticket is consumed on output or error.
+  Engine::Result<std::optional<Engine::RenderOutput>> PollFinalRender(FinalRenderTicket ticket);
+  /// Cancel a pending final render and release its GPU resources. This may wait
+  /// for submitted GPU work and is intended for orderly service shutdown.
+  Engine::Status CancelFinalRender(FinalRenderTicket ticket);
   /// Render the scene through its supplied scene camera into offscreen AOVs.
-  /// The call records and submits a complete frame and returns CPU-owned image
-  /// planes; it fails if another frame is active or any output cannot be read.
+  /// The blocking compatibility wrapper records and submits a complete frame
+  /// and returns CPU-owned image planes; asynchronous consumers should use the
+  /// ticket-based API above.
   /// @param scene Scene to render.
   /// @param camera Resolved camera parameters.
   /// @param width Output width in pixels.
@@ -243,6 +259,7 @@ private:
   IRenderBackend* const m_RenderBackend;
   std::unique_ptr<CommandListHolder> m_CommandList;
   std::unique_ptr<FinalReadbackCapture> m_FinalReadbackCapture;
+  FinalRenderTicket m_NextFinalRenderTicket = 0;
   bool m_FrameActive = false;
   std::string m_LastUploadFailure;
   std::string m_LastRenderGraphFailure;

@@ -20,6 +20,16 @@ Transparent materials are composited source-over in `FinalColor`, `SpecularLight
 
 The export reports invalid dimensions or samples, unsupported paths, and OpenImageIO create, open, write, or close failures through `Engine::Status`.
 
+`RenderOutputExportService` runs camera output export asynchronously. Start a
+PNG or selected-AOV EXR request on the render thread, call `Update` on later
+frames to poll GPU readback, then inspect `GetStatus` for writing progress,
+completion, or a diagnostic message. Once readback completes, the service
+passes an owning `RenderOutput` to its background OpenImageIO worker; the
+worker does not access scene, renderer, or UI objects. Call `Shutdown` on the
+render thread before the associated `RenderSystem` or graphics device is
+destroyed. Shutdown cancels a pending GPU ticket and joins the writer, allowing
+already queued file writes to finish safely.
+
 ## Multilayer OpenEXR
 
 `RenderOutputExporter::WriteMultilayerExr` writes each selected AOV as a named part in one multipart EXR. Part names and channel names come from the stable descriptors in `RenderOutput`; every part stores float32 samples without tone mapping or other value conversion. The selected AOV list controls the part order and contents. Empty selections, duplicate selections, missing planes, malformed sample counts, unsupported AOVs, and file errors return an error.

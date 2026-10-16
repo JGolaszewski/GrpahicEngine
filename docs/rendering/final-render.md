@@ -1,10 +1,29 @@
 # Final rendering and output planes
 
-`RenderSystem::RenderFinal` renders one scene-camera view to an offscreen target
-at the requested width and height. The call submits a complete frame and
-returns a CPU-owned `RenderOutput`. Final rendering does not include editor
-gizmos, camera frusta, or other debug geometry. Editor viewport rendering keeps
-its viewport dimensions and debug overlays.
+`RenderSystem::BeginFinalRender` renders one scene-camera view to an offscreen
+target at the requested width and height and returns a ticket after submitting
+GPU copies to staging textures. Call `PollFinalRender` on the render thread in
+later frames; it returns an empty optional until GPU work completes, then
+returns a CPU-owned `RenderOutput`. Only one final-render ticket may be active
+per render system. `RenderSystem::RenderFinal` remains available as a blocking
+compatibility wrapper. Final rendering does not include editor gizmos, camera
+frusta, or other debug geometry. Editor viewport rendering keeps its viewport
+dimensions and debug overlays.
+
+`RenderOutputExportService` starts PNG or selected-AOV EXR exports from a final
+render. Its `Update` method polls readback on the render thread and queues
+CPU-owned pixels for a background OpenImageIO writer. The service reports
+readback, writing, completion, and failure through request status. Call
+`Shutdown` before destroying its render system or graphics device; this
+cancels pending readback and joins the writer after queued writes finish.
+
+Interactive frame submission accepts multiple `ViewportBinding` values. Each
+view keeps its own camera and framebuffer dimensions. `Mode::Editor` draws
+editor debug geometry, `Mode::Preview` renders a single-color camera preview
+without editor debug geometry, and `Mode::Final` uses the final-render AOV
+attachments. Invalid bindings, including targets with no framebuffer or zero
+dimensions, are skipped. Preview resolution is controlled by its target size;
+the renderer derives the camera aspect ratio from those target dimensions.
 
 ## Output contract
 

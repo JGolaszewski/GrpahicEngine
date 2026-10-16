@@ -59,9 +59,14 @@ struct RenderSystem::CommandListHolder {
 };
 
 struct RenderSystem::FinalReadbackCapture {
+  FinalRenderTicket Ticket = 0;
+  uint32_t Width = 0;
+  uint32_t Height = 0;
   std::vector<nvrhi::TextureHandle> Sources;
   std::vector<nvrhi::StagingTextureHandle> Staging;
-  bool Completed = false;
+  nvrhi::EventQueryHandle CompletionQuery;
+  Engine::FinalColorPostProcess PostProcess;
+  bool Submitted = false;
 };
 
 namespace {
@@ -118,7 +123,12 @@ RenderSystem::RenderSystem(IRenderBackend* backend)
                   m_CommandList->Handle != nullptr, m_ResourceManager != nullptr);
 }
 
-RenderSystem::~RenderSystem() = default;
+RenderSystem::~RenderSystem() {
+  if (m_FinalReadbackCapture != nullptr && GetNvrhiDevice(m_RenderBackend) != nullptr) {
+    GetNvrhiDevice(m_RenderBackend)->waitForIdle();
+    m_FinalReadbackCapture.reset();
+  }
+}
 
 bool RenderSystem::IsValid() const { return m_CommandList && m_CommandList->Handle != nullptr; }
 
@@ -192,8 +202,8 @@ void RenderSystem::SubmitViews(const std::vector<Engine::ViewportBinding>& views
     view->ViewType = ::Engine::Renderer::RenderView::Type::Main;
     view->Initialize(binding.TargetScene, binding.Camera, binding.TargetViewport);
     view->TargetScene = binding.TargetScene;
-    view->FinalRender = binding.RenderMode == Engine::ViewportBinding::Mode::Final;
-    if (!view->FinalRender) {
+    view->RenderMode = binding.RenderMode;
+    if (view->RenderMode == Engine::ViewportBinding::Mode::Editor) {
       view->DebugSettings = binding.DebugSettings;
     }
 
@@ -247,7 +257,7 @@ void RenderSystem::SubmitViews(const std::vector<Engine::ViewportBinding>& views
   m_RenderGraph->AddPass(std::make_unique<::Engine::Renderer::ShadowPass>());
   m_RenderGraph->AddPass(std::make_unique<::Engine::Renderer::ForwardPass>(m_SceneRenderer.get()));
   const bool hasEditorView = std::ranges::any_of(bb.GetSceneViews(), [](const ::Engine::Renderer::RenderView* view) {
-    return view != nullptr && !view->FinalRender;
+    return view != nullptr && view->RenderMode == Engine::ViewportBinding::Mode::Editor;
   });
   if (hasEditorView) {
     m_RenderGraph->AddPass(std::make_unique<::Engine::Renderer::DebugPass>(m_SceneRenderer.get()));
@@ -630,6 +640,7 @@ void RenderSystem::EndFrame() {
   if (!IsValid() || !m_FrameActive) {
     return;
   }
+  bool finalReadbackSubmittedThisFrame = false;
 
   if (!m_RenderGraph->Compile()) {
     const std::string failure = "compile: " + m_RenderGraph->GetLastError();
@@ -642,6 +653,9 @@ void RenderSystem::EndFrame() {
     m_FrameContext->EndGpuTiming(m_CommandList->Handle);
     m_CommandList->Handle->close();
     GetNvrhiDevice(m_RenderBackend)->executeCommandList(m_CommandList->Handle);
+    if (m_FinalReadbackCapture != nullptr && !m_FinalReadbackCapture->Submitted) {
+      GetNvrhiDevice(m_RenderBackend)->waitForIdle();
+    }
     m_RenderBackend->EndGpuEvent();
     m_FrameActive = false;
     m_FrameContext->MarkSubmitted();
@@ -662,7 +676,7 @@ void RenderSystem::EndFrame() {
     ClearSubmittedTargets();
   } else {
     m_LastRenderGraphFailure.clear();
-    if (m_FinalReadbackCapture != nullptr) {
+    if (m_FinalReadbackCapture != nullptr && !m_FinalReadbackCapture->Submitted) {
       if (m_FinalReadbackCapture->Sources.size() != m_FinalReadbackCapture->Staging.size()) {
         m_LastRenderGraphFailure = "final output readback setup is incomplete";
       } else {
@@ -673,7 +687,13 @@ void RenderSystem::EndFrame() {
           m_CommandList->Handle->commitBarriers();
           m_CommandList->Handle->copyTexture(staging, nvrhi::TextureSlice(), source, nvrhi::TextureSlice());
         }
-        m_FinalReadbackCapture->Completed = true;
+        m_FinalReadbackCapture->CompletionQuery = GetNvrhiDevice(m_RenderBackend)->createEventQuery();
+        if (m_FinalReadbackCapture->CompletionQuery == nullptr) {
+          m_LastRenderGraphFailure = "failed to allocate final render completion query";
+        } else {
+          m_FinalReadbackCapture->Submitted = true;
+          finalReadbackSubmittedThisFrame = true;
+        }
       }
     }
   }
@@ -681,15 +701,21 @@ void RenderSystem::EndFrame() {
   m_FrameContext->EndGpuTiming(m_CommandList->Handle);
   m_CommandList->Handle->close();
   GetNvrhiDevice(m_RenderBackend)->executeCommandList(m_CommandList->Handle);
+  if (finalReadbackSubmittedThisFrame) {
+    GetNvrhiDevice(m_RenderBackend)
+        ->setEventQuery(m_FinalReadbackCapture->CompletionQuery, nvrhi::CommandQueue::Graphics);
+  } else if (m_FinalReadbackCapture != nullptr && !m_FinalReadbackCapture->Submitted) {
+    GetNvrhiDevice(m_RenderBackend)->waitForIdle();
+  }
   m_RenderBackend->EndGpuEvent();
   m_FrameActive = false;
   m_FrameContext->MarkSubmitted();
   m_ResourceManager->AdvanceSubmittedFrame(m_FrameContext->GetSubmittedFrames(), m_FrameContext->GetCompletedFrames());
 }
 
-auto RenderSystem::RenderFinal(Engine::Scene& scene, const ::Engine::Renderer::CameraView& camera, uint32_t width,
-                               uint32_t height, const Engine::FinalColorPostProcess& postProcess)
-    -> Engine::Result<Engine::RenderOutput> {
+auto RenderSystem::BeginFinalRender(Engine::Scene& scene, const ::Engine::Renderer::CameraView& camera, uint32_t width,
+                                    uint32_t height, const Engine::FinalColorPostProcess& postProcess)
+    -> Engine::Result<FinalRenderTicket> {
   if (m_FrameActive || (m_FinalReadbackCapture != nullptr)) {
     return std::unexpected(Engine::MakeError("final rendering requires an idle render system"));
   }
@@ -719,6 +745,13 @@ auto RenderSystem::RenderFinal(Engine::Scene& scene, const ::Engine::Renderer::C
   }
 
   auto capture = std::make_unique<FinalReadbackCapture>();
+  capture->Ticket = ++m_NextFinalRenderTicket;
+  capture->Width = width;
+  capture->Height = height;
+  if (capture->Ticket == 0) {
+    capture->Ticket = ++m_NextFinalRenderTicket;
+  }
+  capture->PostProcess = postProcess;
   constexpr uint32_t outputCount = 5;
   capture->Sources.reserve(outputCount);
   capture->Staging.reserve(outputCount);
@@ -761,12 +794,31 @@ auto RenderSystem::RenderFinal(Engine::Scene& scene, const ::Engine::Renderer::C
   }
   SubmitViews({binding});
   EndFrame();
-  if (m_FinalReadbackCapture == nullptr || !m_FinalReadbackCapture->Completed) {
-    m_FinalReadbackCapture.reset();
-    return std::unexpected(Engine::MakeError(
-        m_LastRenderGraphFailure.empty() ? "final rendering failed before output readback" : m_LastRenderGraphFailure));
-  }
+  return m_FinalReadbackCapture->Ticket;
+}
 
+auto RenderSystem::PollFinalRender(FinalRenderTicket ticket) -> Engine::Result<std::optional<Engine::RenderOutput>> {
+  if (m_FinalReadbackCapture == nullptr || ticket == 0 || m_FinalReadbackCapture->Ticket != ticket) {
+    return std::unexpected(Engine::MakeError("final render ticket is not active"));
+  }
+  if (!m_FinalReadbackCapture->Submitted || m_FinalReadbackCapture->CompletionQuery == nullptr) {
+    const std::string failure =
+        m_LastRenderGraphFailure.empty() ? "final rendering failed before output readback" : m_LastRenderGraphFailure;
+    m_FinalReadbackCapture.reset();
+    return std::unexpected(Engine::MakeError(failure));
+  }
+  nvrhi::IDevice* device = GetNvrhiDevice(m_RenderBackend);
+  if (device == nullptr) {
+    m_FinalReadbackCapture.reset();
+    return std::unexpected(Engine::MakeError("final render graphics device is unavailable during readback"));
+  }
+  if (!device->pollEventQuery(m_FinalReadbackCapture->CompletionQuery)) {
+    return std::optional<Engine::RenderOutput>{};
+  }
+  device->resetEventQuery(m_FinalReadbackCapture->CompletionQuery);
+  constexpr size_t outputCount = 5;
+  const uint32_t width = m_FinalReadbackCapture->Width;
+  const uint32_t height = m_FinalReadbackCapture->Height;
   Engine::RenderOutput output;
   output.Width = width;
   output.Height = height;
@@ -784,8 +836,7 @@ auto RenderSystem::RenderFinal(Engine::Scene& scene, const ::Engine::Renderer::C
   for (size_t planeIndex = 0; planeIndex < m_FinalReadbackCapture->Staging.size(); ++planeIndex) {
     auto& staging = m_FinalReadbackCapture->Staging.at(planeIndex);
     size_t rowPitch = 0;
-    void* mapped = GetNvrhiDevice(m_RenderBackend)
-                       ->mapStagingTexture(staging, nvrhi::TextureSlice(), nvrhi::CpuAccessMode::Read, &rowPitch);
+    void* mapped = device->mapStagingTexture(staging, nvrhi::TextureSlice(), nvrhi::CpuAccessMode::Read, &rowPitch);
     if (mapped == nullptr) {
       m_FinalReadbackCapture.reset();
       return std::unexpected(Engine::MakeError("failed to map a final render AOV for CPU readback"));
@@ -803,8 +854,9 @@ auto RenderSystem::RenderFinal(Engine::Scene& scene, const ::Engine::Renderer::C
         }
       }
     }
-    GetNvrhiDevice(m_RenderBackend)->unmapStagingTexture(staging);
+    device->unmapStagingTexture(staging);
   }
+  Engine::FinalColorPostProcess postProcess = std::move(m_FinalReadbackCapture->PostProcess);
   m_FinalReadbackCapture.reset();
 
   if (postProcess) {
@@ -813,7 +865,42 @@ auto RenderSystem::RenderFinal(Engine::Scene& scene, const ::Engine::Renderer::C
       return std::unexpected(Engine::MakeError("final-color post-processing failed: " + status.error().Message));
     }
   }
-  return output;
+  return std::optional<Engine::RenderOutput>(std::move(output));
+}
+
+auto RenderSystem::CancelFinalRender(FinalRenderTicket ticket) -> Engine::Status {
+  if (m_FinalReadbackCapture == nullptr || ticket == 0 || m_FinalReadbackCapture->Ticket != ticket) {
+    return std::unexpected(Engine::MakeError("final render ticket is not active"));
+  }
+  nvrhi::IDevice* device = GetNvrhiDevice(m_RenderBackend);
+  if (device == nullptr) {
+    return std::unexpected(Engine::MakeError("cannot cancel final render without a valid graphics device"));
+  }
+  device->waitForIdle();
+  m_FinalReadbackCapture.reset();
+  return {};
+}
+
+auto RenderSystem::RenderFinal(Engine::Scene& scene, const ::Engine::Renderer::CameraView& camera, uint32_t width,
+                               uint32_t height, const Engine::FinalColorPostProcess& postProcess)
+    -> Engine::Result<Engine::RenderOutput> {
+  auto ticket = BeginFinalRender(scene, camera, width, height, postProcess);
+  if (!ticket) {
+    return std::unexpected(ticket.error());
+  }
+  nvrhi::IDevice* device = GetNvrhiDevice(m_RenderBackend);
+  if (device == nullptr) {
+    return std::unexpected(Engine::MakeError("final rendering requires a valid graphics device"));
+  }
+  device->waitForIdle();
+  auto result = PollFinalRender(*ticket);
+  if (!result) {
+    return std::unexpected(result.error());
+  }
+  if (!result->has_value()) {
+    return std::unexpected(Engine::MakeError("final render completion query did not complete after GPU wait"));
+  }
+  return std::move(result->value());
 }
 
 auto RenderSystem::PickLight(float viewportX, float viewportY) const -> std::optional<Engine::LightId> {

@@ -2,6 +2,7 @@
 #include "rendering/include/renderer/CameraView.h"
 #include "rendering/include/renderer/DebugGeometry.h"
 #include "rendering/include/renderer/Light.h"
+#include "rendering/include/renderer/ViewportBinding.h"
 #include "rendering/src/RenderPacket.h"
 #include "rendering/src/render_graph/RGResources.h"
 #include "scene/include/ArchetypeWorld.h"
@@ -69,6 +70,7 @@ public:
 
   Engine::Scene* TargetScene = nullptr;
   nvrhi::IFramebuffer* TargetFramebuffer = nullptr;
+  Engine::ViewportBinding::Mode RenderMode = Engine::ViewportBinding::Mode::Editor;
   std::vector<RGViewportAttachment> OutputAttachments;
   DirectX::XMFLOAT3 CameraPosition = {0.0f, 0.0f, 0.0f};
   nvrhi::BufferHandle CameraBuffer;
@@ -89,8 +91,6 @@ public:
 
   void ExtractFrustumPlanes();
   bool IsSphereVisible(const DirectX::XMFLOAT3& center, float radius) const;
-  bool FinalRender = false;
-
   void Clear() {
     Queues.Clear();
     Lights.clear();

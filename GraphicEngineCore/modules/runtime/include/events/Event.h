@@ -25,6 +25,8 @@ enum class EventType {
   ViewportClicked,
   ViewportHovered,
   ViewportResizeRequested,
+  CameraPreviewChanged,
+  CameraPreviewOpenRequested,
   CameraSettingsChanged,
   MaterialChanged,
   CommandExecuteRequested,
