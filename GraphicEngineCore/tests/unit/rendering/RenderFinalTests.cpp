@@ -1,6 +1,9 @@
+#include "panels/include/AssetDragDropPayload.h"
+#include "panels/include/AssetDropAssignment.h"
 #include "rendering/include/RenderSystem.h"
 #include "rendering/include/renderer/Material.h"
 #include "rendering/include/renderer/Viewport.h"
+#include "rendering/src/SceneRenderer.h"
 #include "rendering/src/render_graph/RenderGraph.h"
 #include "rendering/src/render_graph/RenderView.h"
 #include "scene/include/Scene.h"
@@ -15,8 +18,11 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
-
+#include <memory>
+#include <optional>
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace {
 TEST(RenderFinalTests, WARPFinalOutputUsesRequestedDimensionsAndOmitsDebugPass) {
@@ -301,6 +307,137 @@ TEST(RenderFinalTests, WARPAllEditorExposedPrimitivesRender) {
       }
     }
   }
+}
+
+TEST(RenderFinalTests, WARPAssignedMaterialTextureGuidsReachLiveTextureResolver) {
+  EngineTests::WarpDevice device;
+  if (!device.Initialize()) {
+    GTEST_SKIP() << "D3D11 WARP device could not be created on this host";
+  }
+
+  EngineTests::WarpRenderBackend backend(device.GetDevice());
+  Engine::RenderSystem renderer(&backend);
+  ASSERT_TRUE(renderer.IsValid());
+
+  constexpr char baseColorGuid[] = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+  constexpr char normalGuid[] = "11111111-2222-4333-8444-555555555555";
+  const std::vector<Engine::AssetManager::TextureAssetInfo> textures = {{.guid = baseColorGuid, .name = "Base color"},
+                                                                        {.guid = normalGuid, .name = "Normal"}};
+  Engine::SceneMaterialDocument material;
+  std::string error;
+  for (const auto& [guid, slot] : std::array<std::pair<const char*, MaterialTextureSlot>, 2>{
+           {{baseColorGuid, MaterialTextureSlot::BaseColor}, {normalGuid, MaterialTextureSlot::Normal}}}) {
+    const auto payload = MakeAssetDragDropPayload(guid);
+    ASSERT_TRUE(payload);
+    const auto decoded = ReadAssetDragDropGuid(&*payload, static_cast<int>(sizeof(*payload)));
+    ASSERT_TRUE(decoded);
+    ASSERT_TRUE(AssignDroppedTexture(material, slot, *decoded, textures, error)) << error;
+  }
+  ASSERT_EQ(material.baseColorTextureGuid, std::optional<std::string>{baseColorGuid});
+  ASSERT_EQ(material.normalTextureGuid, std::optional<std::string>{normalGuid});
+
+  Engine::Renderer::MaterialProperties properties;
+  const auto defaultMaterial = renderer.CreateMaterial(properties);
+  ASSERT_NE(defaultMaterial, nullptr);
+  ASSERT_TRUE(renderer.CreatePrimitive(Engine::PrimitiveShape::Cube, defaultMaterial));
+
+  std::array<std::shared_ptr<Engine::Renderer::TextureResource>, 2> gpuTextures;
+  Engine::ImportedImage baseColorImage{.name = "red base color",
+                                       .mimeType = "image/raw",
+                                       .width = 1,
+                                       .height = 1,
+                                       .rgba8 = {255, 0, 0, 255}};
+  gpuTextures[0] = renderer.GetOrCreateTexture(baseColorGuid, 1U, baseColorImage, true, error);
+  ASSERT_NE(gpuTextures[0], nullptr) << error;
+  Engine::ImportedImage normalImage{.name = "flat normal",
+                                    .mimeType = "image/raw",
+                                    .width = 1,
+                                    .height = 1,
+                                    .rgba8 = {128, 128, 255, 255}};
+  gpuTextures[1] = renderer.GetOrCreateTexture(normalGuid, 1U, normalImage, false, error);
+  ASSERT_NE(gpuTextures[1], nullptr) << error;
+
+  std::vector<std::pair<std::string, bool>> resolved;
+  renderer.GetSceneRenderer()->SetAssetTextureResolver(
+      [&resolved, &gpuTextures](const std::string& guid,
+                                bool srgb) -> std::shared_ptr<Engine::Renderer::TextureResource> {
+        resolved.emplace_back(guid, srgb);
+        if (guid == "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee" && srgb) {
+          return gpuTextures[0];
+        }
+        if (guid == "11111111-2222-4333-8444-555555555555" && !srgb) {
+          return gpuTextures[1];
+        }
+        return nullptr;
+      });
+
+  Engine::Scene scene;
+  const uint64_t sequence = scene.QueueCreate("Textured entity");
+  const uint64_t lightSequence =
+      scene.QueueCreate("Texture test light", Engine::InvalidEntityHandle, Engine::Scene::EntityPreset::SpotLight);
+  const auto created = scene.sync();
+  ASSERT_EQ(created.size(), 2U);
+  ASSERT_EQ(created.front().Sequence, sequence);
+  ASSERT_EQ(created.at(1).Sequence, lightSequence);
+  ASSERT_TRUE(created.front().Outcome);
+  ASSERT_TRUE(created.at(1).Outcome);
+  const Engine::EntityHandle meshEntity = created.front().Entity;
+  const Engine::EntityHandle lightEntity = created.at(1).Entity;
+  Engine::SceneMaterialDocument materialWithoutTextures = material;
+  materialWithoutTextures.baseColorTextureGuid.reset();
+  materialWithoutTextures.normalTextureGuid.reset();
+  Engine::SceneMaterialDocument materialBaseColorOnly = material;
+  materialBaseColorOnly.normalTextureGuid.reset();
+  (void)scene.QueueAdd(meshEntity,
+                       Engine::Ecs::MeshRenderer{.PrimitiveType = "cube", .Material = materialWithoutTextures});
+  Engine::Ecs::Light light;
+  light.Type = Engine::Ecs::LightType::Point;
+  light.Intensity = 20.0F;
+  light.Range = 20.0F;
+  light.CastShadows = false;
+  (void)scene.QueueSet(lightEntity, light);
+  Engine::Ecs::LocalTransform lightTransform;
+  lightTransform.Position = {0.0F, 0.0F, -3.0F};
+  (void)scene.QueueSet(lightEntity, lightTransform);
+  ASSERT_TRUE(scene.Update(0.0F));
+
+  Engine::Renderer::CameraView camera;
+  camera.Position = {0.0F, 0.0F, -5.0F};
+  const auto withoutTextures = renderer.RenderFinal(scene, camera, 32, 32);
+  ASSERT_TRUE(withoutTextures.has_value()) << (withoutTextures.has_value() ? "" : withoutTextures.error().Message);
+
+  (void)scene.QueueSet(meshEntity,
+                       Engine::Ecs::MeshRenderer{.PrimitiveType = "cube", .Material = materialBaseColorOnly});
+  ASSERT_TRUE(scene.Update(0.0F));
+  const auto baseColorOutput = renderer.RenderFinal(scene, camera, 32, 32);
+  ASSERT_TRUE(baseColorOutput.has_value()) << (baseColorOutput.has_value() ? "" : baseColorOutput.error().Message);
+  ASSERT_EQ(resolved.size(), 1U);
+  EXPECT_EQ(resolved[0], (std::pair<std::string, bool>{baseColorGuid, true}));
+  const auto baseColorWarmOutput = renderer.RenderFinal(scene, camera, 32, 32);
+  ASSERT_TRUE(baseColorWarmOutput.has_value())
+      << (baseColorWarmOutput.has_value() ? "" : baseColorWarmOutput.error().Message);
+
+  resolved.clear();
+  (void)scene.QueueSet(meshEntity, Engine::Ecs::MeshRenderer{.PrimitiveType = "cube", .Material = material});
+  ASSERT_TRUE(scene.Update(0.0F));
+  const auto output = renderer.RenderFinal(scene, camera, 32, 32);
+  ASSERT_TRUE(output.has_value()) << (output.has_value() ? "" : output.error().Message);
+  ASSERT_EQ(resolved.size(), 2U);
+  EXPECT_EQ(resolved[0], (std::pair<std::string, bool>{baseColorGuid, true}));
+  EXPECT_EQ(resolved[1], (std::pair<std::string, bool>{normalGuid, false}));
+  ASSERT_TRUE(renderer.RenderFinal(scene, camera, 32, 32).has_value());
+
+  const auto untextured = withoutTextures->GetPixels(Engine::RenderAov::FinalColor);
+  const auto textured = baseColorWarmOutput->GetPixels(Engine::RenderAov::FinalColor);
+  ASSERT_FALSE(untextured.empty());
+  ASSERT_EQ(textured.size(), untextured.size());
+  float largestDifference = 0.0F;
+  for (size_t pixel = 0; pixel + 3U < textured.size(); pixel += 4U) {
+    largestDifference = std::max({largestDifference, std::abs(textured[pixel] - untextured[pixel]),
+                                  std::abs(textured[pixel + 1U] - untextured[pixel + 1U]),
+                                  std::abs(textured[pixel + 2U] - untextured[pixel + 2U])});
+  }
+  EXPECT_GT(largestDifference, 0.1F) << "authored texture references should affect rendered output";
 }
 
 TEST(RenderFinalTests, WARPAllLightTypesChangeReceivingGeometryWhenShadowsAreEnabled) {

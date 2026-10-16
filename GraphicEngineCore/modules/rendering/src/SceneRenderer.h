@@ -110,7 +110,7 @@ private:
   bool ConfigureAndQueuePacket(::Engine::Renderer::RenderView* view, const ::Engine::Ecs::MeshRenderer& meshRenderer,
                                const ::Engine::Renderer::Submesh& submesh,
                                const ::Engine::Renderer::MaterialProperties& materialProperties,
-                               const nvrhi::FramebufferInfoEx& framebufferInfo,
+                               bool hasTextureOverrides, const nvrhi::FramebufferInfoEx& framebufferInfo,
                                ::Engine::Renderer::RenderPacket& packet, bool disableFaceCulling);
   static void SortViewQueues(::Engine::Renderer::RenderView* view);
   void EnsureDebugBuffer(nvrhi::BufferHandle& buffer, uint64_t& capacity, size_t vertexCount, const char* debugName);

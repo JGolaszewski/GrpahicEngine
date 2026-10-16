@@ -684,13 +684,11 @@ auto Engine::SceneRenderer::IsSubmeshVisible(::Engine::Renderer::RenderView* vie
   return visible;
 }
 
-auto Engine::SceneRenderer::ConfigureAndQueuePacket(::Engine::Renderer::RenderView* view,
-                                                    const ::Engine::Ecs::MeshRenderer& meshRenderer,
-                                                    const ::Engine::Renderer::Submesh& submesh,
-                                                    const ::Engine::Renderer::MaterialProperties& materialProperties,
-                                                    const nvrhi::FramebufferInfoEx& framebufferInfo,
-                                                    ::Engine::Renderer::RenderPacket& packet, bool disableFaceCulling)
-    -> bool {
+auto Engine::SceneRenderer::ConfigureAndQueuePacket(
+    ::Engine::Renderer::RenderView* view, const ::Engine::Ecs::MeshRenderer& meshRenderer,
+    const ::Engine::Renderer::Submesh& submesh, const ::Engine::Renderer::MaterialProperties& materialProperties,
+    bool hasTextureOverrides, const nvrhi::FramebufferInfoEx& framebufferInfo, ::Engine::Renderer::RenderPacket& packet,
+    bool disableFaceCulling) -> bool {
   if (view->ViewType == ::Engine::Renderer::RenderView::Type::Shadow &&
       materialProperties.AlphaMode == ::Engine::Renderer::MaterialAlphaMode::Blend) {
     return false;
@@ -739,8 +737,7 @@ auto Engine::SceneRenderer::ConfigureAndQueuePacket(::Engine::Renderer::RenderVi
     key.CullMode = (materialProperties.DoubleSided || disableFaceCulling) ? nvrhi::RasterCullMode::None
                                                                           : nvrhi::RasterCullMode::Back;
   } else {
-    key.PS =
-        submesh.material->HasTextureOverrides() ? m_MaterialSystem->GetTexturedPS() : m_MaterialSystem->GetStandardPS();
+    key.PS = hasTextureOverrides ? m_MaterialSystem->GetTexturedPS() : m_MaterialSystem->GetStandardPS();
     key.Wireframe = meshRenderer.Wireframe;
     key.DepthTest = !meshRenderer.DisableDepthTest;
     key.CullMode = (meshRenderer.Wireframe || materialProperties.DoubleSided || disableFaceCulling)
@@ -815,8 +812,8 @@ void Engine::SceneRenderer::SubmitSubmesh(::Engine::Renderer::RenderView* view,
   packet.PerObjectData = perObjectData;
   const bool disableFaceCulling =
       transform.HasAxisFlip || DirectX::XMVectorGetX(DirectX::XMMatrixDeterminant(world)) < 0.0F;
-  if (ConfigureAndQueuePacket(view, meshRenderer, submesh, material->GetProperties(), framebufferInfo, packet,
-                              disableFaceCulling)) {
+  if (ConfigureAndQueuePacket(view, meshRenderer, submesh, material->GetProperties(), material->HasTextureOverrides(),
+                              framebufferInfo, packet, disableFaceCulling)) {
     m_SubmissionStats.PacketBuildTimeMs +=
         std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - packetBuildStart).count();
   }
