@@ -76,6 +76,34 @@ TEST(ScenePersistenceTests, RoundTripsFieldsAndRejectsTraversalWithoutOverwritin
   EXPECT_TRUE(loaded.document.entities.front().forceWireframe);
 }
 
+TEST(ScenePersistenceTests, SchemaThreeRoundTripsSceneRootAndEmptyHierarchyEntities) {
+  TemporaryProject project;
+  Engine::AssetManager assets(project.Root());
+  Engine::SceneDocument document;
+  Engine::SceneEntityDocument root;
+  root.id = 1;
+  root.identityGuid = Engine::SceneGuidDocument{.high = 8, .low = 1};
+  root.name = "Level One";
+  root.sceneRoot = true;
+  document.entities.push_back(root);
+  Engine::SceneEntityDocument emptyEntity;
+  emptyEntity.id = 2;
+  emptyEntity.identityGuid = Engine::SceneGuidDocument{.high = 8, .low = 2};
+  emptyEntity.parentGuid = root.identityGuid;
+  emptyEntity.name = "Empty Entity";
+  document.entities.push_back(emptyEntity);
+
+  std::string error;
+  ASSERT_TRUE(assets.SaveScene("scene-root.scene.json", document, error)) << error;
+  const auto loaded = assets.LoadScene("scene-root.scene.json");
+  ASSERT_TRUE(loaded) << loaded.error;
+  ASSERT_EQ(loaded.document.entities.size(), 2U);
+  EXPECT_TRUE(loaded.document.entities[0].sceneRoot);
+  EXPECT_EQ(loaded.document.entities[0].name, "Level One");
+  EXPECT_FALSE(loaded.document.entities[1].sceneRoot);
+  EXPECT_EQ(loaded.document.entities[1].parentGuid, root.identityGuid);
+}
+
 TEST(ScenePersistenceTests, PersistsCameraResolutionAndUsesFullHdDefaultsForOlderScenes) {
   TemporaryProject project;
   Engine::AssetManager assets(project.Root());

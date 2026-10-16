@@ -8,8 +8,9 @@
 /// while that target is retained; a null handle and zero dimensions clear it.
 class CameraPreviewChangedEvent final : public Engine::Events::Event {
 public:
-  CameraPreviewChangedEvent(Engine::EntityHandle entity, void* textureId, float width, float height)
-      : m_Entity(entity), m_TextureId(textureId), m_Width(width), m_Height(height) {}
+  CameraPreviewChangedEvent(Engine::EntityHandle entity, void* textureId, float width, float height,
+                            float displayScale = 0.35F)
+      : m_Entity(entity), m_TextureId(textureId), m_Width(width), m_Height(height), m_DisplayScale(displayScale) {}
 
   static auto GetStaticType() -> Engine::Events::EventType { return Engine::Events::EventType::CameraPreviewChanged; }
   auto GetType() const -> Engine::Events::EventType override { return GetStaticType(); }
@@ -17,10 +18,12 @@ public:
   [[nodiscard]] auto GetTextureId() const noexcept -> void* { return m_TextureId; }
   [[nodiscard]] auto GetWidth() const noexcept -> float { return m_Width; }
   [[nodiscard]] auto GetHeight() const noexcept -> float { return m_Height; }
+  [[nodiscard]] auto GetDisplayScale() const noexcept -> float { return m_DisplayScale; }
 
 private:
   Engine::EntityHandle m_Entity = Engine::InvalidEntityHandle;
   void* m_TextureId = nullptr;
   float m_Width = 0.0F;
   float m_Height = 0.0F;
+  float m_DisplayScale = 0.35F;
 };

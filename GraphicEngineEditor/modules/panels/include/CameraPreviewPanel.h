@@ -64,6 +64,9 @@ private:
   std::optional<Engine::RenderOutputExportService::RequestId> m_ExportRequest;
   std::array<bool, 5> m_SelectedAovs = {true, true, true, true, true};
   float m_Zoom = 1.0F;
+  std::array<float, 2> m_ImageOffset{};
+  std::array<float, 2> m_LastMousePosition{};
+  bool m_IsPanning = false;
   bool m_Open = false;
   bool m_RefreshRequested = false;
   bool m_HasImage = false;

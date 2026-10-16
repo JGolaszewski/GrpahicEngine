@@ -27,6 +27,7 @@ private:
   void* m_CameraPreviewTextureId = nullptr;
   Engine::EntityHandle m_CameraPreviewEntity = Engine::InvalidEntityHandle;
   std::pair<float, float> m_CameraPreviewSize = {0.0f, 0.0f};
+  float m_CameraPreviewScale = 0.35F;
   std::pair<float, float> m_ViewportSize = {0.0f, 0.0f};
   bool m_IsHovered = false;
 };

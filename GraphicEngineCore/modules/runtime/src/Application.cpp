@@ -18,6 +18,7 @@
 #include <map>
 #include <nvrhi/nvrhi.h>
 #include <optional>
+#include <string_view>
 #include <thread>
 
 namespace Engine {
@@ -337,6 +338,23 @@ auto Application::LoadScene(const std::filesystem::path& path, std::string& erro
   warnings = std::move(loaded.warnings);
   const bool loadedSuccessfully = LoadSceneDocument(loaded.document, error, warnings);
   if (loadedSuccessfully) {
+    const auto& scenes = GetScenes();
+    if (!scenes.empty()) {
+      std::string sceneName = path.filename().string();
+      constexpr std::string_view sceneExtension = ".scene.json";
+      if (sceneName.ends_with(sceneExtension)) {
+        sceneName.resize(sceneName.size() - sceneExtension.size());
+      } else {
+        sceneName = path.stem().string();
+      }
+      (void)scenes.back()->QueueSet(scenes.back()->SceneRootEntity(), Ecs::Name{.Value = sceneName});
+      for (const auto& result : scenes.back()->sync()) {
+        if (!result.Outcome) {
+          error = result.Outcome.error().Message;
+          return false;
+        }
+      }
+    }
     ENGINE_LOG_INFO("Asset", "Scene loaded | path: {} | entities: {} | lights: {} | cameras: {}", path.generic_string(),
                     loaded.document.entities.size(), loaded.document.lights.size(), loaded.document.cameras.size());
   } else {
@@ -370,8 +388,17 @@ auto Application::LoadSceneDocument(const SceneDocument& document, std::string& 
   std::vector<const SceneEntityDocument*> entitiesToCreate;
   std::vector<const SceneLightDocument*> lightsToCreate;
   std::vector<const SceneCameraDocument*> camerasToCreate;
+  const SceneEntityDocument* rootDocument = nullptr;
 
   for (const auto& entity : document.entities) {
+    if (entity.sceneRoot) {
+      if (rootDocument != nullptr) {
+        error = "scene document contains multiple scene roots";
+        return false;
+      }
+      rootDocument = &entity;
+      continue;
+    }
     const auto setEntityError = [&error, &entity](std::string_view message) -> void {
       error.assign("entity '");
       error.append(entity.name);
@@ -459,6 +486,9 @@ auto Application::LoadSceneDocument(const SceneDocument& document, std::string& 
     } else if (cameraIndex < camerasToCreate.size()) {
       cameras.push_back({.Handle = result.Entity, .Document = camerasToCreate.at(cameraIndex++)});
     }
+  }
+  if (rootDocument != nullptr) {
+    entities.push_back({.Handle = stagedScene->SceneRootEntity(), .Document = rootDocument});
   }
   if (entityIndex != entitiesToCreate.size() || lightIndex != lightsToCreate.size() ||
       cameraIndex != camerasToCreate.size()) {
@@ -596,6 +626,15 @@ auto Application::LoadSceneDocument(const SceneDocument& document, std::string& 
       return false;
     }
   }
+  if (rootDocument == nullptr) {
+    (void)stagedScene->QueueSet(stagedScene->SceneRootEntity(), Ecs::Name{.Value = "Scene"});
+    for (const auto& result : stagedScene->sync()) {
+      if (!result.Outcome) {
+        error = result.Outcome.error().Message;
+        return false;
+      }
+    }
+  }
 
   m_ActiveViews.clear();
   m_ActiveScenes.clear();
@@ -631,6 +670,7 @@ auto Application::CreateSceneDocument(const Scene& scene) const -> SceneDocument
           entity.id = identities[row].Guid.Low;
           entity.identityGuid = SceneGuidDocument{.high = identities[row].Guid.High, .low = identities[row].Guid.Low};
           entity.name = names[row].Value;
+          entity.sceneRoot = world.Get<Ecs::SceneRoot>(handles[row]) != nullptr;
           entity.visible = visibility[row].IsVisible;
           if (const auto* parent = world.Get<Ecs::Parent>(handles[row]);
               parent != nullptr && parent->Id != InvalidEntityHandle) {

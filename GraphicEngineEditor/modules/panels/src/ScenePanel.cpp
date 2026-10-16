@@ -24,6 +24,7 @@ void ScenePanel::OnEvent(Engine::Events::Event& event) {
     m_CameraPreviewEntity = eventData.GetEntity();
     m_CameraPreviewTextureId = eventData.GetTextureId();
     m_CameraPreviewSize = {eventData.GetWidth(), eventData.GetHeight()};
+    m_CameraPreviewScale = eventData.GetDisplayScale();
     return false;
   });
 }
@@ -62,8 +63,8 @@ void ScenePanel::Draw() {
   bool hasCameraPreview =
       m_CameraPreviewTextureId != nullptr && m_CameraPreviewSize.first > 0.0F && m_CameraPreviewSize.second > 0.0F;
   if (hasCameraPreview) {
-    constexpr float previewMaxEdge = 320.0F;
-    constexpr float viewportFraction = 0.35F;
+    constexpr float previewMaxEdge = 480.0F;
+    const float viewportFraction = m_CameraPreviewScale;
     const float aspect = m_CameraPreviewSize.first / m_CameraPreviewSize.second;
     const float maxWidth = (std::min)(previewMaxEdge, viewportPanelSize.x * viewportFraction);
     const float maxHeight = (std::min)(previewMaxEdge, viewportPanelSize.y * viewportFraction);
@@ -96,6 +97,9 @@ void ScenePanel::Draw() {
   if (hasCameraPreview) {
     ImGui::SetCursorScreenPos(previewPosition);
     ImGui::Image(m_CameraPreviewTextureId, previewSize);
+    ImGui::GetWindowDrawList()->AddRect(previewPosition,
+                                        ImVec2(previewPosition.x + previewSize.x, previewPosition.y + previewSize.y),
+                                        IM_COL32(255, 210, 64, 255), 0.0F, 0, 3.0F);
     if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
       EmitEvent(std::make_unique<CameraPreviewOpenRequestedEvent>(m_CameraPreviewEntity));
     }

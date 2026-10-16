@@ -313,9 +313,9 @@ TEST(SystemSchedulerTests, SynchronizesStructuralWritesBeforeLaterSystemsReadThe
       .Name = "Queue entity creation",
       .WritesStructure = true,
       .Execute = [&scene](ArchetypeWorld&) -> void {
-        EXPECT_EQ(scene.EntityCount(), 0U);
+        EXPECT_EQ(scene.EntityCount(), 1U);
         (void)scene.QueueCreate("Staged entity");
-        EXPECT_EQ(scene.EntityCount(), 0U);
+        EXPECT_EQ(scene.EntityCount(), 1U);
       },
   }));
   ASSERT_TRUE(scheduler.AddSystem({
@@ -326,14 +326,14 @@ TEST(SystemSchedulerTests, SynchronizesStructuralWritesBeforeLaterSystemsReadThe
             [&synchronizedCount](std::span<const EntityHandle> entities, std::span<const Engine::Ecs::Name>) -> void {
               synchronizedCount += entities.size();
             });
-        observedBeforeSync = target.EntityCount() == 1U;
+        observedBeforeSync = target.EntityCount() == 2U;
       },
   }));
 
   ASSERT_TRUE(scene.Update(0.0F));
   EXPECT_TRUE(observedBeforeSync);
-  EXPECT_EQ(synchronizedCount, 1U);
-  EXPECT_EQ(scene.EntityCount(), 1U);
+  EXPECT_EQ(synchronizedCount, 2U);
+  EXPECT_EQ(scene.EntityCount(), 2U);
 }
 
 TEST(SystemSchedulerTests, RejectsStructuralSchedulesWithoutABarrierBeforeExecution) {
@@ -381,7 +381,7 @@ TEST(SceneEcsMutationQueueTests, CommitsCreationAtTheStructuralBarrier) {
   Engine::Scene scene;
   const uint64_t sequence = scene.QueueCreateEcsEntity("Camera rig");
   EXPECT_EQ(sequence, 1U);
-  EXPECT_EQ(scene.GetArchetypeWorld().EntityCount(), 0U);
+  EXPECT_EQ(scene.GetArchetypeWorld().EntityCount(), 1U);
 
   const auto results = scene.DrainStructuralCommands();
   ASSERT_EQ(results.size(), 1U);
@@ -392,7 +392,10 @@ TEST(SceneEcsMutationQueueTests, CommitsCreationAtTheStructuralBarrier) {
   EXPECT_TRUE(scene.GetArchetypeWorld().Has<Engine::Ecs::LocalTransform>(entity));
   EXPECT_TRUE(scene.GetArchetypeWorld().Has<Engine::Ecs::Name>(entity));
   EXPECT_TRUE(scene.GetArchetypeWorld().Has<Engine::Ecs::PersistentIdentity>(entity));
-  EXPECT_EQ(scene.GetEcsHierarchySnapshot().front().Name, "Camera rig");
+  const auto hierarchy = scene.GetEcsHierarchySnapshot();
+  ASSERT_EQ(hierarchy.size(), 2U);
+  EXPECT_TRUE(hierarchy.front().IsSceneRoot);
+  EXPECT_EQ(hierarchy.back().Name, "Camera rig");
 }
 
 TEST(SceneEcsMutationQueueTests, AppliesOwnedComponentEditsAndRejectsHierarchyCycles) {
@@ -429,10 +432,11 @@ TEST(SceneEcsMutationQueueTests, AppliesOwnedComponentEditsAndRejectsHierarchyCy
   ASSERT_EQ(cycleResult.size(), 1U);
   EXPECT_FALSE(cycleResult.front().Outcome);
   const auto hierarchy = scene.GetEcsHierarchySnapshot();
-  ASSERT_EQ(hierarchy.size(), 2U);
-  EXPECT_EQ(hierarchy[0].Handle, parent);
-  EXPECT_EQ(hierarchy[1].Handle, child);
-  EXPECT_EQ(hierarchy[1].Parent, parent);
+  ASSERT_EQ(hierarchy.size(), 3U);
+  EXPECT_TRUE(hierarchy[0].IsSceneRoot);
+  EXPECT_EQ(hierarchy[1].Handle, parent);
+  EXPECT_EQ(hierarchy[2].Handle, child);
+  EXPECT_EQ(hierarchy[2].Parent, parent);
 }
 
 TEST(SceneEcsMutationQueueTests, DestroyingANodeCascadesThroughItsDescendants) {
@@ -458,9 +462,10 @@ TEST(SceneEcsMutationQueueTests, DestroyingANodeCascadesThroughItsDescendants) {
   ASSERT_EQ(destroyed.size(), 2U);
   ASSERT_TRUE(destroyed.front().Outcome);
   const auto hierarchy = scene.GetEcsHierarchySnapshot();
-  ASSERT_EQ(hierarchy.size(), 2U);
-  EXPECT_EQ(hierarchy[0].Handle, first);
-  EXPECT_EQ(hierarchy[1].Handle, last);
+  ASSERT_EQ(hierarchy.size(), 3U);
+  EXPECT_TRUE(hierarchy[0].IsSceneRoot);
+  EXPECT_EQ(hierarchy[1].Handle, first);
+  EXPECT_EQ(hierarchy[2].Handle, last);
   EXPECT_FALSE(scene.GetArchetypeWorld().IsAlive(child));
 }
 

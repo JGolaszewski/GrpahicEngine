@@ -9,10 +9,9 @@ The editor navigation camera is editor-owned view state. It does not appear in t
 Camera frustums are editor debug geometry. They use each visible scene camera's transform, field of view, clip planes,
 and output aspect ratio.
 
-Selecting a scene camera shows a live, aspect-preserving low-resolution preview at the left side of the editor
-viewport. The preview follows scene edits while the editor navigation view remains available. Selecting another entity
-without a camera or clearing the selection hides the preview and releases its render target. Click the preview to open
-the full-resolution camera viewer.
+Selecting a scene camera shows a live, aspect-preserving picture-in-picture preview in the editor viewport. The preview follows scene edits while the editor navigation view remains available. Selecting another entity without a camera or clearing the selection hides the preview and releases its render target. The preview has a visible border; click it to open the full-resolution camera viewer. The viewer supports drag panning and mouse-wheel zoom.
+
+PiP display scale and render quality are separate editor preferences in **Engine Settings**. Scale changes the on-screen preview size; quality selects the preview's render resolution relative to the camera output. Preferences persist locally.
 
 ## PiP acceptance check
 

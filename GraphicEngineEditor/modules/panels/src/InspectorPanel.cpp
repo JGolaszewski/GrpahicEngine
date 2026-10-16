@@ -74,6 +74,10 @@ void InspectorPanel::OnEvent(Engine::Events::Event& event) {
     m_Scene = sceneEvent.GetScene();
     return false;
   });
+  dispatcher.Dispatch<AssetRegistryChangedEvent>([this](const auto& update) -> bool {
+    m_Models = update.GetModels();
+    return false;
+  });
 }
 
 void InspectorPanel::Draw() {
@@ -84,19 +88,6 @@ void InspectorPanel::Draw() {
     ImGui::TextUnformatted("Select an entity from the scene hierarchy.");
   }
 
-#ifdef _DEBUG
-  ImGui::Spacing();
-  if (ImGui::CollapsingHeader("Debug Render")) {
-    if (ImGui::Checkbox("Show light gizmos", &m_ShowDebugLightGizmos)) {
-      EmitEvent(std::make_unique<DebugRenderToggledEvent>(DebugRenderToggledEvent::Toggle::LightGizmos,
-                                                          m_ShowDebugLightGizmos));
-    }
-    if (ImGui::Checkbox("Show wireframe plane", &m_ShowDebugWireframePlane)) {
-      EmitEvent(std::make_unique<DebugRenderToggledEvent>(DebugRenderToggledEvent::Toggle::WireframePlane,
-                                                          m_ShowDebugWireframePlane));
-    }
-  }
-#endif
   ImGui::End();
 }
 
@@ -104,6 +95,7 @@ void InspectorPanel::Draw() {
 void InspectorPanel::DrawEntityInspector() {
   const Engine::ArchetypeWorld& world = m_Scene->World();
   const Engine::EntityHandle entity = m_SelectedEntity;
+  const bool isSceneRoot = m_Scene->IsSceneRoot(entity);
   const auto emitSet = [this, entity](Mutation::Component type, auto value) -> void {
     EmitEvent(std::make_unique<Mutation>(entity, Mutation::Operation::Set, type, Mutation::Payload{std::move(value)}));
   };
@@ -123,7 +115,11 @@ void InspectorPanel::DrawEntityInspector() {
     std::array<char, 256> buffer{};
     const size_t length = (std::min)(name.Value.size(), buffer.size() - 1);
     std::copy_n(name.Value.data(), length, buffer.data());
-    if (ImGui::InputText("Name", buffer.data(), buffer.size())) {
+    if (isSceneRoot) {
+      ImGui::BeginDisabled();
+      (void)ImGui::InputText("Name", buffer.data(), buffer.size());
+      ImGui::EndDisabled();
+    } else if (ImGui::InputText("Name", buffer.data(), buffer.size())) {
       name.Value = buffer.data();
       emitSet(Mutation::Component::Name, std::move(name));
     }
@@ -166,20 +162,66 @@ void InspectorPanel::DrawEntityInspector() {
     }
   }
 
+  if (!world.Has<Engine::Ecs::MeshRenderer>(entity)) {
+    m_MeshSourceSelectionEntity = Engine::InvalidEntityHandle;
+  }
   if (const auto* storedMesh = world.Get<Engine::Ecs::MeshRenderer>(entity);
       storedMesh != nullptr && ImGui::CollapsingHeader("Mesh Renderer")) {
     DrawRemoveButton("Remove Mesh Renderer", Mutation::Component::MeshRenderer, emitRemove);
     Engine::Ecs::MeshRenderer mesh = *storedMesh;
-    std::array<char, 256> modelGuid{};
-    const size_t length = (std::min)(mesh.ModelGuid.size(), modelGuid.size() - 1);
-    std::copy_n(mesh.ModelGuid.data(), length, modelGuid.data());
-    bool changed = ImGui::InputText("Model asset GUID", modelGuid.data(), modelGuid.size());
-    mesh.ModelGuid = modelGuid.data();
-    std::array<char, 128> primitiveType{};
-    const size_t primitiveLength = (std::min)(mesh.PrimitiveType.size(), primitiveType.size() - 1);
-    std::copy_n(mesh.PrimitiveType.data(), primitiveLength, primitiveType.data());
-    changed |= ImGui::InputText("Primitive type", primitiveType.data(), primitiveType.size());
-    mesh.PrimitiveType = primitiveType.data();
+    const char* sourceNames[] = {"Asset model", "Primitive"};
+    if (m_MeshSourceSelectionEntity != entity) {
+      m_MeshSourceSelectionEntity = entity;
+      m_MeshSourceSelectionIndex = mesh.PrimitiveType.empty() ? 0 : 1;
+    }
+    int sourceIndex = m_MeshSourceSelectionIndex;
+    bool changed = false;
+    if (ImGui::Combo("Mesh source", &sourceIndex, sourceNames, 2)) {
+      m_MeshSourceSelectionIndex = sourceIndex;
+      if (sourceIndex == 1 && mesh.PrimitiveType.empty()) {
+        mesh.ModelGuid.clear();
+        mesh.PrimitiveType = "cube";
+        changed = true;
+      }
+    }
+    if (sourceIndex == 0) {
+      const auto selected = std::ranges::find(m_Models, mesh.ModelGuid, &Engine::AssetManager::ModelAssetInfo::guid);
+      const char* preview = selected == m_Models.end() ? "Select model..." : selected->name.c_str();
+      if (ImGui::BeginCombo("Model asset", preview)) {
+        for (const auto& model : m_Models) {
+          const bool isSelected = model.guid == mesh.ModelGuid;
+          if (ImGui::Selectable(model.name.c_str(), isSelected)) {
+            mesh.ModelGuid = model.guid;
+            mesh.PrimitiveType.clear();
+            m_MeshSourceSelectionIndex = 0;
+            changed = true;
+          }
+        }
+        ImGui::EndCombo();
+      }
+    } else {
+      constexpr std::array<const char*, 4> primitiveNames = {"Cube", "Sphere", "Plane", "Cone"};
+      constexpr std::array<const char*, 4> primitiveValues = {"cube", "sphere", "plane", "cone"};
+      size_t primitiveIndex = 0;
+      for (size_t index = 0; index < primitiveValues.size(); ++index) {
+        if (mesh.PrimitiveType == primitiveValues[index]) {
+          primitiveIndex = index;
+          break;
+        }
+      }
+      if (ImGui::BeginCombo("Primitive", primitiveNames[primitiveIndex])) {
+        for (size_t index = 0; index < primitiveNames.size(); ++index) {
+          const bool isSelected = primitiveIndex == index;
+          if (ImGui::Selectable(primitiveNames[index], isSelected)) {
+            mesh.ModelGuid.clear();
+            mesh.PrimitiveType = primitiveValues[index];
+            m_MeshSourceSelectionIndex = 1;
+            changed = true;
+          }
+        }
+        ImGui::EndCombo();
+      }
+    }
     changed |= ImGui::Checkbox("Visible", &mesh.Visible);
     changed |= ImGui::Checkbox("Cast shadows", &mesh.CastShadows);
     changed |= ImGui::Checkbox("Receive shadows", &mesh.ReceiveShadows);
@@ -227,31 +269,38 @@ void InspectorPanel::DrawEntityInspector() {
       resolutionIndex = 2;
     } else if (camera.OutputWidth == 3840 && camera.OutputHeight == 2160) {
       resolutionIndex = 3;
+    } else if (m_CustomResolutionEntity == entity || (camera.OutputWidth != 0 && camera.OutputHeight != 0)) {
+      resolutionIndex = 4;
     }
     if (ImGui::Combo("Output resolution", &resolutionIndex, resolutionOptions.data(),
                      static_cast<int>(resolutionOptions.size()))) {
       switch (resolutionIndex) {
       case 0:
+        m_CustomResolutionEntity = Engine::InvalidEntityHandle;
         camera.OutputWidth = 1280;
         camera.OutputHeight = 720;
         changed = true;
         break;
       case 1:
+        m_CustomResolutionEntity = Engine::InvalidEntityHandle;
         camera.OutputWidth = 1920;
         camera.OutputHeight = 1080;
         changed = true;
         break;
       case 2:
+        m_CustomResolutionEntity = Engine::InvalidEntityHandle;
         camera.OutputWidth = 2560;
         camera.OutputHeight = 1440;
         changed = true;
         break;
       case 3:
+        m_CustomResolutionEntity = Engine::InvalidEntityHandle;
         camera.OutputWidth = 3840;
         camera.OutputHeight = 2160;
         changed = true;
         break;
       default:
+        m_CustomResolutionEntity = entity;
         break;
       }
     }
@@ -278,11 +327,11 @@ void InspectorPanel::DrawEntityInspector() {
     }
   }
 
-  if (ImGui::Button("Add Component")) {
+  if (!isSceneRoot && ImGui::Button("Add Component")) {
     m_AddComponentFilter.fill('\0');
     ImGui::OpenPopup("Add component popup");
   }
-  if (ImGui::BeginPopup("Add component popup")) {
+  if (!isSceneRoot && ImGui::BeginPopup("Add component popup")) {
     (void)ImGui::InputTextWithHint("##add-filter", "Search components...", m_AddComponentFilter.data(),
                                    m_AddComponentFilter.size());
     if (!world.Has<Engine::Ecs::MeshRenderer>(entity) && Matches("Mesh Renderer", m_AddComponentFilter.data()) &&

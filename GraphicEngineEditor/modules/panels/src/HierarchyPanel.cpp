@@ -52,23 +52,22 @@ void HierarchyPanel::Draw() {
                                  m_Filter.size());
   const std::vector<Engine::Scene::EntitySnapshot> entities = m_Scene->HierarchySnapshot();
   for (const auto& entity : entities) {
-    if (entity.Parent == Engine::InvalidEntityHandle && SubtreeMatches(entity, entities)) {
+    if (entity.IsSceneRoot && SubtreeMatches(entity, entities)) {
       DrawEntityNode(entity, entities);
     }
   }
   if (entities.empty()) {
     ImGui::TextUnformatted("No entities");
   }
-  DrawRootDropTarget();
   if (ImGui::BeginPopupContextWindow("HierarchyEmptyContext", ImGuiPopupFlags_MouseButtonRight)) {
-    DrawCreateMenu(Engine::InvalidEntityHandle);
+    DrawCreateMenu(m_Scene->SceneRootEntity());
     ImGui::EndPopup();
   }
   if (ImGui::Button("+ Create Entity", ImVec2(-1.0F, 0.0F))) {
     ImGui::OpenPopup("Create entity");
   }
   if (ImGui::BeginPopup("Create entity")) {
-    DrawCreateMenu(Engine::InvalidEntityHandle);
+    DrawCreateMenu(m_Scene->SceneRootEntity());
     ImGui::EndPopup();
   }
   ImGui::End();
@@ -147,12 +146,12 @@ void HierarchyPanel::DrawEntityNode(const Engine::Scene::EntitySnapshot& entity,
                                                                 Engine::Scene::EntityPreset::Camera));
     }
     ImGui::Separator();
-    if (ImGui::MenuItem("Delete entity")) {
+    if (!entity.IsSceneRoot && ImGui::MenuItem("Delete entity")) {
       EmitEvent(std::make_unique<EcsEntityDeleteRequestedEvent>(entity.Handle));
     }
     ImGui::EndPopup();
   }
-  if (ImGui::BeginDragDropSource()) {
+  if (!entity.IsSceneRoot && ImGui::BeginDragDropSource()) {
     ImGui::SetDragDropPayload(kEntityPayload, &entity.Handle, sizeof(entity.Handle));
     ImGui::TextUnformatted(label.c_str());
     ImGui::EndDragDropSource();
@@ -178,20 +177,6 @@ void HierarchyPanel::DrawEntityNode(const Engine::Scene::EntitySnapshot& entity,
   }
   ImGui::PopID();
   ImGui::PopID();
-}
-
-void HierarchyPanel::DrawRootDropTarget() {
-  ImGui::Separator();
-  (void)ImGui::Button("Scene Root", ImVec2(-1.0F, 0.0F));
-  if (ImGui::BeginDragDropTarget()) {
-    if (const auto* payload = ImGui::AcceptDragDropPayload(kEntityPayload);
-        payload != nullptr && std::cmp_equal(payload->DataSize, sizeof(Engine::EntityHandle))) {
-      Engine::EntityHandle dragged;
-      std::memcpy(&dragged, payload->Data, sizeof(dragged));
-      EmitEvent(std::make_unique<EcsEntityReparentRequestedEvent>(dragged, Engine::InvalidEntityHandle));
-    }
-    ImGui::EndDragDropTarget();
-  }
 }
 
 void HierarchyPanel::DrawCreateMenu(Engine::EntityHandle parent) {

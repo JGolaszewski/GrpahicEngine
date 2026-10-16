@@ -21,7 +21,6 @@ public:
 private:
   void DrawEntityNode(const Engine::Scene::EntitySnapshot& entity,
                       const std::vector<Engine::Scene::EntitySnapshot>& entities);
-  void DrawRootDropTarget();
   [[nodiscard]] auto SubtreeMatches(const Engine::Scene::EntitySnapshot& entity,
                                     const std::vector<Engine::Scene::EntitySnapshot>& entities) const -> bool;
   [[nodiscard]] auto MatchesFilter(const Engine::Scene::EntitySnapshot& entity) const -> bool;

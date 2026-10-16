@@ -94,7 +94,6 @@ void EditorUiIntegration::Shutdown() {
   ImGui_ImplGlfw_Shutdown();
   ImGui::DestroyContext();
   m_Backend = nullptr;
-  m_PreviewTexture.reset();
   m_CameraPreviewTexture.reset();
   m_ClearCameraPreviewAfterDraw = false;
   m_Initialized = false;
@@ -105,11 +104,6 @@ auto EditorUiIntegration::GetTextureId(const Engine::ViewportTarget* target) con
     return nullptr;
   }
   return m_Backend->RegisterViewportTexture(*target);
-}
-
-auto EditorUiIntegration::SetRenderPreview(uint32_t width, uint32_t height, std::span<const uint8_t> rgbaPixels)
-    -> bool {
-  return SetPreviewTexture(m_PreviewTexture, width, height, rgbaPixels);
 }
 
 auto EditorUiIntegration::SetCameraPreview(uint32_t width, uint32_t height, std::span<const uint8_t> rgbaPixels)
@@ -146,10 +140,6 @@ auto EditorUiIntegration::SetPreviewTexture(std::unique_ptr<PreviewTexture>& tar
   }
   target = std::move(preview);
   return true;
-}
-
-auto EditorUiIntegration::GetRenderPreviewTextureId() const noexcept -> void* {
-  return m_PreviewTexture == nullptr ? nullptr : m_PreviewTexture->View.Get();
 }
 
 auto EditorUiIntegration::GetCameraPreviewTextureId() const noexcept -> void* {
