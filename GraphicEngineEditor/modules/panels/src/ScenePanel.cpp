@@ -80,7 +80,9 @@ void ScenePanel::Draw() {
   if (m_TextureId != nullptr) {
     const ImVec2 imageMinimum = ImGui::GetCursorScreenPos();
     // ImGui::Image is not interactive; claim the image area so drags cannot
-    // be interpreted as drags on the surrounding viewport window.
+    // be interpreted as drags on the surrounding viewport window. Allow the PiP
+    // image submitted next to own hit-testing where the two images overlap.
+    ImGui::SetNextItemAllowOverlap();
     ImGui::InvisibleButton("ViewportImage", viewportPanelSize);
     ImGui::GetWindowDrawList()->AddImage(
         m_TextureId, imageMinimum, ImVec2(imageMinimum.x + viewportPanelSize.x, imageMinimum.y + viewportPanelSize.y));
