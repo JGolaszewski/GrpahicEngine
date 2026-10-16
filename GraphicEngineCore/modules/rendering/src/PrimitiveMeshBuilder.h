@@ -32,7 +32,6 @@ private:
   std::shared_ptr<Material> m_Material;
 
   static void GenerateCubeData(std::vector<Vertex>& outVertices, std::vector<uint32_t>& outIndices);
-  static void GenerateConeData(std::vector<Vertex>& outVertices, std::vector<uint32_t>& outIndices, uint32_t segments);
   static void GenerateSphereData(std::vector<Vertex>& outVertices, std::vector<uint32_t>& outIndices, uint32_t stacks,
                                  uint32_t slices);
   static void GeneratePlaneData(std::vector<Vertex>& outVertices, std::vector<uint32_t>& outIndices);
