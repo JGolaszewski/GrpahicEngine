@@ -41,7 +41,7 @@ void HierarchyPanel::OnEvent(Engine::Events::Event& event) {
 }
 
 void HierarchyPanel::Draw() {
-  ImGui::Begin("Scene Hierarchy", nullptr, ImGuiWindowFlags_NoCollapse);
+  ImGui::Begin("Hierarchy", nullptr, ImGuiWindowFlags_NoCollapse);
   if (!m_Scene) {
     ImGui::TextUnformatted("No active scene");
     ImGui::End();
@@ -63,7 +63,7 @@ void HierarchyPanel::Draw() {
     DrawCreateMenu(m_Scene->SceneRootEntity());
     ImGui::EndPopup();
   }
-  if (ImGui::Button("+ Create Entity", ImVec2(-1.0F, 0.0F))) {
+  if (ImGui::Button("+ Create", ImVec2(-1.0F, 0.0F))) {
     ImGui::OpenPopup("Create entity");
   }
   if (ImGui::BeginPopup("Create entity")) {
@@ -109,15 +109,7 @@ void HierarchyPanel::DrawEntityNode(const Engine::Scene::EntitySnapshot& entity,
     return;
   }
   const std::string name = entity.Name.empty() ? "Entity " + std::to_string(entity.Handle.Index) : entity.Name;
-  const char* icon = "[Entity]";
-  if (entity.HasSpotLight) {
-    icon = "[Light]";
-  } else if (entity.HasCamera) {
-    icon = "[Camera]";
-  } else if (entity.HasMeshRenderer) {
-    icon = "[Mesh]";
-  }
-  const std::string label = std::string(icon) + " " + name;
+  const std::string label = name;
   ImGui::PushID(static_cast<int>(entity.Handle.Index));
   ImGui::PushID(static_cast<int>(entity.Handle.Generation));
   const ImGuiTreeNodeFlags flags =
@@ -129,7 +121,7 @@ void HierarchyPanel::DrawEntityNode(const Engine::Scene::EntitySnapshot& entity,
     EmitEvent(std::make_unique<EcsEntitySelectedEvent>(entity.Handle));
   }
   if (ImGui::BeginPopupContextItem("EntityContext")) {
-    if (ImGui::MenuItem("Create child entity")) {
+    if (ImGui::MenuItem("Create child")) {
       EmitEvent(std::make_unique<EcsEntityCreateRequestedEvent>("Entity", entity.Handle));
     }
     ImGui::Separator();
@@ -137,7 +129,7 @@ void HierarchyPanel::DrawEntityNode(const Engine::Scene::EntitySnapshot& entity,
       EmitEvent(
           std::make_unique<EcsEntityCreateRequestedEvent>("Mesh", entity.Handle, Engine::Scene::EntityPreset::Mesh));
     }
-    if (ImGui::MenuItem("Create child spot light")) {
+    if (ImGui::MenuItem("Create child light")) {
       EmitEvent(std::make_unique<EcsEntityCreateRequestedEvent>("Spot Light", entity.Handle,
                                                                 Engine::Scene::EntityPreset::SpotLight));
     }
@@ -181,18 +173,18 @@ void HierarchyPanel::DrawEntityNode(const Engine::Scene::EntitySnapshot& entity,
 
 void HierarchyPanel::DrawCreateMenu(Engine::EntityHandle parent) {
   (void)ImGui::InputText("Name", m_NewEntityName.data(), m_NewEntityName.size());
-  if (ImGui::MenuItem("Create Empty Entity")) {
+  if (ImGui::MenuItem("Empty")) {
     EmitEvent(std::make_unique<EcsEntityCreateRequestedEvent>(m_NewEntityName.data(), parent));
   }
-  if (ImGui::MenuItem("Create Mesh Entity")) {
+  if (ImGui::MenuItem("Mesh")) {
     EmitEvent(std::make_unique<EcsEntityCreateRequestedEvent>(m_NewEntityName.data(), parent,
                                                               Engine::Scene::EntityPreset::Mesh));
   }
-  if (ImGui::MenuItem("Create Spot Light")) {
+  if (ImGui::MenuItem("Light")) {
     EmitEvent(std::make_unique<EcsEntityCreateRequestedEvent>(m_NewEntityName.data(), parent,
                                                               Engine::Scene::EntityPreset::SpotLight));
   }
-  if (ImGui::MenuItem("Create Camera")) {
+  if (ImGui::MenuItem("Camera")) {
     EmitEvent(std::make_unique<EcsEntityCreateRequestedEvent>(m_NewEntityName.data(), parent,
                                                               Engine::Scene::EntityPreset::Camera));
   }

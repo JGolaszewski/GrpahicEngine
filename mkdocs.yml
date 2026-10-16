@@ -62,6 +62,7 @@ nav:
           - Final rendering: rendering/final-render.md
   - Workflows:
       - Development workflow: development-workflow.md
+      - Editor workflows: editor-workflows.md
       - Testing: testing.md
       - Windows validation: validation/windows.md
   - Core API:

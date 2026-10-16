@@ -37,6 +37,10 @@ if(BUILD_TESTING)
         "${CMAKE_CURRENT_SOURCE_DIR}/../modules/rendering/src"
         "${CMAKE_CURRENT_SOURCE_DIR}/../../GraphicEngineEditor/modules"
     )
+    file(TO_CMAKE_PATH "${PROJECT_SOURCE_DIR}/SandboxApp/Project" ENGINE_SANDBOX_PROJECT_ROOT)
+    target_compile_definitions(GraphicEngineUnitTests PRIVATE
+        ENGINE_SANDBOX_PROJECT_ROOT="${ENGINE_SANDBOX_PROJECT_ROOT}"
+    )
     target_compile_features(GraphicEngineUnitTests PRIVATE cxx_std_23)
     engine_configure_test_target(GraphicEngineUnitTests)
     if(MSVC)

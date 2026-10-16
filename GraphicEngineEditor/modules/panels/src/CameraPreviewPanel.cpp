@@ -193,7 +193,7 @@ void CameraPreviewPanel::Draw() {
   const ImVec2 displaySize = mainViewport == nullptr ? ImVec2(1280.0F, 720.0F) : mainViewport->WorkSize;
   ImGui::SetNextWindowSize(ImVec2(displaySize.x * 0.78F, displaySize.y * 0.78F), ImGuiCond_FirstUseEver);
   ImGui::SetNextWindowSizeConstraints(ImVec2(320.0F, 240.0F), ImVec2(displaySize.x, displaySize.y));
-  if (ImGui::Begin("Camera Preview", &m_Open, ImGuiWindowFlags_NoCollapse)) {
+  if (ImGui::Begin("Preview", &m_Open, ImGuiWindowFlags_NoCollapse)) {
     if (ImGui::Button("Refresh")) {
       (void)RenderSelectedCamera();
     }

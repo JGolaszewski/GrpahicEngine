@@ -287,7 +287,7 @@ void EditorConsole::UpdateAndRender(bool* isOpen) {
     return;
   }
 
-  if (ImGui::Begin("Engine Console", isOpen)) {
+  if (ImGui::Begin("Console", isOpen)) {
     const Engine::Log::HealthSnapshot health = Engine::Log::GetHealthSnapshot();
     const uint64_t generation = m_Sink->Generation();
     if (generation != m_SnapshotGeneration) {

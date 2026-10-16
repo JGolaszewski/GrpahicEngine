@@ -489,6 +489,39 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
       }
       return true;
     }
+    if (request.GetAction() == SceneFileActionRequestedEvent::Action::ResetSandbox) {
+      const std::filesystem::path projectRoot = GetAssetManager()->GetProjectRoot();
+      const std::filesystem::path templatePath = projectRoot / "Sandbox.template.scene.json";
+      std::string error;
+      std::vector<std::string> warnings;
+      const auto result = m_ActiveSceneDocument.Open(
+          templatePath,
+          [this](const std::filesystem::path& path, std::string& loadError,
+                 std::vector<std::string>& loadWarnings) -> bool {
+            const Engine::SceneDocumentResult loaded = GetAssetManager()->LoadScene(path);
+            if (!loaded) {
+              loadError = loaded.error;
+              loadWarnings.clear();
+              return false;
+            }
+            std::vector<std::string> parseWarnings = loaded.warnings;
+            if (!LoadSceneDocument(loaded.document, loadError, loadWarnings)) {
+              return false;
+            }
+            loadWarnings.insert(loadWarnings.end(), parseWarnings.begin(), parseWarnings.end());
+            return true;
+          },
+          error, warnings);
+      if (result == EditorSceneDocument::OpenResult::Failed) {
+        ENGINE_LOG_ERROR("Scene", "Sandbox reset failed | path: {} | reason: {}", templatePath.generic_string(), error);
+      } else if (result == EditorSceneDocument::OpenResult::Opened) {
+        m_ActiveSceneDocument.CommitPath(projectRoot / "Sandbox.scene.json");
+        for (const std::string& warning : warnings) {
+          ENGINE_LOG_WARN("Scene", "Sandbox loaded with warning | {}", warning);
+        }
+      }
+      return true;
+    }
     return false;
   });
   if (!m_ActiveScene) {
@@ -900,11 +933,11 @@ void Editor::BuildDefaultDockLayout(uint32_t dockspaceId) {
   ImGui::DockBuilderSplitNode(main, ImGuiDir_Right, 0.25F, &right, &main);
   ImGui::DockBuilderSplitNode(main, ImGuiDir_Down, 0.25F, &bottom, &main);
   ImGui::DockBuilderDockWindow("Scene", left);
-  ImGui::DockBuilderDockWindow("Scene Hierarchy", left);
+  ImGui::DockBuilderDockWindow("Hierarchy", left);
   ImGui::DockBuilderDockWindow("Inspector", right);
-  ImGui::DockBuilderDockWindow("Statistics", bottom);
+  ImGui::DockBuilderDockWindow("Stats", bottom);
   ImGui::DockBuilderDockWindow("Assets", bottom);
-  ImGui::DockBuilderDockWindow("Engine Console", bottom);
+  ImGui::DockBuilderDockWindow("Console", bottom);
   ImGui::DockBuilderDockWindow("Viewport", main);
   ImGui::DockBuilderFinish(dockspaceId);
 }

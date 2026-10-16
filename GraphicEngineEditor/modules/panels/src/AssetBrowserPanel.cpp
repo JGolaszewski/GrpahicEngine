@@ -29,7 +29,7 @@ void AssetBrowserPanel::Draw() {
   if (!selectedModel) {
     ImGui::BeginDisabled();
   }
-  if (ImGui::Button("Replace selected object model") && selectedModel) {
+  if (ImGui::Button("Assign model") && selectedModel) {
     EmitEvent(std::make_unique<ModelReassignmentRequestedEvent>(m_SelectedGuid));
   }
   if (!selectedModel) {

@@ -18,6 +18,9 @@ void MainBar::DrawFileMenu() {
   if (ImGui::MenuItem("Open Project Folder...")) {
     EmitEvent(std::make_unique<SceneFileActionRequestedEvent>(SceneFileActionRequestedEvent::Action::OpenProject));
   }
+  if (ImGui::MenuItem("Reset Sandbox")) {
+    EmitEvent(std::make_unique<SceneFileActionRequestedEvent>(SceneFileActionRequestedEvent::Action::ResetSandbox));
+  }
   ImGui::Separator();
   if (ImGui::MenuItem("New", "Ctrl+N")) {
     EmitEvent(std::make_unique<SceneFileActionRequestedEvent>(SceneFileActionRequestedEvent::Action::NewScene));
@@ -39,10 +42,10 @@ void MainBar::DrawWindowMenu() {
   if (!ImGui::BeginMenu("Window")) {
     return;
   }
-  if (ImGui::MenuItem("Engine Settings") && m_SettingsOpenHandler) {
+  if (ImGui::MenuItem("Settings") && m_SettingsOpenHandler) {
     m_SettingsOpenHandler();
   }
-  if (ImGui::MenuItem("Engine Console") && m_ConsoleOpenHandler) {
+  if (ImGui::MenuItem("Console") && m_ConsoleOpenHandler) {
     m_ConsoleOpenHandler();
   }
   ImGui::EndMenu();

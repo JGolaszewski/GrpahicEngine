@@ -99,7 +99,7 @@ void InspectorPanel::DrawEntityInspector() {
   ImGui::TextUnformatted(entityId.c_str());
   ImGui::Separator();
   if (const auto* storedName = world.Get<Engine::Ecs::Name>(entity);
-      storedName != nullptr && ImGui::CollapsingHeader("Name / Tag", ImGuiTreeNodeFlags_DefaultOpen)) {
+      storedName != nullptr && ImGui::CollapsingHeader("Name", ImGuiTreeNodeFlags_DefaultOpen)) {
     Engine::Ecs::Name name = *storedName;
     std::array<char, 256> buffer{};
     const size_t length = (std::min)(name.Value.size(), buffer.size() - 1);
@@ -147,8 +147,8 @@ void InspectorPanel::DrawEntityInspector() {
     m_MeshSourceSelectionEntity = Engine::InvalidEntityHandle;
   }
   if (const auto* storedMesh = world.Get<Engine::Ecs::MeshRenderer>(entity);
-      storedMesh != nullptr && ImGui::CollapsingHeader("Mesh Renderer")) {
-    DrawRemoveButton("Remove Mesh Renderer", Mutation::Component::MeshRenderer, emitRemove);
+      storedMesh != nullptr && ImGui::CollapsingHeader("Mesh")) {
+    DrawRemoveButton("Remove Mesh", Mutation::Component::MeshRenderer, emitRemove);
     Engine::Ecs::MeshRenderer mesh = *storedMesh;
     const char* sourceNames[] = {"Asset model", "Primitive"};
     if (m_MeshSourceSelectionEntity != entity) {
@@ -165,7 +165,7 @@ void InspectorPanel::DrawEntityInspector() {
         changed = true;
       }
     }
-    ImGui::Button("Drop a model asset here", ImVec2(-1.0F, 0.0F));
+    ImGui::Button("Drop model here", ImVec2(-1.0F, 0.0F));
     if (ImGui::BeginDragDropTarget()) {
       const auto handleModelPayload = [this, &mesh, &changed, &sourceIndex](const ImGuiPayload* payload) -> void {
         if (payload == nullptr || !payload->IsDelivery()) {
@@ -182,7 +182,7 @@ void InspectorPanel::DrawEntityInspector() {
         sourceIndex = 0;
         changed = true;
         m_AssetFeedbackSucceeded = true;
-        m_AssetFeedback = "Model assigned to Mesh Renderer";
+        m_AssetFeedback = "Model assigned";
       };
       if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload(ModelAssetDragDropType)) {
         handleModelPayload(payload);
@@ -312,7 +312,7 @@ void InspectorPanel::DrawEntityInspector() {
 
   if (const auto* storedLight = world.Get<Engine::Ecs::Light>(entity);
       storedLight != nullptr && ImGui::CollapsingHeader("Light")) {
-    DrawRemoveButton("Remove Light Component", Mutation::Component::SpotLight, emitRemove);
+    DrawRemoveButton("Remove Light", Mutation::Component::SpotLight, emitRemove);
     Engine::Ecs::Light light = *storedLight;
     constexpr const char* lightTypeNames[] = {"Directional", "Point", "Spot"};
     int typeIndex = static_cast<int>(light.Type);
@@ -425,12 +425,12 @@ void InspectorPanel::DrawEntityInspector() {
   if (!isSceneRoot && ImGui::BeginPopup("Add component popup")) {
     (void)ImGui::InputTextWithHint("##add-filter", "Search components...", m_AddComponentFilter.data(),
                                    m_AddComponentFilter.size());
-    if (!world.Has<Engine::Ecs::MeshRenderer>(entity) && Matches("Mesh Renderer", m_AddComponentFilter.data()) &&
-        ImGui::Selectable("Mesh Renderer")) {
+    if (!world.Has<Engine::Ecs::MeshRenderer>(entity) && Matches("Mesh", m_AddComponentFilter.data()) &&
+        ImGui::Selectable("Mesh")) {
       emitAdd(Mutation::Component::MeshRenderer);
     }
-    if (!world.Has<Engine::Ecs::SpotLight>(entity) && Matches("Spot Light", m_AddComponentFilter.data()) &&
-        ImGui::Selectable("Spot Light")) {
+    if (!world.Has<Engine::Ecs::SpotLight>(entity) && Matches("Light", m_AddComponentFilter.data()) &&
+        ImGui::Selectable("Light")) {
       emitAdd(Mutation::Component::SpotLight);
     }
     if (!world.Has<Engine::Ecs::Camera>(entity) && Matches("Camera", m_AddComponentFilter.data()) &&

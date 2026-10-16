@@ -12,7 +12,7 @@ void EngineSettingsPanel::Draw() {
     return;
   }
 
-  if (!ImGui::Begin("Engine Settings", &m_Open)) {
+  if (!ImGui::Begin("Settings", &m_Open)) {
     ImGui::End();
     return;
   }
@@ -48,7 +48,7 @@ void EngineSettingsPanel::Draw() {
     bool changed = ImGui::Checkbox("Show light gizmos", &preferences.ShowLightGizmos);
     changed |= ImGui::Checkbox("Show camera frustums", &preferences.ShowCameraFrustums);
     changed |= ImGui::Checkbox("Show wireframe plane", &preferences.ShowWireframePlane);
-    ImGui::SeparatorText("Camera Preview");
+    ImGui::SeparatorText("Preview");
     float displayScale = preferences.CameraPreviewScale * 100.0F;
     float renderQuality = preferences.CameraPreviewQuality * 100.0F;
     if (ImGui::SliderFloat("Camera PiP display scale", &displayScale, 10.0F, 80.0F, "%.0f%%")) {
