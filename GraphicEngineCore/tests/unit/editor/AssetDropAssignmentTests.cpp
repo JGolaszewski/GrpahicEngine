@@ -83,7 +83,7 @@ TEST(AssetDropAssignmentTests, ReusableMaterialCreationCanBeAssignedAndSharedEdi
   std::filesystem::create_directories(root);
   struct Cleanup final {
     std::filesystem::path path;
-    ~Cleanup() {
+    ~Cleanup() noexcept {
       std::error_code ignored;
       std::filesystem::remove_all(path, ignored);
     }
