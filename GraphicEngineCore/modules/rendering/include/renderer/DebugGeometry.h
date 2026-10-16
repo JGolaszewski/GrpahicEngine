@@ -20,17 +20,18 @@ class Scene;
 namespace Engine::Renderer {
 /// Position and color for one line or triangle vertex.
 struct ENGINE_API DebugVertex {
-  DirectX::XMFLOAT3 Position = {0.0f, 0.0f, 0.0f}; ///< World-space position.
+  DirectX::XMFLOAT3 Position = {0.0f, 0.0f, 0.0f};    ///< World-space position.
   DirectX::XMFLOAT4 Color = {1.0f, 1.0f, 1.0f, 1.0f}; ///< Linear RGBA vertex color.
 };
 
 /// World-space bounds and direction used to draw a light gizmo.
 struct ENGINE_API DebugLightTarget {
-  Engine::LightId Id = Engine::InvalidLightId; ///< Scene light identity, or invalid when unavailable.
-  DirectX::XMFLOAT3 Position = {0.0f, 0.0f, 0.0f}; ///< World-space light position.
-  DirectX::XMFLOAT3 Direction = {0.0f, -1.0f, 0.0f}; ///< World-space emission direction.
-  float Range = 1.0f; ///< Maximum influence distance.
-  float OuterAngleRadians = DirectX::XM_PIDIV4; ///< Outer cone angle for a spotlight.
+  Engine::LightId Id = Engine::InvalidLightId;                ///< Scene light identity, or invalid when unavailable.
+  Engine::Ecs::LightType Type = Engine::Ecs::LightType::Spot; ///< Light shape represented by the target.
+  DirectX::XMFLOAT3 Position = {0.0f, 0.0f, 0.0f};            ///< World-space light position.
+  DirectX::XMFLOAT3 Direction = {0.0f, -1.0f, 0.0f};          ///< World-space emission direction.
+  float Range = 1.0f;                                         ///< Maximum influence distance.
+  float OuterAngleRadians = DirectX::XM_PIDIV4;               ///< Outer cone angle for a spotlight.
 };
 
 /// Accumulates debug lines, triangles, and light-gizmo targets for a render view.
@@ -87,8 +88,8 @@ public:
   static void BuildScene(const Engine::Scene& scene, const DebugRenderSettings& settings, DebugGeometry& geometry);
 
 private:
-  static void AddSpotLight(Engine::EntityHandle entity, const Engine::Ecs::SpotLight& light,
-                           const Engine::Ecs::WorldTransform& transform, bool selected, DebugGeometry& geometry);
+  static void AddLight(Engine::EntityHandle entity, const Engine::Ecs::Light& light,
+                       const Engine::Ecs::WorldTransform& transform, bool selected, DebugGeometry& geometry);
   static void AddCameraFrustum(const Engine::Ecs::Camera& camera, const Engine::Ecs::WorldTransform& transform,
                                DebugGeometry& geometry);
   static void AddWireframePlane(DebugGeometry& geometry);

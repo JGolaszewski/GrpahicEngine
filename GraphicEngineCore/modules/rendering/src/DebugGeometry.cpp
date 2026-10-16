@@ -67,21 +67,19 @@ void DebugGeometryBuilder::BuildScene(const Engine::Scene& scene, const DebugRen
   }
 
   if (settings.ShowLightGizmos) {
-    scene.World()
-        .ForEachChunkReadOnly<Engine::Ecs::SpotLight, Engine::Ecs::WorldTransform, Engine::Ecs::GlobalVisibility>(
-            [&settings, &geometry](std::span<const Engine::EntityHandle> entities,
-                                   std::span<const Engine::Ecs::SpotLight> lights,
-                                   std::span<const Engine::Ecs::WorldTransform> transforms,
-                                   std::span<const Engine::Ecs::GlobalVisibility> visibility) -> void {
-              for (size_t row = 0; row < entities.size(); ++row) {
-                if (!visibility[row].IsVisible) {
-                  continue;
-                }
-                AddSpotLight(entities[row], lights[row], transforms[row],
-                             static_cast<Engine::LightId>(entities[row].Index) + 1 == settings.SelectedLightId,
-                             geometry);
-              }
-            });
+    scene.World().ForEachChunkReadOnly<Engine::Ecs::Light, Engine::Ecs::WorldTransform, Engine::Ecs::GlobalVisibility>(
+        [&settings, &geometry](std::span<const Engine::EntityHandle> entities,
+                               std::span<const Engine::Ecs::Light> lights,
+                               std::span<const Engine::Ecs::WorldTransform> transforms,
+                               std::span<const Engine::Ecs::GlobalVisibility> visibility) -> void {
+          for (size_t row = 0; row < entities.size(); ++row) {
+            if (!visibility[row].IsVisible) {
+              continue;
+            }
+            AddLight(entities[row], lights[row], transforms[row],
+                     static_cast<Engine::LightId>(entities[row].Index) + 1 == settings.SelectedLightId, geometry);
+          }
+        });
   }
 
   if (settings.ShowCameraFrustums) {
@@ -138,9 +136,9 @@ void DebugGeometryBuilder::AddCameraFrustum(const Engine::Ecs::Camera& camera,
   }
 }
 
-void DebugGeometryBuilder::AddSpotLight(Engine::EntityHandle entity, const Engine::Ecs::SpotLight& light,
-                                        const Engine::Ecs::WorldTransform& transform, bool selected,
-                                        DebugGeometry& geometry) {
+void DebugGeometryBuilder::AddLight(Engine::EntityHandle entity, const Engine::Ecs::Light& light,
+                                    const Engine::Ecs::WorldTransform& transform, bool selected,
+                                    DebugGeometry& geometry) {
   const Engine::LightId id = static_cast<Engine::LightId>(entity.Index) + 1;
   DirectX::XMFLOAT3 position{};
   const DirectX::XMMATRIX worldMatrix = DirectX::XMLoadFloat4x4(&transform.Matrix);
@@ -153,53 +151,87 @@ void DebugGeometryBuilder::AddSpotLight(Engine::EntityHandle entity, const Engin
   const DirectX::XMVECTOR origin = DirectX::XMLoadFloat3(&position);
   const DirectX::XMVECTOR normalizedDirection = NormalizeOrDefault(direction);
 
-  const float safeRange = std::clamp(light.Range, 0.25F, 1000.0F);
+  const DirectX::XMFLOAT3 safeColor(light.Color[0], light.Color[1], light.Color[2]);
+  const DirectX::XMFLOAT4 color = selected ? DirectX::XMFLOAT4(1.0F, 1.0F, 1.0F, 1.0F)
+                                           : DirectX::XMFLOAT4(safeColor.x, safeColor.y, safeColor.z, 1.0F);
+  const float safeRange =
+      light.Type == Engine::Ecs::LightType::Directional ? 1.5F : std::clamp(light.Range, 0.25F, 1000.0F);
   const float outerAngleRadians =
       std::clamp(DirectX::XMConvertToRadians(light.OuterAngleDegrees), 0.0F, DirectX::XM_PIDIV2 - 0.001F);
-  const float coneRadius = safeRange * std::tan(outerAngleRadians);
 
   DirectX::XMVECTOR up = DirectX::XMVectorSet(0.0F, 1.0F, 0.0F, 0.0F);
   if (std::abs(DirectX::XMVectorGetX(DirectX::XMVector3Dot(up, normalizedDirection))) > 0.98F) {
     up = DirectX::XMVectorSet(1.0F, 0.0F, 0.0F, 0.0F);
   }
   const DirectX::XMVECTOR right = DirectX::XMVector3Normalize(DirectX::XMVector3Cross(normalizedDirection, up));
-  const DirectX::XMVECTOR coneUp = DirectX::XMVector3Normalize(DirectX::XMVector3Cross(right, normalizedDirection));
-  const DirectX::XMVECTOR baseCenter =
-      DirectX::XMVectorAdd(origin, DirectX::XMVectorScale(normalizedDirection, safeRange));
+  const DirectX::XMVECTOR side = DirectX::XMVector3Normalize(DirectX::XMVector3Cross(right, normalizedDirection));
 
-  const DirectX::XMFLOAT3 safeColor(light.Color[0], light.Color[1], light.Color[2]);
-  const DirectX::XMFLOAT4 coneColor = selected ? DirectX::XMFLOAT4(1.0F, 1.0F, 1.0F, 1.0F)
-                                               : DirectX::XMFLOAT4(safeColor.x, safeColor.y, safeColor.z, 1.0F);
-  DirectX::XMFLOAT3 previousRingPoint = {};
-  for (uint32_t segment = 0; segment < LightRingSegments; ++segment) {
-    const float angle = TwoPi * static_cast<float>(segment) / static_cast<float>(LightRingSegments);
-    const DirectX::XMVECTOR ringOffset =
-        DirectX::XMVectorAdd(DirectX::XMVectorScale(right, std::cos(angle) * coneRadius),
-                             DirectX::XMVectorScale(coneUp, std::sin(angle) * coneRadius));
-    const DirectX::XMFLOAT3 ringPoint = StoreFloat3(DirectX::XMVectorAdd(baseCenter, ringOffset));
-
-    if (segment > 0) {
-      geometry.AddLine(previousRingPoint, ringPoint, coneColor);
+  if (light.Type == Engine::Ecs::LightType::Directional) {
+    const DirectX::XMVECTOR tip = DirectX::XMVectorAdd(origin, DirectX::XMVectorScale(normalizedDirection, safeRange));
+    const DirectX::XMVECTOR arrowBack =
+        DirectX::XMVectorSubtract(tip, DirectX::XMVectorScale(normalizedDirection, 0.25F));
+    geometry.AddLine(position, StoreFloat3(tip), color);
+    geometry.AddLine(StoreFloat3(tip),
+                     StoreFloat3(DirectX::XMVectorAdd(arrowBack, DirectX::XMVectorScale(right, 0.16F))), color);
+    geometry.AddLine(StoreFloat3(tip),
+                     StoreFloat3(DirectX::XMVectorSubtract(arrowBack, DirectX::XMVectorScale(right, 0.16F))), color);
+    geometry.AddLine(StoreFloat3(tip),
+                     StoreFloat3(DirectX::XMVectorAdd(arrowBack, DirectX::XMVectorScale(side, 0.16F))), color);
+    geometry.AddLine(StoreFloat3(tip),
+                     StoreFloat3(DirectX::XMVectorSubtract(arrowBack, DirectX::XMVectorScale(side, 0.16F))), color);
+  } else if (light.Type == Engine::Ecs::LightType::Point) {
+    for (int plane = 0; plane < 3; ++plane) {
+      DirectX::XMVECTOR firstAxis = plane == 0 ? right : (plane == 1 ? right : side);
+      DirectX::XMVECTOR secondAxis = plane == 0 ? side : (plane == 1 ? normalizedDirection : normalizedDirection);
+      DirectX::XMFLOAT3 previous = {};
+      for (uint32_t segment = 0; segment <= LightRingSegments; ++segment) {
+        const float angle = TwoPi * static_cast<float>(segment) / static_cast<float>(LightRingSegments);
+        const DirectX::XMVECTOR offset =
+            DirectX::XMVectorAdd(DirectX::XMVectorScale(firstAxis, std::cos(angle) * safeRange),
+                                 DirectX::XMVectorScale(secondAxis, std::sin(angle) * safeRange));
+        const DirectX::XMFLOAT3 point = StoreFloat3(DirectX::XMVectorAdd(origin, offset));
+        if (segment > 0) {
+          geometry.AddLine(previous, point, color);
+        }
+        previous = point;
+      }
     }
-    geometry.AddLine(position, ringPoint, coneColor);
-    previousRingPoint = ringPoint;
+  } else {
+    const float coneRadius = safeRange * std::tan(outerAngleRadians);
+    const DirectX::XMVECTOR baseCenter =
+        DirectX::XMVectorAdd(origin, DirectX::XMVectorScale(normalizedDirection, safeRange));
+    DirectX::XMFLOAT3 previousRingPoint = {};
+    for (uint32_t segment = 0; segment < LightRingSegments; ++segment) {
+      const float angle = TwoPi * static_cast<float>(segment) / static_cast<float>(LightRingSegments);
+      const DirectX::XMVECTOR ringOffset =
+          DirectX::XMVectorAdd(DirectX::XMVectorScale(right, std::cos(angle) * coneRadius),
+                               DirectX::XMVectorScale(side, std::sin(angle) * coneRadius));
+      const DirectX::XMFLOAT3 ringPoint = StoreFloat3(DirectX::XMVectorAdd(baseCenter, ringOffset));
+
+      if (segment > 0) {
+        geometry.AddLine(previousRingPoint, ringPoint, color);
+      }
+      geometry.AddLine(position, ringPoint, color);
+      previousRingPoint = ringPoint;
+    }
+
+    const DirectX::XMVECTOR firstRingOffset = DirectX::XMVectorScale(right, coneRadius);
+    const DirectX::XMFLOAT3 firstRingPoint = StoreFloat3(DirectX::XMVectorAdd(baseCenter, firstRingOffset));
+    geometry.AddLine(previousRingPoint, firstRingPoint, color);
+    geometry.AddLine(position, StoreFloat3(baseCenter), color);
+
+    const DirectX::XMFLOAT3 arrowTip =
+        StoreFloat3(DirectX::XMVectorAdd(baseCenter, DirectX::XMVectorScale(normalizedDirection, safeRange * 0.08F)));
+    const DirectX::XMVECTOR arrowSide = DirectX::XMVectorScale(right, safeRange * 0.08F);
+    const DirectX::XMVECTOR arrowBack = DirectX::XMVectorSubtract(
+        DirectX::XMLoadFloat3(&arrowTip), DirectX::XMVectorScale(normalizedDirection, safeRange * 0.16F));
+    geometry.AddLine(arrowTip, StoreFloat3(DirectX::XMVectorAdd(arrowBack, arrowSide)), color);
+    geometry.AddLine(arrowTip, StoreFloat3(DirectX::XMVectorSubtract(arrowBack, arrowSide)), color);
   }
-
-  const DirectX::XMVECTOR firstRingOffset = DirectX::XMVectorScale(right, coneRadius);
-  const DirectX::XMFLOAT3 firstRingPoint = StoreFloat3(DirectX::XMVectorAdd(baseCenter, firstRingOffset));
-  geometry.AddLine(previousRingPoint, firstRingPoint, coneColor);
-  geometry.AddLine(position, StoreFloat3(baseCenter), coneColor);
-
-  const DirectX::XMFLOAT3 arrowTip =
-      StoreFloat3(DirectX::XMVectorAdd(baseCenter, DirectX::XMVectorScale(normalizedDirection, safeRange * 0.08F)));
-  const DirectX::XMVECTOR arrowSide = DirectX::XMVectorScale(right, safeRange * 0.08F);
-  const DirectX::XMVECTOR arrowBack = DirectX::XMVectorSubtract(
-      DirectX::XMLoadFloat3(&arrowTip), DirectX::XMVectorScale(normalizedDirection, safeRange * 0.16F));
-  geometry.AddLine(arrowTip, StoreFloat3(DirectX::XMVectorAdd(arrowBack, arrowSide)), coneColor);
-  geometry.AddLine(arrowTip, StoreFloat3(DirectX::XMVectorSubtract(arrowBack, arrowSide)), coneColor);
 
   geometry.AddLightTarget({
       .Id = id,
+      .Type = light.Type,
       .Position = position,
       .Direction = direction,
       .Range = safeRange,
