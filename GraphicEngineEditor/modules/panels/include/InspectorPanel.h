@@ -30,6 +30,7 @@ private:
   int m_MeshSourceSelectionIndex = 0;
   std::vector<Engine::AssetManager::ModelAssetInfo> m_Models;
   std::vector<Engine::AssetManager::TextureAssetInfo> m_Textures;
+  std::vector<Engine::AssetManager::MaterialAssetInfo> m_Materials;
   std::string m_AssetFeedback;
   bool m_AssetFeedbackSucceeded = true;
 };

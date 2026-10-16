@@ -45,7 +45,9 @@ enum class EventType {
   EcsEntitySelected,
   EcsEntityDeleteRequested,
   EcsEntityReparentRequested,
-  EcsComponentMutationRequested
+  EcsComponentMutationRequested,
+  MaterialAssetSelectionRequested,
+  MaterialAssetEditRequested
 };
 
 class ENGINE_API Event {

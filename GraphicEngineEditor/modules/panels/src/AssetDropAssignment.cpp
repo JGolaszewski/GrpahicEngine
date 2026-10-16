@@ -72,3 +72,23 @@ auto AssignDroppedTexture(Engine::SceneMaterialDocument& material, MaterialTextu
   error = "material texture slot is unsupported";
   return false;
 }
+
+void AssignMaterialAsset(Engine::Ecs::MeshRenderer& mesh, std::string_view guid,
+                         const Engine::SceneMaterialDocument& material) {
+  mesh.MaterialGuid.assign(guid);
+  mesh.Material = material;
+}
+
+void UseDefaultMaterial(Engine::Ecs::MeshRenderer& mesh) {
+  mesh.MaterialGuid.clear();
+  mesh.Material.reset();
+}
+
+auto ApplyMaterialAssetEdit(Engine::Ecs::MeshRenderer& mesh, std::string_view guid,
+                            const Engine::SceneMaterialDocument& material) -> bool {
+  if (mesh.MaterialGuid != guid) {
+    return false;
+  }
+  mesh.Material = material;
+  return true;
+}

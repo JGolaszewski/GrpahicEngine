@@ -613,6 +613,32 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
       AssetRegistryChangedEvent changed(GetAssetManager()->GetKnownModels(), GetAssetManager()->GetKnownTextures(),
                                         GetAssetManager()->GetKnownMaterials());
       BroadcastEvent(changed);
+      if (request.GetTargetEntity() != Engine::InvalidEntityHandle && m_ActiveScene &&
+          m_ActiveScene->World().IsAlive(request.GetTargetEntity())) {
+        std::string error;
+        const auto guid = created.value();
+        if (!GetAssetManager()->LoadMaterial(guid, error)) {
+          AssetWorkflowFeedbackEvent feedback(false, error);
+          BroadcastEvent(feedback);
+          return true;
+        }
+        auto* current = m_ActiveScene->World().Get<Engine::Ecs::MeshRenderer>(request.GetTargetEntity());
+        const auto material = GetAssetManager()->GetMaterial(guid);
+        if (current == nullptr || !material) {
+          AssetWorkflowFeedbackEvent feedback(false, "Selected entity has no assignable Mesh Renderer");
+          BroadcastEvent(feedback);
+          return true;
+        }
+        Engine::Ecs::MeshRenderer updated = *current;
+        AssignMaterialAsset(updated, guid, *material);
+        const Engine::Status status = m_ActiveScene->SetInPlace(request.GetTargetEntity(), std::move(updated));
+        if (!status) {
+          AssetWorkflowFeedbackEvent feedback(false, status.error().Message);
+          BroadcastEvent(feedback);
+          return true;
+        }
+        BroadcastSceneChanged();
+      }
       AssetWorkflowFeedbackEvent feedback(true, "Material asset created");
       BroadcastEvent(feedback);
       return true;
@@ -661,6 +687,100 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
                                       GetAssetManager()->GetKnownMaterials());
     BroadcastEvent(changed);
     AssetWorkflowFeedbackEvent feedback(true, "Asset renamed; scene references remain valid");
+    BroadcastEvent(feedback);
+    return true;
+  });
+  dispatcher.Dispatch<MaterialAssetSelectionRequestedEvent>([this](const auto& request) -> bool {
+    const auto fail = [this](std::string message) -> bool {
+      AssetWorkflowFeedbackEvent feedback(false, std::move(message));
+      BroadcastEvent(feedback);
+      return true;
+    };
+    if (GetAssetManager() == nullptr || !m_ActiveScene || !m_ActiveScene->World().IsAlive(request.GetEntity())) {
+      return fail("Material assignment requires an open project and a live mesh entity");
+    }
+    auto* current = m_ActiveScene->World().Get<Engine::Ecs::MeshRenderer>(request.GetEntity());
+    if (current == nullptr) {
+      return fail("The selected entity does not have a Mesh Renderer component");
+    }
+    std::string error;
+    if (!GetAssetManager()->LoadMaterial(request.GetGuid(), error)) {
+      return fail(error);
+    }
+    const auto material = GetAssetManager()->GetMaterial(request.GetGuid());
+    if (!material) {
+      return fail("Material asset could not be read after loading");
+    }
+    if (GetRenderSystem() != nullptr) {
+      for (const auto& [textureGuid, srgb] :
+           {std::pair{material->baseColorTextureGuid, true}, std::pair{material->normalTextureGuid, false}}) {
+        if (!textureGuid) {
+          continue;
+        }
+        if (!GetRenderSystem()->PrepareAssetTexture(*textureGuid, srgb, error)) {
+          return fail(error);
+        }
+      }
+    }
+    Engine::Ecs::MeshRenderer updated = *current;
+    AssignMaterialAsset(updated, request.GetGuid(), *material);
+    const Engine::Status status = m_ActiveScene->SetInPlace(request.GetEntity(), std::move(updated));
+    if (!status) {
+      return fail(status.error().Message);
+    }
+    BroadcastSceneChanged();
+    AssetWorkflowFeedbackEvent feedback(true, "Material assigned to Mesh Renderer");
+    BroadcastEvent(feedback);
+    return true;
+  });
+  dispatcher.Dispatch<MaterialAssetEditRequestedEvent>([this](const auto& request) -> bool {
+    if (GetAssetManager() == nullptr || !m_ActiveScene) {
+      AssetWorkflowFeedbackEvent feedback(false, "Material edits require an open project");
+      BroadcastEvent(feedback);
+      return true;
+    }
+    std::string error;
+    if (GetRenderSystem() != nullptr) {
+      for (const auto& [textureGuid, srgb] : {std::pair{request.GetMaterial().baseColorTextureGuid, true},
+                                              std::pair{request.GetMaterial().normalTextureGuid, false}}) {
+        if (!textureGuid) {
+          continue;
+        }
+        if (!GetRenderSystem()->PrepareAssetTexture(*textureGuid, srgb, error)) {
+          AssetWorkflowFeedbackEvent feedback(false, error);
+          BroadcastEvent(feedback);
+          return true;
+        }
+      }
+    }
+    if (!GetAssetManager()->SaveMaterial(request.GetGuid(), request.GetMaterial(), error)) {
+      AssetWorkflowFeedbackEvent feedback(false, error);
+      BroadcastEvent(feedback);
+      return true;
+    }
+    std::vector<std::pair<Engine::EntityHandle, Engine::Ecs::MeshRenderer>> updates;
+    m_ActiveScene->World().ForEachChunkReadOnly<Engine::Ecs::MeshRenderer>(
+        [&updates, &request](std::span<const Engine::EntityHandle> entities,
+                             std::span<const Engine::Ecs::MeshRenderer> meshes) -> void {
+          for (size_t index = 0; index < entities.size(); ++index) {
+            if (meshes[index].MaterialGuid == request.GetGuid()) {
+              auto updated = meshes[index];
+              if (ApplyMaterialAssetEdit(updated, request.GetGuid(), request.GetMaterial())) {
+                updates.emplace_back(entities[index], std::move(updated));
+              }
+            }
+          }
+        });
+    for (auto& [entity, mesh] : updates) {
+      const Engine::Status status = m_ActiveScene->SetInPlace(entity, std::move(mesh));
+      if (!status) {
+        AssetWorkflowFeedbackEvent feedback(false, status.error().Message);
+        BroadcastEvent(feedback);
+        return true;
+      }
+    }
+    BroadcastSceneChanged();
+    AssetWorkflowFeedbackEvent feedback(true, "Shared material updated");
     BroadcastEvent(feedback);
     return true;
   });

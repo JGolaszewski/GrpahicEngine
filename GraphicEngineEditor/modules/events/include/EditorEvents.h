@@ -23,6 +23,8 @@
 #include "events/include/EcsEntityReparentRequestedEvent.h"
 #include "events/include/EcsEntitySelectedEvent.h"
 #include "events/include/EntityDeselectedEvent.h"
+#include "events/include/MaterialAssetEditRequestedEvent.h"
+#include "events/include/MaterialAssetSelectionRequestedEvent.h"
 #include "events/include/MaterialChangedEvent.h"
 #include "events/include/MaterialTextureAssignmentRequestedEvent.h"
 #include "events/include/ModelReassignmentRequestedEvent.h"

@@ -1,4 +1,7 @@
 #include "panels/include/InspectorPanel.h"
+#include "events/include/AssetImportRequestedEvent.h"
+#include "events/include/MaterialAssetEditRequestedEvent.h"
+#include "events/include/MaterialAssetSelectionRequestedEvent.h"
 #include "panels/include/AssetDragDropPayload.h"
 #include "panels/include/AssetDropAssignment.h"
 #include "panels/include/TransformRotation.h"
@@ -56,6 +59,7 @@ void InspectorPanel::OnEvent(Engine::Events::Event& event) {
   dispatcher.Dispatch<AssetRegistryChangedEvent>([this](const auto& update) -> bool {
     m_Models = update.GetModels();
     m_Textures = update.GetTextures();
+    m_Materials = update.GetMaterials();
     return false;
   });
   dispatcher.Dispatch<AssetWorkflowFeedbackEvent>([this](const auto& update) -> bool {
@@ -157,6 +161,7 @@ void InspectorPanel::DrawEntityInspector() {
     }
     int sourceIndex = m_MeshSourceSelectionIndex;
     bool changed = false;
+    bool materialChanged = false;
     if (ImGui::Combo("Mesh source", &sourceIndex, sourceNames, 2)) {
       m_MeshSourceSelectionIndex = sourceIndex;
       if (sourceIndex == 1 && mesh.PrimitiveType.empty()) {
@@ -233,21 +238,44 @@ void InspectorPanel::DrawEntityInspector() {
     changed |= ImGui::Checkbox("Receive shadows", &mesh.ReceiveShadows);
     changed |= ImGui::Checkbox("Wireframe", &mesh.Wireframe);
     changed |= ImGui::Checkbox("Disable depth test", &mesh.DisableDepthTest);
-    bool hasMaterialOverride = mesh.Material.has_value();
-    if (ImGui::Checkbox("Override material", &hasMaterialOverride)) {
-      if (hasMaterialOverride) {
-        mesh.Material.emplace();
-      } else {
-        mesh.Material.reset();
+    const bool legacyEmbeddedMaterial = mesh.Material.has_value() && mesh.MaterialGuid.empty();
+    const auto selectedMaterial =
+        std::ranges::find(m_Materials, mesh.MaterialGuid, &Engine::AssetManager::MaterialAssetInfo::guid);
+    const char* materialPreview = "Default";
+    if (legacyEmbeddedMaterial) {
+      materialPreview = "Embedded (legacy)";
+    } else if (!mesh.MaterialGuid.empty()) {
+      materialPreview =
+          selectedMaterial == m_Materials.end() ? "Missing material asset" : selectedMaterial->name.c_str();
+    }
+    if (ImGui::BeginCombo("Material", materialPreview)) {
+      if (ImGui::Selectable("Default", !legacyEmbeddedMaterial && mesh.MaterialGuid.empty())) {
+        UseDefaultMaterial(mesh);
+        changed = true;
       }
-      changed = true;
+      if (legacyEmbeddedMaterial) {
+        ImGui::BeginDisabled();
+        (void)ImGui::Selectable("Embedded (legacy)", true);
+        ImGui::EndDisabled();
+      }
+      for (const auto& materialAsset : m_Materials) {
+        const bool isSelected = materialAsset.guid == mesh.MaterialGuid;
+        if (ImGui::Selectable(materialAsset.name.c_str(), isSelected)) {
+          EmitEvent(std::make_unique<MaterialAssetSelectionRequestedEvent>(entity, materialAsset.guid));
+        }
+      }
+      ImGui::EndCombo();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Create Custom")) {
+      EmitEvent(std::make_unique<AssetImportRequestedEvent>(AssetImportRequestedEvent::AssetType::Material, entity));
     }
     if (mesh.Material) {
       auto& material = *mesh.Material;
       ImGui::SeparatorText("Material");
-      const auto drawTextureTarget = [this, &material,
-                                      &changed](const char* label, MaterialTextureSlot slot,
-                                                const std::optional<std::string>& currentGuid) -> void {
+      const auto drawTextureTarget = [this, &material, &changed,
+                                      &materialChanged](const char* label, MaterialTextureSlot slot,
+                                                        const std::optional<std::string>& currentGuid) -> void {
         std::string targetLabel = std::string(label) + ": Drop texture here";
         if (currentGuid) {
           const auto texture =
@@ -267,6 +295,7 @@ void InspectorPanel::DrawEntityInspector() {
             m_AssetFeedback = guid ? error : "Dropped texture payload is malformed";
           } else {
             changed = true;
+            materialChanged = true;
             m_AssetFeedbackSucceeded = true;
             m_AssetFeedback = std::string(label) + " texture assigned";
           }
@@ -280,26 +309,30 @@ void InspectorPanel::DrawEntityInspector() {
       };
       drawTextureTarget("Base color", MaterialTextureSlot::BaseColor, material.baseColorTextureGuid);
       drawTextureTarget("Normal", MaterialTextureSlot::Normal, material.normalTextureGuid);
-      changed |= ImGui::ColorEdit4("Base color", material.baseColor.data());
-      changed |= ImGui::ColorEdit3("Emissive", material.emissive.data());
-      changed |= ImGui::SliderFloat("Metallic", &material.metallic, 0.0F, 1.0F);
-      changed |= ImGui::SliderFloat("Roughness", &material.roughness, 0.0F, 1.0F);
+      materialChanged |= ImGui::ColorEdit4("Base color", material.baseColor.data());
+      materialChanged |= ImGui::ColorEdit3("Emissive", material.emissive.data());
+      materialChanged |= ImGui::SliderFloat("Metallic", &material.metallic, 0.0F, 1.0F);
+      materialChanged |= ImGui::SliderFloat("Roughness", &material.roughness, 0.0F, 1.0F);
       constexpr const char* brdfNames[] = {"Legacy", "GGX", "GTR"};
       int brdfIndex = material.brdfModel == "ggx" ? 1 : material.brdfModel == "gtr" ? 2 : 0;
       if (ImGui::Combo("BRDF", &brdfIndex, brdfNames, 3)) {
         material.brdfModel = brdfIndex == 1 ? "ggx" : brdfIndex == 2 ? "gtr" : "legacy";
-        changed = true;
+        materialChanged = true;
       }
       constexpr const char* alphaNames[] = {"Opaque", "Mask", "Blend"};
       int alphaIndex = material.alphaMode == "mask" ? 1 : material.alphaMode == "blend" ? 2 : 0;
       if (ImGui::Combo("Alpha mode", &alphaIndex, alphaNames, 3)) {
         material.alphaMode = alphaIndex == 1 ? "mask" : alphaIndex == 2 ? "blend" : "opaque";
-        changed = true;
+        materialChanged = true;
       }
       if (material.alphaMode == "mask") {
-        changed |= ImGui::SliderFloat("Alpha cutoff", &material.alphaCutoff, 0.0F, 1.0F);
+        materialChanged |= ImGui::SliderFloat("Alpha cutoff", &material.alphaCutoff, 0.0F, 1.0F);
       }
-      changed |= ImGui::Checkbox("Double sided", &material.doubleSided);
+      materialChanged |= ImGui::Checkbox("Double sided", &material.doubleSided);
+      changed |= materialChanged;
+    }
+    if (materialChanged && !legacyEmbeddedMaterial && !mesh.MaterialGuid.empty() && mesh.Material.has_value()) {
+      EmitEvent(std::make_unique<MaterialAssetEditRequestedEvent>(mesh.MaterialGuid, *mesh.Material));
     }
     if (changed) {
       emitSet(Mutation::Component::MeshRenderer, std::move(mesh));

@@ -3,7 +3,10 @@
 
 #include <gtest/gtest.h>
 
+#include <chrono>
+#include <filesystem>
 #include <string>
+#include <system_error>
 #include <vector>
 
 namespace {
@@ -59,6 +62,70 @@ TEST(AssetDropAssignmentTests, UnknownTextureDropLeavesBothSlotsUnchanged) {
   EXPECT_EQ(material.baseColorTextureGuid, original.baseColorTextureGuid);
   EXPECT_EQ(material.normalTextureGuid, original.normalTextureGuid);
   EXPECT_FALSE(error.empty());
+}
+
+TEST(AssetDropAssignmentTests, MeshUsesDefaultMaterialUntilAnAssetIsAssigned) {
+  Engine::Ecs::MeshRenderer mesh;
+  EXPECT_TRUE(mesh.MaterialGuid.empty());
+  EXPECT_FALSE(mesh.Material.has_value());
+
+  mesh.MaterialGuid = "material-guid";
+  mesh.Material.emplace();
+  UseDefaultMaterial(mesh);
+  EXPECT_TRUE(mesh.MaterialGuid.empty());
+  EXPECT_FALSE(mesh.Material.has_value());
+}
+
+TEST(AssetDropAssignmentTests, ReusableMaterialCreationCanBeAssignedAndSharedEditsPropagate) {
+  const auto nonce = std::chrono::steady_clock::now().time_since_epoch().count();
+  const auto root =
+      std::filesystem::temp_directory_path() / ("GraphicEngineMaterialAssignmentTests-" + std::to_string(nonce));
+  std::filesystem::create_directories(root);
+  struct Cleanup final {
+    std::filesystem::path path;
+    ~Cleanup() {
+      std::error_code ignored;
+      std::filesystem::remove_all(path, ignored);
+    }
+  } cleanup{root};
+  Engine::AssetManager assets(root);
+  const auto result = assets.CreateMaterial("Custom");
+  ASSERT_TRUE(result) << result.error().Message;
+  const std::string guid = result.value();
+  std::string error;
+  ASSERT_TRUE(assets.LoadMaterial(guid, error)) << error;
+  const auto createdAsset = assets.GetMaterial(guid);
+  ASSERT_TRUE(createdAsset);
+  const Engine::SceneMaterialDocument created = *createdAsset;
+  Engine::Ecs::MeshRenderer first;
+  Engine::Ecs::MeshRenderer second;
+  Engine::Ecs::MeshRenderer unrelated;
+  AssignMaterialAsset(first, guid, created);
+  AssignMaterialAsset(second, guid, created);
+  AssignMaterialAsset(unrelated, "another-material", created);
+  EXPECT_EQ(first.MaterialGuid, guid);
+  EXPECT_EQ(first.Material, created);
+  EXPECT_EQ(second.Material, created);
+
+  Engine::SceneMaterialDocument edited = created;
+  edited.roughness = 0.2F;
+  EXPECT_TRUE(ApplyMaterialAssetEdit(first, guid, edited));
+  EXPECT_TRUE(ApplyMaterialAssetEdit(second, guid, edited));
+  EXPECT_FALSE(ApplyMaterialAssetEdit(unrelated, guid, edited));
+  EXPECT_EQ(first.Material, edited);
+  EXPECT_EQ(second.Material, edited);
+  EXPECT_EQ(unrelated.Material, created);
+}
+
+TEST(AssetDropAssignmentTests, LegacyEmbeddedMaterialRemainsAvailableWithoutAssetIdentity) {
+  Engine::Ecs::MeshRenderer mesh;
+  Engine::SceneMaterialDocument legacy;
+  legacy.baseColor = {0.2F, 0.4F, 0.6F, 1.0F};
+  mesh.Material = legacy;
+
+  EXPECT_TRUE(mesh.MaterialGuid.empty());
+  EXPECT_TRUE(mesh.Material.has_value());
+  EXPECT_EQ(mesh.Material, legacy);
 }
 
 TEST(AssetDropAssignmentTests, DragPayloadRequiresAWellFormedGuidAndFixedSize) {
