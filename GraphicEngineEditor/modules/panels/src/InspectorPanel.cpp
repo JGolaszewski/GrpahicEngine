@@ -103,6 +103,7 @@ void InspectorPanel::DrawEntityInspector() {
   const std::string entityId = "ID: " + std::to_string(entity.Index) + ":" + std::to_string(entity.Generation);
   ImGui::TextUnformatted(entityId.c_str());
   ImGui::Separator();
+  ImGui::PushID(entityId.c_str());
   if (const auto* storedName = world.Get<Engine::Ecs::Name>(entity);
       storedName != nullptr && ImGui::CollapsingHeader("Name", ImGuiTreeNodeFlags_DefaultOpen)) {
     Engine::Ecs::Name name = *storedName;
@@ -118,6 +119,7 @@ void InspectorPanel::DrawEntityInspector() {
       emitSet(Mutation::Component::Name, std::move(name));
     }
   }
+  ImGui::PopID();
 
   if (!isSceneRoot) {
     if (const auto* storedTransform = world.Get<Engine::Ecs::LocalTransform>(entity);
