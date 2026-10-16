@@ -74,6 +74,11 @@ public:
   static void BuildShadowData(Engine::Scene* scene, const std::vector<::Engine::Renderer::RenderView*>& shadowViews,
                               uint32_t firstShadowSlot, uint32_t maxShadowedLights);
   static uint32_t CountShadowCasters(const Engine::Scene* scene, uint32_t limit);
+  /// Counts depth views needed by the selected shadow-casting lights (point lights use six faces).
+  /// @param scene Scene whose light components are counted.
+  /// @param casterLimit Maximum number of shadow-casting lights to include.
+  /// @return Number of shadow-map array slices required.
+  static uint32_t CountShadowViews(const Engine::Scene* scene, uint32_t casterLimit);
 
   static bool EnsureLightBuffers(size_t viewCount, ::Engine::Renderer::FrameContext& frameContext);
   static nvrhi::BufferHandle GetLightBuffer(size_t viewIndex, ::Engine::Renderer::FrameContext& frameContext);

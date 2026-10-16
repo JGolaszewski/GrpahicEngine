@@ -102,6 +102,35 @@ auto ComputeSpotLightViewProj(const ::Engine::Renderer::DirectionalLightData& li
   return view * proj;
 }
 
+auto ComputeDirectionalLightViewProj(const ::Engine::Renderer::DirectionalLightData& lightData) -> DirectX::XMMATRIX {
+  using namespace DirectX;
+  const XMVECTOR direction = NormalizeOrDefault(
+      XMFLOAT3(lightData.DirectionIntensity.x, lightData.DirectionIntensity.y, lightData.DirectionIntensity.z));
+  const XMVECTOR target = XMVectorZero();
+  const XMVECTOR eye = XMVectorSubtract(target, XMVectorScale(direction, 100.0F));
+  XMVECTOR up = XMVectorSet(0.0F, 1.0F, 0.0F, 0.0F);
+  if (std::abs(XMVectorGetX(XMVector3Dot(up, direction))) > 0.98F) {
+    up = XMVectorSet(1.0F, 0.0F, 0.0F, 0.0F);
+  }
+  return XMMatrixLookAtLH(eye, target, up) * XMMatrixOrthographicLH(200.0F, 200.0F, 0.1F, 300.0F);
+}
+
+auto ComputePointLightFaceViewProj(const ::Engine::Renderer::DirectionalLightData& lightData, uint32_t face)
+    -> DirectX::XMMATRIX {
+  using namespace DirectX;
+  constexpr XMFLOAT3 directions[] = {{1.0F, 0.0F, 0.0F},  {-1.0F, 0.0F, 0.0F}, {0.0F, 1.0F, 0.0F},
+                                     {0.0F, -1.0F, 0.0F}, {0.0F, 0.0F, 1.0F},  {0.0F, 0.0F, -1.0F}};
+  constexpr XMFLOAT3 ups[] = {{0.0F, 1.0F, 0.0F}, {0.0F, 1.0F, 0.0F}, {0.0F, 0.0F, -1.0F},
+                              {0.0F, 0.0F, 1.0F}, {0.0F, 1.0F, 0.0F}, {0.0F, 1.0F, 0.0F}};
+  const XMVECTOR position =
+      XMVectorSet(lightData.PositionRange.x, lightData.PositionRange.y, lightData.PositionRange.z, 1.0F);
+  const XMVECTOR direction = XMLoadFloat3(&directions[face]);
+  const XMVECTOR up = XMLoadFloat3(&ups[face]);
+  const XMMATRIX view = XMMatrixLookToLH(position, direction, up);
+  const float farPlane = std::max(lightData.PositionRange.w, 0.06F);
+  return view * XMMatrixPerspectiveFovLH(XM_PIDIV2, 1.0F, 0.05F, farPlane);
+}
+
 auto ToDirectionalLightData(const ::Engine::Ecs::SpotLight& light, const ::Engine::Ecs::WorldTransform& transform)
     -> ::Engine::Renderer::DirectionalLightData {
   ::Engine::Renderer::DirectionalLightData data;
@@ -960,30 +989,42 @@ void Engine::SceneRenderer::BuildShadowData(Engine::Scene* scene,
     return;
   }
   uint32_t viewIndex = firstShadowSlot;
+  uint32_t casterCount = 0;
   scene->World()
       .ForEachChunkReadOnly<::Engine::Ecs::SpotLight, ::Engine::Ecs::WorldTransform, ::Engine::Ecs::GlobalVisibility>(
-          [scene, &shadowViews, firstShadowSlot, maxShadowedLights,
-           &viewIndex](std::span<const Engine::EntityHandle>, std::span<const ::Engine::Ecs::SpotLight> lightComponents,
-                       std::span<const ::Engine::Ecs::WorldTransform> transforms,
-                       std::span<const ::Engine::Ecs::GlobalVisibility> visibility) -> void {
+          [scene, &shadowViews, firstShadowSlot, maxShadowedLights, &casterCount, &viewIndex](
+              std::span<const Engine::EntityHandle> entities, std::span<const ::Engine::Ecs::SpotLight> lightComponents,
+              std::span<const ::Engine::Ecs::WorldTransform> transforms,
+              std::span<const ::Engine::Ecs::GlobalVisibility> visibility) -> void {
             for (size_t row = 0; row < lightComponents.size(); ++row) {
-              if (viewIndex >= firstShadowSlot + maxShadowedLights || viewIndex >= shadowViews.size()) {
+              if (casterCount >= maxShadowedLights || viewIndex >= shadowViews.size()) {
                 return;
               }
               if (!visibility[row].IsVisible) {
                 continue;
               }
               const auto lightData = ToDirectionalLightData(lightComponents[row], transforms[row]);
-              if (lightData.ColorUsePosition.w <= 0.5F || lightData.ShadowParams.w <= 0.5F) {
+              if (lightData.ShadowParams.w <= 0.5F) {
                 continue;
               }
-              auto* shadowView = shadowViews.at(viewIndex++);
-              if (shadowView == nullptr) {
-                continue;
+              const uint32_t faceCount = lightComponents[row].Type == ::Engine::Ecs::LightType::Point ? 6U : 1U;
+              ++casterCount;
+              for (uint32_t face = 0; face < faceCount && viewIndex < shadowViews.size(); ++face) {
+                auto* shadowView = shadowViews.at(viewIndex++);
+                if (shadowView == nullptr) {
+                  continue;
+                }
+                shadowView->TargetScene = scene;
+                shadowView->ShadowLight = entities[row];
+                if (lightComponents[row].Type == ::Engine::Ecs::LightType::Directional) {
+                  shadowView->ViewProjection = ComputeDirectionalLightViewProj(lightData);
+                } else if (faceCount == 6U) {
+                  shadowView->ViewProjection = ComputePointLightFaceViewProj(lightData, face);
+                } else {
+                  shadowView->ViewProjection = ComputeSpotLightViewProj(lightData);
+                }
+                shadowView->ExtractFrustumPlanes();
               }
-              shadowView->TargetScene = scene;
-              shadowView->ViewProjection = ComputeSpotLightViewProj(lightData);
-              shadowView->ExtractFrustumPlanes();
             }
           });
 }
@@ -999,12 +1040,33 @@ auto Engine::SceneRenderer::CountShadowCasters(const Engine::Scene* scene, uint3
           if (count >= limit || count >= MaxShadowedLights) {
             return;
           }
-          if (light.Type == ::Engine::Ecs::LightType::Spot && light.CastShadows) {
+          if (light.CastShadows) {
             ++count;
           }
         }
       });
   return count;
+}
+auto Engine::SceneRenderer::CountShadowViews(const Engine::Scene* scene, uint32_t casterLimit) -> uint32_t {
+  if (scene == nullptr || casterLimit == 0) {
+    return 0;
+  }
+  uint32_t count = 0;
+  uint32_t views = 0;
+  scene->World().ForEachChunkReadOnly<::Engine::Ecs::SpotLight>(
+      [&count, &views, casterLimit](std::span<const Engine::EntityHandle>,
+                                    std::span<const ::Engine::Ecs::SpotLight> lights) -> void {
+        for (const auto& light : lights) {
+          if (count >= casterLimit || count >= MaxShadowedLights) {
+            return;
+          }
+          if (light.CastShadows) {
+            ++count;
+            views += light.Type == ::Engine::Ecs::LightType::Point ? 6U : 1U;
+          }
+        }
+      });
+  return views;
 }
 void Engine::SceneRenderer::BuildLighting(Engine::Scene* scene,
                                           const std::vector<::Engine::Renderer::RenderView*>& shadowViews,
@@ -1017,25 +1079,29 @@ void Engine::SceneRenderer::BuildLighting(Engine::Scene* scene,
   uint32_t shadowSearchStart = 0;
   scene->World()
       .ForEachChunkReadOnly<::Engine::Ecs::SpotLight, ::Engine::Ecs::WorldTransform, ::Engine::Ecs::GlobalVisibility>(
-          [&lights, &shadowSearchStart, &shadowViews,
-           scene](std::span<const Engine::EntityHandle>, std::span<const ::Engine::Ecs::SpotLight> lightComponents,
-                  std::span<const ::Engine::Ecs::WorldTransform> transforms,
-                  std::span<const ::Engine::Ecs::GlobalVisibility> visibility) -> void {
+          [&lights, &shadowSearchStart, &shadowViews, scene](
+              std::span<const Engine::EntityHandle> entities, std::span<const ::Engine::Ecs::SpotLight> lightComponents,
+              std::span<const ::Engine::Ecs::WorldTransform> transforms,
+              std::span<const ::Engine::Ecs::GlobalVisibility> visibility) -> void {
             for (size_t row = 0; row < lightComponents.size() && lights.size() < MaxLights; ++row) {
               if (!visibility[row].IsVisible) {
                 continue;
               }
               auto lightData = ToDirectionalLightData(lightComponents[row], transforms[row]);
-              if (lightData.ColorUsePosition.w > 0.5F && lightData.ShadowParams.w > 0.5F) {
+              if (lightData.ShadowParams.w > 0.5F) {
                 for (uint32_t shadowIndex = shadowSearchStart; shadowIndex < shadowViews.size(); ++shadowIndex) {
                   const auto* shadowView = shadowViews.at(shadowIndex);
-                  if (shadowView == nullptr || shadowView->TargetScene != scene) {
+                  if (shadowView == nullptr || shadowView->TargetScene != scene ||
+                      shadowView->ShadowLight != entities[row]) {
                     continue;
                   }
-                  DirectX::XMStoreFloat4x4(&lightData.LightViewProj,
-                                           DirectX::XMMatrixTranspose(shadowView->ViewProjection));
                   lightData.ShadowParams.x = static_cast<float>(shadowIndex);
-                  shadowSearchStart = shadowIndex + 1;
+                  if (lightComponents[row].Type != ::Engine::Ecs::LightType::Point) {
+                    DirectX::XMStoreFloat4x4(&lightData.LightViewProj,
+                                             DirectX::XMMatrixTranspose(shadowView->ViewProjection));
+                  }
+                  shadowSearchStart =
+                      shadowIndex + (lightComponents[row].Type == ::Engine::Ecs::LightType::Point ? 6U : 1U);
                   break;
                 }
               }

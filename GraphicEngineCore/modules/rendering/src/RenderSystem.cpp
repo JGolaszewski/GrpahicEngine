@@ -265,7 +265,9 @@ void RenderSystem::SubmitViews(const std::vector<Engine::ViewportBinding>& views
     const uint32_t firstShadowSlot = static_cast<uint32_t>(shadowViews.size());
     const uint32_t shadowCasterCount =
         ::Engine::SceneRenderer::CountShadowCasters(scene, m_ShadowSettings.MaxShadowCastersPerScene);
-    for (uint32_t i = 0; i < shadowCasterCount; ++i) {
+    const uint32_t shadowViewCount =
+        ::Engine::SceneRenderer::CountShadowViews(scene, m_ShadowSettings.MaxShadowCastersPerScene);
+    for (uint32_t i = 0; i < shadowViewCount; ++i) {
       auto view = std::make_unique<::Engine::Renderer::RenderView>();
       view->ViewType = ::Engine::Renderer::RenderView::Type::Shadow;
       shadowViews.push_back(view.get());

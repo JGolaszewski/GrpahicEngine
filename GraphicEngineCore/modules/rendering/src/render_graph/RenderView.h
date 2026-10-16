@@ -69,6 +69,7 @@ public:
   DebugGeometry DebugGeometryData;
 
   Engine::Scene* TargetScene = nullptr;
+  Engine::EntityHandle ShadowLight = Engine::InvalidEntityHandle; ///< Entity owning this shadow view's light.
   nvrhi::IFramebuffer* TargetFramebuffer = nullptr;
   Engine::ViewportBinding::Mode RenderMode = Engine::ViewportBinding::Mode::Editor;
   std::vector<RGViewportAttachment> OutputAttachments;
