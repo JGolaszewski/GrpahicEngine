@@ -4,6 +4,7 @@
 #include <atomic>
 #include <random>
 #include <ranges>
+#include <stdexcept>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -23,6 +24,18 @@ auto HandleKey(EntityHandle handle) noexcept -> uint64_t {
 }
 } // namespace
 
+Scene::Scene() {
+  auto root = CreateImmediate("Scene", InvalidEntityHandle);
+  if (!root) {
+    throw std::runtime_error(root.error().Message);
+  }
+  m_SceneRoot = *root;
+  const Status marked = m_World.Add<Ecs::SceneRoot>(m_SceneRoot, Ecs::SceneRoot{});
+  if (!marked) {
+    throw std::runtime_error(marked.error().Message);
+  }
+}
+
 auto Scene::QueueCommand(EntityHandle entity, Command command) -> uint64_t {
   std::scoped_lock lock(m_CommandMutex);
   const uint64_t sequence = m_NextSequence++;
@@ -34,7 +47,8 @@ auto Scene::QueueCommand(EntityHandle entity, Command command) -> uint64_t {
 auto Scene::QueueCreate(std::string name, EntityHandle parent, EntityPreset preset) -> uint64_t {
   return QueueCommand(InvalidEntityHandle,
                       [name = std::move(name), parent, preset](Scene& scene, EntityHandle& result) -> Status {
-                        auto created = scene.CreateImmediate(name, parent);
+                        const EntityHandle actualParent = parent == InvalidEntityHandle ? scene.m_SceneRoot : parent;
+                        auto created = scene.CreateImmediate(name, actualParent);
                         if (!created) {
                           return {std::unexpected(std::move(created.error()))};
                         }
@@ -220,6 +234,12 @@ auto Scene::Detach(EntityHandle entity) -> Status {
 }
 
 auto Scene::ReparentImmediate(EntityHandle entity, EntityHandle parent) -> Status {
+  if (entity == m_SceneRoot) {
+    return std::unexpected(MakeError("The scene root cannot be reparented"));
+  }
+  if (parent == InvalidEntityHandle) {
+    parent = m_SceneRoot;
+  }
   auto* hierarchyParent = m_World.Get<Ecs::Parent>(entity);
   auto* entityLinks = m_World.Get<Ecs::ChildList>(entity);
   if (hierarchyParent == nullptr || entityLinks == nullptr) {
@@ -278,6 +298,9 @@ auto Scene::ReparentImmediate(EntityHandle entity, EntityHandle parent) -> Statu
 }
 
 auto Scene::DestroyImmediate(EntityHandle entity) -> Status {
+  if (entity == m_SceneRoot) {
+    return std::unexpected(MakeError("The scene root cannot be deleted"));
+  }
   auto* links = m_World.Get<Ecs::ChildList>(entity);
   auto* parent = m_World.Get<Ecs::Parent>(entity);
   if (links == nullptr || parent == nullptr) {
@@ -485,10 +508,13 @@ auto Scene::HierarchySnapshot() const -> std::vector<EntitySnapshot> {
   std::vector<EntitySnapshot> snapshots;
   std::vector<EntityHandle> roots;
   m_World.ForEachChunkReadOnly<Ecs::Name, Ecs::Parent, Ecs::ChildList>(
-      [&snapshots, &roots](std::span<const EntityHandle> handles, std::span<const Ecs::Name> names,
-                           std::span<const Ecs::Parent> parents, std::span<const Ecs::ChildList> links) -> void {
+      [this, &snapshots, &roots](std::span<const EntityHandle> handles, std::span<const Ecs::Name> names,
+                                 std::span<const Ecs::Parent> parents, std::span<const Ecs::ChildList> links) -> void {
         for (size_t row = 0; row < handles.size(); ++row) {
-          snapshots.push_back({.Handle = handles[row], .Parent = parents[row].Id, .Name = names[row].Value});
+          snapshots.push_back({.Handle = handles[row],
+                               .Parent = parents[row].Id,
+                               .Name = names[row].Value,
+                               .IsSceneRoot = handles[row] == m_SceneRoot});
           if (parents[row].Id == InvalidEntityHandle && links[row].NextSibling == InvalidEntityHandle) {
             roots.push_back(handles[row]);
           }

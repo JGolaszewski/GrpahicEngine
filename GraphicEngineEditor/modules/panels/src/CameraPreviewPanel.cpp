@@ -52,6 +52,8 @@ void CameraPreviewPanel::OnEvent(Engine::Events::Event& event) {
     m_RefreshRequested = true;
     m_HasImage = false;
     m_Zoom = 1.0F;
+    m_ImageOffset = {};
+    m_IsPanning = false;
     m_Status = "Rendering camera preview...";
     return true;
   });
@@ -198,6 +200,7 @@ void CameraPreviewPanel::Draw() {
     ImGui::SameLine();
     if (ImGui::Button("Fit")) {
       m_Zoom = 1.0F;
+      m_ImageOffset = {};
     }
     ImGui::SameLine();
     if (ImGui::Button("1:1")) {
@@ -206,6 +209,7 @@ void CameraPreviewPanel::Draw() {
           CameraPreviewImageLayout::ComputeFitScale(m_ImageWidth, m_ImageHeight, available.x, available.y);
       if (fitScale > 0.0F) {
         m_Zoom = CameraPreviewImageLayout::ClampZoom(1.0F / fitScale);
+        m_ImageOffset = {};
       }
     }
     ImGui::SameLine();
@@ -258,7 +262,7 @@ void CameraPreviewPanel::Draw() {
 
     const ImVec2 available = ImGui::GetContentRegionAvail();
     if (ImGui::BeginChild("CameraPreviewImage", available, true,
-                          ImGuiWindowFlags_HorizontalScrollbar | ImGuiWindowFlags_NoScrollWithMouse)) {
+                          ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse)) {
       const ImVec2 childAvailable = ImGui::GetContentRegionAvail();
       const CameraPreviewImageLayout::ImageSize imageSize = CameraPreviewImageLayout::ComputeImageSize(
           m_ImageWidth, m_ImageHeight, childAvailable.x, childAvailable.y, m_Zoom);
@@ -268,24 +272,48 @@ void CameraPreviewPanel::Draw() {
       if (m_HasImage && imageSize.Width > 0.0F && imageSize.Height > 0.0F) {
         ImVec2 cursor = ImGui::GetCursorPos();
         if (imageSize.Width < childAvailable.x) {
-          cursor.x += (childAvailable.x - imageSize.Width) * 0.5F;
+          cursor.x += (childAvailable.x - imageSize.Width) * 0.5F + m_ImageOffset[0];
+        } else {
+          cursor.x += m_ImageOffset[0];
         }
         if (imageSize.Height < childAvailable.y) {
-          cursor.y += (childAvailable.y - imageSize.Height) * 0.5F;
+          cursor.y += (childAvailable.y - imageSize.Height) * 0.5F + m_ImageOffset[1];
+        } else {
+          cursor.y += m_ImageOffset[1];
         }
         ImGui::SetCursorPos(cursor);
         void* texture = m_GetTexture ? m_GetTexture() : nullptr;
         if (texture != nullptr) {
           ImGui::Image(texture, ImVec2(imageSize.Width, imageSize.Height));
+          if (ImGui::IsItemHovered()) {
+            ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+            if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+              m_IsPanning = true;
+              const ImVec2 mouse = ImGui::GetIO().MousePos;
+              m_LastMousePosition = {mouse.x, mouse.y};
+            }
+          }
         } else {
           ImGui::TextDisabled("Preview texture is unavailable.");
+        }
+        if (m_IsPanning) {
+          ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+          if (ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
+            const ImVec2 mouse = ImGui::GetIO().MousePos;
+            m_ImageOffset[0] += mouse.x - m_LastMousePosition[0];
+            m_ImageOffset[1] += mouse.y - m_LastMousePosition[1];
+            m_LastMousePosition = {mouse.x, mouse.y};
+          }
+          if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+            m_IsPanning = false;
+          }
         }
       } else if (!m_HasImage) {
         ImGui::TextDisabled("No full-resolution preview is available.");
       }
     }
     ImGui::EndChild();
-    ImGui::TextDisabled("Scrollbars pan the image; hover over it and use the mouse wheel to zoom.");
+    ImGui::TextDisabled("Drag the image to pan; hover over it and use the mouse wheel to zoom.");
   }
   ImGui::End();
   if (!m_Open && m_ClearPreview) {

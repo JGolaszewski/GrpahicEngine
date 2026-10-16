@@ -378,6 +378,7 @@ auto EntityJson(const SceneEntityDocument& entity) -> Json {
   Json item = Json::object();
   item.emplace("id", entity.id);
   item.emplace("name", entity.name);
+  item.emplace("sceneRoot", entity.sceneRoot);
   item.emplace("identityGuid", GuidJson(entity.identityGuid));
   item.emplace("parentGuid", GuidJson(entity.parentGuid));
   item.emplace("visible", entity.visible);
@@ -464,7 +465,7 @@ auto ToJson(const SceneDocument& document) -> Json {
 }
 
 auto ValidateSceneHeader(const std::filesystem::path& path, const SceneDocument& document, std::string& error) -> bool {
-  if ((document.schemaVersion == 1 || document.schemaVersion == CurrentSceneSchemaVersion) &&
+  if ((document.schemaVersion >= 1 && document.schemaVersion <= CurrentSceneSchemaVersion) &&
       std::isfinite(document.unitsPerMeter) && document.unitsPerMeter > 0.0F) {
     return true;
   }
@@ -476,6 +477,11 @@ auto ValidateEntity(const SceneEntityDocument& entity, std::set<uint64_t>& ids, 
   if (entity.id == 0 || !ids.insert(entity.id).second || (entity.modelGuid && !IsGuid(*entity.modelGuid)) ||
       (entity.materialGuid && !IsGuid(*entity.materialGuid))) {
     error = "document contains a duplicate/invalid entity ID or asset GUID";
+    return false;
+  }
+  if (entity.sceneRoot && (entity.modelGuid || entity.primitiveType || entity.materialGuid || entity.material ||
+                           entity.parentGuid || !entity.materialOverrides.empty())) {
+    error = "scene root cannot contain mesh or material data";
     return false;
   }
   if ((entity.modelGuid && entity.primitiveType) ||
@@ -507,11 +513,17 @@ auto ValidateEntity(const SceneEntityDocument& entity, std::set<uint64_t>& ids, 
 
 auto ValidateEntities(const std::filesystem::path& path, const SceneDocument& document, std::string& error) -> bool {
   std::set<uint64_t> ids;
+  size_t sceneRootCount = 0;
   for (const auto& entity : document.entities) {
+    sceneRootCount += entity.sceneRoot ? 1U : 0U;
     if (!ValidateEntity(entity, ids, error)) {
       error = FileContext(path, error);
       return false;
     }
+  }
+  if (sceneRootCount > 1) {
+    error = FileContext(path, "document contains multiple scene roots");
+    return false;
   }
   return true;
 }
@@ -618,6 +630,10 @@ auto ReadEntityIdentity(const Json& item, SceneEntityDocument& entity, std::set<
   if (!fieldError.empty()) {
     return false;
   }
+  if (!ReadBool(item, "sceneRoot", entity.sceneRoot, fieldError)) {
+    fieldError = context + "." + fieldError;
+    return false;
+  }
   if (!ReadOptionalGuid(item, "modelGuid", entity.modelGuid, fieldError) ||
       !ReadOptionalGuid(item, "materialGuid", entity.materialGuid, fieldError)) {
     fieldError = context + "." + fieldError;
@@ -635,8 +651,13 @@ auto ReadEntityIdentity(const Json& item, SceneEntityDocument& entity, std::set<
       return false;
     }
   }
-  if (entity.modelGuid.has_value() == entity.primitiveType.has_value()) {
-    fieldError = context + " must specify exactly one of modelGuid or primitiveType";
+  if (entity.sceneRoot) {
+    if (entity.modelGuid || entity.primitiveType) {
+      fieldError = context + " scene root cannot specify a model or primitive";
+      return false;
+    }
+  } else if (entity.modelGuid && entity.primitiveType) {
+    fieldError = context + " cannot specify both modelGuid and primitiveType";
     return false;
   }
   return true;
@@ -729,6 +750,7 @@ auto ReadEntity(const Json& item, SceneEntityDocument& entity, std::set<uint64_t
             {
                 "id",
                 "name",
+                "sceneRoot",
                 "identityGuid",
                 "parentGuid",
                 "visible",
@@ -743,13 +765,22 @@ auto ReadEntity(const Json& item, SceneEntityDocument& entity, std::set<uint64_t
                 "render",
             },
             result.warnings, context);
-  return ReadEntityIdentity(item, entity, entityIds, context, fieldError) &&
-         ReadGuid(item, "identityGuid", entity.identityGuid, fieldError) &&
-         ReadGuid(item, "parentGuid", entity.parentGuid, fieldError) &&
-         ReadBool(item, "visible", entity.visible, fieldError) &&
-         ReadEntityMaterials(item, entity, result, context, fieldError) &&
-         ReadEntityTransform(item, entity, context, fieldError) &&
-         ReadEntityRenderSettings(item, entity, result, context, fieldError);
+  const bool loaded = ReadEntityIdentity(item, entity, entityIds, context, fieldError) &&
+                      ReadGuid(item, "identityGuid", entity.identityGuid, fieldError) &&
+                      ReadGuid(item, "parentGuid", entity.parentGuid, fieldError) &&
+                      ReadBool(item, "visible", entity.visible, fieldError) &&
+                      ReadEntityMaterials(item, entity, result, context, fieldError) &&
+                      ReadEntityTransform(item, entity, context, fieldError) &&
+                      ReadEntityRenderSettings(item, entity, result, context, fieldError);
+  if (!loaded) {
+    return false;
+  }
+  if (entity.sceneRoot &&
+      (entity.parentGuid || entity.materialGuid || entity.material || !entity.materialOverrides.empty())) {
+    fieldError = context + " scene root cannot have a parent or material";
+    return false;
+  }
+  return true;
 }
 
 auto LoadEntityArray(const Json& root, SceneDocumentResult& result, const std::filesystem::path& path,
@@ -776,6 +807,10 @@ auto LoadEntityArray(const Json& root, SceneDocumentResult& result, const std::f
       return false;
     }
     result.document.entities.push_back(std::move(entity));
+  }
+  if (std::ranges::count(result.document.entities, true, &SceneEntityDocument::sceneRoot) > 1) {
+    result.error = FileContext(path, "document contains multiple scene roots");
+    return false;
   }
   return true;
 }
@@ -939,7 +974,7 @@ auto SceneSerializer::Load(const std::filesystem::path& path) -> SceneDocumentRe
     return result;
   }
   result.document.schemaVersion = root.at("schemaVersion").get<uint32_t>();
-  if (result.document.schemaVersion != 1 && result.document.schemaVersion != CurrentSceneSchemaVersion) {
+  if (result.document.schemaVersion < 1 || result.document.schemaVersion > CurrentSceneSchemaVersion) {
     result.error =
         FileContext(path, "unsupported scene schema version " + std::to_string(result.document.schemaVersion));
     return result;

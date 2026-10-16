@@ -1,6 +1,7 @@
 #pragma once
 
-#include "events/include/DebugRenderToggledEvent.h"
+#include "assets/include/AssetManager.h"
+#include "events/include/AssetRegistryChangedEvent.h"
 #include "events/include/EcsComponentMutationRequestedEvent.h"
 #include "events/include/EcsEntitySelectedEvent.h"
 #include "events/include/EntityDeselectedEvent.h"
@@ -10,6 +11,7 @@
 
 #include <array>
 #include <memory>
+#include <vector>
 
 class InspectorPanel final : public EditorPanel {
 public:
@@ -20,7 +22,9 @@ private:
   void DrawEntityInspector();
   std::shared_ptr<Engine::Scene> m_Scene;
   Engine::EntityHandle m_SelectedEntity = Engine::InvalidEntityHandle;
-  bool m_ShowDebugLightGizmos = true;
-  bool m_ShowDebugWireframePlane = true;
   std::array<char, 64> m_AddComponentFilter{};
+  Engine::EntityHandle m_CustomResolutionEntity = Engine::InvalidEntityHandle;
+  Engine::EntityHandle m_MeshSourceSelectionEntity = Engine::InvalidEntityHandle;
+  int m_MeshSourceSelectionIndex = 0;
+  std::vector<Engine::AssetManager::ModelAssetInfo> m_Models;
 };

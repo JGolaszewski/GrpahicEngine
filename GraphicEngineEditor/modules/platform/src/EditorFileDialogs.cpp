@@ -7,7 +7,9 @@
 #include <shellapi.h>
 #include <shlobj.h>
 
+#include <algorithm>
 #include <array>
+#include <cmath>
 #include <fstream>
 #include <string>
 #include <system_error>
@@ -36,6 +38,20 @@ auto ProjectPreferencePath() -> std::filesystem::path {
 
   appData.resize(length);
   return std::filesystem::path(appData) / L"GraphicEngine" / L"project.txt";
+}
+
+auto EditorPreferencePath() -> std::filesystem::path {
+  const DWORD bufferSize = GetEnvironmentVariableW(L"LOCALAPPDATA", nullptr, 0);
+  if (bufferSize == 0) {
+    return {};
+  }
+  std::wstring appData(bufferSize, L'\0');
+  const DWORD length = GetEnvironmentVariableW(L"LOCALAPPDATA", appData.data(), bufferSize);
+  if (length == 0 || length >= bufferSize) {
+    return {};
+  }
+  appData.resize(length);
+  return std::filesystem::path(appData) / L"GraphicEngine" / L"editor-settings.txt";
 }
 } // namespace
 
@@ -186,6 +202,50 @@ void RememberProjectRoot(const std::filesystem::path& root) {
   std::wofstream output(preference, std::ios::trunc);
   if (output) {
     output << root.native() << L'\n';
+  }
+}
+
+auto LoadEditorPreferences() -> EditorPreferences {
+  EditorPreferences preferences;
+  const auto path = EditorPreferencePath();
+  if (path.empty()) {
+    return preferences;
+  }
+  std::wifstream input(path);
+  int lightGizmos = 1;
+  int cameraFrustums = 1;
+  int wireframePlane = 1;
+  float previewScale = preferences.CameraPreviewScale;
+  float previewQuality = preferences.CameraPreviewQuality;
+  if (input >> lightGizmos >> cameraFrustums >> wireframePlane >> previewScale >> previewQuality) {
+    preferences.ShowLightGizmos = lightGizmos != 0;
+    preferences.ShowCameraFrustums = cameraFrustums != 0;
+    preferences.ShowWireframePlane = wireframePlane != 0;
+    if (std::isfinite(previewScale)) {
+      preferences.CameraPreviewScale = std::clamp(previewScale, 0.1F, 0.8F);
+    }
+    if (std::isfinite(previewQuality)) {
+      preferences.CameraPreviewQuality = std::clamp(previewQuality, 0.05F, 1.0F);
+    }
+  }
+  return preferences;
+}
+
+void SaveEditorPreferences(const EditorPreferences& preferences) {
+  const auto path = EditorPreferencePath();
+  if (path.empty()) {
+    return;
+  }
+  std::error_code error;
+  std::filesystem::create_directories(path.parent_path(), error);
+  if (error) {
+    return;
+  }
+  std::wofstream output(path, std::ios::trunc);
+  if (output) {
+    output << (preferences.ShowLightGizmos ? 1 : 0) << L' ' << (preferences.ShowCameraFrustums ? 1 : 0) << L' '
+           << (preferences.ShowWireframePlane ? 1 : 0) << L' ' << preferences.CameraPreviewScale << L' '
+           << preferences.CameraPreviewQuality << L'\n';
   }
 }
 } // namespace EditorPlatform

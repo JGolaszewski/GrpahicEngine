@@ -14,7 +14,6 @@
 #include "panels/include/HierarchyPanel.h"
 #include "panels/include/InspectorPanel.h"
 #include "panels/include/MainBar.h"
-#include "panels/include/RenderPanel.h"
 #include "panels/include/ScenePanel.h"
 #include "panels/include/StatisticsPanel.h"
 #include "platform/include/EditorFileDialogs.h"
@@ -56,6 +55,7 @@ auto QuaternionToPitchYawRoll(const std::array<float, 4>& quaternion) -> std::ar
 } // namespace
 
 void Editor::OnInit() {
+  m_EditorPreferences = EditorPlatform::LoadEditorPreferences();
   m_EditorConsole.AttachToLogger();
   m_RenderOutputExportService = std::make_unique<Engine::RenderOutputExportService>();
   if (!m_UiIntegration.Initialize(GetWindow(), GetRenderer())) {
@@ -124,7 +124,12 @@ void Editor::OnInit() {
   auto mainBar = std::make_unique<MainBar>();
   MainBar* mainBarPanel = mainBar.get();
   mainBar->SetConsoleOpenHandler([this] -> void { m_EngineConsoleOpen = true; });
-  auto engineSettings = std::make_unique<EngineSettingsPanel>(this);
+  auto engineSettings = std::make_unique<EngineSettingsPanel>(
+      this, [this] { return m_EditorPreferences; },
+      [this](const auto& preferences) {
+        m_EditorPreferences = preferences;
+        EditorPlatform::SaveEditorPreferences(m_EditorPreferences);
+      });
   auto* engineSettingsPanel = engineSettings.get();
   mainBar->SetSettingsOpenHandler([engineSettingsPanel] -> void { engineSettingsPanel->Open(); });
   m_Panels.push_back(std::move(mainBar));
@@ -134,27 +139,6 @@ void Editor::OnInit() {
   m_Panels.push_back(std::make_unique<HierarchyPanel>());
   m_Panels.push_back(std::make_unique<InspectorPanel>());
   m_Panels.push_back(std::make_unique<AssetBrowserPanel>());
-  auto renderPanel = std::make_unique<RenderPanel>(
-      [this](const Engine::Renderer::CameraView& camera, uint32_t width,
-             uint32_t height) -> Engine::Result<Engine::RenderOutput> {
-        if (!m_ActiveScene || GetRenderSystem() == nullptr) {
-          return std::unexpected(Engine::MakeError("No active scene or render system is available"));
-        }
-        return GetRenderSystem()->RenderFinal(*m_ActiveScene, camera, width, height);
-      },
-      [this](uint32_t width, uint32_t height, std::span<const uint8_t> pixels) -> bool {
-        return m_UiIntegration.SetRenderPreview(width, height, pixels);
-      },
-      [this]() -> void* { return m_UiIntegration.GetRenderPreviewTextureId(); });
-  m_RenderPanel = renderPanel.get();
-  m_RenderPanel->SetScene(m_ActiveScene);
-  mainBarPanel->SetRenderOpenHandler([this] -> void {
-    if (m_RenderPanel != nullptr) {
-      m_RenderPanel->Open();
-    }
-  });
-  m_Panels.push_back(std::move(renderPanel));
-
   auto cameraPreviewPanel = std::make_unique<CameraPreviewPanel>(
       [this](Engine::EntityHandle entity) -> Engine::Result<Engine::RenderOutput> {
         if (!m_ActiveScene || GetRenderSystem() == nullptr) {
@@ -217,9 +201,6 @@ void Editor::OnSceneReplaced(const std::shared_ptr<Engine::Scene>& scene) {
   }
   m_ActiveScene = scene;
   m_SelectedEntity = Engine::InvalidEntityHandle;
-  if (m_RenderPanel != nullptr) {
-    m_RenderPanel->SetScene(scene);
-  }
   BroadcastSceneChanged();
 }
 
@@ -325,9 +306,9 @@ void Editor::OnSetupViews() {
   binding.Camera.FarPlane = m_EditorCameraSettings.FarPlane;
   binding.TargetViewport = m_EditorViewport.get();
   binding.TargetScene = m_ActiveScene.get();
-  binding.DebugSettings.ShowLightGizmos = m_ShowDebugLightGizmos;
-  binding.DebugSettings.ShowCameraFrustums = true;
-  binding.DebugSettings.ShowWireframePlane = m_ShowDebugWireframePlane;
+  binding.DebugSettings.ShowLightGizmos = m_EditorPreferences.ShowLightGizmos;
+  binding.DebugSettings.ShowCameraFrustums = m_EditorPreferences.ShowCameraFrustums;
+  binding.DebugSettings.ShowWireframePlane = m_EditorPreferences.ShowWireframePlane;
   RegisterView(binding);
 
   UpdateCameraPreview();
@@ -468,6 +449,34 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
     BroadcastEvent(*event);
     return true;
   });
+  dispatcher.Dispatch<AssetImportRequestedEvent>([this](const auto& request) -> bool {
+    if (GetAssetManager() == nullptr) {
+      return true;
+    }
+    const auto path = request.GetAssetType() == AssetImportRequestedEvent::AssetType::Texture
+                          ? EditorPlatform::ChooseTextureFile(GetAssetManager()->GetProjectRoot())
+                          : EditorPlatform::ChooseModelFile(GetAssetManager()->GetProjectRoot());
+    if (!path) {
+      return true;
+    }
+    auto imported = request.GetAssetType() == AssetImportRequestedEvent::AssetType::Texture
+                        ? GetAssetManager()->ImportTexture(*path)
+                        : GetAssetManager()->ImportModel(*path);
+    if (!imported) {
+      ENGINE_LOG_ERROR("Asset", "Asset import failed | path: {} | reason: {}", path->generic_string(),
+                       imported.error().Message);
+      return true;
+    }
+    std::vector<std::string> warnings;
+    std::string error;
+    if (!GetAssetManager()->RefreshRegistry(warnings, error)) {
+      ENGINE_LOG_ERROR("Asset", "Asset registry refresh failed after import | reason: {}", error);
+      return true;
+    }
+    AssetRegistryChangedEvent changed(GetAssetManager()->GetKnownModels(), GetAssetManager()->GetKnownTextures());
+    BroadcastEvent(changed);
+    return true;
+  });
   dispatcher.Dispatch<EcsEntityCreateRequestedEvent>([this](const auto& request) -> bool {
     (void)m_ActiveScene->QueueCreate(request.GetName(), request.GetParent(), request.GetPreset());
     return true;
@@ -593,9 +602,11 @@ void Editor::UpdateCameraPreview() {
     return;
   }
 
-  constexpr uint32_t previewMaxDimension = 320;
   const uint32_t longestDimension = (std::max)(camera->OutputWidth, camera->OutputHeight);
-  const float scale = (std::min)(1.0F, static_cast<float>(previewMaxDimension) / static_cast<float>(longestDimension));
+  const uint32_t previewMaxDimension =
+      static_cast<uint32_t>(static_cast<float>(longestDimension) * m_EditorPreferences.CameraPreviewQuality);
+  const float scale =
+      (std::min)(1.0F, static_cast<float>((std::max)(previewMaxDimension, 1U)) / static_cast<float>(longestDimension));
   const uint32_t width = (std::max)(1U, static_cast<uint32_t>(static_cast<float>(camera->OutputWidth) * scale));
   const uint32_t height = (std::max)(1U, static_cast<uint32_t>(static_cast<float>(camera->OutputHeight) * scale));
   if (m_CameraPreviewTarget == nullptr || m_CameraPreviewTarget->GetWidth() != width ||
@@ -618,14 +629,16 @@ void Editor::UpdateCameraPreview() {
   }
 
   const bool changed = m_CameraPreviewEntity != m_SelectedEntity || m_CameraPreviewResolution.first != width ||
-                       m_CameraPreviewResolution.second != height;
+                       m_CameraPreviewResolution.second != height ||
+                       m_LastCameraPreviewDisplayScale != m_EditorPreferences.CameraPreviewScale;
   m_CameraPreviewEntity = m_SelectedEntity;
   m_CameraPreviewCamera = *cameraView;
   m_CameraPreviewResolution = {width, height};
+  m_LastCameraPreviewDisplayScale = m_EditorPreferences.CameraPreviewScale;
   if (changed) {
-    CameraPreviewChangedEvent previewChanged(m_CameraPreviewEntity,
-                                             m_UiIntegration.GetTextureId(m_CameraPreviewTarget.get()),
-                                             static_cast<float>(width), static_cast<float>(height));
+    CameraPreviewChangedEvent previewChanged(
+        m_CameraPreviewEntity, m_UiIntegration.GetTextureId(m_CameraPreviewTarget.get()), static_cast<float>(width),
+        static_cast<float>(height), m_EditorPreferences.CameraPreviewScale);
     BroadcastEvent(previewChanged);
   }
 }
@@ -640,7 +653,7 @@ void Editor::DestroyCameraPreview() {
   m_CameraPreviewEntity = Engine::InvalidEntityHandle;
   m_CameraPreviewResolution = {0, 0};
   if (wasVisible) {
-    CameraPreviewChangedEvent previewChanged(Engine::InvalidEntityHandle, nullptr, 0.0F, 0.0F);
+    CameraPreviewChangedEvent previewChanged(Engine::InvalidEntityHandle, nullptr, 0.0F, 0.0F, 0.35F);
     BroadcastEvent(previewChanged);
   }
 }
@@ -687,7 +700,6 @@ void Editor::BuildDefaultDockLayout(uint32_t dockspaceId) {
   ImGui::DockBuilderDockWindow("Inspector", right);
   ImGui::DockBuilderDockWindow("Statistics", bottom);
   ImGui::DockBuilderDockWindow("Assets", bottom);
-  ImGui::DockBuilderDockWindow("Render", right);
   ImGui::DockBuilderDockWindow("Engine Console", bottom);
   ImGui::DockBuilderDockWindow("Viewport", main);
   ImGui::DockBuilderFinish(dockspaceId);

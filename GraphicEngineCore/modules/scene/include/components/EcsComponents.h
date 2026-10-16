@@ -16,7 +16,7 @@ namespace Engine::Ecs {
 /// Stable 128-bit identity stored in serialized scenes.
 struct SceneGuid {
   uint64_t High = 0; ///< Most-significant 64 bits of the identity.
-  uint64_t Low = 0; ///< Least-significant 64 bits of the identity.
+  uint64_t Low = 0;  ///< Least-significant 64 bits of the identity.
 
   /// Compares both words of the persistent identity.
   /// @param other Identity to compare with.
@@ -34,12 +34,15 @@ struct Name {
   std::string Value; ///< User-facing entity label.
 };
 
+/// Marks the permanent root entity that owns a scene hierarchy.
+struct SceneRoot {};
+
 /// Local translation, quaternion rotation, and scale.
 struct alignas(16) LocalTransform {
-  std::array<float, 3> Position = {0.0F, 0.0F, 0.0F}; ///< Local translation.
+  std::array<float, 3> Position = {0.0F, 0.0F, 0.0F};       ///< Local translation.
   std::array<float, 4> Rotation = {0.0F, 0.0F, 0.0F, 1.0F}; ///< Local XYZW rotation quaternion.
-  std::array<float, 3> Scale = {1.0F, 1.0F, 1.0F}; ///< Positive local scale per axis.
-  bool IsDirty = true; ///< Whether the cached world transform needs recomputation.
+  std::array<float, 3> Scale = {1.0F, 1.0F, 1.0F};          ///< Positive local scale per axis.
+  bool IsDirty = true;                                      ///< Whether the cached world transform needs recomputation.
   std::array<std::byte, 7> Padding{}; ///< Padding that preserves the component's 16-byte alignment.
 };
 
@@ -50,10 +53,10 @@ struct Parent {
 
 /// Intrusive child and sibling links maintained by Scene.
 struct ChildList {
-  EntityHandle FirstChild = InvalidEntityHandle; ///< First child in sibling order.
-  EntityHandle LastChild = InvalidEntityHandle; ///< Last child in sibling order.
+  EntityHandle FirstChild = InvalidEntityHandle;      ///< First child in sibling order.
+  EntityHandle LastChild = InvalidEntityHandle;       ///< Last child in sibling order.
   EntityHandle PreviousSibling = InvalidEntityHandle; ///< Previous entity with the same parent.
-  EntityHandle NextSibling = InvalidEntityHandle; ///< Next entity with the same parent.
+  EntityHandle NextSibling = InvalidEntityHandle;     ///< Next entity with the same parent.
 };
 
 /// Cached world-space transform computed from the hierarchy.
@@ -77,38 +80,38 @@ static_assert(alignof(WorldTransform) >= 16);
 
 /// Rendering settings and model identity for a mesh entity.
 struct MeshRenderer {
-  std::string ModelGuid; ///< Imported model identity, when using a model asset.
-  std::string PrimitiveType; ///< Built-in primitive name, when not using a model asset.
-  bool CastShadows = true; ///< Whether this mesh contributes to shadow maps.
-  bool ReceiveShadows = true; ///< Whether this mesh receives shadows.
-  bool Visible = true; ///< Whether this mesh is submitted for rendering.
-  bool Wireframe = false; ///< Whether this mesh uses wireframe rasterization.
+  std::string ModelGuid;         ///< Imported model identity, when using a model asset.
+  std::string PrimitiveType;     ///< Built-in primitive name, when not using a model asset.
+  bool CastShadows = true;       ///< Whether this mesh contributes to shadow maps.
+  bool ReceiveShadows = true;    ///< Whether this mesh receives shadows.
+  bool Visible = true;           ///< Whether this mesh is submitted for rendering.
+  bool Wireframe = false;        ///< Whether this mesh uses wireframe rasterization.
   bool DisableDepthTest = false; ///< Whether depth testing is disabled for this mesh.
 };
 
 /// Parameters for a spot light attached to an entity.
 struct SpotLight {
   std::array<float, 3> Direction = {0.0F, -1.0F, 0.0F}; ///< Local emission direction.
-  std::array<float, 3> Color = {1.0F, 1.0F, 1.0F}; ///< Linear RGB light color.
-  float Intensity = 1.0F; ///< Radiometric intensity multiplier.
-  float Range = 10.0F; ///< Maximum light influence distance.
-  float InnerAngleDegrees = 20.0F; ///< Inner spotlight cone angle in degrees.
-  float OuterAngleDegrees = 30.0F; ///< Outer spotlight cone angle in degrees.
-  float ShadowBias = 0.0015F; ///< Constant shadow-map depth bias.
-  float ShadowNormalBias = 0.0015F; ///< Slope-scaled shadow-map bias.
-  bool UsePosition = true; ///< Whether the light uses its entity position.
-  bool CastShadows = true; ///< Whether the light produces shadows.
+  std::array<float, 3> Color = {1.0F, 1.0F, 1.0F};      ///< Linear RGB light color.
+  float Intensity = 1.0F;                               ///< Radiometric intensity multiplier.
+  float Range = 10.0F;                                  ///< Maximum light influence distance.
+  float InnerAngleDegrees = 20.0F;                      ///< Inner spotlight cone angle in degrees.
+  float OuterAngleDegrees = 30.0F;                      ///< Outer spotlight cone angle in degrees.
+  float ShadowBias = 0.0015F;                           ///< Constant shadow-map depth bias.
+  float ShadowNormalBias = 0.0015F;                     ///< Slope-scaled shadow-map bias.
+  bool UsePosition = true;                              ///< Whether the light uses its entity position.
+  bool CastShadows = true;                              ///< Whether the light produces shadows.
 };
 
 /// Projection, output resolution, and activation settings for an authored scene camera.
 struct Camera {
   float FieldOfViewDegrees = 45.0F; ///< Vertical field of view in degrees.
-  float NearPlane = 0.1F; ///< Near clipping plane distance.
-  float FarPlane = 1000.0F; ///< Far clipping plane distance.
-  uint32_t OutputWidth = 1920;  ///< Configured render output width in pixels; must be positive.
-  uint32_t OutputHeight = 1080; ///< Configured render output height in pixels; must be positive.
-  int32_t Priority = 0; ///< Selection priority when choosing an active scene camera.
-  bool Active = true; ///< Whether the camera participates in camera selection.
+  float NearPlane = 0.1F;           ///< Near clipping plane distance.
+  float FarPlane = 1000.0F;         ///< Far clipping plane distance.
+  uint32_t OutputWidth = 1920;      ///< Configured render output width in pixels; must be positive.
+  uint32_t OutputHeight = 1080;     ///< Configured render output height in pixels; must be positive.
+  int32_t Priority = 0;             ///< Selection priority when choosing an active scene camera.
+  bool Active = true;               ///< Whether the camera participates in camera selection.
 };
 
 /// Validates finite local transform components and positive scale values.

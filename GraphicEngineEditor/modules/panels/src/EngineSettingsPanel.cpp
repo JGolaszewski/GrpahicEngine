@@ -38,6 +38,25 @@ void EngineSettingsPanel::Draw() {
   ImGui::SetItemTooltip("0 disables the engine frame limiter. VSync may still limit presentation.");
 
   ImGui::SeparatorText("Rendering");
+  if (m_GetPreferences && m_SetPreferences) {
+    auto preferences = m_GetPreferences();
+    bool changed = ImGui::Checkbox("Show light gizmos", &preferences.ShowLightGizmos);
+    changed |= ImGui::Checkbox("Show camera frustums", &preferences.ShowCameraFrustums);
+    changed |= ImGui::Checkbox("Show wireframe plane", &preferences.ShowWireframePlane);
+    float displayScale = preferences.CameraPreviewScale * 100.0F;
+    float renderQuality = preferences.CameraPreviewQuality * 100.0F;
+    if (ImGui::SliderFloat("Camera PiP display scale", &displayScale, 10.0F, 80.0F, "%.0f%%")) {
+      preferences.CameraPreviewScale = displayScale / 100.0F;
+      changed = true;
+    }
+    if (ImGui::SliderFloat("Camera PiP render quality", &renderQuality, 5.0F, 100.0F, "%.0f%%")) {
+      preferences.CameraPreviewQuality = renderQuality / 100.0F;
+      changed = true;
+    }
+    if (changed) {
+      m_SetPreferences(preferences);
+    }
+  }
   Engine::RenderSystem* renderSystem = m_Application->GetRenderSystem();
   if (renderSystem != nullptr) {
     Engine::ShadowSettings shadowSettings = renderSystem->GetShadowSettings();

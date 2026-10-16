@@ -3,6 +3,7 @@
 #include "application/include/EditorEventRouter.h"
 #include "panels/include/EditorConsole.h"
 #include "panels/include/EditorPanel.h"
+#include "platform/include/EditorFileDialogs.h"
 #include "platform/include/EditorUiIntegration.h"
 #include "rendering/include/RenderOutputExportService.h"
 #include "rendering/include/renderer/CameraView.h"
@@ -19,7 +20,6 @@ namespace Engine {
 class Viewport;
 class ViewportTarget;
 } // namespace Engine
-class RenderPanel;
 class CameraPreviewPanel;
 
 class Editor final : public Engine::Application {
@@ -59,7 +59,6 @@ private:
   std::shared_ptr<Engine::Viewport> m_CameraPreviewViewport;
   std::shared_ptr<Engine::ViewportTarget> m_CameraPreviewTarget;
   std::vector<std::unique_ptr<EditorPanel>> m_Panels;
-  RenderPanel* m_RenderPanel = nullptr;
   CameraPreviewPanel* m_CameraPreviewPanel = nullptr;
   EditorEventRouter m_EventRouter;
   std::vector<EditorEventRouter::Connection> m_PanelConnections;
@@ -70,13 +69,13 @@ private:
   Engine::EntityHandle m_CameraPreviewEntity = Engine::InvalidEntityHandle;
   Engine::Renderer::CameraView m_CameraPreviewCamera;
   std::pair<uint32_t, uint32_t> m_CameraPreviewResolution = {0, 0};
+  float m_LastCameraPreviewDisplayScale = 0.0F;
   Engine::Ecs::LocalTransform m_EditorCameraTransform{.Position = {0.0F, 0.0F, -5.0F}};
   Engine::Ecs::Camera m_EditorCameraSettings;
   std::pair<float, float> m_ViewportSize = {0.0F, 0.0F};
   bool m_DefaultLayoutBuilt = false;
   bool m_EngineConsoleOpen = true;
-  bool m_ShowDebugLightGizmos = true;
-  bool m_ShowDebugWireframePlane = true;
+  EditorPlatform::EditorPreferences m_EditorPreferences;
   std::array<bool, static_cast<size_t>(Engine::Events::KeyCode::Count)> m_CameraKeysDown{};
   bool m_ViewportHovered = false;
   bool m_CameraLookActive = false;
