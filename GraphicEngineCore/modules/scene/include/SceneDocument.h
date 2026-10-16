@@ -53,9 +53,10 @@ struct SceneEntityDocument {
   std::optional<SceneGuidDocument> identityGuid; ///< Optional persistent identity.
   std::optional<SceneGuidDocument> parentGuid;   ///< Optional persistent identity of the parent entity.
   bool visible = true; ///< Whether the entity is visible in scene views; ignored for the structural root.
-  std::optional<std::string> modelGuid;                                ///< Optional imported model identity.
-  std::optional<std::string> materialGuid;                             ///< Optional shared material identity.
-  std::optional<std::string> primitiveType;                            ///< Optional built-in primitive shape name.
+  std::optional<std::string> modelGuid;     ///< Optional imported model identity.
+  std::optional<std::string> materialGuid;  ///< Optional shared material identity.
+  std::optional<std::string> primitiveType; ///< Optional built-in primitive shape name.
+  bool hasMeshRenderer = false; ///< Whether this entity has a mesh renderer, even without a source assigned.
   std::optional<SceneMaterialDocument> material;                       ///< Optional entity-owned material data.
   std::vector<std::optional<SceneMaterialDocument>> materialOverrides; ///< Per-submesh material overrides.
   std::array<float, 3> position{}; ///< Local translation in scene units; ignored for the structural root.

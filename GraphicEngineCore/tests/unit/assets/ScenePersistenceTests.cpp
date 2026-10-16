@@ -77,6 +77,23 @@ TEST(ScenePersistenceTests, RoundTripsFieldsAndRejectsTraversalWithoutOverwritin
   EXPECT_EQ(*loaded.document.entities.front().primitiveType, "cube");
   EXPECT_EQ(loaded.document.entities.front().position, (std::array<float, 3>{1.0F, -2.0F, 3.5F}));
   EXPECT_TRUE(loaded.document.entities.front().forceWireframe);
+  EXPECT_TRUE(loaded.document.entities.front().hasMeshRenderer);
+}
+
+TEST(ScenePersistenceTests, LegacyAuthoredMeshSettingsRestoreMeshRendererPresence) {
+  TemporaryProject project;
+  const auto path = project.Root() / "legacy-mesh.scene.json";
+  {
+    std::ofstream scene(path, std::ios::binary | std::ios::trunc);
+    scene
+        << R"({"schemaVersion":3,"unitsPerMeter":1.0,"entities":[{"id":1,"name":"Mesh","render":{"visible":true,"forceWireframe":true,"disableDepthTest":false,"castShadows":true,"receiveShadows":true}}]})";
+    ASSERT_TRUE(scene.good());
+  }
+
+  const auto loaded = Engine::SceneSerializer::Load(path);
+  ASSERT_TRUE(loaded) << loaded.error;
+  ASSERT_EQ(loaded.document.entities.size(), 1U);
+  EXPECT_TRUE(loaded.document.entities.front().hasMeshRenderer);
 }
 
 TEST(ScenePersistenceTests, SchemaThreeRoundTripsSceneRootAndEmptyHierarchyEntities) {

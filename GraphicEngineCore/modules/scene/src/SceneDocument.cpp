@@ -374,6 +374,12 @@ auto GuidJson(const std::optional<SceneGuidDocument>& guid) -> Json {
   return Json{{"high", guid->high}, {"low", guid->low}};
 }
 
+auto HasMeshRenderer(const SceneEntityDocument& entity) -> bool {
+  return entity.hasMeshRenderer || entity.modelGuid.has_value() || entity.primitiveType.has_value() ||
+         entity.material.has_value() || !entity.materialOverrides.empty() || entity.forceWireframe ||
+         !entity.meshVisible || entity.disableDepthTest || !entity.castShadows || !entity.receiveShadows;
+}
+
 auto EntityJson(const SceneEntityDocument& entity) -> Json {
   Json item = Json::object();
   item.emplace("id", entity.id);
@@ -384,6 +390,7 @@ auto EntityJson(const SceneEntityDocument& entity) -> Json {
   item.emplace("modelGuid", entity.modelGuid ? Json(*entity.modelGuid) : Json(nullptr));
   item.emplace("materialGuid", entity.materialGuid ? Json(*entity.materialGuid) : Json(nullptr));
   item.emplace("primitiveType", entity.primitiveType ? Json(*entity.primitiveType) : Json(nullptr));
+  item.emplace("hasMeshRenderer", !entity.sceneRoot && HasMeshRenderer(entity));
   if (!entity.sceneRoot) {
     item.emplace("visible", entity.visible);
     item.emplace("position", entity.position);
@@ -490,8 +497,8 @@ auto ValidateEntity(const SceneEntityDocument& entity, std::set<uint64_t>& ids, 
     error = "document contains a duplicate/invalid entity ID or asset GUID";
     return false;
   }
-  if (entity.sceneRoot && (entity.modelGuid || entity.primitiveType || entity.materialGuid || entity.material ||
-                           entity.parentGuid || !entity.materialOverrides.empty())) {
+  if (entity.sceneRoot && (entity.hasMeshRenderer || entity.modelGuid || entity.primitiveType || entity.materialGuid ||
+                           entity.material || entity.parentGuid || !entity.materialOverrides.empty())) {
     error = "scene root cannot contain mesh or material data";
     return false;
   }
@@ -781,6 +788,7 @@ auto ReadEntity(const Json& item, SceneEntityDocument& entity, std::set<uint64_t
                 "modelGuid",
                 "materialGuid",
                 "primitiveType",
+                "hasMeshRenderer",
                 "material",
                 "materialOverrides",
                 "position",
@@ -793,6 +801,10 @@ auto ReadEntity(const Json& item, SceneEntityDocument& entity, std::set<uint64_t
                               ReadGuid(item, "identityGuid", entity.identityGuid, fieldError) &&
                               ReadGuid(item, "parentGuid", entity.parentGuid, fieldError);
   if (!identityLoaded) {
+    return false;
+  }
+  if (!ReadBool(item, "hasMeshRenderer", entity.hasMeshRenderer, fieldError)) {
+    fieldError = context + "." + fieldError;
     return false;
   }
   if (entity.sceneRoot) {
@@ -816,6 +828,7 @@ auto ReadEntity(const Json& item, SceneEntityDocument& entity, std::set<uint64_t
   if (!loaded) {
     return false;
   }
+  entity.hasMeshRenderer = HasMeshRenderer(entity);
   if (entity.sceneRoot &&
       (entity.parentGuid || entity.materialGuid || entity.material || !entity.materialOverrides.empty())) {
     fieldError = context + " scene root cannot have a parent or material";

@@ -130,6 +130,7 @@ TEST(SceneEcsPersistenceTests, RoundTripsEntityIdentityHierarchyAndSupportedComp
     EXPECT_EQ(actual->name, expected.name);
     EXPECT_EQ(actual->visible, expected.visible);
     EXPECT_EQ(actual->primitiveType, expected.primitiveType);
+    EXPECT_EQ(actual->hasMeshRenderer, expected.hasMeshRenderer);
     EXPECT_EQ(actual->position, expected.position);
     EXPECT_EQ(actual->rotation, expected.rotation);
     EXPECT_EQ(actual->scale, expected.scale);
@@ -171,6 +172,47 @@ TEST(SceneEcsPersistenceTests, RoundTripsEntityIdentityHierarchyAndSupportedComp
   EXPECT_FLOAT_EQ(loaded.cameras.front().farPlane, saved.cameras.front().farPlane);
   EXPECT_EQ(loaded.cameras.front().outputWidth, saved.cameras.front().outputWidth);
   EXPECT_EQ(loaded.cameras.front().outputHeight, saved.cameras.front().outputHeight);
+}
+
+TEST(SceneEcsPersistenceTests, PersistsEmptyMeshRendererComponents) {
+  Engine::Scene source;
+  const uint64_t sequence = source.QueueCreate("Empty Mesh");
+  const auto created = source.sync();
+  ASSERT_EQ(created.size(), 1U);
+  ASSERT_TRUE(created.front().Outcome);
+  ASSERT_EQ(created.front().Sequence, sequence);
+  (void)source.QueueAdd(created.front().Entity, Engine::Ecs::MeshRenderer{});
+  const auto updated = source.sync();
+  ASSERT_EQ(updated.size(), 1U);
+  ASSERT_TRUE(updated.front().Outcome);
+
+  Engine::Application application;
+  const Engine::SceneDocument saved = application.CreateSceneDocument(source);
+  const auto savedEntity =
+      std::ranges::find(saved.entities, std::string("Empty Mesh"), &Engine::SceneEntityDocument::name);
+  ASSERT_NE(savedEntity, saved.entities.end());
+  EXPECT_TRUE(savedEntity->hasMeshRenderer);
+  EXPECT_FALSE(savedEntity->modelGuid.has_value());
+  EXPECT_FALSE(savedEntity->primitiveType.has_value());
+
+  const auto path = std::filesystem::temp_directory_path() /
+                    ("GraphicEngineEmptyMeshRenderer-" +
+                     std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + ".scene.json");
+  std::string error;
+  ASSERT_TRUE(Engine::SceneSerializer::SaveAtomic(path, saved, error)) << error;
+  const auto serialized = Engine::SceneSerializer::Load(path);
+  std::error_code filesystemError;
+  std::filesystem::remove(path, filesystemError);
+  ASSERT_TRUE(serialized) << serialized.error;
+
+  std::vector<std::string> warnings;
+  ASSERT_TRUE(application.LoadSceneDocument(serialized.document, error, warnings)) << error;
+  ASSERT_EQ(application.GetScenes().size(), 1U);
+  const Engine::SceneDocument restored = application.CreateSceneDocument(*application.GetScenes().front());
+  const auto restoredEntity =
+      std::ranges::find(restored.entities, std::string("Empty Mesh"), &Engine::SceneEntityDocument::name);
+  ASSERT_NE(restoredEntity, restored.entities.end());
+  EXPECT_TRUE(restoredEntity->hasMeshRenderer);
 }
 
 TEST(SceneEcsPersistenceTests, LightTypeSwitchingValidatesAndPersistsDirectionalPointAndSpot) {

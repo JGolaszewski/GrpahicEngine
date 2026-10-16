@@ -624,7 +624,7 @@ auto Application::LoadSceneDocument(const SceneDocument& document, std::string& 
     if (!queueParent(pending.Handle, source.parentGuid)) {
       return false;
     }
-    if (source.modelGuid || source.primitiveType) {
+    if (source.hasMeshRenderer || source.modelGuid || source.primitiveType) {
       (void)stagedScene->QueueAdd(pending.Handle, Ecs::MeshRenderer{
                                                       .ModelGuid = source.modelGuid.value_or(""),
                                                       .PrimitiveType = source.primitiveType.value_or(""),
@@ -759,6 +759,7 @@ auto Application::CreateSceneDocument(const Scene& scene) const -> SceneDocument
             entity.primitiveType = mesh->PrimitiveType;
           }
           if (mesh != nullptr) {
+            entity.hasMeshRenderer = true;
             entity.forceWireframe = mesh->Wireframe;
             entity.meshVisible = mesh->Visible;
             entity.disableDepthTest = mesh->DisableDepthTest;
