@@ -1,4 +1,5 @@
 #include "rendering/include/RenderOutputExportService.h"
+#include "rendering/include/RenderSystem.h"
 #include "rendering/include/renderer/CameraView.h"
 #include "scene/include/Scene.h"
 

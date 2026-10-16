@@ -22,6 +22,10 @@ class ViewportTarget;
 } // namespace Engine
 class CameraPreviewPanel;
 
+#ifdef _MSC_VER
+#  pragma warning(push)
+#  pragma warning(disable : 4324) // The editor camera transform requires 16-byte alignment.
+#endif
 class Editor final : public Engine::Application {
 public:
   Editor() = default;
@@ -82,3 +86,6 @@ private:
   double m_MouseDeltaX = 0.0;
   double m_MouseDeltaY = 0.0;
 };
+#ifdef _MSC_VER
+#  pragma warning(pop)
+#endif

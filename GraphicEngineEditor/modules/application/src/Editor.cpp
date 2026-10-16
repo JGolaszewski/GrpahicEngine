@@ -122,7 +122,6 @@ void Editor::OnInit() {
 
   CreateViewport(1280, 720);
   auto mainBar = std::make_unique<MainBar>();
-  MainBar* mainBarPanel = mainBar.get();
   mainBar->SetConsoleOpenHandler([this] -> void { m_EngineConsoleOpen = true; });
   auto engineSettings = std::make_unique<EngineSettingsPanel>(
       this, [this] { return m_EditorPreferences; },
