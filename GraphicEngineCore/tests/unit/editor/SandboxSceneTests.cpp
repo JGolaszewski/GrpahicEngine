@@ -58,10 +58,14 @@ TEST(SandboxSceneTests, BundledSceneLoadsAndRestoresRepresentativeEditorContent)
       ASSERT_TRUE(entity.material.has_value());
       EXPECT_EQ(entity.material->baseColorTextureGuid, "a1000000-0000-4000-8000-000000000002");
     }
-    if (entity.primitiveType == "cube") ++cubeCount;
-    if (entity.primitiveType == "sphere") ++sphereCount;
-    if (entity.primitiveType == "plane") ++planeCount;
-    if (entity.primitiveType == "cone") ++coneCount;
+    if (entity.primitiveType == "cube")
+      ++cubeCount;
+    if (entity.primitiveType == "sphere")
+      ++sphereCount;
+    if (entity.primitiveType == "plane")
+      ++planeCount;
+    if (entity.primitiveType == "cone")
+      ++coneCount;
   }
   EXPECT_EQ(modelCount, 1U);
   EXPECT_EQ(cubeCount, 1U);
@@ -72,9 +76,12 @@ TEST(SandboxSceneTests, BundledSceneLoadsAndRestoresRepresentativeEditorContent)
   size_t pointCount = 0;
   size_t spotCount = 0;
   for (const Engine::SceneLightDocument& light : document.lights) {
-    if (light.type == "directional") ++directionalCount;
-    if (light.type == "point") ++pointCount;
-    if (light.type == "spot") ++spotCount;
+    if (light.type == "directional")
+      ++directionalCount;
+    if (light.type == "point")
+      ++pointCount;
+    if (light.type == "spot")
+      ++spotCount;
   }
   EXPECT_EQ(directionalCount, 1U);
   EXPECT_EQ(pointCount, 1U);
