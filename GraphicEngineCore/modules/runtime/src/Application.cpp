@@ -465,17 +465,18 @@ auto Application::LoadSceneDocument(const SceneDocument& document, std::string& 
         prepareMaterialTextures(*material, entity.name);
       }
     }
-    if (entity.modelGuid) {
+    if (const auto modelGuid = entity.modelGuid; modelGuid.has_value()) {
+      const std::string& guid = modelGuid.value();
       std::string assetError;
-      if (!m_AssetManager->LoadModel(*entity.modelGuid, assetError)) {
+      if (!m_AssetManager->LoadModel(guid, assetError)) {
         setEntityError(assetError);
         return false;
       }
       if (m_RenderSystem != nullptr) {
-        const auto model = m_AssetManager->GetModel(*entity.modelGuid);
-        const auto generation = m_AssetManager->GetGeneration(*entity.modelGuid);
-        if (model && generation &&
-            !m_RenderSystem->PrepareModelResources(*entity.modelGuid, *generation, *model, {}, error)) {
+        const auto model = m_AssetManager->GetModel(guid);
+        const auto generation = m_AssetManager->GetGeneration(guid);
+        if (model && generation.has_value() &&
+            !m_RenderSystem->PrepareModelResources(guid, generation.value(), *model, {}, error)) {
           const std::string resourceError = error;
           setEntityError("model resource setup failed: ");
           error += resourceError;
@@ -483,17 +484,19 @@ auto Application::LoadSceneDocument(const SceneDocument& document, std::string& 
         }
       }
     }
-    if (entity.primitiveType && !IsPrimitiveType(*entity.primitiveType)) {
+    const auto primitiveType = entity.primitiveType;
+    if (primitiveType.has_value() && !IsPrimitiveType(primitiveType.value())) {
       setEntityError("uses an unsupported primitive type");
       return false;
     }
-    if (entity.primitiveType && m_RenderSystem != nullptr) {
+    if (primitiveType.has_value() && m_RenderSystem != nullptr) {
+      const std::string& type = primitiveType.value();
       PrimitiveShape shape = PrimitiveShape::Cone;
-      if (*entity.primitiveType == "cube") {
+      if (type == "cube") {
         shape = PrimitiveShape::Cube;
-      } else if (*entity.primitiveType == "sphere") {
+      } else if (type == "sphere") {
         shape = PrimitiveShape::Sphere;
-      } else if (*entity.primitiveType == "plane") {
+      } else if (type == "plane") {
         shape = PrimitiveShape::Plane;
       }
       auto material = m_RenderSystem->CreateMaterial({});
