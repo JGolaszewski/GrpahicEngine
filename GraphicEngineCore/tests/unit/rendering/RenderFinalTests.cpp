@@ -253,7 +253,7 @@ TEST(RenderFinalTests, WARPAllEditorExposedPrimitivesRender) {
     transform.Position = {0.0F, 0.0F, 0.0F};
     if (shapes[index] == Engine::PrimitiveShape::Plane) {
       DirectX::XMFLOAT4 rotation{};
-      DirectX::XMStoreFloat4(&rotation, DirectX::XMQuaternionRotationRollPitchYaw(DirectX::XM_PIDIV2, 0.0F, 0.0F));
+      DirectX::XMStoreFloat4(&rotation, DirectX::XMQuaternionRotationRollPitchYaw(-DirectX::XM_PIDIV2, 0.0F, 0.0F));
       transform.Rotation = {rotation.x, rotation.y, rotation.z, rotation.w};
     }
     (void)scene.QueueSet(created.front().Entity, transform);
