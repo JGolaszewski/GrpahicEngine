@@ -1,0 +1,14 @@
+# Editor settings
+
+The editor stores user-wide settings in `%LOCALAPPDATA%/GraphicEngine/editor-settings.json`.
+The file is created when a setting is changed. A missing file uses the built-in defaults.
+
+Settings use versioned JSON categories:
+
+- `runtime`: frame limiter frequency in hertz (`0` disables the limiter). Simulation pause is session state and resets on launch.
+- `rendering`: editor gizmos, wireframe plane, shadow map resolution, shadow caster limit, and VSync.
+- `camera_preview`: display scale and render quality, stored as fractions from `0.0` to `1.0`.
+
+Invalid or unreadable settings are reported in the editor log and defaults are used so the editor can still launch.
+Out-of-range numeric values are clamped to the supported editor ranges. Existing `editor-settings.txt` preferences
+are read once and migrated to JSON when possible; the old file is left untouched.

@@ -1,16 +1,11 @@
 #pragma once
 
+#include "platform/include/EditorSettings.h"
+
 #include <filesystem>
 #include <optional>
 
 namespace EditorPlatform {
-struct EditorPreferences {
-  bool ShowLightGizmos = true;
-  bool ShowCameraFrustums = true;
-  bool ShowWireframePlane = true;
-  float CameraPreviewScale = 0.35F;
-  float CameraPreviewQuality = 0.25F;
-};
 EditorPreferences LoadEditorPreferences();
 void SaveEditorPreferences(const EditorPreferences& preferences);
 std::optional<std::filesystem::path> ChooseSceneFile(bool save, const std::filesystem::path& initialPath,

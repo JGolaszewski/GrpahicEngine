@@ -56,6 +56,18 @@ auto QuaternionToPitchYawRoll(const std::array<float, 4>& quaternion) -> std::ar
 
 void Editor::OnInit() {
   m_EditorPreferences = EditorPlatform::LoadEditorPreferences();
+  SetFrameLimiterHz(m_EditorPreferences.FrameLimiterHz);
+  if (Engine::RenderSystem* renderSystem = GetRenderSystem()) {
+    Engine::ShadowSettings shadowSettings;
+    shadowSettings.Resolution = m_EditorPreferences.ShadowMapResolution;
+    shadowSettings.MaxShadowCastersPerScene = m_EditorPreferences.MaxShadowCasters;
+    if (!renderSystem->SetShadowSettings(shadowSettings)) {
+      ENGINE_LOG_WARN("Render", "Saved shadow settings were rejected; using renderer defaults");
+    }
+  }
+  if (Engine::IRenderBackend* backend = GetRenderer(); backend != nullptr && backend->SupportsVSyncControl()) {
+    (void)backend->SetVSyncEnabled(m_EditorPreferences.VSyncEnabled);
+  }
   m_EditorConsole.AttachToLogger();
   m_RenderOutputExportService = std::make_unique<Engine::RenderOutputExportService>();
   if (!m_UiIntegration.Initialize(GetWindow(), GetRenderer())) {

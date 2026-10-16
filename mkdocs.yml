@@ -53,6 +53,7 @@ nav:
   - Architecture and guides:
       - C++ guidelines: cpp-guidelines.md
       - Logging: logging.md
+      - Editor settings: editor-settings.md
       - Rendering:
           - Cameras: rendering/cameras.md
           - Editor render panel: rendering/editor-render-panel.md
