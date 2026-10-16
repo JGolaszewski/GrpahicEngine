@@ -31,15 +31,47 @@ auto Matches(const char* name, const char* filter) -> bool {
   return haystack.contains(needle);
 }
 
-void DrawRemoveButton(const char* id, Mutation::Component component,
-                      const std::function<void(Mutation::Component)>& emitRemove) {
-  if (ImGui::Button(id, ImVec2(-1.0F, 0.0F))) {
+auto DrawComponentHeader(const char* label, const char* componentName, const char* tableId,
+                         Mutation::Component component, const std::function<void(Mutation::Component)>& emitRemove)
+    -> bool {
+  const float buttonSize = ImGui::GetFrameHeight();
+  const bool tableVisible =
+      ImGui::BeginTable(tableId, 2, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_NoSavedSettings);
+  if (!tableVisible) {
+    return false;
+  }
+
+  ImGui::TableSetupColumn("Component header", ImGuiTableColumnFlags_WidthStretch);
+  ImGui::TableSetupColumn("Remove component", ImGuiTableColumnFlags_WidthFixed, buttonSize);
+  ImGui::TableNextRow(ImGuiTableRowFlags_None, buttonSize);
+  ImGui::TableSetColumnIndex(0);
+  const bool open = ImGui::CollapsingHeader(label);
+  ImGui::TableSetColumnIndex(1);
+  // The button has its own table cell, so clicking it cannot activate the header beside it.
+  const std::string buttonId = std::string("##Remove ") + componentName + " component";
+  if (ImGui::Button(buttonId.c_str(), ImVec2(buttonSize, buttonSize))) {
     emitRemove(component);
   }
   if (ImGui::IsItemHovered()) {
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg)
-    ImGui::SetTooltip("Remove component");
+    const std::string tooltip = std::string("Remove ") + componentName + " component";
+    ImGui::SetTooltip("%s", tooltip.c_str());
   }
+
+  const ImVec2 buttonMin = ImGui::GetItemRectMin();
+  const ImVec2 buttonMax = ImGui::GetItemRectMax();
+  const float centerX = (buttonMin.x + buttonMax.x) * 0.5F;
+  const float centerY = (buttonMin.y + buttonMax.y) * 0.5F;
+  const ImU32 iconColor = ImGui::GetColorU32(ImGui::IsItemHovered() ? ImGuiCol_Text : ImGuiCol_TextDisabled);
+  ImDrawList* drawList = ImGui::GetWindowDrawList();
+  const float scale = buttonSize / 20.0F;
+  drawList->AddRectFilled(ImVec2(centerX - 4.0F * scale, centerY - 2.0F * scale),
+                          ImVec2(centerX + 4.0F * scale, centerY + 5.0F * scale), iconColor, 1.0F * scale);
+  drawList->AddRectFilled(ImVec2(centerX - 5.0F * scale, centerY - 4.0F * scale),
+                          ImVec2(centerX + 5.0F * scale, centerY - 3.0F * scale), iconColor, 0.5F * scale);
+  drawList->AddRectFilled(ImVec2(centerX - 2.0F * scale, centerY - 6.0F * scale),
+                          ImVec2(centerX + 2.0F * scale, centerY - 5.0F * scale), iconColor, 0.5F * scale);
+  ImGui::EndTable();
+  return open;
 }
 } // namespace
 
@@ -164,8 +196,8 @@ void InspectorPanel::DrawEntityInspector() {
     m_MeshSourceSelectionEntity = Engine::InvalidEntityHandle;
   }
   if (const auto* storedMesh = world.Get<Engine::Ecs::MeshRenderer>(entity);
-      storedMesh != nullptr && ImGui::CollapsingHeader("Mesh")) {
-    DrawRemoveButton("Remove Mesh", Mutation::Component::MeshRenderer, emitRemove);
+      storedMesh != nullptr &&
+      DrawComponentHeader("Mesh", "Mesh", "Mesh component header", Mutation::Component::MeshRenderer, emitRemove)) {
     Engine::Ecs::MeshRenderer mesh = *storedMesh;
     const char* sourceNames[] = {"Asset model", "Primitive"};
     if (m_MeshSourceSelectionEntity != entity) {
@@ -353,8 +385,8 @@ void InspectorPanel::DrawEntityInspector() {
   }
 
   if (const auto* storedLight = world.Get<Engine::Ecs::Light>(entity);
-      storedLight != nullptr && ImGui::CollapsingHeader("Light")) {
-    DrawRemoveButton("Remove Light", Mutation::Component::SpotLight, emitRemove);
+      storedLight != nullptr &&
+      DrawComponentHeader("Light", "Light", "Light component header", Mutation::Component::SpotLight, emitRemove)) {
     Engine::Ecs::Light light = *storedLight;
     constexpr const char* lightTypeNames[] = {"Directional", "Point", "Spot"};
     int typeIndex = static_cast<int>(light.Type);
@@ -383,8 +415,8 @@ void InspectorPanel::DrawEntityInspector() {
   }
 
   if (const auto* storedCamera = world.Get<Engine::Ecs::Camera>(entity);
-      storedCamera != nullptr && ImGui::CollapsingHeader("Camera")) {
-    DrawRemoveButton("Remove Camera", Mutation::Component::Camera, emitRemove);
+      storedCamera != nullptr &&
+      DrawComponentHeader("Camera", "Camera", "Camera component header", Mutation::Component::Camera, emitRemove)) {
     Engine::Ecs::Camera camera = *storedCamera;
     bool changed = ImGui::SliderFloat("Field of view", &camera.FieldOfViewDegrees, 10.0F, 150.0F, "%.1f deg");
     changed |= ImGui::DragFloat("Near plane", &camera.NearPlane, 0.01F, 0.001F, 100.0F);
