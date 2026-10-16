@@ -131,7 +131,7 @@ TEST(RenderOutputExportServiceTests, CarriesSolidBackgroundThroughAsyncPngAndExr
   ASSERT_EQ(pngStatus.Phase, Engine::RenderOutputExportPhase::Completed) << pngStatus.Message;
   auto pngInput = OIIO::ImageInput::open(pngPath.wstring());
   ASSERT_NE(pngInput, nullptr) << OIIO::geterror();
-  std::vector<float> pngPixels(2U * 2U * 4U);
+  std::vector<float> pngPixels(static_cast<size_t>(2U) * 2U * 4U);
   ASSERT_TRUE(pngInput->read_image(0, 0, 0, -1, OIIO::span<float>(pngPixels.data(), pngPixels.size())))
       << pngInput->geterror();
   for (size_t offset = 0; offset < pngPixels.size(); offset += 4U) {
@@ -151,10 +151,10 @@ TEST(RenderOutputExportServiceTests, CarriesSolidBackgroundThroughAsyncPngAndExr
   ASSERT_EQ(exrStatus.Phase, Engine::RenderOutputExportPhase::Completed) << exrStatus.Message;
   auto exrInput = OIIO::ImageInput::open(exrPath.wstring());
   ASSERT_NE(exrInput, nullptr) << OIIO::geterror();
-  std::vector<float> depth(2U * 2U);
+  std::vector<float> depth(static_cast<size_t>(2U) * 2U);
   ASSERT_TRUE(exrInput->read_image(0, 0, 0, -1, OIIO::span<float>(depth.data(), depth.size()))) << exrInput->geterror();
   ASSERT_TRUE(exrInput->seek_subimage(1, 0));
-  std::vector<float> exrPixels(2U * 2U * 4U);
+  std::vector<float> exrPixels(static_cast<size_t>(2U) * 2U * 4U);
   ASSERT_TRUE(exrInput->read_image(1, 0, 0, -1, OIIO::span<float>(exrPixels.data(), exrPixels.size())))
       << exrInput->geterror();
   for (size_t pixel = 0; pixel < depth.size(); ++pixel) {
