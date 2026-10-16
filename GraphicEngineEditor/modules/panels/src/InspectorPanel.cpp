@@ -5,6 +5,7 @@
 #include "panels/include/AssetDragDropPayload.h"
 #include "panels/include/AssetDropAssignment.h"
 #include "panels/include/TransformRotation.h"
+#include "panels/include/TransformScaleLock.h"
 
 #include <algorithm>
 #include <array>
@@ -132,7 +133,17 @@ void InspectorPanel::DrawEntityInspector() {
         changed |= ImGui::DragFloat4("Raw quaternion", transform.Rotation.data(), 0.01F);
         ImGui::TreePop();
       }
-      changed |= ImGui::DragFloat3("Local scale", transform.Scale.data(), 0.05F, 0.01F, 1000.0F);
+      const std::array<float, 3> previousScale = transform.Scale;
+      const float lockWidth = ImGui::CalcTextSize("Lock").x + ImGui::GetFrameHeight();
+      ImGui::SetNextItemWidth(-lockWidth);
+      if (ImGui::DragFloat3("Local scale", transform.Scale.data(), 0.05F, 0.01F, 1000.0F)) {
+        (void)Editor::TransformScaleLock::Apply(transform.Scale, previousScale, m_LockTransformScale);
+        changed = true;
+      }
+      ImGui::SameLine();
+      (void)ImGui::Checkbox("Lock", &m_LockTransformScale);
+      changed |= ImGui::Checkbox("Flip horizontal", &transform.FlipHorizontal);
+      changed |= ImGui::Checkbox("Flip vertical", &transform.FlipVertical);
       if (changed) {
         emitSet(Mutation::Component::Transform, transform);
       }
