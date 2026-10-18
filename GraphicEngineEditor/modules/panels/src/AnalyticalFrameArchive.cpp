@@ -583,8 +583,9 @@ auto ViewportStateValid(const Json& state, uint32_t width, uint32_t height) -> E
     return std::unexpected(Fail("Analytical Frame viewport state must be an object"));
   }
   try {
-    if (!ParseAov(state.at("SelectedAov")) || !ParseModel(state.at("SelectedModel")) ||
-        !ParseModel(state.at("CompareModelA")) || !ParseModel(state.at("CompareModelB"))) {
+    const auto selectedAov = ParseAov(state.at("SelectedAov"));
+    if (!selectedAov || !ParseModel(state.at("SelectedModel")) || !ParseModel(state.at("CompareModelA")) ||
+        !ParseModel(state.at("CompareModelB"))) {
       return std::unexpected(Fail("Analytical Frame viewport state contains an unsupported AOV or BRDF model"));
     }
     float zoom = 0.0F;
@@ -611,6 +612,9 @@ auto ViewportStateValid(const Json& state, uint32_t width, uint32_t height) -> E
     const std::string mode = state.at("Mode").get<std::string>();
     if (mode != "Single" && mode != "Wipe" && mode != "RelativeLuminanceError") {
       return std::unexpected(Fail("Analytical Frame viewport comparison mode is unsupported"));
+    }
+    if (mode == "RelativeLuminanceError" && *selectedAov != Engine::RenderAov::FinalColor) {
+      return std::unexpected(Fail("Analytical Frame relative luminance error requires the final-color AOV"));
     }
   } catch (const Json::exception&) {
     return std::unexpected(Fail("Analytical Frame viewport state is incomplete or malformed"));
@@ -768,13 +772,24 @@ auto BuildManifest(const Editor::Panels::AnalyticalFrameSession& session, std::v
     if (planes.size() != 5) {
       return std::unexpected(Fail("Analytical Frame variant does not contain all five AOV planes"));
     }
-    for (const auto& plane : planes) {
-      if (plane.ChannelCount == 0 || plane.Pixels.size() > (std::numeric_limits<uint64_t>::max() / sizeof(float))) {
-        return std::unexpected(Fail("Analytical Frame plane has an invalid sample count"));
+    constexpr std::array canonicalAovs{Engine::RenderAov::FinalColor, Engine::RenderAov::Depth,
+                                       Engine::RenderAov::WorldNormal, Engine::RenderAov::SpecularLighting,
+                                       Engine::RenderAov::DiffuseLighting};
+    for (size_t planeIndex = 0; planeIndex < planes.size(); ++planeIndex) {
+      const auto& plane = planes[planeIndex];
+      const auto& descriptor = Engine::RenderOutput::GetDescriptor(canonicalAovs[planeIndex]);
+      const uint64_t width = variant.Render.Output.Width;
+      const uint64_t height = variant.Render.Output.Height;
+      if (plane.Aov != canonicalAovs[planeIndex] || plane.ChannelCount != descriptor.ChannelCount ||
+          width > std::numeric_limits<uint64_t>::max() / height ||
+          width * height > std::numeric_limits<uint64_t>::max() / descriptor.ChannelCount ||
+          plane.Pixels.size() != width * height * descriptor.ChannelCount ||
+          plane.Pixels.size() > (std::numeric_limits<uint64_t>::max() / sizeof(float))) {
+        return std::unexpected(Fail("Analytical Frame plane AOV, channel layout, or sample count is invalid"));
       }
       const uint64_t offset = payload.size();
       const uint64_t byteLength = static_cast<uint64_t>(plane.Pixels.size()) * sizeof(float);
-      if (byteLength > MaximumArchiveBytes - offset) {
+      if (offset > MaximumArchiveBytes - HeaderBytes || byteLength > MaximumArchiveBytes - HeaderBytes - offset) {
         return std::unexpected(Fail("Analytical Frame captured buffers exceed the supported archive size"));
       }
       std::vector<uint8_t> planeBytes;
@@ -1084,6 +1099,10 @@ auto Editor::Panels::AnalyticalFrameArchive::Save(const std::filesystem::path& p
     const std::string manifestText = manifest->dump();
     if (manifestText.empty() || manifestText.size() > MaximumManifestBytes) {
       return std::unexpected(Fail("Analytical Frame manifest exceeds the supported size"));
+    }
+    if (manifestText.size() > MaximumArchiveBytes - HeaderBytes ||
+        payload.size() > MaximumArchiveBytes - HeaderBytes - manifestText.size()) {
+      return std::unexpected(Fail("Analytical Frame archive exceeds the supported total size"));
     }
     const auto nonce = std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
     std::filesystem::path temporaryPath = path;

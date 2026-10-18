@@ -242,6 +242,39 @@ TEST(AnalyticalFrameArchiveTests, RejectsInvalidViewportStateBeforeWriting) {
   const Engine::Status saved = Editor::Panels::AnalyticalFrameArchive::Save(directory.File("invalid.aframe"), session);
   ASSERT_FALSE(saved.has_value());
   EXPECT_NE(saved.error().Message.find("outside the captured image"), std::string::npos);
+
+  session = MakeSession();
+  session.ViewportState["SelectedAov"] = "depth";
+  session.ViewportState["Mode"] = "RelativeLuminanceError";
+  const Engine::Status incompatible =
+      Editor::Panels::AnalyticalFrameArchive::Save(directory.File("incompatible-error-mode.aframe"), session);
+  ASSERT_FALSE(incompatible.has_value());
+  EXPECT_NE(incompatible.error().Message.find("requires the final-color AOV"), std::string::npos);
+}
+
+TEST(AnalyticalFrameArchiveTests, RejectsMutatedOutputPlanesBeforeWriting) {
+  TemporaryArchiveDirectory directory;
+
+  auto wrongOrder = MakeSession();
+  wrongOrder.Variants.front().Render.Output.GetMutablePlanes().front().Aov = Engine::RenderAov::Depth;
+  const Engine::Status orderSave =
+      Editor::Panels::AnalyticalFrameArchive::Save(directory.File("wrong-order.aframe"), wrongOrder);
+  ASSERT_FALSE(orderSave.has_value());
+  EXPECT_NE(orderSave.error().Message.find("AOV, channel layout, or sample count"), std::string::npos);
+
+  auto wrongChannels = MakeSession();
+  wrongChannels.Variants.front().Render.Output.GetMutablePlanes().front().ChannelCount = 3;
+  const Engine::Status channelSave =
+      Editor::Panels::AnalyticalFrameArchive::Save(directory.File("wrong-channels.aframe"), wrongChannels);
+  ASSERT_FALSE(channelSave.has_value());
+  EXPECT_NE(channelSave.error().Message.find("AOV, channel layout, or sample count"), std::string::npos);
+
+  auto wrongSamples = MakeSession();
+  wrongSamples.Variants.front().Render.Output.GetMutablePlanes().front().Pixels.pop_back();
+  const Engine::Status sampleSave =
+      Editor::Panels::AnalyticalFrameArchive::Save(directory.File("wrong-samples.aframe"), wrongSamples);
+  ASSERT_FALSE(sampleSave.has_value());
+  EXPECT_NE(sampleSave.error().Message.find("AOV, channel layout, or sample count"), std::string::npos);
 }
 
 } // namespace
