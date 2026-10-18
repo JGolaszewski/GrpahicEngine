@@ -55,6 +55,7 @@ auto MaterialPropertiesFromDocument(const ::Engine::SceneMaterialDocument& docum
   properties.Model = document.brdfModel == "ggx"        ? ::Engine::Renderer::BrdfModel::GGX
                      : document.brdfModel == "gtr"      ? ::Engine::Renderer::BrdfModel::GTR
                      : document.brdfModel == "beckmann" ? ::Engine::Renderer::BrdfModel::Beckmann
+                     : document.brdfModel == "gauss"    ? ::Engine::Renderer::BrdfModel::Gauss
                                                         : ::Engine::Renderer::BrdfModel::Legacy;
   properties.Workflow = document.workflow == "specularGlossiness"
                             ? ::Engine::Renderer::MaterialWorkflow::SpecularGlossiness

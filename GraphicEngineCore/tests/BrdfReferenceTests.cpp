@@ -47,6 +47,40 @@ auto IntegrateBeckmannNdf(float alpha) -> float {
   return 2.0F * ::Engine::Renderer::Brdf::Pi * integral;
 }
 
+auto IntegrateGaussNdf(float alpha) -> float {
+  constexpr uint32_t sampleCount = 20000;
+  const float step = DirectX::XM_PIDIV2 / static_cast<float>(sampleCount);
+  float integral = 0.0F;
+  for (uint32_t i = 0; i < sampleCount; ++i) {
+    const float theta = (static_cast<float>(i) + 0.5F) * step;
+    const float cosine = std::cos(theta);
+    const float sine = std::sin(theta);
+    integral += ::Engine::Renderer::Brdf::EvaluateGaussNdf(cosine, alpha) * cosine * sine * step;
+  }
+  return 2.0F * ::Engine::Renderer::Brdf::Pi * integral;
+}
+
+void TestGaussReferenceAndFiniteEvaluation() {
+  for (float alpha : {0.05F, 0.2F, 0.65F, 1.0F}) {
+    Require(std::abs(IntegrateGaussNdf(alpha) - 1.0F) < 2.0e-4F, "Gauss projected NDF must normalize to one");
+  }
+  const float alpha = 0.4F;
+  const float noH = 0.75F;
+  const float noHSquared = noH * noH;
+  const float expected = std::exp(-(1.0F - noHSquared) / (2.0F * alpha * alpha * noHSquared)) /
+                         (2.0F * ::Engine::Renderer::Brdf::Pi * alpha * alpha * noHSquared * noHSquared);
+  Require(std::abs(::Engine::Renderer::Brdf::EvaluateGaussNdf(noH, alpha) - expected) < 1.0e-6F,
+          "Gauss NDF must match its normalized Gaussian slope equation");
+  Require(::Engine::Renderer::Brdf::EvaluateGaussNdf(0.0F, alpha) == 0.0F &&
+              std::isfinite(::Engine::Renderer::Brdf::EvaluateGaussNdf(1.0F, 0.0F)),
+          "Gauss NDF must stay finite at grazing and minimum roughness boundaries");
+  const auto value = ::Engine::Renderer::Brdf::EvaluateGaussBrdf({0.0F, 0.0F, 1.0F}, {0.3F, 0.0F, 0.9539392F},
+                                                                 {-0.1F, 0.5F, 0.8602325F}, {0.7F, 0.4F, 0.2F},
+                                                                 {0.04F, 0.04F, 0.04F}, alpha);
+  Require(std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z),
+          "Gauss BRDF reference evaluation must remain finite");
+}
+
 void TestBeckmannReferenceAndFiniteEvaluation() {
   for (float alpha : {0.05F, 0.2F, 0.65F, 1.0F}) {
     Require(std::abs(IntegrateBeckmannNdf(alpha) - 1.0F) < 2.0e-4F, "Beckmann projected NDF must normalize to one");
@@ -177,6 +211,10 @@ void TestMaterialGpuAbiPacking() {
   properties.Model = ::Engine::Renderer::BrdfModel::Beckmann;
   const auto beckmann = ::Engine::Renderer::BuildMaterialGpu(properties);
   Require(beckmann.ModelFlags.y == 3U, "Beckmann selector must use the appended model value without changing the ABI");
+  properties.Model = ::Engine::Renderer::BrdfModel::Gauss;
+  const auto gauss = ::Engine::Renderer::BuildMaterialGpu(properties);
+  Require(gauss.ModelFlags.y == 4U && gauss.ModelFlags.x == ::Engine::Renderer::MaterialGpuAbiVersion,
+          "Gauss selector must append value four without changing the material GPU ABI");
 }
 
 void TestMaterialPropertiesRoundTrip() {
@@ -221,6 +259,7 @@ auto main() -> int {
   try {
     TestProjectedNdfNormalization();
     TestBeckmannReferenceAndFiniteEvaluation();
+    TestGaussReferenceAndFiniteEvaluation();
     TestGtrLimitsAndRoughnessMapping();
     TestReciprocityAndWhiteFurnace();
     TestMaterialGpuAbiPacking();

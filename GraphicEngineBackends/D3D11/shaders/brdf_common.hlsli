@@ -134,6 +134,23 @@ float BrdfBeckmannNdf(float noH, float alpha)
     return exp(exponent) / denominator;
 }
 
+float BrdfGaussNdf(float noH, float alpha)
+{
+    const float safeNoH = saturate(noH);
+    const float noHSquared = safeNoH * safeNoH;
+    if (safeNoH <= 0.0f)
+    {
+        return 0.0f;
+    }
+    const float safeAlpha = max(alpha, BRDF_MIN_ALPHA);
+    const float alphaSquared = safeAlpha * safeAlpha;
+    const float tanSquared = (1.0f - noHSquared) / max(noHSquared, BRDF_EPSILON);
+    const float exponent = -tanSquared / (2.0f * alphaSquared);
+    const float cosFourth = noHSquared * noHSquared;
+    const float denominator = max(2.0f * BRDF_PI * alphaSquared * cosFourth, BRDF_EPSILON);
+    return exp(exponent) / denominator;
+}
+
 float BrdfGtrLogNormalization(float alpha, float gamma)
 {
     const float safeAlpha = max(alpha, BRDF_MIN_ALPHA);
@@ -228,6 +245,13 @@ void EvaluateBeckmannBrdfComponents(BrdfQuery query, float3 baseColor, float met
 {
     EvaluateMicrofacetBrdfComponents(query, baseColor, metallic, dielectricF0, alpha,
         BrdfBeckmannNdf(query.NoH, alpha), diffuse, specular);
+}
+
+void EvaluateGaussBrdfComponents(BrdfQuery query, float3 baseColor, float metallic, float3 dielectricF0,
+    float alpha, out float3 diffuse, out float3 specular)
+{
+    EvaluateMicrofacetBrdfComponents(query, baseColor, metallic, dielectricF0, alpha,
+        BrdfGaussNdf(query.NoH, alpha), diffuse, specular);
 }
 
 #endif
