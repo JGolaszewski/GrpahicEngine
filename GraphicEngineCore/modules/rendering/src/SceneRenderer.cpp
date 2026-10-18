@@ -50,14 +50,17 @@ auto MaterialPropertiesFromDocument(const ::Engine::SceneMaterialDocument& docum
   properties.Metallic = document.metallic;
   properties.Roughness = document.roughness;
   properties.GtrGamma = document.gtrGamma;
+  properties.AnisotropicRoughnessU = document.anisotropicRoughnessU;
+  properties.AnisotropicRoughnessV = document.anisotropicRoughnessV;
   properties.Ior = document.ior;
   properties.SpecularF0 = {document.specularF0[0], document.specularF0[1], document.specularF0[2]};
-  properties.Model = document.brdfModel == "ggx"          ? ::Engine::Renderer::BrdfModel::GGX
-                     : document.brdfModel == "gtr"        ? ::Engine::Renderer::BrdfModel::GTR
-                     : document.brdfModel == "beckmann"   ? ::Engine::Renderer::BrdfModel::Beckmann
-                     : document.brdfModel == "gauss"      ? ::Engine::Renderer::BrdfModel::Gauss
-                     : document.brdfModel == "blinnPhong" ? ::Engine::Renderer::BrdfModel::BlinnPhong
-                                                          : ::Engine::Renderer::BrdfModel::Legacy;
+  properties.Model = document.brdfModel == "ggx"                ? ::Engine::Renderer::BrdfModel::GGX
+                     : document.brdfModel == "gtr"              ? ::Engine::Renderer::BrdfModel::GTR
+                     : document.brdfModel == "beckmann"         ? ::Engine::Renderer::BrdfModel::Beckmann
+                     : document.brdfModel == "gauss"            ? ::Engine::Renderer::BrdfModel::Gauss
+                     : document.brdfModel == "blinnPhong"       ? ::Engine::Renderer::BrdfModel::BlinnPhong
+                     : document.brdfModel == "ashikhminShirley" ? ::Engine::Renderer::BrdfModel::AshikhminShirley
+                                                                : ::Engine::Renderer::BrdfModel::Legacy;
   properties.Workflow = document.workflow == "specularGlossiness"
                             ? ::Engine::Renderer::MaterialWorkflow::SpecularGlossiness
                             : ::Engine::Renderer::MaterialWorkflow::MetallicRoughness;

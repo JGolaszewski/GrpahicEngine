@@ -24,7 +24,15 @@ class MaterialBackendAccess;
 namespace Engine::Renderer {
 
 /// BRDF family selected for shading a material.
-enum class BrdfModel : uint32_t { Legacy = 0, GGX = 1, GTR = 2, Beckmann = 3, Gauss = 4, BlinnPhong = 5 };
+enum class BrdfModel : uint32_t {
+  Legacy = 0,
+  GGX = 1,
+  GTR = 2,
+  Beckmann = 3,
+  Gauss = 4,
+  BlinnPhong = 5,
+  AshikhminShirley = 6
+};
 
 /// Metallic-roughness or specular-glossiness material parameterization.
 enum class MaterialWorkflow : uint32_t { MetallicRoughness = 0, SpecularGlossiness = 1 };
@@ -37,7 +45,7 @@ enum class MaterialAlphaMode : uint32_t { Opaque = 0, Mask = 1, Blend = 2 };
 
 /// Versioned CPU-to-shader material constant-buffer layout.
 /// The buffer occupies b1; texture and sampler registers are listed in docs/material-binding-abi.md.
-inline constexpr uint32_t MaterialGpuAbiVersion = 4;
+inline constexpr uint32_t MaterialGpuAbiVersion = 5;
 /// Minimum alpha used by the shader to avoid a zero roughness denominator.
 inline constexpr float MaterialMinAlpha = 1.0e-3f;
 /// Smallest supported GTR distribution gamma.
@@ -54,9 +62,9 @@ struct MaterialGpu {
   DirectX::XMFLOAT4 BaseColor;               ///< Linear RGBA base color factor.
   DirectX::XMFLOAT4 EmissiveMetallic;        ///< RGB emissive factor and metallic value.
   DirectX::XMFLOAT4 SurfaceParams;           ///< Roughness, alpha floor, GTR gamma, and IOR.
-  DirectX::XMFLOAT4 SpecularParams;          ///< RGB dielectric F0 and reserved padding.
+  DirectX::XMFLOAT4 SpecularParams;          ///< RGB dielectric F0 and Ashikhmin-Shirley U roughness.
   DirectX::XMUINT4 ModelFlags;               ///< ABI version, BRDF, workflow/specular, and alpha/double-sided flags.
-  DirectX::XMFLOAT4 AlphaParams;             ///< Alpha cutoff and reserved values.
+  DirectX::XMFLOAT4 AlphaParams;             ///< Alpha cutoff, Ashikhmin-Shirley V roughness, and reserved values.
   DirectX::XMUINT4 TextureCoordinates0;      ///< UV indices for base color, normal, metallic-roughness, and occlusion.
   DirectX::XMUINT4 TextureCoordinates1;      ///< UV index for emission and reserved values.
   DirectX::XMFLOAT4 TextureParams;           ///< Normal scale, occlusion strength, and reserved values.
@@ -93,6 +101,8 @@ struct MaterialProperties {
   float Metallic = 0.0f;                                  ///< Metalness in the metallic-roughness workflow.
   float Roughness = 0.5f;                                 ///< Surface microfacet roughness.
   float GtrGamma = 2.0f;                                  ///< GTR distribution gamma parameter.
+  float AnisotropicRoughnessU = 0.5f;                     ///< Ashikhmin-Shirley roughness along the tangent axis.
+  float AnisotropicRoughnessV = 0.5f;                     ///< Ashikhmin-Shirley roughness along the bitangent axis.
   float Ior = 1.5f;                                       ///< Index of refraction used to derive dielectric F0.
   DirectX::XMFLOAT3 SpecularF0 = {0.04f, 0.04f, 0.04f};   ///< Explicit dielectric normal-incidence reflectance.
   BrdfModel Model = BrdfModel::Legacy;                    ///< BRDF distribution used by the shader.
@@ -122,7 +132,8 @@ inline MaterialGpu BuildMaterialGpu(const MaterialProperties& properties) noexce
   const float roughness = ClampFinite(properties.Roughness, 0.5f, 0.0f, 1.0f);
   const float ior = ClampFinite(properties.Ior, 1.5f, MaterialMinIor, MaterialMaxIor);
   const auto validModel = [](BrdfModel model) {
-    return static_cast<uint32_t>(model) <= static_cast<uint32_t>(BrdfModel::BlinnPhong) ? model : BrdfModel::Legacy;
+    return static_cast<uint32_t>(model) <= static_cast<uint32_t>(BrdfModel::AshikhminShirley) ? model
+                                                                                              : BrdfModel::Legacy;
   };
   const auto validWorkflow = [](MaterialWorkflow workflow) {
     return static_cast<uint32_t>(workflow) <= static_cast<uint32_t>(MaterialWorkflow::SpecularGlossiness)
@@ -147,12 +158,14 @@ inline MaterialGpu BuildMaterialGpu(const MaterialProperties& properties) noexce
       {roughness, (std::max)(roughness * roughness, MaterialMinAlpha),
        ClampFinite(properties.GtrGamma, 2.0f, MaterialMinGtrGamma, MaterialMaxGtrGamma), ior},
       {ClampFinite(properties.SpecularF0.x, 0.04f, 0.0f, 1.0f), ClampFinite(properties.SpecularF0.y, 0.04f, 0.0f, 1.0f),
-       ClampFinite(properties.SpecularF0.z, 0.04f, 0.0f, 1.0f), 0.0f},
+       ClampFinite(properties.SpecularF0.z, 0.04f, 0.0f, 1.0f),
+       ClampFinite(properties.AnisotropicRoughnessU, 0.5f, 0.0f, 1.0f)},
       {MaterialGpuAbiVersion, static_cast<uint32_t>(validModel(properties.Model)),
        static_cast<uint32_t>(validSpecularMode(properties.SpecularMode)) |
            (validWorkflow(properties.Workflow) == MaterialWorkflow::SpecularGlossiness ? 0x100u : 0u),
        static_cast<uint32_t>(validAlphaMode(properties.AlphaMode)) | (properties.DoubleSided ? 0x100u : 0u)},
-      {ClampFinite(properties.AlphaCutoff, 0.5f, 0.0f, 1.0f), 0.0f, 0.0f, 0.0f}};
+      {ClampFinite(properties.AlphaCutoff, 0.5f, 0.0f, 1.0f),
+       ClampFinite(properties.AnisotropicRoughnessV, 0.5f, 0.0f, 1.0f), 0.0f, 0.0f}};
   gpu.TextureCoordinates0 = {
       properties.BaseColorTexCoord < MaxTextureCoordinateSets ? properties.BaseColorTexCoord : 0,
       properties.NormalTexCoord < MaxTextureCoordinateSets ? properties.NormalTexCoord : 0,

@@ -10,6 +10,7 @@
 #include <cstdlib>
 #include <exception>
 #include <iostream>
+#include <limits>
 #include <numbers>
 #include <utility>
 
@@ -94,6 +95,26 @@ void TestBlinnPhongReferenceAndFiniteEvaluation() {
                                                                       {0.04F, 0.04F, 0.04F}, alpha);
   Require(std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z),
           "Blinn-Phong BRDF reference evaluation must remain finite");
+}
+
+void TestAshikhminShirleyReferenceAndFiniteEvaluation() {
+  using ::Engine::Renderer::Brdf::EvaluateAshikhminShirleyNdf;
+  constexpr float roughness = 0.5F;
+  constexpr float exponent = 2.0F / 0.0625F - 2.0F;
+  const float expectedPeak = (exponent + 1.0F) / (2.0F * ::Engine::Renderer::Brdf::Pi);
+  Require(std::abs(EvaluateAshikhminShirleyNdf({0.0F, 0.0F, 1.0F}, roughness, roughness) - expectedPeak) < 1.0e-5F,
+          "Ashikhmin-Shirley normal incidence must match its reference value");
+  const float alongU = EvaluateAshikhminShirleyNdf({0.4F, 0.0F, 0.9165151F}, 0.2F, 0.8F);
+  const float alongV = EvaluateAshikhminShirleyNdf({0.0F, 0.4F, 0.9165151F}, 0.2F, 0.8F);
+  Require(std::abs(alongU - alongV) > 1.0e-3F, "Ashikhmin-Shirley must respond independently to U and V roughness");
+  Require(EvaluateAshikhminShirleyNdf({1.0F, 0.0F, 0.0F}, 0.5F, 0.5F) == 0.0F &&
+              std::isfinite(EvaluateAshikhminShirleyNdf({0.0F, 0.0F, 1.0F}, 0.0F, 0.0F)),
+          "Ashikhmin-Shirley must remain finite at the horizon and minimum roughness");
+  const auto value = ::Engine::Renderer::Brdf::EvaluateAshikhminShirleyBrdf(
+      {0.0F, 0.0F, 1.0F}, {1.0F, 0.0F, 0.0F}, {0.0F, 1.0F, 0.0F}, {0.3F, 0.0F, 0.9539392F}, {-0.1F, 0.5F, 0.8602325F},
+      {0.7F, 0.4F, 0.2F}, {0.04F, 0.04F, 0.04F}, 0.2F, 0.8F);
+  Require(std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z),
+          "Ashikhmin-Shirley BRDF reference evaluation must remain finite");
 }
 
 void TestGaussReferenceAndFiniteEvaluation() {
@@ -255,12 +276,27 @@ void TestMaterialGpuAbiPacking() {
   const auto blinnPhong = ::Engine::Renderer::BuildMaterialGpu(properties);
   Require(blinnPhong.ModelFlags.y == 5U && blinnPhong.ModelFlags.x == ::Engine::Renderer::MaterialGpuAbiVersion,
           "Blinn-Phong selector must append value five without changing the material GPU ABI");
+  properties.Model = ::Engine::Renderer::BrdfModel::AshikhminShirley;
+  properties.AnisotropicRoughnessU = 0.2F;
+  properties.AnisotropicRoughnessV = 0.8F;
+  const auto ashikhmin = ::Engine::Renderer::BuildMaterialGpu(properties);
+  Require(
+      ashikhmin.ModelFlags.y == 6U && ashikhmin.ModelFlags.x == 5U && sizeof(ashikhmin) == 304U &&
+          std::abs(ashikhmin.SpecularParams.w - 0.2F) < 1.0e-6F && std::abs(ashikhmin.AlphaParams.y - 0.8F) < 1.0e-6F,
+      "Ashikhmin-Shirley selection and anisotropic values must use ABI-v5 reserved lanes without growing the buffer");
+  properties.AnisotropicRoughnessU = std::numeric_limits<float>::quiet_NaN();
+  properties.AnisotropicRoughnessV = 4.0F;
+  const auto sanitized = ::Engine::Renderer::BuildMaterialGpu(properties);
+  Require(sanitized.SpecularParams.w == 0.5F && sanitized.AlphaParams.y == 1.0F,
+          "Anisotropic roughness packing must sanitize non-finite values and clamp finite values");
 }
 
 void TestMaterialPropertiesRoundTrip() {
   ::Engine::Renderer::Material material(0);
   ::Engine::Renderer::MaterialProperties properties;
   properties.Model = ::Engine::Renderer::BrdfModel::GTR;
+  properties.AnisotropicRoughnessU = 0.23F;
+  properties.AnisotropicRoughnessV = 0.79F;
   properties.SpecularMode = ::Engine::Renderer::DielectricSpecularMode::ExplicitF0;
   properties.GtrGamma = 4.0F;
   properties.Ior = 1.8F;
@@ -270,7 +306,9 @@ void TestMaterialPropertiesRoundTrip() {
   Require(restored.Model == properties.Model && restored.SpecularMode == properties.SpecularMode &&
               std::abs(restored.GtrGamma - properties.GtrGamma) < 1.0e-6F &&
               std::abs(restored.Ior - properties.Ior) < 1.0e-6F &&
-              std::abs(restored.SpecularF0.z - properties.SpecularF0.z) < 1.0e-6F,
+              std::abs(restored.SpecularF0.z - properties.SpecularF0.z) < 1.0e-6F &&
+              std::abs(restored.AnisotropicRoughnessU - properties.AnisotropicRoughnessU) < 1.0e-6F &&
+              std::abs(restored.AnisotropicRoughnessV - properties.AnisotropicRoughnessV) < 1.0e-6F,
           "Material must retain authored BRDF model parameters");
 }
 
@@ -301,6 +339,7 @@ auto main() -> int {
     TestBeckmannReferenceAndFiniteEvaluation();
     TestGaussReferenceAndFiniteEvaluation();
     TestBlinnPhongReferenceAndFiniteEvaluation();
+    TestAshikhminShirleyReferenceAndFiniteEvaluation();
     TestGtrLimitsAndRoughnessMapping();
     TestReciprocityAndWhiteFurnace();
     TestMaterialGpuAbiPacking();
