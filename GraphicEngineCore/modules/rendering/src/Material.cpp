@@ -99,6 +99,8 @@ MaterialProperties Material::GetProperties() const {
   properties.Metallic = m_Constants.EmissiveMetallic.w;
   properties.Roughness = m_Constants.SurfaceParams.x;
   properties.GtrGamma = m_Constants.SurfaceParams.z;
+  properties.AnisotropicRoughnessU = m_Constants.SpecularParams.w;
+  properties.AnisotropicRoughnessV = m_Constants.AlphaParams.y;
   properties.Ior = m_Constants.SurfaceParams.w;
   properties.SpecularF0 = {m_Constants.SpecularParams.x, m_Constants.SpecularParams.y, m_Constants.SpecularParams.z};
   properties.Model = static_cast<BrdfModel>(m_Constants.ModelFlags.y);

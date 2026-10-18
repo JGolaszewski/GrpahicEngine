@@ -189,6 +189,9 @@ PS_OUTPUT main_ps(VS_OUTPUT input)
     }
 
     float3 N        = BrdfNormalizeOr(input.normalWS, float3(0.0f, 0.0f, 1.0f));
+    const float3 tangent = BrdfNormalizeOr(input.tangentWS.xyz - N * dot(N, input.tangentWS.xyz),
+        abs(N.y) < 0.9f ? normalize(cross(float3(0.0f, 1.0f, 0.0f), N)) : float3(1.0f, 0.0f, 0.0f));
+    const float3 bitangent = cross(N, tangent) * (input.tangentWS.w < 0.0f ? -1.0f : 1.0f);
     float  metallic = saturate(g_EmissiveMetallic.w);
     const bool isSpecularGlossiness = (g_ModelFlags.z & 0x100u) != 0u;
     const bool isLegacy = g_ModelFlags.y == 0u;
@@ -279,10 +282,40 @@ PS_OUTPUT main_ps(VS_OUTPUT input)
             const float3 brdfF0 = isSpecularGlossiness ? specularF0 : dielectricF0;
             float3 diffuseBrdf;
             float3 specularBrdf;
-            if (g_ModelFlags.y == 2u)
+            if (g_ModelFlags.y == 6u)
+            {
+                EvaluateAshikhminShirleyBrdfComponents(query, tangent, bitangent, brdfBaseColor, brdfMetallic,
+                    brdfF0, g_SpecularParams.w, g_AlphaParams.y, diffuseBrdf, specularBrdf);
+            }
+            else if (g_ModelFlags.y == 2u)
             {
                 EvaluateGtrBrdfComponents(query, brdfBaseColor, brdfMetallic, brdfF0, alpha,
                     g_SurfaceParams.z, diffuseBrdf, specularBrdf);
+            }
+            else if (g_ModelFlags.y == 3u)
+            {
+                EvaluateBeckmannBrdfComponents(query, brdfBaseColor, brdfMetallic, brdfF0, alpha,
+                    diffuseBrdf, specularBrdf);
+            }
+            else if (g_ModelFlags.y == 4u)
+            {
+                EvaluateGaussBrdfComponents(query, brdfBaseColor, brdfMetallic, brdfF0, alpha,
+                    diffuseBrdf, specularBrdf);
+            }
+            else if (g_ModelFlags.y == 5u)
+            {
+                EvaluateBlinnPhongBrdfComponents(query, brdfBaseColor, brdfMetallic, brdfF0, alpha,
+                    diffuseBrdf, specularBrdf);
+            }
+            else if (g_ModelFlags.y == 7u)
+            {
+                EvaluateSchlickBrdfComponents(query, brdfBaseColor, brdfMetallic, brdfF0, alpha,
+                    diffuseBrdf, specularBrdf);
+            }
+            else if (g_ModelFlags.y == 8u)
+            {
+                EvaluateSawickiBrdfComponents(query, brdfBaseColor, brdfMetallic, brdfF0, alpha,
+                    diffuseBrdf, specularBrdf);
             }
             else
             {

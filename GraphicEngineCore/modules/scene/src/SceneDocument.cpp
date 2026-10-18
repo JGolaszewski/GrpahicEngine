@@ -199,7 +199,9 @@ auto ValidateMaterialNames(const Json& value, SceneMaterialDocument& material, s
     material.workflow = "specularGlossiness";
     warnings.push_back(context + " migrated specularGlossiness from brdfModel to workflow with GGX shading");
   }
-  if (material.brdfModel != "legacy" && material.brdfModel != "ggx" && material.brdfModel != "gtr") {
+  if (material.brdfModel != "legacy" && material.brdfModel != "ggx" && material.brdfModel != "gtr" &&
+      material.brdfModel != "beckmann" && material.brdfModel != "gauss" && material.brdfModel != "blinnPhong" &&
+      material.brdfModel != "ashikhminShirley" && material.brdfModel != "schlick" && material.brdfModel != "sawicki") {
     error = "brdfModel has an unsupported value";
     return false;
   }
@@ -231,6 +233,8 @@ auto ReadMaterial(const Json& value, SceneMaterialDocument& material, std::vecto
                 "metallic",
                 "roughness",
                 "gtrGamma",
+                "anisotropicRoughnessU",
+                "anisotropicRoughnessV",
                 "ior",
                 "specularF0",
                 "brdfModel",
@@ -256,6 +260,11 @@ auto ReadMaterial(const Json& value, SceneMaterialDocument& material, std::vecto
   if (!ReadMaterialTextFields(value, material, error)) {
     return false;
   }
+  if ((value.contains("anisotropicRoughnessU") &&
+       !ReadNumber(value, "anisotropicRoughnessU", material.anisotropicRoughnessU, error)) ||
+      (value.contains("anisotropicRoughnessV") &&
+       !ReadNumber(value, "anisotropicRoughnessV", material.anisotropicRoughnessV, error)))
+    return false;
   if (value.contains("alphaCutoff") && !ReadNumber(value, "alphaCutoff", material.alphaCutoff, error)) {
     return false;
   }
@@ -273,8 +282,14 @@ auto ReadMaterial(const Json& value, SceneMaterialDocument& material, std::vecto
     error = "alphaCutoff must be within [0, 1]";
     return false;
   }
+  if (!std::isfinite(material.anisotropicRoughnessU) || !std::isfinite(material.anisotropicRoughnessV)) {
+    error = "anisotropic roughness values must be finite";
+    return false;
+  }
   if (material.metallic < 0.0F || material.metallic > 1.0F || material.roughness < 0.0F || material.roughness > 1.0F ||
-      material.gtrGamma < 1.0F || material.gtrGamma > 8.0F || material.ior < 1.0F || material.ior > 3.0F) {
+      material.gtrGamma < 1.0F || material.gtrGamma > 8.0F || material.ior < 1.0F || material.ior > 3.0F ||
+      material.anisotropicRoughnessU < 0.0F || material.anisotropicRoughnessU > 1.0F ||
+      material.anisotropicRoughnessV < 0.0F || material.anisotropicRoughnessV > 1.0F) {
     error = "material contains out-of-range BRDF settings";
     return false;
   }
@@ -304,15 +319,21 @@ auto IsValidPrimitiveType(const std::string& type) -> bool {
 }
 
 auto IsValidMaterial(const SceneMaterialDocument& material) -> bool {
-  const auto validBrdf = material.brdfModel == "legacy" || material.brdfModel == "ggx" || material.brdfModel == "gtr";
+  const auto validBrdf = material.brdfModel == "legacy" || material.brdfModel == "ggx" || material.brdfModel == "gtr" ||
+                         material.brdfModel == "beckmann" || material.brdfModel == "gauss" ||
+                         material.brdfModel == "blinnPhong" || material.brdfModel == "ashikhminShirley" ||
+                         material.brdfModel == "schlick" || material.brdfModel == "sawicki";
   const bool validWorkflow = material.workflow == "metallicRoughness" || material.workflow == "specularGlossiness";
   if (!validBrdf || !validWorkflow || (material.specularMode != "ior" && material.specularMode != "explicitF0") ||
       (material.alphaMode != "opaque" && material.alphaMode != "mask" && material.alphaMode != "blend") ||
       !std::isfinite(material.metallic) || !std::isfinite(material.roughness) || !std::isfinite(material.gtrGamma) ||
-      !std::isfinite(material.ior) || !std::isfinite(material.alphaCutoff) || material.metallic < 0.0F ||
-      material.metallic > 1.0F || material.roughness < 0.0F || material.roughness > 1.0F || material.gtrGamma < 1.0F ||
-      material.gtrGamma > 8.0F || material.ior < 1.0F || material.ior > 3.0F || material.alphaCutoff < 0.0F ||
-      material.alphaCutoff > 1.0F) {
+      !std::isfinite(material.ior) || !std::isfinite(material.alphaCutoff) ||
+      !std::isfinite(material.anisotropicRoughnessU) || !std::isfinite(material.anisotropicRoughnessV) ||
+      material.metallic < 0.0F || material.metallic > 1.0F || material.roughness < 0.0F || material.roughness > 1.0F ||
+      material.gtrGamma < 1.0F || material.gtrGamma > 8.0F || material.ior < 1.0F || material.ior > 3.0F ||
+      material.alphaCutoff < 0.0F || material.alphaCutoff > 1.0F || material.anisotropicRoughnessU < 0.0F ||
+      material.anisotropicRoughnessU > 1.0F || material.anisotropicRoughnessV < 0.0F ||
+      material.anisotropicRoughnessV > 1.0F) {
     return false;
   }
   if ((material.baseColorTextureGuid && !IsGuid(*material.baseColorTextureGuid)) ||
@@ -354,6 +375,8 @@ auto MaterialJson(const SceneMaterialDocument& material) -> Json {
       {"metallic", material.metallic},
       {"roughness", material.roughness},
       {"gtrGamma", material.gtrGamma},
+      {"anisotropicRoughnessU", material.anisotropicRoughnessU},
+      {"anisotropicRoughnessV", material.anisotropicRoughnessV},
       {"ior", material.ior},
       {"specularF0", material.specularF0},
       {"brdfModel", material.brdfModel},

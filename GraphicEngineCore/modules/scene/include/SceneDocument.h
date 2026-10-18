@@ -29,16 +29,19 @@ struct SceneMaterialDocument {
   float metallic = 0.0f;                                     ///< Metallic workflow factor in [0, 1].
   float roughness = 0.5f;                                    ///< Surface roughness factor in [0, 1].
   float gtrGamma = 2.0f;                                     ///< GTR distribution parameter used by the selected BRDF.
+  float anisotropicRoughnessU = 0.5f;                        ///< Ashikhmin-Shirley tangent-axis roughness.
+  float anisotropicRoughnessV = 0.5f;                        ///< Ashikhmin-Shirley bitangent-axis roughness.
   float ior = 1.5f; ///< Index of refraction used to derive dielectric reflectance.
   std::array<float, 3> specularF0 = {0.04f, 0.04f, 0.04f}; ///< RGB reflectance at normal incidence.
-  std::string brdfModel = "legacy";                        ///< Identifier of the BRDF implementation.
-  std::string workflow = "metallicRoughness";              ///< Material parameter workflow identifier.
-  std::string specularMode = "ior";                        ///< Source mode used to derive specular reflectance.
-  std::string alphaMode = "opaque";                        ///< Alpha handling mode for the material.
-  float alphaCutoff = 0.5f;                                ///< Mask threshold used when alpha mode is masked.
-  bool doubleSided = false;                                ///< Whether the material renders both face orientations.
-  std::optional<std::string> baseColorTextureGuid;         ///< Optional base-color texture identity.
-  std::optional<std::string> normalTextureGuid;            ///< Optional tangent-space normal texture identity.
+  std::string brdfModel =
+      "legacy"; ///< BRDF identifier, including stable "blinnPhong", "schlick", and "sawicki" tokens.
+  std::string workflow = "metallicRoughness";      ///< Material parameter workflow identifier.
+  std::string specularMode = "ior";                ///< Source mode used to derive specular reflectance.
+  std::string alphaMode = "opaque";                ///< Alpha handling mode for the material.
+  float alphaCutoff = 0.5f;                        ///< Mask threshold used when alpha mode is masked.
+  bool doubleSided = false;                        ///< Whether the material renders both face orientations.
+  std::optional<std::string> baseColorTextureGuid; ///< Optional base-color texture identity.
+  std::optional<std::string> normalTextureGuid;    ///< Optional tangent-space normal texture identity.
   /// Compares every serialized material property.
   /// @param other Material document to compare with.
   /// @return True when all properties match.
