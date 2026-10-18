@@ -63,9 +63,11 @@ camera entity also opens its viewport picture-in-picture preview.
 Use **File > Open Project Folder...** to select a project and refresh its asset
 registry. Use **File > Open...** to load a `.scene.json` file from the active
 project, **New** to start an empty scene, and **Save** or **Save As...** to
-write the active scene. `Ctrl+N`, `Ctrl+O`, `Ctrl+S`, and `Ctrl+Shift+S` are
-the corresponding shortcuts. Scene files must be saved inside the active
-project. **File > Reset Sandbox** loads the active project's
+write the active scene. The File menu displays `Ctrl+N`, `Ctrl+O`, `Ctrl+S`,
+and `Ctrl+Shift+S` beside these actions as labels; the editor does not currently
+handle those combinations as keyboard shortcuts, so choose the menu items to
+run the actions. Scene files must be saved inside the active project.
+**File > Reset Sandbox** loads the active project's
 `Sandbox.template.scene.json` and sets `Sandbox.scene.json` as the active save
 path. See [Editor workflows](editor-workflows.md) for the repeatable Sandbox
 setup.
