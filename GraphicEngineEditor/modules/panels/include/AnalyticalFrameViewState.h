@@ -7,7 +7,7 @@
 #include <cstdint>
 #include <optional>
 
-namespace Editor::Panels {
+namespace AnalyticalFrame {
 
 /// View-only selection and navigation state for a captured Analytical Frame.
 /// This state is persisted with a project and never causes scene rendering.
@@ -29,4 +29,4 @@ struct AnalyticalFrameViewState {
   float WipePosition = 0.5F;                    ///< Normalized A/B wipe location in [0, 1].
 };
 
-} // namespace Editor::Panels
+} // namespace AnalyticalFrame

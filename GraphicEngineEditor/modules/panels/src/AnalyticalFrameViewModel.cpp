@@ -6,7 +6,7 @@
 #include <limits>
 #include <string_view>
 
-namespace Editor::Panels::AnalyticalFrameViewModel {
+namespace AnalyticalFrame::AnalyticalFrameViewModel {
 namespace {
 
 struct NamedAov {
@@ -330,7 +330,8 @@ auto BuildWipeImage(const Engine::RenderOutput& a, const Engine::RenderOutput& b
   }
   const size_t width = a.Width;
   const size_t height = a.Height;
-  const size_t split = static_cast<size_t>(std::lround(std::clamp(wipePosition, 0.0F, 1.0F) * a.Width));
+  const size_t split =
+      static_cast<size_t>(std::lround(std::clamp(wipePosition, 0.0F, 1.0F) * static_cast<float>(a.Width)));
   std::vector<uint8_t> result(imageA->size());
   for (size_t y = 0; y < height; ++y) {
     for (size_t x = 0; x < width; ++x) {
@@ -364,4 +365,4 @@ auto BuildRelativeLuminanceHeatmap(const Engine::RenderOutput& a, const Engine::
   return rgba;
 }
 
-} // namespace Editor::Panels::AnalyticalFrameViewModel
+} // namespace AnalyticalFrame::AnalyticalFrameViewModel

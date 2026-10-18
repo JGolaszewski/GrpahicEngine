@@ -145,9 +145,9 @@ void InspectorPanel::DrawEntityInspector() {
     std::copy_n(name.Value.data(), length, buffer.data());
     if (isSceneRoot) {
       ImGui::BeginDisabled();
-      (void)ImGui::InputText(Editor::Panels::Detail::kEntityNameInputLabel, buffer.data(), buffer.size());
+      (void)ImGui::InputText(AnalyticalFrame::Detail::kEntityNameInputLabel, buffer.data(), buffer.size());
       ImGui::EndDisabled();
-    } else if (ImGui::InputText(Editor::Panels::Detail::kEntityNameInputLabel, buffer.data(), buffer.size())) {
+    } else if (ImGui::InputText(AnalyticalFrame::Detail::kEntityNameInputLabel, buffer.data(), buffer.size())) {
       name.Value = buffer.data();
       emitSet(Mutation::Component::Name, std::move(name));
     }

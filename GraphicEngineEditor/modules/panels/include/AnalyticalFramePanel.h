@@ -73,7 +73,7 @@ public:
                        ClearTextureFunction clearTexture, ChoosePathFunction choosePath);
 
   /// Replaces the displayed complete session and restores its typed viewport state.
-  void SetSession(Editor::Panels::AnalyticalFrameSession session);
+  void SetSession(AnalyticalFrame::AnalyticalFrameSession session);
   /// Opens the static viewer window.
   void Open() noexcept { m_Open = true; }
   /// Closes the static viewer and releases its display texture while retaining the session.
@@ -84,12 +84,12 @@ public:
   void OnEvent(Engine::Events::Event& event) override;
 
   /// Gets the detached session currently displayed, if any.
-  [[nodiscard]] auto GetSession() const noexcept -> const std::optional<Editor::Panels::AnalyticalFrameSession>& {
+  [[nodiscard]] auto GetSession() const noexcept -> const std::optional<AnalyticalFrame::AnalyticalFrameSession>& {
     return m_Session;
   }
 
 private:
-  auto FindVariant(Engine::Renderer::BrdfModel model) const -> const Editor::Panels::AnalyticalFrameVariant*;
+  auto FindVariant(Engine::Renderer::BrdfModel model) const -> const AnalyticalFrame::AnalyticalFrameVariant*;
   auto IsRelativeErrorCompatible() const -> bool;
   auto BuildCompletedComparison() const -> std::optional<BrdfAnalysisPanel::CompletedComparison>;
   void RefreshTargets();
@@ -138,8 +138,8 @@ private:
   std::optional<Engine::Renderer::BrdfAnalysis::BrdfAnalysisSnapshot> m_CapturedSnapshot;
   std::optional<Engine::Renderer::BrdfAnalysis::BrdfAnalysisCaptureSession> m_Capture;
   std::string m_CapturedTargetLabel;
-  std::optional<Editor::Panels::AnalyticalFrameSession> m_Session;
-  Editor::Panels::AnalyticalFrameViewState m_ViewState;
+  std::optional<AnalyticalFrame::AnalyticalFrameSession> m_Session;
+  AnalyticalFrame::AnalyticalFrameViewState m_ViewState;
   std::string m_Status = "Open an .aframe project or capture an Analytical Frame from a scene.";
   uint32_t m_ImageWidth = 0;
   uint32_t m_ImageHeight = 0;

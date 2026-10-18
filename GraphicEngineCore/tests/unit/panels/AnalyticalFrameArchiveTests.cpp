@@ -54,10 +54,10 @@ auto MakeViewportState() -> nlohmann::json {
           {"WipePosition", 0.4F}};
 }
 
-auto MakeSession() -> Editor::Panels::AnalyticalFrameSession {
+auto MakeSession() -> AnalyticalFrame::AnalyticalFrameSession {
   using namespace Engine::Renderer;
   using namespace Engine::Renderer::BrdfAnalysis;
-  Editor::Panels::AnalyticalFrameSession session;
+  AnalyticalFrame::AnalyticalFrameSession session;
   auto& snapshot = session.Snapshot;
   snapshot.TargetEntityId = 42;
   snapshot.SourceMaterial.brdfModel = "ggx";
@@ -86,7 +86,7 @@ auto MakeSession() -> Editor::Panels::AnalyticalFrameSession {
   session.ViewportState = MakeViewportState();
   session.PostProcessCallbackPresent = true;
 
-  Editor::Panels::AnalyticalFrameVariant variant;
+  AnalyticalFrame::AnalyticalFrameVariant variant;
   auto& request = variant.Render.Request;
   request.Scene = snapshot.Scene;
   Engine::SceneMaterialDocument requestMaterial =
@@ -155,9 +155,9 @@ TEST(AnalyticalFrameArchiveTests, SavesAndReopensDetachedCapturedBuffersAndSetti
   const auto path = directory.File("frozen-frame.aframe");
   const auto original = MakeSession();
 
-  const Engine::Status save = Editor::Panels::AnalyticalFrameArchive::Save(path, original);
+  const Engine::Status save = AnalyticalFrame::AnalyticalFrameArchive::Save(path, original);
   ASSERT_TRUE(save) << (save ? "" : save.error().Message);
-  const auto loaded = Editor::Panels::AnalyticalFrameArchive::Load(path);
+  const auto loaded = AnalyticalFrame::AnalyticalFrameArchive::Load(path);
 
   ASSERT_TRUE(loaded.has_value()) << (loaded ? "" : loaded.error().Message);
   EXPECT_EQ(loaded->TargetLabel, original.TargetLabel);
@@ -187,21 +187,21 @@ TEST(AnalyticalFrameArchiveTests, SavesAndReopensDetachedCapturedBuffersAndSetti
 TEST(AnalyticalFrameArchiveTests, RejectsTruncatedAndCorruptArchivesWithoutReturningASession) {
   TemporaryArchiveDirectory directory;
   const auto path = directory.File("broken.aframe");
-  ASSERT_TRUE(Editor::Panels::AnalyticalFrameArchive::Save(path, MakeSession()));
+  ASSERT_TRUE(AnalyticalFrame::AnalyticalFrameArchive::Save(path, MakeSession()));
   auto bytes = ReadArchiveBytes(path);
   ASSERT_GT(bytes.size(), 24U);
   bytes.pop_back();
   WriteArchiveBytes(path, bytes);
-  const auto loaded = Editor::Panels::AnalyticalFrameArchive::Load(path);
+  const auto loaded = AnalyticalFrame::AnalyticalFrameArchive::Load(path);
   EXPECT_FALSE(loaded.has_value());
   EXPECT_NE(loaded.error().Message.find("payload length"), std::string::npos);
 
-  ASSERT_TRUE(Editor::Panels::AnalyticalFrameArchive::Save(path, MakeSession()));
+  ASSERT_TRUE(AnalyticalFrame::AnalyticalFrameArchive::Save(path, MakeSession()));
   bytes = ReadArchiveBytes(path);
   ASSERT_GT(bytes.size(), 24U);
   bytes.back() ^= 0x5AU;
   WriteArchiveBytes(path, bytes);
-  const auto corrupt = Editor::Panels::AnalyticalFrameArchive::Load(path);
+  const auto corrupt = AnalyticalFrame::AnalyticalFrameArchive::Load(path);
   EXPECT_FALSE(corrupt.has_value());
   EXPECT_NE(corrupt.error().Message.find("checksum"), std::string::npos);
 }
@@ -209,7 +209,7 @@ TEST(AnalyticalFrameArchiveTests, RejectsTruncatedAndCorruptArchivesWithoutRetur
 TEST(AnalyticalFrameArchiveTests, RejectsUnsupportedManifestVersion) {
   TemporaryArchiveDirectory directory;
   const auto path = directory.File("future-version.aframe");
-  ASSERT_TRUE(Editor::Panels::AnalyticalFrameArchive::Save(path, MakeSession()));
+  ASSERT_TRUE(AnalyticalFrame::AnalyticalFrameArchive::Save(path, MakeSession()));
   auto bytes = ReadArchiveBytes(path);
   ASSERT_GT(bytes.size(), 24U);
   uint64_t manifestSize = 0;
@@ -230,7 +230,7 @@ TEST(AnalyticalFrameArchiveTests, RejectsUnsupportedManifestVersion) {
   changed.insert(changed.end(), bytes.begin() + static_cast<std::ptrdiff_t>(16U + manifestSize), bytes.end());
   WriteArchiveBytes(path, changed);
 
-  const auto loaded = Editor::Panels::AnalyticalFrameArchive::Load(path);
+  const auto loaded = AnalyticalFrame::AnalyticalFrameArchive::Load(path);
   ASSERT_FALSE(loaded.has_value());
   EXPECT_NE(loaded.error().Message.find("Unsupported Analytical Frame archive version"), std::string::npos);
 }
@@ -239,7 +239,7 @@ TEST(AnalyticalFrameArchiveTests, RejectsInvalidViewportStateBeforeWriting) {
   TemporaryArchiveDirectory directory;
   auto session = MakeSession();
   session.ViewportState["PinnedPixel"] = {99U, 0U};
-  const Engine::Status saved = Editor::Panels::AnalyticalFrameArchive::Save(directory.File("invalid.aframe"), session);
+  const Engine::Status saved = AnalyticalFrame::AnalyticalFrameArchive::Save(directory.File("invalid.aframe"), session);
   ASSERT_FALSE(saved.has_value());
   EXPECT_NE(saved.error().Message.find("outside the captured image"), std::string::npos);
 
@@ -247,7 +247,7 @@ TEST(AnalyticalFrameArchiveTests, RejectsInvalidViewportStateBeforeWriting) {
   session.ViewportState["SelectedAov"] = "depth";
   session.ViewportState["Mode"] = "RelativeLuminanceError";
   const Engine::Status incompatible =
-      Editor::Panels::AnalyticalFrameArchive::Save(directory.File("incompatible-error-mode.aframe"), session);
+      AnalyticalFrame::AnalyticalFrameArchive::Save(directory.File("incompatible-error-mode.aframe"), session);
   ASSERT_FALSE(incompatible.has_value());
   EXPECT_NE(incompatible.error().Message.find("requires the final-color AOV"), std::string::npos);
 }
@@ -258,21 +258,21 @@ TEST(AnalyticalFrameArchiveTests, RejectsMutatedOutputPlanesBeforeWriting) {
   auto wrongOrder = MakeSession();
   wrongOrder.Variants.front().Render.Output.GetMutablePlanes().front().Aov = Engine::RenderAov::Depth;
   const Engine::Status orderSave =
-      Editor::Panels::AnalyticalFrameArchive::Save(directory.File("wrong-order.aframe"), wrongOrder);
+      AnalyticalFrame::AnalyticalFrameArchive::Save(directory.File("wrong-order.aframe"), wrongOrder);
   ASSERT_FALSE(orderSave.has_value());
   EXPECT_NE(orderSave.error().Message.find("AOV, channel layout, or sample count"), std::string::npos);
 
   auto wrongChannels = MakeSession();
   wrongChannels.Variants.front().Render.Output.GetMutablePlanes().front().ChannelCount = 3;
   const Engine::Status channelSave =
-      Editor::Panels::AnalyticalFrameArchive::Save(directory.File("wrong-channels.aframe"), wrongChannels);
+      AnalyticalFrame::AnalyticalFrameArchive::Save(directory.File("wrong-channels.aframe"), wrongChannels);
   ASSERT_FALSE(channelSave.has_value());
   EXPECT_NE(channelSave.error().Message.find("AOV, channel layout, or sample count"), std::string::npos);
 
   auto wrongSamples = MakeSession();
   wrongSamples.Variants.front().Render.Output.GetMutablePlanes().front().Pixels.pop_back();
   const Engine::Status sampleSave =
-      Editor::Panels::AnalyticalFrameArchive::Save(directory.File("wrong-samples.aframe"), wrongSamples);
+      AnalyticalFrame::AnalyticalFrameArchive::Save(directory.File("wrong-samples.aframe"), wrongSamples);
   ASSERT_FALSE(sampleSave.has_value());
   EXPECT_NE(sampleSave.error().Message.find("AOV, channel layout, or sample count"), std::string::npos);
 }

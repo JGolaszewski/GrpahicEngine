@@ -24,6 +24,8 @@ if(BUILD_TESTING)
         "${CMAKE_CURRENT_SOURCE_DIR}/../../GraphicEngineEditor/modules/panels/src/AssetDropAssignment.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/../../GraphicEngineEditor/modules/panels/src/ScenePanel.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/../../GraphicEngineEditor/modules/panels/src/BrdfAnalysisExport.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../../GraphicEngineEditor/modules/panels/src/AnalyticalFrameArchive.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../../GraphicEngineEditor/modules/panels/src/AnalyticalFrameViewModel.cpp"
     )
     target_link_libraries(GraphicEngineUnitTests PRIVATE
         GraphicEngineCore

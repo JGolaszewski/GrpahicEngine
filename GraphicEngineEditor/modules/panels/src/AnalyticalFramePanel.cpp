@@ -123,15 +123,15 @@ AnalyticalFramePanel::AnalyticalFramePanel(TargetProvider targets, CameraProvide
   }
 }
 
-void AnalyticalFramePanel::SetSession(Editor::Panels::AnalyticalFrameSession session) {
-  Editor::Panels::AnalyticalFrameViewState state;
+void AnalyticalFramePanel::SetSession(AnalyticalFrame::AnalyticalFrameSession session) {
+  AnalyticalFrame::AnalyticalFrameViewState state;
   if (session.ViewportState.is_object() && !session.ViewportState.empty()) {
-    auto decodedState = Editor::Panels::AnalyticalFrameViewModel::FromViewportJson(session.ViewportState);
+    auto decodedState = AnalyticalFrame::AnalyticalFrameViewModel::FromViewportJson(session.ViewportState);
     if (!decodedState) {
       m_Status = "Could not display Analytical Frame: invalid viewport state: " + decodedState.error().Message;
       return;
     }
-    state = std::move(*decodedState);
+    state = *decodedState;
   }
   CancelCapture();
   Open();
@@ -151,7 +151,7 @@ void AnalyticalFramePanel::SetSession(Editor::Panels::AnalyticalFrameSession ses
     }
   }
   m_Status = "Opened detached Analytical Frame project.";
-  const BrdfModel displayedModel = m_ViewState.Mode == Editor::Panels::AnalyticalFrameViewState::ComparisonMode::Single
+  const BrdfModel displayedModel = m_ViewState.Mode == AnalyticalFrame::AnalyticalFrameViewState::ComparisonMode::Single
                                        ? m_ViewState.SelectedModel
                                        : m_ViewState.CompareModelA;
   const auto* displayedVariant = FindVariant(displayedModel);
@@ -336,7 +336,7 @@ void AnalyticalFramePanel::CompleteCapture() {
     m_CapturedSnapshot.reset();
     return;
   }
-  Editor::Panels::AnalyticalFrameSession session;
+  AnalyticalFrame::AnalyticalFrameSession session;
   session.Snapshot = std::move(*m_CapturedSnapshot);
   session.TargetLabel = m_CapturedTargetLabel;
   session.Variants.reserve(result->Variants.size());
@@ -351,15 +351,16 @@ void AnalyticalFramePanel::CompleteCapture() {
     }
     session.Variants.push_back({.Render = std::move(render), .Curve = std::move(*curve), .SceneLuminance = *luminance});
   }
-  session.ViewportState = Editor::Panels::AnalyticalFrameViewModel::ToViewportJson(m_ViewState);
+  session.ViewportState = AnalyticalFrame::AnalyticalFrameViewModel::ToViewportJson(m_ViewState);
   session.PostProcessCallbackPresent = static_cast<bool>(session.Snapshot.PostProcess);
+  const size_t completedVariantCount = session.Variants.size();
   SetSession(std::move(session));
-  m_Status = "Analytical Frame captured: " + std::to_string(m_Session->Variants.size()) + " BRDF variants.";
+  m_Status = "Analytical Frame captured: " + std::to_string(completedVariantCount) + " BRDF variants.";
   m_Capture.reset();
   m_CapturedSnapshot.reset();
 }
 
-auto AnalyticalFramePanel::FindVariant(BrdfModel model) const -> const Editor::Panels::AnalyticalFrameVariant* {
+auto AnalyticalFramePanel::FindVariant(BrdfModel model) const -> const AnalyticalFrame::AnalyticalFrameVariant* {
   if (!m_Session) {
     return nullptr;
   }
@@ -376,7 +377,7 @@ auto AnalyticalFramePanel::IsRelativeErrorCompatible() const -> bool {
   const auto* b = FindVariant(m_ViewState.CompareModelB);
   return a != nullptr && b != nullptr && a->Render.Request.Width == b->Render.Request.Width &&
          a->Render.Request.Height == b->Render.Request.Height &&
-         Editor::Panels::AnalyticalFrameViewModel::HasCompatibleLinearFinalColor(a->Render.Output, b->Render.Output);
+         AnalyticalFrame::AnalyticalFrameViewModel::HasCompatibleLinearFinalColor(a->Render.Output, b->Render.Output);
 }
 
 auto AnalyticalFramePanel::BuildCompletedComparison() const -> std::optional<BrdfAnalysisPanel::CompletedComparison> {
@@ -398,31 +399,32 @@ auto AnalyticalFramePanel::BuildCurrentImage() const -> Engine::Result<std::vect
   if (!m_Session) {
     return std::unexpected(Engine::MakeError("No Analytical Frame is open."));
   }
-  const auto* variantA = FindVariant(
-      m_ViewState.Mode == Editor::Panels::AnalyticalFrameViewState::ComparisonMode::Single ? m_ViewState.SelectedModel
-                                                                                           : m_ViewState.CompareModelA);
+  const auto* variantA =
+      FindVariant(m_ViewState.Mode == AnalyticalFrame::AnalyticalFrameViewState::ComparisonMode::Single
+                      ? m_ViewState.SelectedModel
+                      : m_ViewState.CompareModelA);
   if (variantA == nullptr) {
     return std::unexpected(Engine::MakeError("The selected BRDF variant is not present in this Analytical Frame."));
   }
-  if (m_ViewState.Mode == Editor::Panels::AnalyticalFrameViewState::ComparisonMode::Single) {
-    return Editor::Panels::AnalyticalFrameViewModel::BuildDisplayImage(variantA->Render.Output,
-                                                                       m_ViewState.SelectedAov);
+  if (m_ViewState.Mode == AnalyticalFrame::AnalyticalFrameViewState::ComparisonMode::Single) {
+    return AnalyticalFrame::AnalyticalFrameViewModel::BuildDisplayImage(variantA->Render.Output,
+                                                                        m_ViewState.SelectedAov);
   }
   const auto* variantB = FindVariant(m_ViewState.CompareModelB);
   if (variantB == nullptr) {
     return std::unexpected(Engine::MakeError("The second BRDF variant is not present in this Analytical Frame."));
   }
-  if (m_ViewState.Mode == Editor::Panels::AnalyticalFrameViewState::ComparisonMode::Wipe) {
-    return Editor::Panels::AnalyticalFrameViewModel::BuildWipeImage(variantA->Render.Output, variantB->Render.Output,
-                                                                    m_ViewState.SelectedAov, m_ViewState.WipePosition);
+  if (m_ViewState.Mode == AnalyticalFrame::AnalyticalFrameViewState::ComparisonMode::Wipe) {
+    return AnalyticalFrame::AnalyticalFrameViewModel::BuildWipeImage(variantA->Render.Output, variantB->Render.Output,
+                                                                     m_ViewState.SelectedAov, m_ViewState.WipePosition);
   }
   if (!IsRelativeErrorCompatible() || variantA->Render.Request.Width != variantB->Render.Request.Width ||
       variantA->Render.Request.Height != variantB->Render.Request.Height) {
     return std::unexpected(
         Engine::MakeError("Relative luminance error requires compatible linear final-color captures."));
   }
-  return Editor::Panels::AnalyticalFrameViewModel::BuildRelativeLuminanceHeatmap(variantA->Render.Output,
-                                                                                 variantB->Render.Output);
+  return AnalyticalFrame::AnalyticalFrameViewModel::BuildRelativeLuminanceHeatmap(variantA->Render.Output,
+                                                                                  variantB->Render.Output);
 }
 
 bool AnalyticalFramePanel::RefreshImage() {
@@ -440,7 +442,7 @@ bool AnalyticalFramePanel::RefreshImage() {
     m_Status = image.error().Message;
     return false;
   }
-  const BrdfModel displayedModel = m_ViewState.Mode == Editor::Panels::AnalyticalFrameViewState::ComparisonMode::Single
+  const BrdfModel displayedModel = m_ViewState.Mode == AnalyticalFrame::AnalyticalFrameViewState::ComparisonMode::Single
                                        ? m_ViewState.SelectedModel
                                        : m_ViewState.CompareModelA;
   const auto* displayedVariant = FindVariant(displayedModel);
@@ -534,10 +536,13 @@ void AnalyticalFramePanel::DrawCaptureControls() {
     if (ImGui::Button("Cancel capture")) {
       CancelCapture();
     }
-    ImGui::SameLine();
-    ImGui::ProgressBar(static_cast<float>(m_Capture->GetCompletedCount()) /
-                           static_cast<float>((std::max)(m_Capture->GetTotalCount(), size_t{1})),
-                       ImVec2(200.0F, 0.0F));
+    if (m_Capture.has_value()) {
+      ImGui::SameLine();
+      const auto& capture = m_Capture.value();
+      ImGui::ProgressBar(static_cast<float>(capture.GetCompletedCount()) /
+                             static_cast<float>((std::max)(capture.GetTotalCount(), size_t{1})),
+                         ImVec2(200.0F, 0.0F));
+    }
   }
   ImGui::SameLine();
   ImGui::TextUnformatted(m_Status.c_str());
@@ -555,33 +560,33 @@ void AnalyticalFramePanel::DrawControls() {
   for (const auto& variant : m_Session->Variants) {
     availableModels.push_back(variant.Render.Request.Model);
   }
-  if (m_ViewState.Mode == Editor::Panels::AnalyticalFrameViewState::ComparisonMode::Single) {
+  if (m_ViewState.Mode == AnalyticalFrame::AnalyticalFrameViewState::ComparisonMode::Single) {
     imageChanged |= DrawEnumCombo("BRDF model", m_ViewState.SelectedModel, availableModels, ModelName);
   } else {
     imageChanged |= DrawEnumCombo("Model A", m_ViewState.CompareModelA, availableModels, ModelName);
     ImGui::SameLine();
     imageChanged |= DrawEnumCombo("Model B", m_ViewState.CompareModelB, availableModels, ModelName);
   }
-  std::vector<Editor::Panels::AnalyticalFrameViewState::ComparisonMode> modes = {
-      Editor::Panels::AnalyticalFrameViewState::ComparisonMode::Single,
-      Editor::Panels::AnalyticalFrameViewState::ComparisonMode::Wipe};
+  std::vector<AnalyticalFrame::AnalyticalFrameViewState::ComparisonMode> modes = {
+      AnalyticalFrame::AnalyticalFrameViewState::ComparisonMode::Single,
+      AnalyticalFrame::AnalyticalFrameViewState::ComparisonMode::Wipe};
   const bool relativeErrorCompatible = IsRelativeErrorCompatible();
-  if (m_ViewState.Mode == Editor::Panels::AnalyticalFrameViewState::ComparisonMode::RelativeLuminanceError &&
+  if (m_ViewState.Mode == AnalyticalFrame::AnalyticalFrameViewState::ComparisonMode::RelativeLuminanceError &&
       !relativeErrorCompatible) {
-    m_ViewState.Mode = Editor::Panels::AnalyticalFrameViewState::ComparisonMode::Single;
+    m_ViewState.Mode = AnalyticalFrame::AnalyticalFrameViewState::ComparisonMode::Single;
     imageChanged = true;
     m_Status = "Relative luminance error is unavailable for these AOVs or capture settings.";
   }
   if (relativeErrorCompatible) {
-    modes.push_back(Editor::Panels::AnalyticalFrameViewState::ComparisonMode::RelativeLuminanceError);
+    modes.push_back(AnalyticalFrame::AnalyticalFrameViewState::ComparisonMode::RelativeLuminanceError);
   }
-  auto modeName = [](Editor::Panels::AnalyticalFrameViewState::ComparisonMode mode) -> const char* {
+  auto modeName = [](AnalyticalFrame::AnalyticalFrameViewState::ComparisonMode mode) -> const char* {
     switch (mode) {
-    case Editor::Panels::AnalyticalFrameViewState::ComparisonMode::Single:
+    case AnalyticalFrame::AnalyticalFrameViewState::ComparisonMode::Single:
       return "Single";
-    case Editor::Panels::AnalyticalFrameViewState::ComparisonMode::Wipe:
+    case AnalyticalFrame::AnalyticalFrameViewState::ComparisonMode::Wipe:
       return "A/B wipe";
-    case Editor::Panels::AnalyticalFrameViewState::ComparisonMode::RelativeLuminanceError:
+    case AnalyticalFrame::AnalyticalFrameViewState::ComparisonMode::RelativeLuminanceError:
       return "Relative luminance error";
     }
     return "Single";
@@ -589,7 +594,7 @@ void AnalyticalFramePanel::DrawControls() {
   if (DrawEnumCombo("View mode", m_ViewState.Mode, modes, modeName)) {
     imageChanged = true;
   }
-  if (m_ViewState.Mode == Editor::Panels::AnalyticalFrameViewState::ComparisonMode::Wipe) {
+  if (m_ViewState.Mode == AnalyticalFrame::AnalyticalFrameViewState::ComparisonMode::Wipe) {
     imageChanged |= ImGui::SliderFloat("Wipe position", &m_ViewState.WipePosition, 0.0F, 1.0F);
   }
   if (ImGui::Button("Fit image")) {
@@ -646,7 +651,7 @@ void AnalyticalFramePanel::DrawMeasurements() const {
       return;
     }
     const auto sample =
-        Editor::Panels::AnalyticalFrameViewModel::ReadPixel(variant->Render.Output, m_ViewState.SelectedAov, x, y);
+        AnalyticalFrame::AnalyticalFrameViewModel::ReadPixel(variant->Render.Output, m_ViewState.SelectedAov, x, y);
     if (!sample) {
       return;
     }
@@ -657,7 +662,7 @@ void AnalyticalFramePanel::DrawMeasurements() const {
                   sample->Channels[channel]);
     }
   };
-  if (m_ViewState.Mode == Editor::Panels::AnalyticalFrameViewState::ComparisonMode::Single) {
+  if (m_ViewState.Mode == AnalyticalFrame::AnalyticalFrameViewState::ComparisonMode::Single) {
     printSample(m_ViewState.SelectedModel, "Value");
   } else {
     printSample(m_ViewState.CompareModelA, "A");
@@ -666,8 +671,8 @@ void AnalyticalFramePanel::DrawMeasurements() const {
       const auto* a = FindVariant(m_ViewState.CompareModelA);
       const auto* b = FindVariant(m_ViewState.CompareModelB);
       if (a != nullptr && b != nullptr) {
-        auto errors =
-            Editor::Panels::AnalyticalFrameViewModel::ComputeRelativeLuminanceError(a->Render.Output, b->Render.Output);
+        auto errors = AnalyticalFrame::AnalyticalFrameViewModel::ComputeRelativeLuminanceError(a->Render.Output,
+                                                                                               b->Render.Output);
         if (errors && x < a->Render.Output.Width && y < a->Render.Output.Height) {
           ImGui::Text("Raw relative luminance error: %.8g",
                       errors->at(static_cast<size_t>(y) * a->Render.Output.Width + x));
@@ -756,7 +761,7 @@ void AnalyticalFramePanel::DrawCanvas() {
   const ImVec2 imageMaximum(imageX + imageWidth, imageY + imageHeight);
   drawList->PushClipRect(canvasPosition, canvasMaximum, true);
   drawList->AddImage(texture, imageMinimum, imageMaximum);
-  if (m_ViewState.Mode == Editor::Panels::AnalyticalFrameViewState::ComparisonMode::Wipe) {
+  if (m_ViewState.Mode == AnalyticalFrame::AnalyticalFrameViewState::ComparisonMode::Wipe) {
     const float wipeX = imageX + imageWidth * m_ViewState.WipePosition;
     drawList->AddLine(ImVec2(wipeX, imageY), ImVec2(wipeX, imageY + imageHeight), IM_COL32(255, 255, 255, 255), 2.0F);
   }
@@ -797,7 +802,7 @@ void AnalyticalFramePanel::UpdatePinnedPixel(float mouseX, float mouseY, float i
 
 void AnalyticalFramePanel::StoreViewportState() {
   if (m_Session) {
-    m_Session->ViewportState = Editor::Panels::AnalyticalFrameViewModel::ToViewportJson(m_ViewState);
+    m_Session->ViewportState = AnalyticalFrame::AnalyticalFrameViewModel::ToViewportJson(m_ViewState);
   }
 }
 
@@ -811,7 +816,7 @@ void AnalyticalFramePanel::OpenArchive() {
     return;
   }
   CancelCapture();
-  auto loaded = Editor::Panels::AnalyticalFrameArchive::Load(*path);
+  auto loaded = AnalyticalFrame::AnalyticalFrameArchive::Load(*path);
   if (!loaded) {
     m_Status = "Could not open Analytical Frame project: " + loaded.error().Message;
     return;
@@ -829,7 +834,11 @@ void AnalyticalFramePanel::SaveArchive() {
     return;
   }
   StoreViewportState();
-  const Engine::Status saved = Editor::Panels::AnalyticalFrameArchive::Save(*path, *m_Session);
+  if (!m_Session.has_value()) {
+    m_Status = "There is no complete Analytical Frame to save.";
+    return;
+  }
+  const Engine::Status saved = AnalyticalFrame::AnalyticalFrameArchive::Save(*path, m_Session.value());
   m_Status =
       saved ? "Analytical Frame project saved." : "Could not save Analytical Frame project: " + saved.error().Message;
 }

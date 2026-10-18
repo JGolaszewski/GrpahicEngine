@@ -11,7 +11,7 @@
 #include <optional>
 #include <vector>
 
-namespace Editor::Panels::AnalyticalFrameViewModel {
+namespace AnalyticalFrame::AnalyticalFrameViewModel {
 
 /// Encodes the typed viewer state using the stable strings used by `.aframe` manifests.
 [[nodiscard]] auto ToViewportJson(const AnalyticalFrameViewState& state) -> nlohmann::json;
@@ -61,4 +61,4 @@ struct PixelSample {
 [[nodiscard]] auto BuildRelativeLuminanceHeatmap(const Engine::RenderOutput& a, const Engine::RenderOutput& b)
     -> Engine::Result<std::vector<uint8_t>>;
 
-} // namespace Editor::Panels::AnalyticalFrameViewModel
+} // namespace AnalyticalFrame::AnalyticalFrameViewModel

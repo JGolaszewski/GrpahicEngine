@@ -9,6 +9,7 @@
 #include "events/include/EcsEntityReparentRequestedEvent.h"
 #include "events/include/EcsEntitySelectedEvent.h"
 #include "events/include/EditorEvents.h"
+#include "panels/include/AnalyticalFramePanel.h"
 #include "panels/include/AssetBrowserPanel.h"
 #include "panels/include/AssetDropAssignment.h"
 #include "panels/include/BrdfAnalysisExport.h"
@@ -357,6 +358,151 @@ void Editor::OnInit() {
   m_CameraPreviewPanel = cameraPreviewPanel.get();
   m_Panels.push_back(std::move(cameraPreviewPanel));
 
+  auto analyticalFramePanel = std::make_unique<AnalyticalFramePanel>(
+      [this]() -> Engine::Result<std::vector<AnalyticalFramePanel::Target>> {
+        if (!m_ActiveScene || GetAssetManager() == nullptr) {
+          return std::unexpected(Engine::MakeError("No active scene or asset manager is available"));
+        }
+        const Engine::SceneDocument document = CreateSceneDocument(*m_ActiveScene);
+        std::vector<AnalyticalFramePanel::Target> targets;
+        for (const auto& entity : document.entities) {
+          if (!entity.hasMeshRenderer) {
+            continue;
+          }
+          if (entity.material || entity.materialGuid) {
+            targets.push_back({.EntityId = entity.id,
+                               .MaterialOverrideIndex = std::nullopt,
+                               .Label = entity.name + " (entity material)"});
+          }
+          for (size_t index = 0; index < entity.materialOverrides.size(); ++index) {
+            if (entity.materialOverrides.at(index)) {
+              targets.push_back({.EntityId = entity.id,
+                                 .MaterialOverrideIndex = index,
+                                 .Label = entity.name + " (material slot " + std::to_string(index) + ")"});
+            }
+          }
+        }
+        return targets;
+      },
+      [this]() -> Engine::Result<std::vector<AnalyticalFramePanel::CameraTarget>> {
+        if (!m_ActiveScene) {
+          return std::unexpected(Engine::MakeError("No active scene is available"));
+        }
+        Engine::SceneDocument document = CreateSceneDocument(*m_ActiveScene);
+        std::stable_sort(document.cameras.begin(), document.cameras.end(), [](const auto& left, const auto& right) {
+          if (left.active != right.active) {
+            return left.active;
+          }
+          return left.priority > right.priority;
+        });
+        std::vector<AnalyticalFramePanel::CameraTarget> cameras;
+        for (const auto& camera : document.cameras) {
+          if (camera.active && camera.visible) {
+            cameras.push_back({.EntityId = camera.id, .Label = camera.name});
+          }
+        }
+        return cameras;
+      },
+      [this](const AnalyticalFramePanel::Target& target, const AnalyticalFramePanel::CameraTarget& cameraTarget,
+             const Engine::Renderer::BrdfAnalysis::BrdfAnalysisOverrides& overrides)
+          -> Engine::Result<Engine::Renderer::BrdfAnalysis::BrdfAnalysisSnapshot> {
+        if (!m_ActiveScene || GetAssetManager() == nullptr || GetRenderSystem() == nullptr) {
+          return std::unexpected(Engine::MakeError("No active scene, asset manager, or render system is available"));
+        }
+        Engine::Renderer::BrdfAnalysis::BrdfAnalysisSnapshot snapshot;
+        snapshot.Scene = CreateSceneDocument(*m_ActiveScene);
+        const auto entity = std::find_if(snapshot.Scene.entities.begin(), snapshot.Scene.entities.end(),
+                                         [&target](const auto& item) { return item.id == target.EntityId; });
+        if (entity == snapshot.Scene.entities.end() || !entity->hasMeshRenderer) {
+          return std::unexpected(Engine::MakeError("Selected material entity is no longer in the active scene"));
+        }
+        std::optional<Engine::SceneMaterialDocument> sourceMaterial;
+        if (target.MaterialOverrideIndex) {
+          if (*target.MaterialOverrideIndex >= entity->materialOverrides.size()) {
+            return std::unexpected(Engine::MakeError("Selected material override is no longer available"));
+          }
+          sourceMaterial = entity->materialOverrides.at(*target.MaterialOverrideIndex);
+        } else if (entity->material) {
+          sourceMaterial = entity->material;
+        } else if (entity->materialGuid) {
+          sourceMaterial = GetAssetManager()->GetMaterial(*entity->materialGuid);
+        }
+        if (!sourceMaterial) {
+          return std::unexpected(Engine::MakeError("Selected scene material data could not be resolved"));
+        }
+        snapshot.TargetEntityId = target.EntityId;
+        snapshot.MaterialOverrideIndex = target.MaterialOverrideIndex;
+        snapshot.SourceMaterial = *sourceMaterial;
+        snapshot.SourceMaterialProperties = MaterialPropertiesFromSceneDocument(*sourceMaterial);
+
+        const auto camera =
+            std::find_if(snapshot.Scene.cameras.begin(), snapshot.Scene.cameras.end(),
+                         [&cameraTarget](const auto& item) { return item.id == cameraTarget.EntityId; });
+        if (camera == snapshot.Scene.cameras.end() || !camera->identityGuid) {
+          return std::unexpected(Engine::MakeError("Selected authored camera identity is unavailable"));
+        }
+        const Engine::Ecs::SceneGuid cameraGuid{camera->identityGuid->high, camera->identityGuid->low};
+        std::optional<Engine::Renderer::CameraView> cameraView;
+        m_ActiveScene->World()
+            .ForEachChunkReadOnly<Engine::Ecs::PersistentIdentity, Engine::Ecs::Camera, Engine::Ecs::WorldTransform>(
+                [&cameraGuid, &cameraView](std::span<const Engine::EntityHandle> /*entities*/,
+                                           std::span<const Engine::Ecs::PersistentIdentity> identities,
+                                           std::span<const Engine::Ecs::Camera> cameraComponents,
+                                           std::span<const Engine::Ecs::WorldTransform> transforms) {
+                  for (size_t index = 0; index < identities.size(); ++index) {
+                    if (identities[index].Guid == cameraGuid) {
+                      const auto resolved =
+                          Engine::Renderer::ResolveSceneCameraView(cameraComponents[index], transforms[index]);
+                      if (resolved) {
+                        cameraView = *resolved;
+                      }
+                      return;
+                    }
+                  }
+                });
+        if (!cameraView) {
+          return std::unexpected(Engine::MakeError("Selected authored camera cannot be resolved for capture"));
+        }
+        snapshot.Camera = *cameraView;
+        snapshot.Width = camera->outputWidth;
+        snapshot.Height = camera->outputHeight;
+        const Engine::ShadowSettings shadowSettings = GetRenderSystem()->GetShadowSettings();
+        snapshot.ShadowMapResolution = shadowSettings.Resolution;
+        snapshot.MaxShadowCastersPerScene = shadowSettings.MaxShadowCastersPerScene;
+        snapshot.FrameOverrides = overrides;
+        return snapshot;
+      },
+      [this](const Engine::Renderer::BrdfAnalysis::BrdfAnalysisRenderRequest& request)
+          -> Engine::Result<Engine::RenderOutput> {
+        if (GetRenderSystem() == nullptr || GetAssetManager() == nullptr) {
+          return std::unexpected(Engine::MakeError("No render system or asset manager is available"));
+        }
+        std::vector<std::string> warnings;
+        auto detachedScene = CreateDetachedSceneFromDocument(request.Scene, warnings);
+        if (!detachedScene) {
+          return std::unexpected(detachedScene.error());
+        }
+        return GetRenderSystem()->RenderFinal(**detachedScene, request.Camera, request.Width, request.Height,
+                                              request.PostProcess);
+      },
+      [this](uint32_t width, uint32_t height, std::span<const uint8_t> pixels) -> bool {
+        return m_UiIntegration.SetAnalyticalFrameImage(width, height, pixels);
+      },
+      [this]() -> void* { return m_UiIntegration.GetAnalyticalFrameTextureId(); },
+      [this]() -> void { m_UiIntegration.ClearAnalyticalFrameImage(); },
+      [this](AnalyticalFramePanel::FileOperation operation, const std::filesystem::path& initialPath) {
+        using PanelOperation = AnalyticalFramePanel::FileOperation;
+        using PlatformOperation = EditorPlatform::AnalyticalFrameFileOperation;
+        const PlatformOperation platformOperation =
+            operation == PanelOperation::OpenArchive   ? PlatformOperation::OpenArchive
+            : operation == PanelOperation::SaveArchive ? PlatformOperation::SaveArchive
+            : operation == PanelOperation::ExportChart ? PlatformOperation::ExportChart
+                                                       : PlatformOperation::ExportMeasurements;
+        return EditorPlatform::ChooseAnalyticalFrameFile(platformOperation, initialPath);
+      });
+  m_AnalyticalFramePanel = analyticalFramePanel.get();
+  m_Panels.push_back(std::move(analyticalFramePanel));
+
   m_PanelConnections.reserve(m_Panels.size());
   for (auto& panel : m_Panels) {
     m_PanelConnections.push_back(m_EventRouter.Subscribe(
@@ -576,6 +722,10 @@ void Editor::OnShutdownUI() {
   if (m_CameraPreviewPanel != nullptr) {
     m_CameraPreviewPanel->Close();
     m_CameraPreviewPanel = nullptr;
+  }
+  if (m_AnalyticalFramePanel != nullptr) {
+    m_AnalyticalFramePanel->Close();
+    m_AnalyticalFramePanel = nullptr;
   }
   m_EditorConsole.DetachFromLogger();
   m_UiIntegration.Shutdown();

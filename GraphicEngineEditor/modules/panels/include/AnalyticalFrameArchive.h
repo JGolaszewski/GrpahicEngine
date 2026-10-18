@@ -9,7 +9,7 @@
 #include <string>
 #include <vector>
 
-namespace Editor::Panels {
+namespace AnalyticalFrame {
 
 /// One completed model's captured planes and analytic measurements.
 struct AnalyticalFrameVariant {
@@ -45,4 +45,4 @@ public:
   static auto Load(const std::filesystem::path& path) -> Engine::Result<AnalyticalFrameSession>;
 };
 
-} // namespace Editor::Panels
+} // namespace AnalyticalFrame

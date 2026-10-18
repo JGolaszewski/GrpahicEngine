@@ -437,7 +437,7 @@ auto PropertiesFromSnapshot(const Engine::Renderer::MaterialProperties& source) 
   return SourcePropertiesJson(source);
 }
 
-auto SnapshotJson(const Editor::Panels::AnalyticalFrameSession& session) -> Engine::Result<Json> {
+auto SnapshotJson(const AnalyticalFrame::AnalyticalFrameSession& session) -> Engine::Result<Json> {
   auto sourceMaterial = ParseMaterialDocument(MaterialDocumentJson(session.Snapshot.SourceMaterial));
   auto sourceProperties = ParseSourceProperties(SourcePropertiesJson(session.Snapshot.SourceMaterialProperties));
   auto camera = ParseCamera(CameraJson(session.Snapshot.Camera));
@@ -469,7 +469,7 @@ auto SnapshotJson(const Editor::Panels::AnalyticalFrameSession& session) -> Engi
 }
 
 auto ValidateVariantRequest(const Engine::Renderer::BrdfAnalysis::BrdfAnalysisSnapshot& snapshot,
-                            const Editor::Panels::AnalyticalFrameVariant& variant) -> Engine::Status {
+                            const AnalyticalFrame::AnalyticalFrameVariant& variant) -> Engine::Status {
   const auto& request = variant.Render.Request;
   Engine::Renderer::MaterialProperties expectedMaterial = snapshot.SourceMaterialProperties;
   expectedMaterial.Model = request.Model;
@@ -529,7 +529,7 @@ auto ValidateVariantRequest(const Engine::Renderer::BrdfAnalysis::BrdfAnalysisSn
   return {};
 }
 
-auto ParseSnapshot(const Json& value, Editor::Panels::AnalyticalFrameSession& session) -> Engine::Status {
+auto ParseSnapshot(const Json& value, AnalyticalFrame::AnalyticalFrameSession& session) -> Engine::Status {
   if (!value.is_object()) {
     return std::unexpected(Fail("Analytical Frame snapshot must be an object"));
   }
@@ -706,7 +706,7 @@ auto ReadU64(std::span<const uint8_t> bytes, size_t offset) -> uint64_t {
   return value;
 }
 
-auto BuildManifest(const Editor::Panels::AnalyticalFrameSession& session, std::vector<uint8_t>& payload)
+auto BuildManifest(const AnalyticalFrame::AnalyticalFrameSession& session, std::vector<uint8_t>& payload)
     -> Engine::Result<Json> {
   using namespace Engine::Renderer::BrdfAnalysis;
   auto snapshot = SnapshotJson(session);
@@ -869,12 +869,12 @@ auto ReadPlane(const Json& metadata, std::span<const uint8_t> payload, uint32_t 
 }
 
 auto ParseVariant(const Json& value, std::span<const uint8_t> payload)
-    -> Engine::Result<Editor::Panels::AnalyticalFrameVariant> {
+    -> Engine::Result<AnalyticalFrame::AnalyticalFrameVariant> {
   using namespace Engine::Renderer::BrdfAnalysis;
   if (!value.is_object()) {
     return std::unexpected(Fail("Analytical Frame variant must be an object"));
   }
-  Editor::Panels::AnalyticalFrameVariant result;
+  AnalyticalFrame::AnalyticalFrameVariant result;
   const auto model = ParseModel(value.value("model", Json{}));
   if (!model) {
     return std::unexpected(Fail("Analytical Frame uses an unsupported BRDF model"));
@@ -983,7 +983,7 @@ auto ValidatePayloadRanges(const Json& variants, uint64_t payloadSize) -> Engine
   return {};
 }
 
-auto ReadArchive(const std::filesystem::path& path) -> Engine::Result<Editor::Panels::AnalyticalFrameSession> {
+auto ReadArchive(const std::filesystem::path& path) -> Engine::Result<AnalyticalFrame::AnalyticalFrameSession> {
   std::error_code error;
   const uintmax_t rawSize = std::filesystem::file_size(path, error);
   if (error || rawSize < HeaderBytes || rawSize > MaximumArchiveBytes || rawSize > std::numeric_limits<size_t>::max() ||
@@ -1033,7 +1033,7 @@ auto ReadArchive(const std::filesystem::path& path) -> Engine::Result<Editor::Pa
     if (!rangeStatus) {
       return std::unexpected(rangeStatus.error());
     }
-    Editor::Panels::AnalyticalFrameSession session;
+    AnalyticalFrame::AnalyticalFrameSession session;
     const auto snapshotStatus = ParseSnapshot(manifest.at("snapshot"), session);
     if (!snapshotStatus) {
       return std::unexpected(snapshotStatus.error());
@@ -1085,8 +1085,8 @@ auto ReadArchive(const std::filesystem::path& path) -> Engine::Result<Editor::Pa
 
 } // namespace
 
-auto Editor::Panels::AnalyticalFrameArchive::Save(const std::filesystem::path& path,
-                                                  const AnalyticalFrameSession& session) -> Engine::Status {
+auto AnalyticalFrame::AnalyticalFrameArchive::Save(const std::filesystem::path& path,
+                                                   const AnalyticalFrameSession& session) -> Engine::Status {
   if (path.empty() || path.extension() != ".aframe") {
     return std::unexpected(Fail("Analytical Frame destination must have a .aframe extension"));
   }
@@ -1178,7 +1178,7 @@ auto Editor::Panels::AnalyticalFrameArchive::Save(const std::filesystem::path& p
   }
 }
 
-auto Editor::Panels::AnalyticalFrameArchive::Load(const std::filesystem::path& path)
+auto AnalyticalFrame::AnalyticalFrameArchive::Load(const std::filesystem::path& path)
     -> Engine::Result<AnalyticalFrameSession> {
   if (path.empty() || path.extension() != ".aframe") {
     return std::unexpected(Fail("Analytical Frame source must have a .aframe extension"));
