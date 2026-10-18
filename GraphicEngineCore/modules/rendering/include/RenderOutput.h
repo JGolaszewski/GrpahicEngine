@@ -81,6 +81,18 @@ public:
   /// @return Static descriptor for the requested plane.
   static const RenderAovDescriptor& GetDescriptor(RenderAov aov) noexcept;
 
+  /// Rebuilds a complete CPU render output from canonical serialized planes.
+  ///
+  /// The factory accepts exactly the five canonical planes in descriptor order,
+  /// with exact tightly packed dimensions and finite float samples. It is
+  /// suitable for restoring captured output without a renderer or GPU device.
+  /// @param width Image width in pixels.
+  /// @param height Image height in pixels.
+  /// @param planes Owned planes in canonical AOV order.
+  /// @return A complete output, or an error when dimensions or plane data are invalid.
+  static auto CreateFromPlanes(uint32_t width, uint32_t height, std::vector<RenderOutputPlane> planes)
+      -> Result<RenderOutput>;
+
 private:
   std::vector<RenderOutputPlane> m_Planes;
   friend class RenderSystem;
