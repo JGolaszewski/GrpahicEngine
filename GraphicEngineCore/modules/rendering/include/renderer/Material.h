@@ -32,7 +32,8 @@ enum class BrdfModel : uint32_t {
   Gauss = 4,
   BlinnPhong = 5,
   AshikhminShirley = 6,
-  Schlick = 7
+  Schlick = 7,
+  Sawicki = 8
 };
 
 /// Metallic-roughness or specular-glossiness material parameterization.
@@ -133,7 +134,7 @@ inline MaterialGpu BuildMaterialGpu(const MaterialProperties& properties) noexce
   const float roughness = ClampFinite(properties.Roughness, 0.5f, 0.0f, 1.0f);
   const float ior = ClampFinite(properties.Ior, 1.5f, MaterialMinIor, MaterialMaxIor);
   const auto validModel = [](BrdfModel model) {
-    return static_cast<uint32_t>(model) <= static_cast<uint32_t>(BrdfModel::Schlick) ? model : BrdfModel::Legacy;
+    return static_cast<uint32_t>(model) <= static_cast<uint32_t>(BrdfModel::Sawicki) ? model : BrdfModel::Legacy;
   };
   const auto validWorkflow = [](MaterialWorkflow workflow) {
     return static_cast<uint32_t>(workflow) <= static_cast<uint32_t>(MaterialWorkflow::SpecularGlossiness)

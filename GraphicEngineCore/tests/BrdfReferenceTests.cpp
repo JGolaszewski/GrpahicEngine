@@ -87,6 +87,45 @@ auto IntegrateSchlickNdf(float alpha) -> float {
   return 2.0F * ::Engine::Renderer::Brdf::Pi * integral;
 }
 
+auto IntegrateSawickiNdf(float alpha) -> float {
+  constexpr uint32_t sampleCount = 100000;
+  const float step = DirectX::XM_PIDIV2 / static_cast<float>(sampleCount);
+  float integral = 0.0F;
+  for (uint32_t i = 0; i < sampleCount; ++i) {
+    const float theta = (static_cast<float>(i) + 0.5F) * step;
+    const float cosine = std::cos(theta);
+    const float sine = std::sin(theta);
+    integral += ::Engine::Renderer::Brdf::EvaluateSawickiNdf(cosine, alpha) * cosine * sine * step;
+  }
+  return 2.0F * ::Engine::Renderer::Brdf::Pi * integral;
+}
+
+void TestSawickiReferenceAndFiniteEvaluation() {
+  using ::Engine::Renderer::Brdf::EvaluateSawickiNdf;
+  for (float alpha : {0.001F, 0.01F, 0.2F, 0.65F, 1.0F}) {
+    Require(std::abs(IntegrateSawickiNdf(alpha) - 1.0F) < 2.0e-3F,
+            "Sawicki projected NDF must normalize to one including minimum alpha");
+  }
+  constexpr float alpha = 0.4F;
+  constexpr float noH = 0.75F;
+  constexpr float nds = 4.0F * alpha - 3.0F;
+  constexpr float shifted = (1.0F - nds) * noH + nds + 3.0F;
+  const float expected =
+      96.0F * (3.0F + nds) * noH / (::Engine::Renderer::Brdf::Pi * shifted * shifted * shifted * shifted);
+  Require(std::abs(EvaluateSawickiNdf(noH, alpha) - expected) < 1.0e-6F,
+          "Sawicki NDF must match its normalized rational reference equation");
+  Require(EvaluateSawickiNdf(-0.1F, alpha) == 0.0F && EvaluateSawickiNdf(0.0F, alpha) == 0.0F &&
+              EvaluateSawickiNdf(1.1F, alpha) == EvaluateSawickiNdf(1.0F, alpha) &&
+              std::isfinite(EvaluateSawickiNdf(1.0F, 0.0F)) &&
+              std::isfinite(EvaluateSawickiNdf(1.0F, std::numeric_limits<float>::quiet_NaN())),
+          "Sawicki NDF must clamp its domain and stay finite at minimum roughness");
+  const auto value = ::Engine::Renderer::Brdf::EvaluateSawickiBrdf({0.0F, 0.0F, 1.0F}, {0.3F, 0.0F, 0.9539392F},
+                                                                   {-0.1F, 0.5F, 0.8602325F}, {0.7F, 0.4F, 0.2F},
+                                                                   {0.04F, 0.04F, 0.04F}, alpha);
+  Require(std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z),
+          "Sawicki BRDF reference evaluation must remain finite");
+}
+
 void TestSchlickReferenceAndFiniteEvaluation() {
   using ::Engine::Renderer::Brdf::EvaluateSchlickNdf;
   for (float alpha : {0.05F, 0.2F, 0.65F, 1.0F}) {
@@ -329,6 +368,10 @@ void TestMaterialGpuAbiPacking() {
   const auto schlick = ::Engine::Renderer::BuildMaterialGpu(properties);
   Require(schlick.ModelFlags.y == 7U && schlick.ModelFlags.x == ::Engine::Renderer::MaterialGpuAbiVersion,
           "Schlick selector must append value seven without changing the material GPU ABI");
+  properties.Model = ::Engine::Renderer::BrdfModel::Sawicki;
+  const auto sawicki = ::Engine::Renderer::BuildMaterialGpu(properties);
+  Require(sawicki.ModelFlags.y == 8U && sawicki.ModelFlags.x == ::Engine::Renderer::MaterialGpuAbiVersion,
+          "Sawicki selector must append value eight without changing the material GPU ABI");
 }
 
 void TestMaterialPropertiesRoundTrip() {
@@ -376,6 +419,7 @@ void TestEcsTransformComponentValidation() {
 auto main() -> int {
   try {
     TestProjectedNdfNormalization();
+    TestSawickiReferenceAndFiniteEvaluation();
     TestBeckmannReferenceAndFiniteEvaluation();
     TestGaussReferenceAndFiniteEvaluation();
     TestBlinnPhongReferenceAndFiniteEvaluation();

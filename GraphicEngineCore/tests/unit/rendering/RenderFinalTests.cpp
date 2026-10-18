@@ -677,6 +677,15 @@ TEST(RenderFinalTests, WARPAllLightTypesChangeReceivingGeometryWhenShadowsAreEna
     for (const float channel : schlickPixels) {
       EXPECT_TRUE(std::isfinite(channel)) << lightNames[lightIndex] << " produced a non-finite Schlick pixel";
     }
+    receiverProperties.Model = Engine::Renderer::BrdfModel::Sawicki;
+    receiverMaterial->SetProperties(receiverProperties);
+    const auto sawickiOutput = renderer.RenderFinal(scene, camera, 96, 96);
+    ASSERT_TRUE(sawickiOutput.has_value()) << (sawickiOutput.has_value() ? "" : sawickiOutput.error().Message);
+    const auto sawickiPixels = sawickiOutput->GetPixels(Engine::RenderAov::FinalColor);
+    ASSERT_FALSE(sawickiPixels.empty());
+    for (const float channel : sawickiPixels) {
+      EXPECT_TRUE(std::isfinite(channel)) << lightNames[lightIndex] << " produced a non-finite Sawicki pixel";
+    }
     receiverProperties.Model = Engine::Renderer::BrdfModel::AshikhminShirley;
     receiverMaterial->SetProperties(receiverProperties);
 

@@ -372,6 +372,11 @@ PS_OUTPUT main_ps(VS_OUTPUT input)
                 EvaluateSchlickBrdfComponents(query, brdfBaseColor, brdfMetallic, brdfF0, alpha,
                     diffuseBrdf, specularBrdf);
             }
+            else if (g_ModelFlags.y == 8u)
+            {
+                EvaluateSawickiBrdfComponents(query, brdfBaseColor, brdfMetallic, brdfF0, alpha,
+                    diffuseBrdf, specularBrdf);
+            }
             else
             {
                 EvaluateGgxBrdfComponents(query, brdfBaseColor, brdfMetallic, brdfF0, alpha,
