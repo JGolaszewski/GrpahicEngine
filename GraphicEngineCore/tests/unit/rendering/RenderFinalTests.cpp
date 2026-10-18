@@ -589,6 +589,9 @@ TEST(RenderFinalTests, WARPAllLightTypesChangeReceivingGeometryWhenShadowsAreEna
   Engine::Renderer::MaterialProperties receiverProperties;
   receiverProperties.BaseColor = {0.8F, 0.8F, 0.8F, 1.0F};
   receiverProperties.Roughness = 1.0F;
+  receiverProperties.Model = Engine::Renderer::BrdfModel::AshikhminShirley;
+  receiverProperties.AnisotropicRoughnessU = 0.2F;
+  receiverProperties.AnisotropicRoughnessV = 0.8F;
   const auto receiverMaterial = renderer.CreateMaterial(receiverProperties);
   ASSERT_NE(receiverMaterial, nullptr);
   ASSERT_TRUE(renderer.CreatePrimitive(Engine::PrimitiveShape::Plane, receiverMaterial));
@@ -660,6 +663,9 @@ TEST(RenderFinalTests, WARPAllLightTypesChangeReceivingGeometryWhenShadowsAreEna
     const auto enabledPixels = enabledOutput->GetPixels(Engine::RenderAov::FinalColor);
     const auto enabledNormals = enabledOutput->GetPixels(Engine::RenderAov::WorldNormal);
     ASSERT_FALSE(enabledPixels.empty());
+    for (const float channel : enabledPixels) {
+      EXPECT_TRUE(std::isfinite(channel)) << lightNames[lightIndex] << " produced a non-finite Ashikhmin-Shirley pixel";
+    }
     ASSERT_EQ(enabledNormals.size(), enabledPixels.size() / 4U * 3U);
 
     light.CastShadows = false;

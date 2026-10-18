@@ -342,7 +342,12 @@ PS_OUTPUT main_ps(VS_OUTPUT input)
             const float3 brdfF0 = isSpecularGlossiness ? specularF0 : dielectricF0;
             float3 diffuseBrdf;
             float3 specularBrdf;
-            if (g_ModelFlags.y == 2u)
+            if (g_ModelFlags.y == 6u)
+            {
+                EvaluateAshikhminShirleyBrdfComponents(query, tangent, bitangent, brdfBaseColor, brdfMetallic,
+                    brdfF0, g_SpecularParams.w, g_AlphaParams.y, diffuseBrdf, specularBrdf);
+            }
+            else if (g_ModelFlags.y == 2u)
             {
                 EvaluateGtrBrdfComponents(query, brdfBaseColor, brdfMetallic, brdfF0, alpha,
                     g_SurfaceParams.z, diffuseBrdf, specularBrdf);
