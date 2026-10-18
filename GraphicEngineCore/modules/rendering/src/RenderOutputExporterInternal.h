@@ -11,6 +11,9 @@ namespace Engine::Rendering::Detail {
 Status WritePngFile(uint32_t width, uint32_t height, std::span<const float> finalColorRgba,
                     const std::filesystem::path& path, const RenderOutputBackground& background = {});
 
+Status WritePngRgba8File(uint32_t width, uint32_t height, std::span<const uint8_t> rgba,
+                         const std::filesystem::path& path);
+
 Status WriteMultilayerExrFile(uint32_t width, uint32_t height, std::span<const RenderOutputPlane> planes,
                               std::span<const RenderAov> selectedAovs, const std::filesystem::path& path,
                               const RenderOutputBackground& background = {});

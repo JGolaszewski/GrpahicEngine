@@ -13,3 +13,9 @@ The panel reports a response curve over light angle from 0 to 90 degrees, along 
 The response curve fixes the view direction to the surface normal and sweeps the incident light angle uniformly from 0 to 90 degrees. Response values are Rec. 709 luminance of the unweighted BRDF value; the incident-angle cosine is not included. The angular integral uses radians. Scene luminance is measured from the linear final-color render output on a per-pixel Rec. 709 basis.
 
 The curve describes the material's angular response in isolation, while scene luminance includes the captured scene geometry, lights, camera, and render inputs. Compare scene measurements only among variants from the same completed capture.
+
+## Exporting a comparison
+
+After a complete comparison appears, use **Export chart PNG** to save the displayed response curves with the same model colors and shared response scale. Use **Export measurements JSON** to save the captured scene document, source material values, camera and render settings (including output dimensions and active shadow limits), response samples and curve statistics, and mean and peak scene luminance for every variant. The PNG and JSON are produced from the comparison currently shown in the panel.
+
+The JSON includes the full serialized scene, including authored lights and cameras. A custom final-color post-process is stored as a callback, so the report records whether one was present; its implementation cannot be represented as JSON.

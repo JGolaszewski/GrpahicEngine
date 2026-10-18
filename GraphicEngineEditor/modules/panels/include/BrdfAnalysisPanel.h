@@ -45,12 +45,16 @@ public:
   /// Captures one target and renders all requested models from the same snapshot.
   using ExecuteFunction =
       std::function<Engine::Result<ExecutionResult>(const Target&, const std::vector<Engine::Renderer::BrdfModel>&)>;
+  /// Exports the displayed result. A successful empty value means the user cancelled the file dialog.
+  using ExportFunction = std::function<Engine::Result<std::optional<std::string>>(const CompletedComparison&, bool)>;
 
-  /// Creates the panel with editor-owned target discovery and variant execution callbacks.
-  BrdfAnalysisPanel(TargetProvider getTargets, ExecuteFunction execute);
+  /// Creates the panel and takes ownership of the editor callbacks.
+  BrdfAnalysisPanel(TargetProvider&& getTargets, ExecuteFunction&& execute);
 
-  /// Replaces the editor-owned scene selection and render execution services.
-  void SetServices(TargetProvider getTargets, ExecuteFunction execute);
+  /// Replaces the editor callbacks and takes ownership of them.
+  void SetServices(TargetProvider&& getTargets, ExecuteFunction&& execute);
+  /// Sets the export callback and takes ownership of it.
+  void SetExportFunction(ExportFunction&& exportComparison);
 
   /// Draws target/model controls and the last fully completed comparison.
   void Draw() override;
@@ -74,6 +78,7 @@ private:
 
   TargetProvider m_GetTargets;
   ExecuteFunction m_Execute;
+  ExportFunction m_Export;
   std::vector<Target> m_Targets;
   std::optional<CompletedComparison> m_CompletedComparison;
   std::string m_Status = "Choose a material and run a comparison.";

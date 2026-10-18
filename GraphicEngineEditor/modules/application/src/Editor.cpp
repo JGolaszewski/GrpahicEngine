@@ -1,6 +1,7 @@
 ﻿#include "application/include/Editor.h"
 
 #include "application/include/EditorProjectWorkflow.h"
+#include "assets/include/AssetManager.h"
 #include "events/include/AssetRegistryChangedEvent.h"
 #include "events/include/EcsComponentMutationRequestedEvent.h"
 #include "events/include/EcsEntityCreateRequestedEvent.h"
@@ -10,6 +11,7 @@
 #include "events/include/EditorEvents.h"
 #include "panels/include/AssetBrowserPanel.h"
 #include "panels/include/AssetDropAssignment.h"
+#include "panels/include/BrdfAnalysisExport.h"
 #include "panels/include/BrdfAnalysisPanel.h"
 #include "panels/include/CameraPreviewPanel.h"
 #include "panels/include/CameraPreviewRequest.h"
@@ -23,15 +25,18 @@
 #include "rendering/include/RenderSystem.h"
 #include "rendering/include/ViewportTarget.h"
 #include "rendering/include/renderer/CameraView.h"
+#include "rendering/include/renderer/Material.h"
 #include "rendering/include/renderer/Viewport.h"
 #include "runtime/include/LogMacros.h"
 #include "runtime/include/Window.h"
 #include "scene/include/Scene.h"
+#include "scene/include/SceneDocument.h"
 #include "scene/include/components/EcsComponents.h"
 
 #include <DirectXMath.h>
 #include <algorithm>
 #include <cmath>
+#include <filesystem>
 #include <imgui.h>
 #include <imgui_internal.h>
 #include <span>
@@ -39,6 +44,42 @@
 #include <utility>
 
 namespace {
+auto MaterialPropertiesFromSceneDocument(const Engine::SceneMaterialDocument& document)
+    -> Engine::Renderer::MaterialProperties {
+  using Engine::Renderer::BrdfModel;
+  Engine::Renderer::MaterialProperties properties;
+  properties.BaseColor = {document.baseColor[0], document.baseColor[1], document.baseColor[2], document.baseColor[3]};
+  properties.Emissive = {document.emissive[0], document.emissive[1], document.emissive[2]};
+  properties.Metallic = document.metallic;
+  properties.Roughness = document.roughness;
+  properties.GtrGamma = document.gtrGamma;
+  properties.AnisotropicRoughnessU = document.anisotropicRoughnessU;
+  properties.AnisotropicRoughnessV = document.anisotropicRoughnessV;
+  properties.Ior = document.ior;
+  properties.SpecularF0 = {document.specularF0[0], document.specularF0[1], document.specularF0[2]};
+  properties.Model = document.brdfModel == "ggx"                ? BrdfModel::GGX
+                     : document.brdfModel == "gtr"              ? BrdfModel::GTR
+                     : document.brdfModel == "beckmann"         ? BrdfModel::Beckmann
+                     : document.brdfModel == "gauss"            ? BrdfModel::Gauss
+                     : document.brdfModel == "blinnPhong"       ? BrdfModel::BlinnPhong
+                     : document.brdfModel == "ashikhminShirley" ? BrdfModel::AshikhminShirley
+                     : document.brdfModel == "schlick"          ? BrdfModel::Schlick
+                     : document.brdfModel == "sawicki"          ? BrdfModel::Sawicki
+                                                                : BrdfModel::Legacy;
+  properties.Workflow = document.workflow == "specularGlossiness"
+                            ? Engine::Renderer::MaterialWorkflow::SpecularGlossiness
+                            : Engine::Renderer::MaterialWorkflow::MetallicRoughness;
+  properties.SpecularMode = document.specularMode == "explicitF0"
+                                ? Engine::Renderer::DielectricSpecularMode::ExplicitF0
+                                : Engine::Renderer::DielectricSpecularMode::IndexOfRefraction;
+  properties.AlphaMode = document.alphaMode == "mask"    ? Engine::Renderer::MaterialAlphaMode::Mask
+                         : document.alphaMode == "blend" ? Engine::Renderer::MaterialAlphaMode::Blend
+                                                         : Engine::Renderer::MaterialAlphaMode::Opaque;
+  properties.AlphaCutoff = document.alphaCutoff;
+  properties.DoubleSided = document.doubleSided;
+  return properties;
+}
+
 auto QuaternionToPitchYawRoll(const std::array<float, 4>& quaternion) -> std::array<float, 3> {
   const DirectX::XMVECTOR rotation =
       DirectX::XMQuaternionNormalize(DirectX::XMVectorSet(quaternion[0], quaternion[1], quaternion[2], quaternion[3]));
@@ -158,6 +199,113 @@ void Editor::OnInit() {
   auto brdfAnalysisPanel =
       std::make_unique<BrdfAnalysisPanel>(BrdfAnalysisPanel::TargetProvider{}, BrdfAnalysisPanel::ExecuteFunction{});
   m_BrdfAnalysisPanel = brdfAnalysisPanel.get();
+  m_BrdfAnalysisPanel->SetServices(
+      [this]() -> Engine::Result<std::vector<BrdfAnalysisPanel::Target>> {
+        if (!m_ActiveScene || GetAssetManager() == nullptr) {
+          return std::unexpected(Engine::MakeError("No active scene or asset manager is available"));
+        }
+        const Engine::SceneDocument document = CreateSceneDocument(*m_ActiveScene);
+        const auto resolveMaterial =
+            [this](const Engine::SceneEntityDocument& entity) -> std::optional<Engine::SceneMaterialDocument> {
+          if (entity.material) {
+            return entity.material;
+          }
+          return entity.materialGuid ? GetAssetManager()->GetMaterial(*entity.materialGuid) : std::nullopt;
+        };
+        std::vector<BrdfAnalysisPanel::Target> targets;
+        for (const auto& entity : document.entities) {
+          if (!entity.hasMeshRenderer) {
+            continue;
+          }
+          const auto source = resolveMaterial(entity);
+          if (source) {
+            targets.push_back({.EntityId = entity.id,
+                               .MaterialOverrideIndex = std::nullopt,
+                               .Label = entity.name + " (entity material)"});
+          }
+          for (size_t index = 0; index < entity.materialOverrides.size(); ++index) {
+            if (entity.materialOverrides.at(index)) {
+              targets.push_back({.EntityId = entity.id,
+                                 .MaterialOverrideIndex = index,
+                                 .Label = entity.name + " (material slot " + std::to_string(index) + ")"});
+            }
+          }
+        }
+        return targets;
+      },
+      [this](const BrdfAnalysisPanel::Target& target, const std::vector<Engine::Renderer::BrdfModel>& models)
+          -> Engine::Result<BrdfAnalysisPanel::ExecutionResult> {
+        if (!m_ActiveScene || GetAssetManager() == nullptr || GetRenderSystem() == nullptr) {
+          return std::unexpected(Engine::MakeError("No active scene, asset manager, or render system is available"));
+        }
+        Engine::Renderer::BrdfAnalysis::BrdfAnalysisSnapshot snapshot;
+        snapshot.Scene = CreateSceneDocument(*m_ActiveScene);
+        const auto entity = std::find_if(snapshot.Scene.entities.begin(), snapshot.Scene.entities.end(),
+                                         [&target](const auto& item) { return item.id == target.EntityId; });
+        if (entity == snapshot.Scene.entities.end()) {
+          return std::unexpected(Engine::MakeError("Selected material entity is no longer in the active scene"));
+        }
+        std::optional<Engine::SceneMaterialDocument> sourceMaterial;
+        if (target.MaterialOverrideIndex) {
+          if (*target.MaterialOverrideIndex >= entity->materialOverrides.size()) {
+            return std::unexpected(Engine::MakeError("Selected material override is no longer available"));
+          }
+          sourceMaterial = entity->materialOverrides.at(*target.MaterialOverrideIndex);
+        } else if (entity->material) {
+          sourceMaterial = entity->material;
+        } else if (entity->materialGuid) {
+          sourceMaterial = GetAssetManager()->GetMaterial(*entity->materialGuid);
+        }
+        if (!sourceMaterial) {
+          return std::unexpected(Engine::MakeError("Selected scene material data could not be resolved"));
+        }
+
+        snapshot.TargetEntityId = target.EntityId;
+        snapshot.MaterialOverrideIndex = target.MaterialOverrideIndex;
+        snapshot.SourceMaterial = *sourceMaterial;
+        snapshot.SourceMaterialProperties = MaterialPropertiesFromSceneDocument(*sourceMaterial);
+        snapshot.Camera.Position = m_EditorCameraTransform.Position;
+        snapshot.Camera.Rotation = m_EditorCameraTransform.Rotation;
+        snapshot.Camera.FieldOfViewDegrees = m_EditorCameraSettings.FieldOfViewDegrees;
+        snapshot.Camera.NearPlane = m_EditorCameraSettings.NearPlane;
+        snapshot.Camera.FarPlane = m_EditorCameraSettings.FarPlane;
+        snapshot.Width = m_EditorViewport != nullptr ? (std::max)(m_EditorViewport->GetWidth(), 1U) : 1280U;
+        snapshot.Height = m_EditorViewport != nullptr ? (std::max)(m_EditorViewport->GetHeight(), 1U) : 720U;
+        const Engine::ShadowSettings shadowSettings = GetRenderSystem()->GetShadowSettings();
+        snapshot.ShadowMapResolution = shadowSettings.Resolution;
+        snapshot.MaxShadowCastersPerScene = shadowSettings.MaxShadowCastersPerScene;
+
+        auto variants = Engine::Renderer::BrdfAnalysis::ExecuteBrdfAnalysisVariants(
+            snapshot, models, [this](const auto& request) -> Engine::Result<Engine::RenderOutput> {
+              std::vector<std::string> warnings;
+              auto detachedScene = CreateDetachedSceneFromDocument(request.Scene, warnings);
+              if (!detachedScene) {
+                return std::unexpected(detachedScene.error());
+              }
+              return GetRenderSystem()->RenderFinal(**detachedScene, request.Camera, request.Width, request.Height,
+                                                    request.PostProcess);
+            });
+        if (!variants) {
+          return std::unexpected(variants.error());
+        }
+        return BrdfAnalysisPanel::ExecutionResult{.Snapshot = std::move(snapshot), .Variants = std::move(*variants)};
+      });
+  m_BrdfAnalysisPanel->SetExportFunction([this](const BrdfAnalysisPanel::CompletedComparison& comparison,
+                                                bool json) -> Engine::Result<std::optional<std::string>> {
+    std::filesystem::path initialPath =
+        GetAssetManager() != nullptr ? GetAssetManager()->GetProjectRoot() : std::filesystem::path{};
+    initialPath /= json ? "brdf-analysis.json" : "brdf-analysis.png";
+    const auto destination = EditorPlatform::ChooseBrdfAnalysisFile(json, initialPath);
+    if (!destination) {
+      return std::optional<std::string>{};
+    }
+    const Engine::Status status = json ? BrdfAnalysisExporter::WriteJson(comparison, *destination)
+                                       : BrdfAnalysisExporter::WriteChartPng(comparison, *destination);
+    if (!status) {
+      return std::unexpected(status.error());
+    }
+    return std::optional<std::string>("Exported comparison to " + destination->string());
+  });
   m_Panels.push_back(std::move(brdfAnalysisPanel));
   m_Panels.push_back(std::make_unique<ScenePanel>());
   m_Panels.push_back(std::make_unique<HierarchyPanel>());

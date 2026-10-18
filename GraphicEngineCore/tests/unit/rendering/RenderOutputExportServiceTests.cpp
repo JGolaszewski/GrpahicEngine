@@ -96,7 +96,7 @@ TEST(RenderOutputExportServiceTests, WritesPngAsynchronouslyAtRequestedDimension
   EXPECT_EQ(input->spec().width, 13);
   EXPECT_EQ(input->spec().height, 7);
   EXPECT_EQ(input->spec().nchannels, 4);
-  std::vector<float> pixels(13U * 7U * 4U);
+  std::vector<float> pixels(static_cast<std::size_t>(13U) * 7U * 4U);
   ASSERT_TRUE(input->read_image(0, 0, 0, -1, OIIO::span<float>(pixels.data(), pixels.size()))) << input->geterror();
   EXPECT_TRUE(std::ranges::all_of(pixels, [](float sample) { return std::isfinite(sample); }));
   EXPECT_TRUE(input->close());
@@ -192,14 +192,14 @@ TEST(RenderOutputExportServiceTests, WritesOnlySelectedAovsToExrAndReportsWriteF
   EXPECT_EQ(input->spec().height, 5);
   EXPECT_EQ(input->spec().nchannels, 1);
   EXPECT_EQ(input->spec().get_string_attribute("oiio:subimagename"), "depth");
-  std::vector<float> depthPixels(8U * 5U);
+  std::vector<float> depthPixels(static_cast<std::size_t>(8U) * 5U);
   ASSERT_TRUE(input->read_image(0, 0, 0, -1, OIIO::span<float>(depthPixels.data(), depthPixels.size())))
       << input->geterror();
   EXPECT_TRUE(std::ranges::all_of(depthPixels, [](float sample) { return std::isfinite(sample); }));
   ASSERT_TRUE(input->seek_subimage(1, 0));
   EXPECT_EQ(input->spec().nchannels, 4);
   EXPECT_EQ(input->spec().get_string_attribute("oiio:subimagename"), "final_color");
-  std::vector<float> colorPixels(8U * 5U * 4U);
+  std::vector<float> colorPixels(static_cast<std::size_t>(8U) * 5U * 4U);
   ASSERT_TRUE(input->read_image(1, 0, 0, -1, OIIO::span<float>(colorPixels.data(), colorPixels.size())))
       << input->geterror();
   EXPECT_TRUE(std::ranges::all_of(colorPixels, [](float sample) { return std::isfinite(sample); }));

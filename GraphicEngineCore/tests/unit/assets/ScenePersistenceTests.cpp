@@ -87,6 +87,42 @@ TEST(ScenePersistenceTests, RoundTripsFieldsAndRejectsTraversalWithoutOverwritin
   EXPECT_TRUE(loaded.document.entities.front().hasMeshRenderer);
 }
 
+TEST(ScenePersistenceTests, SerializesValidatedSceneDocumentToReusableJson) {
+  Engine::SceneDocument document;
+  document.unitsPerMeter = 0.5F;
+  Engine::SceneEntityDocument entity;
+  entity.id = 12;
+  entity.name = "analysis target";
+  entity.primitiveType = "sphere";
+  Engine::SceneMaterialDocument material;
+  material.brdfModel = "beckmann";
+  entity.material = material;
+  document.entities.push_back(entity);
+  Engine::SceneLightDocument light;
+  light.id = 13;
+  light.type = "point";
+  light.intensity = 4.0F;
+  document.lights.push_back(light);
+  Engine::SceneCameraDocument camera;
+  camera.id = 14;
+  camera.outputWidth = 320;
+  camera.outputHeight = 200;
+  document.cameras.push_back(camera);
+
+  std::string json;
+  std::string error;
+  ASSERT_TRUE(Engine::SceneSerializer::SerializeJson(document, json, error)) << error;
+  const auto parsed = nlohmann::json::parse(json);
+  EXPECT_EQ(parsed.at("entities").at(0).at("material").at("brdfModel"), "beckmann");
+  EXPECT_EQ(parsed.at("lights").at(0).at("intensity"), 4.0F);
+  EXPECT_EQ(parsed.at("cameras").at(0).at("outputWidth"), 320U);
+
+  document.entities.front().id = 0;
+  EXPECT_FALSE(Engine::SceneSerializer::SerializeJson(document, json, error));
+  EXPECT_FALSE(error.empty());
+  EXPECT_TRUE(json.empty());
+}
+
 TEST(ScenePersistenceTests, LegacyAuthoredMeshSettingsRestoreMeshRendererPresence) {
   TemporaryProject project;
   const auto path = project.Root() / "legacy-mesh.scene.json";

@@ -33,6 +33,8 @@ struct ENGINE_API BrdfAnalysisSnapshot {
   CameraView Camera;                            ///< Resolved world-space camera pose and projection.
   uint32_t Width = 0;                           ///< Render width captured for every comparison variant.
   uint32_t Height = 0;                          ///< Render height captured for every comparison variant.
+  uint32_t ShadowMapResolution = 0;             ///< Active renderer shadow-map resolution at capture time.
+  uint32_t MaxShadowCastersPerScene = 0;        ///< Active renderer shadow-caster limit at capture time.
   Engine::FinalColorPostProcess PostProcess;    ///< Final-color processing captured for every variant.
 };
 
@@ -44,6 +46,8 @@ struct ENGINE_API BrdfAnalysisRenderRequest {
   CameraView Camera;                         ///< Captured camera settings shared by all variants.
   uint32_t Width = 0;                        ///< Captured render width.
   uint32_t Height = 0;                       ///< Captured render height.
+  uint32_t ShadowMapResolution = 0;          ///< Captured renderer shadow-map resolution.
+  uint32_t MaxShadowCastersPerScene = 0;     ///< Captured renderer shadow-caster limit.
   Engine::FinalColorPostProcess PostProcess; ///< Captured final-color processing.
 };
 

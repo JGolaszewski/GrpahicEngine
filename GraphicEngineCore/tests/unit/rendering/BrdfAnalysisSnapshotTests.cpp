@@ -21,8 +21,7 @@ auto MakeSnapshot() -> BrdfAnalysisSnapshot {
   target.name = "Selected material owner";
   target.materialGuid = "shared-material-guid";
   target.materialOverrides.resize(2);
-  target.materialOverrides[0] = Engine::SceneMaterialDocument{};
-  target.materialOverrides[0]->brdfModel = "ggx";
+  target.materialOverrides[0] = Engine::SceneMaterialDocument{.brdfModel = "ggx"};
   snapshot.Scene.entities.push_back(target);
   Engine::SceneEntityDocument other;
   other.id = 43;
@@ -51,6 +50,8 @@ auto MakeSnapshot() -> BrdfAnalysisSnapshot {
   snapshot.Camera.FieldOfViewDegrees = 52.0F;
   snapshot.Width = 320;
   snapshot.Height = 200;
+  snapshot.ShadowMapResolution = 1024;
+  snapshot.MaxShadowCastersPerScene = 3;
   return snapshot;
 }
 
@@ -62,6 +63,8 @@ TEST(BrdfAnalysisSnapshotTests, VariantsOnlyChangeSelectedMaterialModelAndPreser
     ++callbackCount;
     EXPECT_EQ(request.Width, 320U);
     EXPECT_EQ(request.Height, 200U);
+    EXPECT_EQ(request.ShadowMapResolution, 1024U);
+    EXPECT_EQ(request.MaxShadowCastersPerScene, 3U);
     EXPECT_FLOAT_EQ(request.Camera.Position[1], 2.0F);
     EXPECT_FLOAT_EQ(request.Camera.FieldOfViewDegrees, 52.0F);
     EXPECT_EQ(request.Scene.unitsPerMeter, 0.5F);
@@ -89,8 +92,8 @@ TEST(BrdfAnalysisSnapshotTests, VariantsOnlyChangeSelectedMaterialModelAndPreser
   EXPECT_EQ(callbackCount, models.size());
   EXPECT_EQ((*result)[0].Request.Model, models[0]);
   EXPECT_EQ((*result)[1].Request.Model, models[1]);
-  EXPECT_EQ(snapshot.Scene.entities[0].materialOverrides[0]->brdfModel, "ggx");
-  EXPECT_EQ(snapshot.Scene.entities[1].material->roughness, 0.8F);
+  EXPECT_EQ(snapshot.Scene.entities[0].materialOverrides[0].value_or(Engine::SceneMaterialDocument{}).brdfModel, "ggx");
+  EXPECT_FLOAT_EQ(snapshot.Scene.entities[1].material.value_or(Engine::SceneMaterialDocument{}).roughness, 0.8F);
   EXPECT_EQ(snapshot.SourceMaterial.brdfModel, "ggx");
   EXPECT_EQ(snapshot.SourceMaterialProperties.Model, Engine::Renderer::BrdfModel::GGX);
 }
@@ -114,7 +117,7 @@ TEST(BrdfAnalysisSnapshotTests, StopsWithoutReturningPartialResultsWhenVariantRe
   ASSERT_FALSE(result.has_value());
   EXPECT_EQ(result.error().Message, "expected test failure");
   EXPECT_EQ(callbackCount, 2U);
-  EXPECT_EQ(snapshot.Scene.entities[0].materialOverrides[0]->brdfModel, "ggx");
+  EXPECT_EQ(snapshot.Scene.entities[0].materialOverrides[0].value_or(Engine::SceneMaterialDocument{}).brdfModel, "ggx");
 }
 
 TEST(BrdfAnalysisSnapshotTests, RejectsDuplicateModelsBeforeRendering) {
@@ -192,10 +195,14 @@ TEST(BrdfAnalysisSnapshotTests, CreatesVariantsForEverySupportedBrdfModel) {
   for (size_t index = 0; index < models.size(); ++index) {
     EXPECT_EQ((*result)[index].Request.Model, models[index].first);
     EXPECT_EQ((*result)[index].Request.Material.Model, models[index].first);
-    ASSERT_TRUE((*result)[index].Request.Scene.entities[0].materialOverrides[0].has_value());
-    EXPECT_EQ((*result)[index].Request.Scene.entities[0].materialOverrides[0]->brdfModel, models[index].second);
+    EXPECT_EQ((*result)[index]
+                  .Request.Scene.entities[0]
+                  .materialOverrides[0]
+                  .value_or(Engine::SceneMaterialDocument{})
+                  .brdfModel,
+              models[index].second);
   }
-  EXPECT_EQ(snapshot.Scene.entities[0].materialOverrides[0]->brdfModel, "ggx");
+  EXPECT_EQ(snapshot.Scene.entities[0].materialOverrides[0].value_or(Engine::SceneMaterialDocument{}).brdfModel, "ggx");
 }
 
 } // namespace

@@ -75,6 +75,27 @@ TEST(RenderOutputExporterTests, WritesToneMappedSrgbPngWithDimensionsAndDecodabl
   EXPECT_NEAR(decoded[11], 128.0F / 255.0F, 1.0F / 255.0F);
 }
 
+TEST(RenderOutputExporterTests, WritesRgba8PngWithoutChangingChartPixels) {
+  TemporaryOutputDirectory directory;
+  const std::array<uint8_t, 8> chartPixels{12, 34, 56, 255, 200, 180, 160, 255};
+  const auto path = directory.File("chart.png");
+
+  const auto status = Engine::Rendering::Detail::WritePngRgba8File(2, 1, chartPixels, path);
+  ASSERT_TRUE(status) << (status ? "" : status.error().Message);
+
+  auto input = ReadInput(path);
+  ASSERT_NE(input, nullptr) << OIIO::geterror();
+  ASSERT_EQ(input->spec().width, 2);
+  ASSERT_EQ(input->spec().height, 1);
+  ASSERT_EQ(input->spec().nchannels, 4);
+  std::array<uint8_t, 8> decoded{};
+  ASSERT_TRUE(input->read_image(0, 0, 0, -1, OIIO::span<uint8_t>(decoded.data(), decoded.size()))) << input->geterror();
+  EXPECT_EQ(decoded, chartPixels);
+  EXPECT_FALSE(Engine::Rendering::Detail::WritePngRgba8File(2, 1, std::span<const uint8_t>(chartPixels).first(7),
+                                                            directory.File("invalid.png")));
+  EXPECT_FALSE(Engine::Rendering::Detail::WritePngRgba8File(2, 1, chartPixels, directory.File("wrong.exr")));
+}
+
 TEST(RenderOutputExporterTests, PngBackgroundCompositesInLinearSpaceAndPreservesAlphaWhenDisabled) {
   TemporaryOutputDirectory directory;
   const std::array<float, 8> transparentAndPartial{1.0F, 0.0F, 0.0F, 0.0F, 1.0F, 0.0F, 0.0F, 0.5F};
