@@ -52,9 +52,10 @@ auto MaterialPropertiesFromDocument(const ::Engine::SceneMaterialDocument& docum
   properties.GtrGamma = document.gtrGamma;
   properties.Ior = document.ior;
   properties.SpecularF0 = {document.specularF0[0], document.specularF0[1], document.specularF0[2]};
-  properties.Model = document.brdfModel == "ggx"   ? ::Engine::Renderer::BrdfModel::GGX
-                     : document.brdfModel == "gtr" ? ::Engine::Renderer::BrdfModel::GTR
-                                                   : ::Engine::Renderer::BrdfModel::Legacy;
+  properties.Model = document.brdfModel == "ggx"        ? ::Engine::Renderer::BrdfModel::GGX
+                     : document.brdfModel == "gtr"      ? ::Engine::Renderer::BrdfModel::GTR
+                     : document.brdfModel == "beckmann" ? ::Engine::Renderer::BrdfModel::Beckmann
+                                                        : ::Engine::Renderer::BrdfModel::Legacy;
   properties.Workflow = document.workflow == "specularGlossiness"
                             ? ::Engine::Renderer::MaterialWorkflow::SpecularGlossiness
                             : ::Engine::Renderer::MaterialWorkflow::MetallicRoughness;

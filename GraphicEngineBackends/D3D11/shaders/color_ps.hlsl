@@ -284,6 +284,11 @@ PS_OUTPUT main_ps(VS_OUTPUT input)
                 EvaluateGtrBrdfComponents(query, brdfBaseColor, brdfMetallic, brdfF0, alpha,
                     g_SurfaceParams.z, diffuseBrdf, specularBrdf);
             }
+            else if (g_ModelFlags.y == 3u)
+            {
+                EvaluateBeckmannBrdfComponents(query, brdfBaseColor, brdfMetallic, brdfF0, alpha,
+                    diffuseBrdf, specularBrdf);
+            }
             else
             {
                 EvaluateGgxBrdfComponents(query, brdfBaseColor, brdfMetallic, brdfF0, alpha,

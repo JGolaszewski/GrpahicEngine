@@ -103,6 +103,31 @@ TEST(ScenePersistenceTests, LegacyAuthoredMeshSettingsRestoreMeshRendererPresenc
   EXPECT_TRUE(loaded.document.entities.front().hasMeshRenderer);
 }
 
+TEST(ScenePersistenceTests, BeckmannMaterialModelRoundTripsAndUnsupportedModelsAreRejected) {
+  TemporaryProject project;
+  Engine::AssetManager assets(project.Root());
+  Engine::SceneDocument document;
+  Engine::SceneEntityDocument entity;
+  entity.id = 7;
+  entity.name = "Beckmann";
+  entity.primitiveType = "sphere";
+  Engine::SceneMaterialDocument material;
+  material.brdfModel = "beckmann";
+  entity.material = material;
+  document.entities.push_back(entity);
+
+  std::string error;
+  ASSERT_TRUE(assets.SaveScene("beckmann.scene.json", document, error)) << error;
+  const auto loaded = assets.LoadScene("beckmann.scene.json");
+  ASSERT_TRUE(loaded) << loaded.error;
+  ASSERT_TRUE(loaded.document.entities.front().material.has_value());
+  EXPECT_EQ(loaded.document.entities.front().material->brdfModel, "beckmann");
+
+  material.brdfModel = "unknown";
+  document.entities.front().material = material;
+  EXPECT_FALSE(assets.SaveScene("unsupported.scene.json", document, error));
+}
+
 TEST(ScenePersistenceTests, SchemaThreeRoundTripsSceneRootAndEmptyHierarchyEntities) {
   TemporaryProject project;
   Engine::AssetManager assets(project.Root());

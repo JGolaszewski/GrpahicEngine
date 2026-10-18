@@ -359,10 +359,13 @@ void InspectorPanel::DrawEntityInspector() {
       materialChanged |= ImGui::ColorEdit3("Emissive", material.emissive.data());
       materialChanged |= ImGui::SliderFloat("Metallic", &material.metallic, 0.0F, 1.0F);
       materialChanged |= ImGui::SliderFloat("Roughness", &material.roughness, 0.0F, 1.0F);
-      constexpr const char* brdfNames[] = {"Legacy", "GGX", "GTR"};
-      int brdfIndex = material.brdfModel == "ggx" ? 1 : material.brdfModel == "gtr" ? 2 : 0;
-      if (ImGui::Combo("BRDF", &brdfIndex, brdfNames, 3)) {
-        material.brdfModel = brdfIndex == 1 ? "ggx" : brdfIndex == 2 ? "gtr" : "legacy";
+      constexpr const char* brdfNames[] = {"Legacy", "GGX", "GTR", "Beckmann"};
+      int brdfIndex = material.brdfModel == "ggx"        ? 1
+                      : material.brdfModel == "gtr"      ? 2
+                      : material.brdfModel == "beckmann" ? 3
+                                                         : 0;
+      if (ImGui::Combo("BRDF", &brdfIndex, brdfNames, 4)) {
+        material.brdfModel = brdfIndex == 1 ? "ggx" : brdfIndex == 2 ? "gtr" : brdfIndex == 3 ? "beckmann" : "legacy";
         materialChanged = true;
       }
       if (material.brdfModel == "gtr") {

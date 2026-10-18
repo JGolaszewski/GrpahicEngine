@@ -31,7 +31,7 @@ struct SceneMaterialDocument {
   float gtrGamma = 2.0f;                                     ///< GTR distribution parameter used by the selected BRDF.
   float ior = 1.5f; ///< Index of refraction used to derive dielectric reflectance.
   std::array<float, 3> specularF0 = {0.04f, 0.04f, 0.04f}; ///< RGB reflectance at normal incidence.
-  std::string brdfModel = "legacy";                        ///< Identifier of the BRDF implementation.
+  std::string brdfModel = "legacy";                        ///< BRDF identifier: legacy, ggx, gtr, or beckmann.
   std::string workflow = "metallicRoughness";              ///< Material parameter workflow identifier.
   std::string specularMode = "ior";                        ///< Source mode used to derive specular reflectance.
   std::string alphaMode = "opaque";                        ///< Alpha handling mode for the material.
