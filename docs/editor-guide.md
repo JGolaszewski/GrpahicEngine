@@ -35,7 +35,7 @@ select entities in **Scene Hierarchy** instead.
 Use **Scene Hierarchy** to inspect and edit the active scene:
 
 - Select an entity by clicking its row. The **Inspector** then shows its name,
-  transform, visibility, and any mesh renderer, spot light, or camera
+  transform, visibility, and any Mesh, Light, or Camera
   components.
 - Use the search field to filter by entity name or component type. Matching
   descendants keep their parent rows visible.
