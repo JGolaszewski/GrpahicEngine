@@ -48,13 +48,13 @@ public:
   /// Exports the displayed result. A successful empty value means the user cancelled the file dialog.
   using ExportFunction = std::function<Engine::Result<std::optional<std::string>>(const CompletedComparison&, bool)>;
 
-  /// Creates the panel with editor-owned target discovery and variant execution callbacks.
-  BrdfAnalysisPanel(TargetProvider getTargets, ExecuteFunction execute);
+  /// Creates the panel and takes ownership of the editor callbacks.
+  BrdfAnalysisPanel(TargetProvider&& getTargets, ExecuteFunction&& execute);
 
-  /// Replaces the editor-owned scene selection and render execution services.
-  void SetServices(TargetProvider getTargets, ExecuteFunction execute);
-  /// Sets the callback used to export the currently displayed chart or JSON report.
-  void SetExportFunction(ExportFunction exportComparison);
+  /// Replaces the editor callbacks and takes ownership of them.
+  void SetServices(TargetProvider&& getTargets, ExecuteFunction&& execute);
+  /// Sets the export callback and takes ownership of it.
+  void SetExportFunction(ExportFunction&& exportComparison);
 
   /// Draws target/model controls and the last fully completed comparison.
   void Draw() override;

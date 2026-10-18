@@ -134,10 +134,10 @@ void DrawResponseChart(std::span<const BrdfAnalysisPanel::VariantResult> variant
 }
 } // namespace
 
-BrdfAnalysisPanel::BrdfAnalysisPanel(TargetProvider getTargets, ExecuteFunction execute)
+BrdfAnalysisPanel::BrdfAnalysisPanel(TargetProvider&& getTargets, ExecuteFunction&& execute)
     : m_GetTargets(std::move(getTargets)), m_Execute(std::move(execute)) {}
 
-void BrdfAnalysisPanel::SetServices(TargetProvider getTargets, ExecuteFunction execute) {
+void BrdfAnalysisPanel::SetServices(TargetProvider&& getTargets, ExecuteFunction&& execute) {
   m_GetTargets = std::move(getTargets);
   m_Execute = std::move(execute);
   m_TargetsDirty = true;
@@ -147,7 +147,7 @@ void BrdfAnalysisPanel::SetServices(TargetProvider getTargets, ExecuteFunction e
   m_Status = "Choose a material and run a comparison.";
 }
 
-void BrdfAnalysisPanel::SetExportFunction(ExportFunction exportComparison) { m_Export = std::move(exportComparison); }
+void BrdfAnalysisPanel::SetExportFunction(ExportFunction&& exportComparison) { m_Export = std::move(exportComparison); }
 
 void BrdfAnalysisPanel::OnEvent(Engine::Events::Event& event) {
   Engine::Events::EventDispatcher dispatcher(event);

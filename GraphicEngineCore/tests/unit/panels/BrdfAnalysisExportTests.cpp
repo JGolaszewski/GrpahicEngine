@@ -102,6 +102,10 @@ TEST(BrdfAnalysisExportTests, WritesChartPngForDisplayedCurves) {
   std::vector<uint8_t> pixels(static_cast<std::size_t>(1200U) * 720U * 4U);
   ASSERT_TRUE(input->read_image(0, 0, 0, -1, OIIO::span<uint8_t>(pixels.data(), pixels.size()))) << input->geterror();
   EXPECT_EQ(pixels.at(3), 255);
+  const std::size_t peakCurvePixel = (static_cast<std::size_t>(70U) * 1200U + 620U) * 4U;
+  EXPECT_EQ(pixels.at(peakCurvePixel), 77U);
+  EXPECT_EQ(pixels.at(peakCurvePixel + 1U), 180U);
+  EXPECT_EQ(pixels.at(peakCurvePixel + 2U), 255U);
 }
 
 TEST(BrdfAnalysisExportTests, WritesSceneSettingsAndMeasurementsToJson) {
