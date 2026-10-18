@@ -140,9 +140,16 @@ struct SceneDocumentResult {
   explicit operator bool() const noexcept { return error.empty(); }
 };
 
-/// Loads and atomically saves serialized scene documents.
+/// Loads, validates, and serializes scene documents using the persistent scene schema.
 class ENGINE_API SceneSerializer {
 public:
+  /// Serializes a validated scene document using the scene file schema.
+  /// @param document Document to serialize.
+  /// @param json Receives formatted JSON on success.
+  /// @param error Receives a failure description on error and is cleared on success.
+  /// @return True when the document is valid and serialized successfully.
+  static bool SerializeJson(const SceneDocument& document, std::string& json, std::string& error);
+
   /// Loads and validates a scene document from a file.
   /// @param path File to read.
   /// @return The parsed document and any non-fatal warnings, or an error.

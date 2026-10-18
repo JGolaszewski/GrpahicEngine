@@ -147,6 +147,8 @@ void BrdfAnalysisPanel::SetServices(TargetProvider getTargets, ExecuteFunction e
   m_Status = "Choose a material and run a comparison.";
 }
 
+void BrdfAnalysisPanel::SetExportFunction(ExportFunction exportComparison) { m_Export = std::move(exportComparison); }
+
 void BrdfAnalysisPanel::OnEvent(Engine::Events::Event& event) {
   Engine::Events::EventDispatcher dispatcher(event);
   dispatcher.Dispatch<SceneChangedEvent>([this](const auto&) -> bool {
@@ -308,6 +310,24 @@ void BrdfAnalysisPanel::Draw() {
 
     ImGui::SeparatorText("Response curves (light angle 0 to 90 degrees)");
     DrawResponseChart(comparison.Variants);
+
+    if (ImGui::Button("Export chart PNG") && m_Export) {
+      const auto result = m_Export(comparison, false);
+      if (!result) {
+        m_Status = result.error().Message;
+      } else if (*result) {
+        m_Status = **result;
+      }
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Export measurements JSON") && m_Export) {
+      const auto result = m_Export(comparison, true);
+      if (!result) {
+        m_Status = result.error().Message;
+      } else if (*result) {
+        m_Status = **result;
+      }
+    }
 
     ImGui::SeparatorText("Measurements");
     if (ImGui::BeginTable("BrdfAnalysisMeasurements", 6,

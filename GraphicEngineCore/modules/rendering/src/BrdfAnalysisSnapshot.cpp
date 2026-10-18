@@ -112,6 +112,8 @@ auto Engine::Renderer::BrdfAnalysis::ExecuteBrdfAnalysisVariants(const BrdfAnaly
     request.Camera = snapshot.Camera;
     request.Width = snapshot.Width;
     request.Height = snapshot.Height;
+    request.ShadowMapResolution = snapshot.ShadowMapResolution;
+    request.MaxShadowCastersPerScene = snapshot.MaxShadowCastersPerScene;
     request.PostProcess = snapshot.PostProcess;
 
     const Engine::Status materialStatus = ApplyMaterialVariant(

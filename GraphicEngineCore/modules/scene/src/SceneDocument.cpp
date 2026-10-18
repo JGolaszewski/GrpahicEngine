@@ -1157,6 +1157,23 @@ auto SceneSerializer::Load(const std::filesystem::path& path) -> SceneDocumentRe
   return result;
 }
 
+auto SceneSerializer::SerializeJson(const SceneDocument& document, std::string& json, std::string& error) -> bool {
+  error.clear();
+  json.clear();
+  const std::filesystem::path contextPath("scene document");
+  if (!ValidateSceneHeader(contextPath, document, error) || !ValidateEntities(contextPath, document, error) ||
+      !ValidateLights(contextPath, document, error) || !ValidateCameras(contextPath, document, error)) {
+    return false;
+  }
+  try {
+    json = ToJson(document).dump(2);
+    return true;
+  } catch (const Json::exception& exception) {
+    error = std::string("scene JSON serialization failed: ") + exception.what();
+    return false;
+  }
+}
+
 auto SceneSerializer::SaveAtomic(const std::filesystem::path& path, const SceneDocument& document, std::string& error)
     -> bool {
   static std::atomic<uint64_t> temporaryFileSequence = 0;
