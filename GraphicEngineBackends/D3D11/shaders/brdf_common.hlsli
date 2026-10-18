@@ -151,6 +151,15 @@ float BrdfGaussNdf(float noH, float alpha)
     return exp(exponent) / denominator;
 }
 
+float BrdfBlinnPhongNdf(float noH, float alpha)
+{
+    const float safeNoH = saturate(noH);
+    const float safeAlpha = max(alpha, BRDF_MIN_ALPHA);
+    const float exponent = max(2.0f / (safeAlpha * safeAlpha) - 2.0f, 0.0f);
+    const float cosinePower = safeNoH == 0.0f && exponent == 0.0f ? 1.0f : pow(safeNoH, exponent);
+    return ((exponent + 2.0f) / (2.0f * BRDF_PI)) * cosinePower;
+}
+
 float BrdfGtrLogNormalization(float alpha, float gamma)
 {
     const float safeAlpha = max(alpha, BRDF_MIN_ALPHA);
@@ -252,6 +261,13 @@ void EvaluateGaussBrdfComponents(BrdfQuery query, float3 baseColor, float metall
 {
     EvaluateMicrofacetBrdfComponents(query, baseColor, metallic, dielectricF0, alpha,
         BrdfGaussNdf(query.NoH, alpha), diffuse, specular);
+}
+
+void EvaluateBlinnPhongBrdfComponents(BrdfQuery query, float3 baseColor, float metallic, float3 dielectricF0,
+    float alpha, out float3 diffuse, out float3 specular)
+{
+    EvaluateMicrofacetBrdfComponents(query, baseColor, metallic, dielectricF0, alpha,
+        BrdfBlinnPhongNdf(query.NoH, alpha), diffuse, specular);
 }
 
 #endif

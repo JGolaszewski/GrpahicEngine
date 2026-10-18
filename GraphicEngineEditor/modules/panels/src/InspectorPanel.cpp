@@ -359,17 +359,19 @@ void InspectorPanel::DrawEntityInspector() {
       materialChanged |= ImGui::ColorEdit3("Emissive", material.emissive.data());
       materialChanged |= ImGui::SliderFloat("Metallic", &material.metallic, 0.0F, 1.0F);
       materialChanged |= ImGui::SliderFloat("Roughness", &material.roughness, 0.0F, 1.0F);
-      constexpr const char* brdfNames[] = {"Legacy", "GGX", "GTR", "Beckmann", "Gauss"};
-      int brdfIndex = material.brdfModel == "ggx"        ? 1
-                      : material.brdfModel == "gtr"      ? 2
-                      : material.brdfModel == "beckmann" ? 3
-                      : material.brdfModel == "gauss"    ? 4
-                                                         : 0;
-      if (ImGui::Combo("BRDF", &brdfIndex, brdfNames, 5)) {
+      constexpr const char* brdfNames[] = {"Legacy", "GGX", "GTR", "Beckmann", "Gauss", "Blinn-Phong"};
+      int brdfIndex = material.brdfModel == "ggx"          ? 1
+                      : material.brdfModel == "gtr"        ? 2
+                      : material.brdfModel == "beckmann"   ? 3
+                      : material.brdfModel == "gauss"      ? 4
+                      : material.brdfModel == "blinnPhong" ? 5
+                                                           : 0;
+      if (ImGui::Combo("BRDF", &brdfIndex, brdfNames, 6)) {
         material.brdfModel = brdfIndex == 1   ? "ggx"
                              : brdfIndex == 2 ? "gtr"
                              : brdfIndex == 3 ? "beckmann"
                              : brdfIndex == 4 ? "gauss"
+                             : brdfIndex == 5 ? "blinnPhong"
                                               : "legacy";
         materialChanged = true;
       }

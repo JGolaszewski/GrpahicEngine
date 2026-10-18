@@ -149,6 +149,27 @@ TEST(ScenePersistenceTests, GaussMaterialModelRoundTrips) {
   EXPECT_EQ(loaded.document.entities.front().material->brdfModel, "gauss");
 }
 
+TEST(ScenePersistenceTests, BlinnPhongMaterialModelRoundTrips) {
+  TemporaryProject project;
+  Engine::AssetManager assets(project.Root());
+  Engine::SceneDocument document;
+  Engine::SceneEntityDocument entity;
+  entity.id = 9;
+  entity.name = "Blinn-Phong";
+  entity.primitiveType = "sphere";
+  Engine::SceneMaterialDocument material;
+  material.brdfModel = "blinnPhong";
+  entity.material = material;
+  document.entities.push_back(entity);
+
+  std::string error;
+  ASSERT_TRUE(assets.SaveScene("blinn-phong.scene.json", document, error)) << error;
+  const auto loaded = assets.LoadScene("blinn-phong.scene.json");
+  ASSERT_TRUE(loaded) << loaded.error;
+  ASSERT_TRUE(loaded.document.entities.front().material.has_value());
+  EXPECT_EQ(loaded.document.entities.front().material->brdfModel, "blinnPhong");
+}
+
 TEST(ScenePersistenceTests, SchemaThreeRoundTripsSceneRootAndEmptyHierarchyEntities) {
   TemporaryProject project;
   Engine::AssetManager assets(project.Root());

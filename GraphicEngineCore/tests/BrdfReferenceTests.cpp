@@ -60,6 +60,42 @@ auto IntegrateGaussNdf(float alpha) -> float {
   return 2.0F * ::Engine::Renderer::Brdf::Pi * integral;
 }
 
+auto IntegrateBlinnPhongNdf(float alpha) -> float {
+  constexpr uint32_t sampleCount = 20000;
+  const float step = DirectX::XM_PIDIV2 / static_cast<float>(sampleCount);
+  float integral = 0.0F;
+  for (uint32_t i = 0; i < sampleCount; ++i) {
+    const float theta = (static_cast<float>(i) + 0.5F) * step;
+    const float cosine = std::cos(theta);
+    const float sine = std::sin(theta);
+    integral += ::Engine::Renderer::Brdf::EvaluateBlinnPhongNdf(cosine, alpha) * cosine * sine * step;
+  }
+  return 2.0F * ::Engine::Renderer::Brdf::Pi * integral;
+}
+
+void TestBlinnPhongReferenceAndFiniteEvaluation() {
+  for (float alpha : {0.05F, 0.2F, 0.65F, 1.0F, 1.5F}) {
+    Require(std::abs(IntegrateBlinnPhongNdf(alpha) - 1.0F) < 2.0e-4F,
+            "Blinn-Phong projected NDF must normalize to one");
+  }
+  const float alpha = 0.4F;
+  const float noH = 0.75F;
+  const float exponent = 2.0F / (alpha * alpha) - 2.0F;
+  const float expected = (exponent + 2.0F) / (2.0F * ::Engine::Renderer::Brdf::Pi) * std::pow(noH, exponent);
+  Require(std::abs(::Engine::Renderer::Brdf::EvaluateBlinnPhongNdf(noH, alpha) - expected) < 1.0e-6F,
+          "Blinn-Phong NDF must match the normalized exponent equation");
+  Require(std::abs(::Engine::Renderer::Brdf::EvaluateBlinnPhongNdf(0.0F, 2.0F) - 1.0F / ::Engine::Renderer::Brdf::Pi) <
+                  1.0e-6F &&
+              ::Engine::Renderer::Brdf::EvaluateBlinnPhongNdf(0.0F, 0.4F) == 0.0F &&
+              std::isfinite(::Engine::Renderer::Brdf::EvaluateBlinnPhongNdf(1.0F, 0.0F)),
+          "Blinn-Phong NDF must stay finite at grazing, zero-exponent, and minimum-roughness boundaries");
+  const auto value = ::Engine::Renderer::Brdf::EvaluateBlinnPhongBrdf({0.0F, 0.0F, 1.0F}, {0.3F, 0.0F, 0.9539392F},
+                                                                      {-0.1F, 0.5F, 0.8602325F}, {0.7F, 0.4F, 0.2F},
+                                                                      {0.04F, 0.04F, 0.04F}, alpha);
+  Require(std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z),
+          "Blinn-Phong BRDF reference evaluation must remain finite");
+}
+
 void TestGaussReferenceAndFiniteEvaluation() {
   for (float alpha : {0.05F, 0.2F, 0.65F, 1.0F}) {
     Require(std::abs(IntegrateGaussNdf(alpha) - 1.0F) < 2.0e-4F, "Gauss projected NDF must normalize to one");
@@ -215,6 +251,10 @@ void TestMaterialGpuAbiPacking() {
   const auto gauss = ::Engine::Renderer::BuildMaterialGpu(properties);
   Require(gauss.ModelFlags.y == 4U && gauss.ModelFlags.x == ::Engine::Renderer::MaterialGpuAbiVersion,
           "Gauss selector must append value four without changing the material GPU ABI");
+  properties.Model = ::Engine::Renderer::BrdfModel::BlinnPhong;
+  const auto blinnPhong = ::Engine::Renderer::BuildMaterialGpu(properties);
+  Require(blinnPhong.ModelFlags.y == 5U && blinnPhong.ModelFlags.x == ::Engine::Renderer::MaterialGpuAbiVersion,
+          "Blinn-Phong selector must append value five without changing the material GPU ABI");
 }
 
 void TestMaterialPropertiesRoundTrip() {
@@ -260,6 +300,7 @@ auto main() -> int {
     TestProjectedNdfNormalization();
     TestBeckmannReferenceAndFiniteEvaluation();
     TestGaussReferenceAndFiniteEvaluation();
+    TestBlinnPhongReferenceAndFiniteEvaluation();
     TestGtrLimitsAndRoughnessMapping();
     TestReciprocityAndWhiteFurnace();
     TestMaterialGpuAbiPacking();
