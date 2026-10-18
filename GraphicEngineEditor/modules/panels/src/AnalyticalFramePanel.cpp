@@ -150,8 +150,13 @@ void AnalyticalFramePanel::SetSession(Editor::Panels::AnalyticalFrameSession ses
     }
   }
   m_Status = "Opened detached Analytical Frame project.";
-  if (m_ViewState.PinnedPixel && (m_ViewState.PinnedPixel->at(0) >= m_Session->Snapshot.Width ||
-                                  m_ViewState.PinnedPixel->at(1) >= m_Session->Snapshot.Height)) {
+  const BrdfModel displayedModel = m_ViewState.Mode == Editor::Panels::AnalyticalFrameViewState::ComparisonMode::Single
+                                       ? m_ViewState.SelectedModel
+                                       : m_ViewState.CompareModelA;
+  const auto* displayedVariant = FindVariant(displayedModel);
+  if (m_ViewState.PinnedPixel &&
+      (displayedVariant == nullptr || m_ViewState.PinnedPixel->at(0) >= displayedVariant->Render.Output.Width ||
+       m_ViewState.PinnedPixel->at(1) >= displayedVariant->Render.Output.Height)) {
     m_ViewState.PinnedPixel.reset();
     StoreViewportState();
   }
@@ -428,12 +433,27 @@ bool AnalyticalFramePanel::RefreshImage() {
     m_Status = image.error().Message;
     return false;
   }
-  if (!m_Upload || !m_Upload(m_Session->Snapshot.Width, m_Session->Snapshot.Height, *image)) {
+  const BrdfModel displayedModel = m_ViewState.Mode == Editor::Panels::AnalyticalFrameViewState::ComparisonMode::Single
+                                       ? m_ViewState.SelectedModel
+                                       : m_ViewState.CompareModelA;
+  const auto* displayedVariant = FindVariant(displayedModel);
+  if (displayedVariant == nullptr) {
+    m_Status = "The displayed BRDF variant is not present in this Analytical Frame.";
+    return false;
+  }
+  const uint32_t width = displayedVariant->Render.Output.Width;
+  const uint32_t height = displayedVariant->Render.Output.Height;
+  const uint64_t expectedByteCount = static_cast<uint64_t>(width) * height * 4U;
+  if (width == 0 || height == 0 || expectedByteCount != image->size()) {
+    m_Status = "The captured display image dimensions do not match its pixel buffer.";
+    return false;
+  }
+  if (!m_Upload || !m_Upload(width, height, *image)) {
     m_Status = "The captured image could not be uploaded to the static viewer.";
     return false;
   }
-  m_ImageWidth = m_Session->Snapshot.Width;
-  m_ImageHeight = m_Session->Snapshot.Height;
+  m_ImageWidth = width;
+  m_ImageHeight = height;
   return true;
 }
 

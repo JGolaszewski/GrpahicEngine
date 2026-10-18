@@ -79,6 +79,17 @@ TEST(AnalyticalFrameViewModelTests, BuildsStaticWipeFromCapturedBuffers) {
   EXPECT_EQ(right, expectedRight);
 }
 
+TEST(AnalyticalFrameViewModelTests, BuildsDisplayPixelsAtCapturedOutputResolution) {
+  const auto output = MakeOutput(3, 2, std::vector<float>(3U * 2U * 4U, 0.25F));
+
+  auto image = Editor::Panels::AnalyticalFrameViewModel::BuildDisplayImage(output, Engine::RenderAov::FinalColor);
+
+  ASSERT_TRUE(image.has_value());
+  EXPECT_EQ(output.Width, 3U);
+  EXPECT_EQ(output.Height, 2U);
+  EXPECT_EQ(image->size(), 3U * 2U * 4U);
+}
+
 TEST(AnalyticalFrameViewModelTests, RoundTripsTypedViewportStateWithStableManifestNames) {
   Editor::Panels::AnalyticalFrameViewState state;
   state.SelectedAov = Engine::RenderAov::WorldNormal;
