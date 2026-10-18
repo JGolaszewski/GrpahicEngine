@@ -74,6 +74,42 @@ auto IntegrateBlinnPhongNdf(float alpha) -> float {
   return 2.0F * ::Engine::Renderer::Brdf::Pi * integral;
 }
 
+auto IntegrateSchlickNdf(float alpha) -> float {
+  constexpr uint32_t sampleCount = 20000;
+  const float step = DirectX::XM_PIDIV2 / static_cast<float>(sampleCount);
+  float integral = 0.0F;
+  for (uint32_t i = 0; i < sampleCount; ++i) {
+    const float theta = (static_cast<float>(i) + 0.5F) * step;
+    const float cosine = std::cos(theta);
+    const float sine = std::sin(theta);
+    integral += ::Engine::Renderer::Brdf::EvaluateSchlickNdf(cosine, alpha) * cosine * sine * step;
+  }
+  return 2.0F * ::Engine::Renderer::Brdf::Pi * integral;
+}
+
+void TestSchlickReferenceAndFiniteEvaluation() {
+  using ::Engine::Renderer::Brdf::EvaluateSchlickNdf;
+  for (float alpha : {0.05F, 0.2F, 0.65F, 1.0F}) {
+    Require(std::abs(IntegrateSchlickNdf(alpha) - 1.0F) < 2.0e-3F, "Schlick projected NDF must normalize to one");
+  }
+  constexpr float alpha = 0.4F;
+  constexpr float noH = 0.75F;
+  constexpr float m = alpha;
+  constexpr float x = noH + m - 1.0F;
+  constexpr float inner = (m - 1.0F) * x * x + m * m;
+  const float expected = m * m * m * x / (::Engine::Renderer::Brdf::Pi * noH * inner * inner);
+  Require(std::abs(EvaluateSchlickNdf(noH, alpha) - expected) < 1.0e-6F,
+          "Schlick NDF must match the normalized rational reference equation");
+  Require(EvaluateSchlickNdf(0.0F, alpha) == 0.0F && EvaluateSchlickNdf(0.5F, alpha) == 0.0F &&
+              std::isfinite(EvaluateSchlickNdf(1.0F, 0.0F)),
+          "Schlick NDF must return zero outside support and remain finite at the minimum-roughness boundary");
+  const auto value = ::Engine::Renderer::Brdf::EvaluateSchlickBrdf({0.0F, 0.0F, 1.0F}, {0.3F, 0.0F, 0.9539392F},
+                                                                   {-0.1F, 0.5F, 0.8602325F}, {0.7F, 0.4F, 0.2F},
+                                                                   {0.04F, 0.04F, 0.04F}, alpha);
+  Require(std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z),
+          "Schlick BRDF reference evaluation must remain finite");
+}
+
 void TestBlinnPhongReferenceAndFiniteEvaluation() {
   for (float alpha : {0.05F, 0.2F, 0.65F, 1.0F, 1.5F}) {
     Require(std::abs(IntegrateBlinnPhongNdf(alpha) - 1.0F) < 2.0e-4F,
@@ -289,6 +325,10 @@ void TestMaterialGpuAbiPacking() {
   const auto sanitized = ::Engine::Renderer::BuildMaterialGpu(properties);
   Require(sanitized.SpecularParams.w == 0.5F && sanitized.AlphaParams.y == 1.0F,
           "Anisotropic roughness packing must sanitize non-finite values and clamp finite values");
+  properties.Model = ::Engine::Renderer::BrdfModel::Schlick;
+  const auto schlick = ::Engine::Renderer::BuildMaterialGpu(properties);
+  Require(schlick.ModelFlags.y == 7U && schlick.ModelFlags.x == ::Engine::Renderer::MaterialGpuAbiVersion,
+          "Schlick selector must append value seven without changing the material GPU ABI");
 }
 
 void TestMaterialPropertiesRoundTrip() {
@@ -340,6 +380,7 @@ auto main() -> int {
     TestGaussReferenceAndFiniteEvaluation();
     TestBlinnPhongReferenceAndFiniteEvaluation();
     TestAshikhminShirleyReferenceAndFiniteEvaluation();
+    TestSchlickReferenceAndFiniteEvaluation();
     TestGtrLimitsAndRoughnessMapping();
     TestReciprocityAndWhiteFurnace();
     TestMaterialGpuAbiPacking();

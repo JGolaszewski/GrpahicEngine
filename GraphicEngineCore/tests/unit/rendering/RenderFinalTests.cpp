@@ -668,6 +668,18 @@ TEST(RenderFinalTests, WARPAllLightTypesChangeReceivingGeometryWhenShadowsAreEna
     }
     ASSERT_EQ(enabledNormals.size(), enabledPixels.size() / 4U * 3U);
 
+    receiverProperties.Model = Engine::Renderer::BrdfModel::Schlick;
+    receiverMaterial->SetProperties(receiverProperties);
+    const auto schlickOutput = renderer.RenderFinal(scene, camera, 96, 96);
+    ASSERT_TRUE(schlickOutput.has_value()) << (schlickOutput.has_value() ? "" : schlickOutput.error().Message);
+    const auto schlickPixels = schlickOutput->GetPixels(Engine::RenderAov::FinalColor);
+    ASSERT_FALSE(schlickPixels.empty());
+    for (const float channel : schlickPixels) {
+      EXPECT_TRUE(std::isfinite(channel)) << lightNames[lightIndex] << " produced a non-finite Schlick pixel";
+    }
+    receiverProperties.Model = Engine::Renderer::BrdfModel::AshikhminShirley;
+    receiverMaterial->SetProperties(receiverProperties);
+
     light.CastShadows = false;
     (void)scene.QueueSet(lightEntity, light);
     ASSERT_TRUE(scene.Update(0.0F));
