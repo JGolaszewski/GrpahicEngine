@@ -48,5 +48,12 @@ void MainBar::DrawWindowMenu() {
   if (ImGui::MenuItem("Console") && m_ConsoleOpenHandler) {
     m_ConsoleOpenHandler();
   }
+  if (m_AnalyticalFrameWorkspaceHandler) {
+    const char* workspaceMenuItem =
+        m_AnalyticalFrameWorkspaceActive ? "Exit Analytical Frame Workspace" : "Analytical Frame Workspace";
+    if (ImGui::MenuItem(workspaceMenuItem)) {
+      m_AnalyticalFrameWorkspaceHandler(!m_AnalyticalFrameWorkspaceActive);
+    }
+  }
   ImGui::EndMenu();
 }

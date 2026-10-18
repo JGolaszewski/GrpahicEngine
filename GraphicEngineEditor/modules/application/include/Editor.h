@@ -24,6 +24,7 @@ class ViewportTarget;
 class CameraPreviewPanel;
 class BrdfAnalysisPanel;
 class AnalyticalFramePanel;
+class MainBar;
 
 #ifdef _MSC_VER
 #  pragma warning(push)
@@ -67,6 +68,7 @@ private:
   std::shared_ptr<Engine::Viewport> m_CameraPreviewViewport;
   std::shared_ptr<Engine::ViewportTarget> m_CameraPreviewTarget;
   std::vector<std::unique_ptr<EditorPanel>> m_Panels;
+  MainBar* m_MainBarPanel = nullptr;
   CameraPreviewPanel* m_CameraPreviewPanel = nullptr;
   BrdfAnalysisPanel* m_BrdfAnalysisPanel = nullptr;
   AnalyticalFramePanel* m_AnalyticalFramePanel = nullptr;
@@ -85,6 +87,7 @@ private:
   std::pair<float, float> m_ViewportSize = {0.0F, 0.0F};
   bool m_DefaultLayoutBuilt = false;
   bool m_EngineConsoleOpen = true;
+  bool m_AnalyticalFrameWorkspaceActive = false;
   EditorPlatform::EditorPreferences m_EditorPreferences;
   std::array<bool, static_cast<size_t>(Engine::Events::KeyCode::Count)> m_CameraKeysDown{};
   bool m_ViewportHovered = false;

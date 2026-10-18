@@ -76,6 +76,8 @@ public:
   void SetSession(AnalyticalFrame::AnalyticalFrameSession session);
   /// Opens the static viewer window.
   void Open() noexcept { m_Open = true; }
+  /// Selects the full-area focus workspace presentation instead of the floating panel.
+  void SetFocusWorkspace(bool focused) noexcept { m_FocusWorkspace = focused; }
   /// Closes the static viewer and releases its display texture while retaining the session.
   void Close();
   /// Draws a static image viewer, comparison controls, pixel inspection and measurements.
@@ -97,6 +99,7 @@ private:
   void AdvanceCapture();
   void CancelCapture();
   void DrawCaptureControls();
+  void DrawFocusWorkspace();
   void CompleteCapture();
   auto BuildCurrentImage() const -> Engine::Result<std::vector<uint8_t>>;
   bool RefreshImage();
@@ -143,6 +146,8 @@ private:
   std::string m_Status = "Open an .aframe project or capture an Analytical Frame from a scene.";
   uint32_t m_ImageWidth = 0;
   uint32_t m_ImageHeight = 0;
+  float m_SidebarWidth = 360.0F;
   bool m_ImageDirty = true;
   bool m_Open = true;
+  bool m_FocusWorkspace = false;
 };

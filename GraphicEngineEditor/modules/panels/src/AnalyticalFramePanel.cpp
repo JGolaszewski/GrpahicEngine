@@ -537,15 +537,13 @@ void AnalyticalFramePanel::DrawCaptureControls() {
       CancelCapture();
     }
     if (m_Capture.has_value()) {
-      ImGui::SameLine();
       const auto& capture = m_Capture.value();
       ImGui::ProgressBar(static_cast<float>(capture.GetCompletedCount()) /
                              static_cast<float>((std::max)(capture.GetTotalCount(), size_t{1})),
-                         ImVec2(200.0F, 0.0F));
+                         ImVec2(-1.0F, 0.0F));
     }
   }
-  ImGui::SameLine();
-  ImGui::TextUnformatted(m_Status.c_str());
+  ImGui::TextWrapped("%s", m_Status.c_str());
 }
 
 void AnalyticalFramePanel::DrawControls() {
@@ -564,7 +562,6 @@ void AnalyticalFramePanel::DrawControls() {
     imageChanged |= DrawEnumCombo("BRDF model", m_ViewState.SelectedModel, availableModels, ModelName);
   } else {
     imageChanged |= DrawEnumCombo("Model A", m_ViewState.CompareModelA, availableModels, ModelName);
-    ImGui::SameLine();
     imageChanged |= DrawEnumCombo("Model B", m_ViewState.CompareModelB, availableModels, ModelName);
   }
   std::vector<AnalyticalFrame::AnalyticalFrameViewState::ComparisonMode> modes = {
@@ -597,23 +594,20 @@ void AnalyticalFramePanel::DrawControls() {
   if (m_ViewState.Mode == AnalyticalFrame::AnalyticalFrameViewState::ComparisonMode::Wipe) {
     imageChanged |= ImGui::SliderFloat("Wipe position", &m_ViewState.WipePosition, 0.0F, 1.0F);
   }
-  if (ImGui::Button("Fit image")) {
+  if (ImGui::Button("Fit image", ImVec2(-1.0F, 0.0F))) {
     m_ViewState.Zoom = 1.0F;
     m_ViewState.PanOffsetPixels = {};
   }
-  if (ImGui::Button("Open .aframe")) {
+  if (ImGui::Button("Open .aframe", ImVec2(-1.0F, 0.0F))) {
     OpenArchive();
   }
-  ImGui::SameLine();
-  if (ImGui::Button("Save .aframe")) {
+  if (ImGui::Button("Save .aframe", ImVec2(-1.0F, 0.0F))) {
     SaveArchive();
   }
-  ImGui::SameLine();
-  if (ImGui::Button("Export curve PNG")) {
+  if (ImGui::Button("Export curve PNG", ImVec2(-1.0F, 0.0F))) {
     Export(true);
   }
-  ImGui::SameLine();
-  if (ImGui::Button("Export measurements JSON")) {
+  if (ImGui::Button("Export measurements JSON", ImVec2(-1.0F, 0.0F))) {
     Export(false);
   }
   if (imageChanged) {
@@ -866,11 +860,16 @@ void AnalyticalFramePanel::Export(bool chart) {
 }
 
 void AnalyticalFramePanel::Draw() {
-  if (!m_Open) {
-    return;
-  }
   if (m_TargetsDirty && !m_Capture) {
     RefreshTargets();
+  }
+  if (m_FocusWorkspace) {
+    DrawFocusWorkspace();
+    AdvanceCapture();
+    return;
+  }
+  if (!m_Open) {
+    return;
   }
   const bool visible = ImGui::Begin("Analytical Frame", &m_Open);
   if (visible) {
@@ -887,4 +886,62 @@ void AnalyticalFramePanel::Draw() {
     return;
   }
   AdvanceCapture();
+}
+
+void AnalyticalFramePanel::DrawFocusWorkspace() {
+  ImGuiViewport* viewport = ImGui::GetMainViewport();
+  ImGui::SetNextWindowPos(viewport->WorkPos);
+  ImGui::SetNextWindowSize(viewport->WorkSize);
+  ImGui::SetNextWindowViewport(viewport->ID);
+  constexpr ImGuiWindowFlags workspaceFlags = ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoTitleBar |
+                                              ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
+                                              ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings;
+  if (!ImGui::Begin("Analytical Frame Workspace", nullptr, workspaceFlags)) {
+    ImGui::End();
+    return;
+  }
+
+  ImGui::TextUnformatted("Captured frame");
+  ImGui::Separator();
+  const ImVec2 available = ImGui::GetContentRegionAvail();
+  constexpr float splitterWidth = 6.0F;
+  const float horizontalSpacing = ImGui::GetStyle().ItemSpacing.x * 2.0F;
+  const float minCanvasWidth = (std::min)(260.0F, available.x * 0.45F);
+  const float minSidebarWidth = (std::min)(280.0F, available.x * 0.35F);
+  const float maxSidebarWidth =
+      (std::max)(minSidebarWidth, (std::min)(640.0F, available.x - minCanvasWidth - splitterWidth - horizontalSpacing));
+  m_SidebarWidth = std::clamp(m_SidebarWidth, minSidebarWidth, maxSidebarWidth);
+  const float canvasWidth = (std::max)(1.0F, available.x - m_SidebarWidth - splitterWidth - horizontalSpacing);
+
+  ImGui::BeginChild("##AnalyticalFrameCanvasRegion", ImVec2(canvasWidth, available.y), false);
+  if (m_Session) {
+    DrawCanvas();
+  } else {
+    ImGui::TextWrapped(
+        "Capture a frame from the selected authored camera or open an .aframe project to inspect its rendered image.");
+  }
+  ImGui::EndChild();
+  ImGui::SameLine(0.0F, ImGui::GetStyle().ItemSpacing.x);
+
+  ImGui::InvisibleButton("##AnalyticalFrameSidebarSplitter", ImVec2(splitterWidth, available.y),
+                         ImGuiButtonFlags_MouseButtonLeft);
+  if (ImGui::IsItemActive()) {
+    m_SidebarWidth = std::clamp(m_SidebarWidth - ImGui::GetIO().MouseDelta.x, minSidebarWidth, maxSidebarWidth);
+  }
+  ImGui::GetWindowDrawList()->AddRectFilled(ImGui::GetItemRectMin(), ImGui::GetItemRectMax(),
+                                            ImGui::IsItemHovered() || ImGui::IsItemActive()
+                                                ? ImGui::GetColorU32(ImGuiCol_SeparatorActive)
+                                                : ImGui::GetColorU32(ImGuiCol_Separator));
+  ImGui::SameLine(0.0F, ImGui::GetStyle().ItemSpacing.x);
+
+  ImGui::BeginChild("##AnalyticalFrameToolsSidebar", ImVec2(m_SidebarWidth, available.y), false);
+  DrawCaptureControls();
+  if (m_Session) {
+    ImGui::Separator();
+    DrawControls();
+    ImGui::Separator();
+    DrawMeasurements();
+  }
+  ImGui::EndChild();
+  ImGui::End();
 }

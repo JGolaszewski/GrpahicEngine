@@ -185,6 +185,7 @@ void Editor::OnInit() {
 
   CreateViewport(1280, 720);
   auto mainBar = std::make_unique<MainBar>();
+  m_MainBarPanel = mainBar.get();
   mainBar->SetConsoleOpenHandler([this] -> void { m_EngineConsoleOpen = true; });
   auto engineSettings = std::make_unique<EngineSettingsPanel>(
       this, [this] { return m_EditorPreferences; },
@@ -501,6 +502,19 @@ void Editor::OnInit() {
         return EditorPlatform::ChooseAnalyticalFrameFile(platformOperation, initialPath);
       });
   m_AnalyticalFramePanel = analyticalFramePanel.get();
+  m_MainBarPanel->SetAnalyticalFrameWorkspaceHandler([this](bool active) {
+    m_AnalyticalFrameWorkspaceActive = active;
+    m_MainBarPanel->SetAnalyticalFrameWorkspaceActive(active);
+    m_AnalyticalFramePanel->SetFocusWorkspace(active);
+    if (active) {
+      m_AnalyticalFramePanel->Open();
+      m_ViewportHovered = false;
+      m_CameraLookActive = false;
+      m_CameraKeysDown.fill(false);
+      m_MouseDeltaX = 0.0;
+      m_MouseDeltaY = 0.0;
+    }
+  });
   m_Panels.push_back(std::move(analyticalFramePanel));
 
   m_PanelConnections.reserve(m_Panels.size());
@@ -679,7 +693,16 @@ void Editor::OnEvent(Engine::Events::Event& event) {
     m_MouseDeltaY += moved.DeltaY;
     return false;
   });
-  m_EventRouter.DispatchInput(event);
+  if (m_AnalyticalFrameWorkspaceActive) {
+    if (m_MainBarPanel != nullptr) {
+      m_MainBarPanel->OnEvent(event);
+    }
+    if (!event.Handled && m_AnalyticalFramePanel != nullptr) {
+      m_AnalyticalFramePanel->OnEvent(event);
+    }
+  } else {
+    m_EventRouter.DispatchInput(event);
+  }
 }
 
 void Editor::OnUIRender() {
@@ -690,7 +713,9 @@ void Editor::OnUIRender() {
   ImGui::DockSpaceOverViewport(dockspaceId, ImGui::GetMainViewport(), ImGuiDockNodeFlags_PassthruCentralNode);
   BuildDefaultDockLayoutIfNeeded(dockspaceId);
   for (auto& panel : m_Panels) {
-    panel->Draw();
+    if (!m_AnalyticalFrameWorkspaceActive || panel.get() == m_MainBarPanel || panel.get() == m_AnalyticalFramePanel) {
+      panel->Draw();
+    }
   }
   if (m_ActiveScene) {
     for (const auto& result : m_ActiveScene->sync()) {
@@ -707,7 +732,9 @@ void Editor::OnUIRender() {
       BroadcastSceneChanged();
     }
   }
-  m_EditorConsole.UpdateAndRender(&m_EngineConsoleOpen);
+  if (!m_AnalyticalFrameWorkspaceActive) {
+    m_EditorConsole.UpdateAndRender(&m_EngineConsoleOpen);
+  }
 }
 
 void Editor::OnBeginUIFrame() { m_UiIntegration.BeginFrame(); }

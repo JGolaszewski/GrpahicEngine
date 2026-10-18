@@ -2,6 +2,8 @@
 
 The editor's **Analytical Frame** panel captures one authored scene camera and one material target, then renders the selected BRDF models sequentially. Every variant uses a copied scene, the same camera, lights, texture identities, render settings, and output size. Only the BRDF model changes. Roughness and GTR distribution overrides are frame-local and apply equally to every variant; they do not modify scene or material assets.
 
+Choose **Window → Analytical Frame Workspace** to enter the analysis focus view. The captured image fills the main canvas, with capture and analysis tools in a resizable right sidebar. Other editor panels are hidden while this view is active; choose **Window → Exit Analytical Frame Workspace** to restore them and the existing dock layout. The viewer displays a frozen capture. It does not continuously rerender as the scene changes.
+
 Capture defaults to the selected camera's authored output resolution. Enable **Resolution override** to choose a different frame size. The panel reports progress and lets you cancel between variants. If a render or measurement fails, or capture is cancelled, the panel discards all partial results.
 
 Each model stores all five linear float AOVs: final color, depth, world normal, specular lighting, and diffuse lighting. It also stores the BRDF response curve and its peak, mean, and angular integral, plus scene mean and peak luminance. Captured frames are immutable snapshots; changing the active scene does not update them.
