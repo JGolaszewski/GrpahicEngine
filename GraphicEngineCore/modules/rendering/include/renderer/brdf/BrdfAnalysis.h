@@ -33,10 +33,13 @@ struct SceneLuminanceMeasurements {
 
 /// Samples the selected BRDF with a fixed normal-facing view and a swept light angle.
 ///
-/// GGX and GTR use the engine's microfacet response. Legacy uses the legacy Lambert
-/// and powered specular response. The reported curve is the unweighted BRDF value;
-/// the incident-angle cosine is not applied. Input material data is only read and
-/// sanitized locally, so authored properties remain unchanged.
+/// Every supported BRDF model uses the engine's CPU reference evaluator when one
+/// is available. Legacy uses its renderer Lambert and powered-specular response,
+/// and GTR uses the engine's GTR NDF with the shared microfacet terms. The reported
+/// curve is the unweighted BRDF value; the incident-angle cosine is not applied.
+/// Input material data is only read and sanitized locally, so authored properties
+/// remain unchanged. The angular sweep lies in the tangent-normal plane; for
+/// Ashikhmin-Shirley, the material's scalar roughness is used on both tangent axes.
 /// @param material Material properties supplying color, roughness, and reflectance.
 /// @param model BRDF model evaluated for this curve.
 /// @param sampleCount Number of uniformly spaced samples, including 0 and 90 degrees; must be in [2, 4096].

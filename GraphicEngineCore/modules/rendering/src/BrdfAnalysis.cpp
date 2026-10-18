@@ -21,6 +21,31 @@ float Luminance(float red, float green, float blue) noexcept {
 
 float SafeChannel(float value) noexcept { return ClampFinite(value, 0.0F, 0.0F, 1.0F); }
 
+DirectX::XMFLOAT3 EvaluateMicrofacetResponse(BrdfModel model, const DirectX::XMFLOAT3& view,
+                                             const DirectX::XMFLOAT3& light, const DirectX::XMFLOAT3& diffuseColor,
+                                             const DirectX::XMFLOAT3& f0, float alpha, float roughness) noexcept {
+  constexpr DirectX::XMFLOAT3 normal{0.0F, 0.0F, 1.0F};
+  switch (model) {
+  case BrdfModel::GGX:
+    return Brdf::EvaluateGgxBrdf(normal, view, light, diffuseColor, f0, alpha);
+  case BrdfModel::Beckmann:
+    return Brdf::EvaluateBeckmannBrdf(normal, view, light, diffuseColor, f0, alpha);
+  case BrdfModel::Gauss:
+    return Brdf::EvaluateGaussBrdf(normal, view, light, diffuseColor, f0, alpha);
+  case BrdfModel::BlinnPhong:
+    return Brdf::EvaluateBlinnPhongBrdf(normal, view, light, diffuseColor, f0, alpha);
+  case BrdfModel::AshikhminShirley:
+    return Brdf::EvaluateAshikhminShirleyBrdf(normal, {1.0F, 0.0F, 0.0F}, {0.0F, 1.0F, 0.0F}, view, light, diffuseColor,
+                                              f0, roughness, roughness);
+  case BrdfModel::Schlick:
+    return Brdf::EvaluateSchlickBrdf(normal, view, light, diffuseColor, f0, alpha);
+  case BrdfModel::Sawicki:
+    return Brdf::EvaluateSawickiBrdf(normal, view, light, diffuseColor, f0, alpha);
+  default:
+    return {0.0F, 0.0F, 0.0F};
+  }
+}
+
 } // namespace
 
 Result<BrdfResponseCurve> AnalyzeBrdfResponse(const MaterialProperties& material, BrdfModel model,
@@ -28,7 +53,7 @@ Result<BrdfResponseCurve> AnalyzeBrdfResponse(const MaterialProperties& material
   if (sampleCount < 2 || sampleCount > MaximumSampleCount) {
     return std::unexpected(MakeError("BRDF response sample count must be between 2 and 4096"));
   }
-  if (static_cast<uint32_t>(model) > static_cast<uint32_t>(BrdfModel::GTR)) {
+  if (static_cast<uint32_t>(model) > static_cast<uint32_t>(BrdfModel::Sawicki)) {
     return std::unexpected(MakeError("BRDF response model is unsupported"));
   }
 
@@ -72,6 +97,9 @@ Result<BrdfResponseCurve> AnalyzeBrdfResponse(const MaterialProperties& material
   const float legacySpecularGreen = specularGlossiness ? explicitF0Green : 0.04F * (1.0F - metallic) + green * metallic;
   const float legacySpecularBlue = specularGlossiness ? explicitF0Blue : 0.04F * (1.0F - metallic) + blue * metallic;
   const float legacyPower = 8.0F + (128.0F - 8.0F) * (1.0F - roughness);
+  const DirectX::XMFLOAT3 view{0.0F, 0.0F, 1.0F};
+  const DirectX::XMFLOAT3 diffuseColor{diffuseRed, diffuseGreen, diffuseBlue};
+  const DirectX::XMFLOAT3 f0{f0Red, f0Green, f0Blue};
 
   BrdfResponseCurve curve;
   curve.Model = model;
@@ -83,24 +111,23 @@ Result<BrdfResponseCurve> AnalyzeBrdfResponse(const MaterialProperties& material
     const float angleDegrees = angleRadians * (180.0F / std::numbers::pi_v<float>);
     const float lightX = std::sin(angleRadians);
     const float lightZ = std::cos(angleRadians);
+    const DirectX::XMFLOAT3 light{lightX, 0.0F, lightZ};
     const float responseCosine = (std::max)(lightZ, 0.0F);
-    float responseRed = 0.0F;
-    float responseGreen = 0.0F;
-    float responseBlue = 0.0F;
+    DirectX::XMFLOAT3 response{};
 
     if (model == BrdfModel::Legacy) {
       const float specular = std::pow(responseCosine, legacyPower - 1.0F);
-      responseRed = diffuseRed + legacySpecularRed * specular;
-      responseGreen = diffuseGreen + legacySpecularGreen * specular;
-      responseBlue = diffuseBlue + legacySpecularBlue * specular;
-    } else {
+      response = {diffuseRed + legacySpecularRed * specular, diffuseGreen + legacySpecularGreen * specular,
+                  diffuseBlue + legacySpecularBlue * specular};
+    } else if (model != BrdfModel::GTR) {
+      response = EvaluateMicrofacetResponse(model, view, light, diffuseColor, f0, alpha, roughness);
+    } else if (responseCosine > Brdf::Epsilon) {
       const float halfX = lightX;
       const float halfZ = 1.0F + lightZ;
       const float halfLength = std::sqrt(halfX * halfX + halfZ * halfZ);
       const float noH = (std::clamp)(halfZ / halfLength, 0.0F, 1.0F);
       const float voH = noH;
-      const float distribution =
-          model == BrdfModel::GTR ? Brdf::EvaluateGtrNdf(noH, alpha, gamma) : Brdf::EvaluateGgxNdf(noH, alpha);
+      const float distribution = Brdf::EvaluateGtrNdf(noH, alpha, gamma);
       const float fresnelWeight = std::pow(1.0F - voH, 5.0F);
       const float fresnelRed = f0Red + (1.0F - f0Red) * fresnelWeight;
       const float fresnelGreen = f0Green + (1.0F - f0Green) * fresnelWeight;
@@ -112,13 +139,13 @@ Result<BrdfResponseCurve> AnalyzeBrdfResponse(const MaterialProperties& material
       const float smithL = noV * std::sqrt((std::max)(alphaSquared + (1.0F - alphaSquared) * noL * noL, 0.0F));
       const float smithDenominator = smithV + smithL;
       const float geometry = smithDenominator > Brdf::Epsilon ? (2.0F * noV * noL) / smithDenominator : 0.0F;
-      const float specularScale = responseCosine > Brdf::Epsilon ? distribution * geometry / (4.0F * noV * noL) : 0.0F;
-      responseRed = diffuseRed * (1.0F - fresnelRed) / Brdf::Pi + fresnelRed * specularScale;
-      responseGreen = diffuseGreen * (1.0F - fresnelGreen) / Brdf::Pi + fresnelGreen * specularScale;
-      responseBlue = diffuseBlue * (1.0F - fresnelBlue) / Brdf::Pi + fresnelBlue * specularScale;
+      const float specularScale = distribution * geometry / (4.0F * noV * noL);
+      response = {diffuseRed * (1.0F - fresnelRed) / Brdf::Pi + fresnelRed * specularScale,
+                  diffuseGreen * (1.0F - fresnelGreen) / Brdf::Pi + fresnelGreen * specularScale,
+                  diffuseBlue * (1.0F - fresnelBlue) / Brdf::Pi + fresnelBlue * specularScale};
     }
 
-    const float luminance = Luminance(responseRed, responseGreen, responseBlue);
+    const float luminance = Luminance(response.x, response.y, response.z);
     if (!std::isfinite(luminance)) {
       return std::unexpected(MakeError("BRDF response produced a non-finite sample"));
     }

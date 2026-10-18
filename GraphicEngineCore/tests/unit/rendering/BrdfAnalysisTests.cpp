@@ -1,3 +1,4 @@
+#include "rendering/include/renderer/brdf/Brdf.h"
 #include "rendering/include/renderer/brdf/BrdfAnalysis.h"
 
 #include <gtest/gtest.h>
@@ -44,12 +45,22 @@ TEST(BrdfAnalysisTests, SamplesFiniteCurvesAndComputesSummaryMeasurements) {
   EXPECT_NEAR(curve.Measurements.Integral, integral, 1.0e-6F);
 }
 
-TEST(BrdfAnalysisTests, SupportsLegacyGgxAndGtrWithFiniteInputs) {
+TEST(BrdfAnalysisTests, SupportsEveryMaterialBrdfModelWithFiniteInputs) {
   Engine::Renderer::MaterialProperties material;
   material.Roughness = 0.18F;
   material.GtrGamma = 4.0F;
-  for (const Engine::Renderer::BrdfModel model :
-       {Engine::Renderer::BrdfModel::Legacy, Engine::Renderer::BrdfModel::GGX, Engine::Renderer::BrdfModel::GTR}) {
+  constexpr std::array models = {
+      Engine::Renderer::BrdfModel::Legacy,
+      Engine::Renderer::BrdfModel::GGX,
+      Engine::Renderer::BrdfModel::GTR,
+      Engine::Renderer::BrdfModel::Beckmann,
+      Engine::Renderer::BrdfModel::Gauss,
+      Engine::Renderer::BrdfModel::BlinnPhong,
+      Engine::Renderer::BrdfModel::AshikhminShirley,
+      Engine::Renderer::BrdfModel::Schlick,
+      Engine::Renderer::BrdfModel::Sawicki,
+  };
+  for (const Engine::Renderer::BrdfModel model : models) {
     const auto result = AnalyzeBrdfResponse(material, model, 13);
     ASSERT_TRUE(result.has_value());
     EXPECT_TRUE(std::isfinite(result->Measurements.Peak));
@@ -60,15 +71,54 @@ TEST(BrdfAnalysisTests, SupportsLegacyGgxAndGtrWithFiniteInputs) {
 
 TEST(BrdfAnalysisTests, UsesTheSameAngularInputsForEverySupportedModel) {
   const Engine::Renderer::MaterialProperties material;
-  const auto legacy = AnalyzeBrdfResponse(material, Engine::Renderer::BrdfModel::Legacy, 17);
-  const auto ggx = AnalyzeBrdfResponse(material, Engine::Renderer::BrdfModel::GGX, 17);
-  const auto gtr = AnalyzeBrdfResponse(material, Engine::Renderer::BrdfModel::GTR, 17);
+  constexpr std::array models = {
+      Engine::Renderer::BrdfModel::Legacy,
+      Engine::Renderer::BrdfModel::GGX,
+      Engine::Renderer::BrdfModel::GTR,
+      Engine::Renderer::BrdfModel::Beckmann,
+      Engine::Renderer::BrdfModel::Gauss,
+      Engine::Renderer::BrdfModel::BlinnPhong,
+      Engine::Renderer::BrdfModel::AshikhminShirley,
+      Engine::Renderer::BrdfModel::Schlick,
+      Engine::Renderer::BrdfModel::Sawicki,
+  };
+  const auto reference = AnalyzeBrdfResponse(material, models.front(), 17);
+  ASSERT_TRUE(reference.has_value());
+  for (const Engine::Renderer::BrdfModel model : models) {
+    const auto curve = AnalyzeBrdfResponse(material, model, 17);
+    ASSERT_TRUE(curve.has_value());
+    EXPECT_EQ(curve->AnglesDegrees, reference->AnglesDegrees);
+  }
+}
 
-  ASSERT_TRUE(legacy.has_value());
-  ASSERT_TRUE(ggx.has_value());
-  ASSERT_TRUE(gtr.has_value());
-  EXPECT_EQ(legacy->AnglesDegrees, ggx->AnglesDegrees);
-  EXPECT_EQ(legacy->AnglesDegrees, gtr->AnglesDegrees);
+TEST(BrdfAnalysisTests, MatchesCpuReferenceForNewIsotropicDistributionModels) {
+  const Engine::Renderer::MaterialProperties material;
+  constexpr DirectX::XMFLOAT3 normal{0.0F, 0.0F, 1.0F};
+  constexpr DirectX::XMFLOAT3 view{0.0F, 0.0F, 1.0F};
+  constexpr DirectX::XMFLOAT3 light{0.0F, 0.0F, 1.0F};
+  constexpr DirectX::XMFLOAT3 diffuseColor{1.0F, 1.0F, 1.0F};
+  constexpr DirectX::XMFLOAT3 f0{0.04F, 0.04F, 0.04F};
+  constexpr float alpha = 0.25F;
+  constexpr float roughness = 0.5F;
+
+  const auto check = [&](Engine::Renderer::BrdfModel model, const DirectX::XMFLOAT3& expected) {
+    const auto curve = AnalyzeBrdfResponse(material, model, 2);
+    ASSERT_TRUE(curve.has_value());
+    EXPECT_NEAR(curve->Response.front(), expected.x, 1.0e-6F);
+  };
+  check(Engine::Renderer::BrdfModel::Beckmann,
+        Engine::Renderer::Brdf::EvaluateBeckmannBrdf(normal, view, light, diffuseColor, f0, alpha));
+  check(Engine::Renderer::BrdfModel::Gauss,
+        Engine::Renderer::Brdf::EvaluateGaussBrdf(normal, view, light, diffuseColor, f0, alpha));
+  check(Engine::Renderer::BrdfModel::BlinnPhong,
+        Engine::Renderer::Brdf::EvaluateBlinnPhongBrdf(normal, view, light, diffuseColor, f0, alpha));
+  check(Engine::Renderer::BrdfModel::AshikhminShirley,
+        Engine::Renderer::Brdf::EvaluateAshikhminShirleyBrdf(normal, {1.0F, 0.0F, 0.0F}, {0.0F, 1.0F, 0.0F}, view,
+                                                             light, diffuseColor, f0, roughness, roughness));
+  check(Engine::Renderer::BrdfModel::Schlick,
+        Engine::Renderer::Brdf::EvaluateSchlickBrdf(normal, view, light, diffuseColor, f0, alpha));
+  check(Engine::Renderer::BrdfModel::Sawicki,
+        Engine::Renderer::Brdf::EvaluateSawickiBrdf(normal, view, light, diffuseColor, f0, alpha));
 }
 
 TEST(BrdfAnalysisTests, RejectsInvalidCurveSampleCountAndModel) {
