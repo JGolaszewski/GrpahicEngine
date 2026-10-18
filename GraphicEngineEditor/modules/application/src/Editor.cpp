@@ -10,6 +10,7 @@
 #include "events/include/EditorEvents.h"
 #include "panels/include/AssetBrowserPanel.h"
 #include "panels/include/AssetDropAssignment.h"
+#include "panels/include/BrdfAnalysisPanel.h"
 #include "panels/include/CameraPreviewPanel.h"
 #include "panels/include/CameraPreviewRequest.h"
 #include "panels/include/EngineSettingsPanel.h"
@@ -154,6 +155,10 @@ void Editor::OnInit() {
   m_Panels.push_back(std::move(mainBar));
   m_Panels.push_back(std::move(engineSettings));
   m_Panels.push_back(std::make_unique<StatWindow>(this));
+  auto brdfAnalysisPanel =
+      std::make_unique<BrdfAnalysisPanel>(BrdfAnalysisPanel::TargetProvider{}, BrdfAnalysisPanel::ExecuteFunction{});
+  m_BrdfAnalysisPanel = brdfAnalysisPanel.get();
+  m_Panels.push_back(std::move(brdfAnalysisPanel));
   m_Panels.push_back(std::make_unique<ScenePanel>());
   m_Panels.push_back(std::make_unique<HierarchyPanel>());
   m_Panels.push_back(std::make_unique<InspectorPanel>());
