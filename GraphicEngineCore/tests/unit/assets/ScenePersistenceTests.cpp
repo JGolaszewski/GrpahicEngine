@@ -170,6 +170,31 @@ TEST(ScenePersistenceTests, BlinnPhongMaterialModelRoundTrips) {
   EXPECT_EQ(loaded.document.entities.front().material->brdfModel, "blinnPhong");
 }
 
+TEST(ScenePersistenceTests, AshikhminShirleyModelAndAnisotropicRoughnessRoundTrip) {
+  TemporaryProject project;
+  Engine::AssetManager assets(project.Root());
+  Engine::SceneDocument document;
+  Engine::SceneEntityDocument entity;
+  entity.id = 10;
+  entity.name = "Ashikhmin-Shirley";
+  entity.primitiveType = "sphere";
+  Engine::SceneMaterialDocument material;
+  material.brdfModel = "ashikhminShirley";
+  material.anisotropicRoughnessU = 0.2F;
+  material.anisotropicRoughnessV = 0.8F;
+  entity.material = material;
+  document.entities.push_back(entity);
+
+  std::string error;
+  ASSERT_TRUE(assets.SaveScene("ashikhmin-shirley.scene.json", document, error)) << error;
+  const auto loaded = assets.LoadScene("ashikhmin-shirley.scene.json");
+  ASSERT_TRUE(loaded) << loaded.error;
+  ASSERT_TRUE(loaded.document.entities.front().material.has_value());
+  EXPECT_EQ(loaded.document.entities.front().material->brdfModel, "ashikhminShirley");
+  EXPECT_FLOAT_EQ(loaded.document.entities.front().material->anisotropicRoughnessU, 0.2F);
+  EXPECT_FLOAT_EQ(loaded.document.entities.front().material->anisotropicRoughnessV, 0.8F);
+}
+
 TEST(ScenePersistenceTests, SchemaThreeRoundTripsSceneRootAndEmptyHierarchyEntities) {
   TemporaryProject project;
   Engine::AssetManager assets(project.Root());

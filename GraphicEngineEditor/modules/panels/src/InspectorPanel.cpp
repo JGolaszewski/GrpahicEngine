@@ -359,24 +359,31 @@ void InspectorPanel::DrawEntityInspector() {
       materialChanged |= ImGui::ColorEdit3("Emissive", material.emissive.data());
       materialChanged |= ImGui::SliderFloat("Metallic", &material.metallic, 0.0F, 1.0F);
       materialChanged |= ImGui::SliderFloat("Roughness", &material.roughness, 0.0F, 1.0F);
-      constexpr const char* brdfNames[] = {"Legacy", "GGX", "GTR", "Beckmann", "Gauss", "Blinn-Phong"};
-      int brdfIndex = material.brdfModel == "ggx"          ? 1
-                      : material.brdfModel == "gtr"        ? 2
-                      : material.brdfModel == "beckmann"   ? 3
-                      : material.brdfModel == "gauss"      ? 4
-                      : material.brdfModel == "blinnPhong" ? 5
-                                                           : 0;
-      if (ImGui::Combo("BRDF", &brdfIndex, brdfNames, 6)) {
+      constexpr const char* brdfNames[] = {"Legacy",           "GGX", "GTR", "Beckmann", "Gauss", "Blinn-Phong",
+                                           "Ashikhmin-Shirley"};
+      int brdfIndex = material.brdfModel == "ggx"                ? 1
+                      : material.brdfModel == "gtr"              ? 2
+                      : material.brdfModel == "beckmann"         ? 3
+                      : material.brdfModel == "gauss"            ? 4
+                      : material.brdfModel == "blinnPhong"       ? 5
+                      : material.brdfModel == "ashikhminShirley" ? 6
+                                                                 : 0;
+      if (ImGui::Combo("BRDF", &brdfIndex, brdfNames, 7)) {
         material.brdfModel = brdfIndex == 1   ? "ggx"
                              : brdfIndex == 2 ? "gtr"
                              : brdfIndex == 3 ? "beckmann"
                              : brdfIndex == 4 ? "gauss"
                              : brdfIndex == 5 ? "blinnPhong"
+                             : brdfIndex == 6 ? "ashikhminShirley"
                                               : "legacy";
         materialChanged = true;
       }
       if (material.brdfModel == "gtr") {
         materialChanged |= ImGui::SliderFloat("GTR gamma", &material.gtrGamma, 1.0F, 8.0F, "%.2f");
+      }
+      if (material.brdfModel == "ashikhminShirley") {
+        materialChanged |= ImGui::SliderFloat("Roughness U", &material.anisotropicRoughnessU, 0.0f, 1.0f);
+        materialChanged |= ImGui::SliderFloat("Roughness V", &material.anisotropicRoughnessV, 0.0f, 1.0f);
       }
       constexpr const char* alphaNames[] = {"Opaque", "Mask", "Blend"};
       int alphaIndex = material.alphaMode == "mask" ? 1 : material.alphaMode == "blend" ? 2 : 0;

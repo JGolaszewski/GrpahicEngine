@@ -89,6 +89,30 @@ inline float EvaluateBlinnPhongNdf(float noH, float alpha) noexcept {
   return ((exponent + 2.0f) / (2.0f * Pi)) * cosinePower;
 }
 
+/// Evaluates the normalized Ashikhmin-Shirley anisotropic NDF in a tangent frame.
+/// @param halfTangent Half-vector projected on tangent, bitangent, and normal axes.
+/// @param roughnessU Perceptual roughness along the tangent axis.
+/// @param roughnessV Perceptual roughness along the bitangent axis.
+inline float EvaluateAshikhminShirleyNdf(const DirectX::XMFLOAT3& halfTangent, float roughnessU,
+                                         float roughnessV) noexcept {
+  const float noH = ClampUnit(halfTangent.z);
+  if (noH <= 0.0f) {
+    return 0.0f;
+  }
+  const float alphaU = AlphaFromPerceptualRoughness(std::isfinite(roughnessU) ? roughnessU : 0.5f);
+  const float alphaV = AlphaFromPerceptualRoughness(std::isfinite(roughnessV) ? roughnessV : 0.5f);
+  const float nu = (std::max)(2.0f / (alphaU * alphaU) - 2.0f, 0.0f);
+  const float nv = (std::max)(2.0f / (alphaV * alphaV) - 2.0f, 0.0f);
+  const float tangentSquared = halfTangent.x * halfTangent.x + halfTangent.y * halfTangent.y;
+  const float exponent =
+      tangentSquared > Epsilon
+          ? (nu * halfTangent.x * halfTangent.x + nv * halfTangent.y * halfTangent.y) / tangentSquared
+          : 0.5f * (nu + nv);
+  const float cosPower = std::pow(noH, exponent);
+  const float denominator = 2.0f * Pi * noH * noH * noH * noH;
+  return std::sqrt((nu + 1.0f) * (nv + 1.0f)) * cosPower / (std::max)(denominator, Epsilon);
+}
+
 inline DirectX::XMFLOAT3 EvaluateGgxBrdf(const DirectX::XMFLOAT3& normal, const DirectX::XMFLOAT3& view,
                                          const DirectX::XMFLOAT3& light, const DirectX::XMFLOAT3& diffuseColor,
                                          const DirectX::XMFLOAT3& f0, float alpha) noexcept {
@@ -222,5 +246,42 @@ inline DirectX::XMFLOAT3 EvaluateBlinnPhongBrdf(const DirectX::XMFLOAT3& normal,
                   diffuseColor.y * (1.0f - f0.y) / Pi + (f0.y + (1.0f - f0.y) * fresnelWeight) * specularScale,
                   diffuseColor.z * (1.0f - f0.z) / Pi + (f0.z + (1.0f - f0.z) * fresnelWeight) * specularScale, 0.0f));
   return result;
+}
+
+/// Evaluates Ashikhmin-Shirley using the mesh tangent frame and independent perceptual roughness axes.
+inline DirectX::XMFLOAT3 EvaluateAshikhminShirleyBrdf(const DirectX::XMFLOAT3& normal, const DirectX::XMFLOAT3& tangent,
+                                                      const DirectX::XMFLOAT3& bitangent, const DirectX::XMFLOAT3& view,
+                                                      const DirectX::XMFLOAT3& light,
+                                                      const DirectX::XMFLOAT3& diffuseColor,
+                                                      const DirectX::XMFLOAT3& f0, float roughnessU,
+                                                      float roughnessV) noexcept {
+  using namespace DirectX;
+  const XMVECTOR n = XMVector3Normalize(XMLoadFloat3(&normal));
+  const XMVECTOR t = XMVector3Normalize(XMLoadFloat3(&tangent));
+  const XMVECTOR b = XMVector3Normalize(XMLoadFloat3(&bitangent));
+  const XMVECTOR v = XMVector3Normalize(XMLoadFloat3(&view));
+  const XMVECTOR l = XMVector3Normalize(XMLoadFloat3(&light));
+  const float noV = (std::max)(XMVectorGetX(XMVector3Dot(n, v)), 0.0f);
+  const float noL = (std::max)(XMVectorGetX(XMVector3Dot(n, l)), 0.0f);
+  if (noV <= Epsilon || noL <= Epsilon)
+    return {0.0f, 0.0f, 0.0f};
+  const XMVECTOR h = XMVector3Normalize(XMVectorAdd(v, l));
+  const XMFLOAT3 halfTangent{XMVectorGetX(XMVector3Dot(h, t)), XMVectorGetX(XMVector3Dot(h, b)),
+                             XMVectorGetX(XMVector3Dot(h, n))};
+  const float voH = ClampUnit(XMVectorGetX(XMVector3Dot(v, h)));
+  const float safeRoughnessU = std::isfinite(roughnessU) ? roughnessU : 0.5f;
+  const float safeRoughnessV = std::isfinite(roughnessV) ? roughnessV : 0.5f;
+  const float alpha =
+      (std::max)(AlphaFromPerceptualRoughness(safeRoughnessU), AlphaFromPerceptualRoughness(safeRoughnessV));
+  const float alphaSquared = alpha * alpha;
+  const float smithV = noL * std::sqrt((std::max)(alphaSquared + (1.0f - alphaSquared) * noV * noV, 0.0f));
+  const float smithL = noV * std::sqrt((std::max)(alphaSquared + (1.0f - alphaSquared) * noL * noL, 0.0f));
+  const float geometry = smithV + smithL > Epsilon ? 2.0f * noV * noL / (smithV + smithL) : 0.0f;
+  const float fresnelWeight = std::pow(1.0f - voH, 5.0f);
+  const float specularScale =
+      EvaluateAshikhminShirleyNdf(halfTangent, safeRoughnessU, safeRoughnessV) * geometry / (4.0f * noV * noL);
+  return {diffuseColor.x * (1.0f - f0.x) / Pi + (f0.x + (1.0f - f0.x) * fresnelWeight) * specularScale,
+          diffuseColor.y * (1.0f - f0.y) / Pi + (f0.y + (1.0f - f0.y) * fresnelWeight) * specularScale,
+          diffuseColor.z * (1.0f - f0.z) / Pi + (f0.z + (1.0f - f0.z) * fresnelWeight) * specularScale};
 }
 } // namespace Engine::Renderer::Brdf
