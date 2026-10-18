@@ -116,7 +116,6 @@ auto ValidateOutput(const Engine::RenderOutput& output, uint32_t width, uint32_t
 
 auto ValidateInputs(const Engine::Renderer::BrdfAnalysis::BrdfAnalysisSnapshot& snapshot,
                     std::span<const Engine::Renderer::BrdfModel> models) -> Engine::Status {
-  using Engine::Renderer::Brdf;
   const uint32_t width = snapshot.FrameOverrides.OutputResolution.has_value()
                              ? snapshot.FrameOverrides.OutputResolution->Width
                              : snapshot.Width;
@@ -132,8 +131,9 @@ auto ValidateInputs(const Engine::Renderer::BrdfAnalysis::BrdfAnalysisSnapshot& 
     return std::unexpected(Engine::MakeError("BRDF analysis roughness override must be finite and in [0, 1]"));
   }
   if (snapshot.FrameOverrides.GtrGamma.has_value() &&
-      (!std::isfinite(*snapshot.FrameOverrides.GtrGamma) || *snapshot.FrameOverrides.GtrGamma < Brdf::MinGamma ||
-       *snapshot.FrameOverrides.GtrGamma > Brdf::MaxGamma)) {
+      (!std::isfinite(*snapshot.FrameOverrides.GtrGamma) ||
+       *snapshot.FrameOverrides.GtrGamma < Engine::Renderer::Brdf::MinGamma ||
+       *snapshot.FrameOverrides.GtrGamma > Engine::Renderer::Brdf::MaxGamma)) {
     return std::unexpected(Engine::MakeError("BRDF analysis GTR gamma override is outside its supported range"));
   }
   if (models.empty()) {
