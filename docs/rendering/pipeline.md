@@ -80,9 +80,9 @@ layouts.
 
 `Engine::Renderer::MaterialProperties` is the editable CPU-side material
 description. It supports metallic-roughness and specular-glossiness workflows,
-dielectric reflectance from index of refraction or explicit F0, and seven BRDF
-choices: `Legacy`, `GGX`, `GTR`, `Beckmann`, `Gauss`, `Blinn-Phong`, and
-`Ashikhmin-Shirley`. The default workflow is metallic-roughness,
+dielectric reflectance from index of refraction or explicit F0, and eight BRDF
+choices: `Legacy`, `GGX`, `GTR`, `Beckmann`, `Gauss`, `Blinn-Phong`,
+`Ashikhmin-Shirley`, and `Schlick`. The default workflow is metallic-roughness,
 the default model is `Legacy`, and the default alpha mode is opaque. Input
 factors are sanitized and clamped when `BuildMaterialGpu` packs the shader
 constant buffer. Beckmann and Gauss use the same perceptual-roughness-to-alpha
@@ -99,6 +99,8 @@ material GPU ABI is version 5: these values occupy the existing reserved
 The normalized anisotropic cosine-power distribution uses the interpolated
 tangent frame in both color pixel shaders and stays finite at the horizon for
 broad roughness values.
+Schlick uses a rational microfacet distribution with a supported half-vector domain and a finite result at minimum
+material roughness.
 
 The textured shader supports base color, normal, metallic-roughness, occlusion,
 and emissive maps, with a UV set and UV transform per slot. It applies the

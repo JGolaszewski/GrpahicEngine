@@ -201,7 +201,7 @@ auto ValidateMaterialNames(const Json& value, SceneMaterialDocument& material, s
   }
   if (material.brdfModel != "legacy" && material.brdfModel != "ggx" && material.brdfModel != "gtr" &&
       material.brdfModel != "beckmann" && material.brdfModel != "gauss" && material.brdfModel != "blinnPhong" &&
-      material.brdfModel != "ashikhminShirley") {
+      material.brdfModel != "ashikhminShirley" && material.brdfModel != "schlick") {
     error = "brdfModel has an unsupported value";
     return false;
   }
@@ -321,7 +321,8 @@ auto IsValidPrimitiveType(const std::string& type) -> bool {
 auto IsValidMaterial(const SceneMaterialDocument& material) -> bool {
   const auto validBrdf = material.brdfModel == "legacy" || material.brdfModel == "ggx" || material.brdfModel == "gtr" ||
                          material.brdfModel == "beckmann" || material.brdfModel == "gauss" ||
-                         material.brdfModel == "blinnPhong" || material.brdfModel == "ashikhminShirley";
+                         material.brdfModel == "blinnPhong" || material.brdfModel == "ashikhminShirley" ||
+                         material.brdfModel == "schlick";
   const bool validWorkflow = material.workflow == "metallicRoughness" || material.workflow == "specularGlossiness";
   if (!validBrdf || !validWorkflow || (material.specularMode != "ior" && material.specularMode != "explicitF0") ||
       (material.alphaMode != "opaque" && material.alphaMode != "mask" && material.alphaMode != "blend") ||
