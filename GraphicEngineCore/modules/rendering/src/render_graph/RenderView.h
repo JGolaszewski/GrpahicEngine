@@ -69,7 +69,11 @@ public:
   DebugGeometry DebugGeometryData;
 
   Engine::Scene* TargetScene = nullptr;
+  Engine::EntityHandle ShadowLight = Engine::InvalidEntityHandle; ///< Entity owning this shadow view's light.
   nvrhi::IFramebuffer* TargetFramebuffer = nullptr;
+  nvrhi::IFramebuffer* DisplayFramebuffer = nullptr;
+  nvrhi::TextureHandle DisplayColorTexture;
+  RGResourceID DisplayColorResource;
   Engine::ViewportBinding::Mode RenderMode = Engine::ViewportBinding::Mode::Editor;
   std::vector<RGViewportAttachment> OutputAttachments;
   DirectX::XMFLOAT3 CameraPosition = {0.0f, 0.0f, 0.0f};

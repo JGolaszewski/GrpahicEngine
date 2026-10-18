@@ -1,5 +1,6 @@
 ﻿#include "application/include/Editor.h"
 
+#include "application/include/EditorProjectWorkflow.h"
 #include "events/include/AssetRegistryChangedEvent.h"
 #include "events/include/EcsComponentMutationRequestedEvent.h"
 #include "events/include/EcsEntityCreateRequestedEvent.h"
@@ -8,6 +9,7 @@
 #include "events/include/EcsEntitySelectedEvent.h"
 #include "events/include/EditorEvents.h"
 #include "panels/include/AssetBrowserPanel.h"
+#include "panels/include/AssetDropAssignment.h"
 #include "panels/include/CameraPreviewPanel.h"
 #include "panels/include/CameraPreviewRequest.h"
 #include "panels/include/EngineSettingsPanel.h"
@@ -56,6 +58,18 @@ auto QuaternionToPitchYawRoll(const std::array<float, 4>& quaternion) -> std::ar
 
 void Editor::OnInit() {
   m_EditorPreferences = EditorPlatform::LoadEditorPreferences();
+  SetFrameLimiterHz(m_EditorPreferences.FrameLimiterHz);
+  if (Engine::RenderSystem* renderSystem = GetRenderSystem()) {
+    Engine::ShadowSettings shadowSettings;
+    shadowSettings.Resolution = m_EditorPreferences.ShadowMapResolution;
+    shadowSettings.MaxShadowCastersPerScene = m_EditorPreferences.MaxShadowCasters;
+    if (!renderSystem->SetShadowSettings(shadowSettings)) {
+      ENGINE_LOG_WARN("Render", "Saved shadow settings were rejected; using renderer defaults");
+    }
+  }
+  if (Engine::IRenderBackend* backend = GetRenderer(); backend != nullptr && backend->SupportsVSyncControl()) {
+    (void)backend->SetVSyncEnabled(m_EditorPreferences.VSyncEnabled);
+  }
   m_EditorConsole.AttachToLogger();
   m_RenderOutputExportService = std::make_unique<Engine::RenderOutputExportService>();
   if (!m_UiIntegration.Initialize(GetWindow(), GetRenderer())) {
@@ -101,7 +115,7 @@ void Editor::OnInit() {
     Engine::Ecs::SpotLight light;
     light.Direction = {-0.4F, -0.7F, 0.2F};
     light.Intensity = 8.0F;
-    light.UsePosition = true;
+    light.Type = Engine::Ecs::LightType::Spot;
     (void)m_ActiveScene->QueueSet(lightEntity, lightTransform);
     (void)m_ActiveScene->QueueAdd(lightEntity, light);
   }
@@ -116,7 +130,13 @@ void Editor::OnInit() {
   if (Engine::RenderSystem* renderSystem = GetRenderSystem()) {
     auto material = renderSystem->CreateMaterial({});
     if (material) {
-      (void)renderSystem->CreatePrimitive(Engine::PrimitiveShape::Cube, std::move(material));
+      constexpr std::array primitiveShapes = {Engine::PrimitiveShape::Cube, Engine::PrimitiveShape::Sphere,
+                                              Engine::PrimitiveShape::Plane, Engine::PrimitiveShape::Cone};
+      for (const Engine::PrimitiveShape shape : primitiveShapes) {
+        if (!renderSystem->CreatePrimitive(shape, material)) {
+          ENGINE_LOG_WARN("Render", "Editor primitive resource setup failed | shape: {}", static_cast<uint32_t>(shape));
+        }
+      }
     }
   }
 
@@ -158,7 +178,8 @@ void Editor::OnInit() {
         return EditorPlatform::ChooseRenderOutputFile(exr, initialPath);
       },
       [this](Engine::EntityHandle entity, bool exr, std::vector<Engine::RenderAov> selectedAovs,
-             std::filesystem::path destination) -> Engine::Result<Engine::RenderOutputExportService::RequestId> {
+             std::filesystem::path destination, Engine::RenderOutputBackground background)
+          -> Engine::Result<Engine::RenderOutputExportService::RequestId> {
         Engine::RenderSystem* renderer = GetRenderSystem();
         if (!m_ActiveScene || renderer == nullptr || m_RenderOutputExportService == nullptr) {
           return std::unexpected(Engine::MakeError("No active scene or render system is available"));
@@ -168,12 +189,12 @@ void Editor::OnInit() {
           return std::unexpected(request.error());
         }
         if (exr) {
-          return m_RenderOutputExportService->StartMultilayerExr(*renderer, *m_ActiveScene, request->View,
-                                                                 request->Width, request->Height,
-                                                                 std::move(selectedAovs), std::move(destination));
+          return m_RenderOutputExportService->StartMultilayerExr(
+              *renderer, *m_ActiveScene, request->View, request->Width, request->Height, std::move(selectedAovs),
+              std::move(destination), {}, background);
         }
         return m_RenderOutputExportService->StartPng(*renderer, *m_ActiveScene, request->View, request->Width,
-                                                     request->Height, std::move(destination));
+                                                     request->Height, std::move(destination), {}, background);
       },
       [this](
           Engine::RenderOutputExportService::RequestId requestId) -> std::optional<Engine::RenderOutputExportStatus> {
@@ -189,7 +210,8 @@ void Editor::OnInit() {
         *panel, [this](std::unique_ptr<Engine::Events::Event> event) -> void { ProcessPanelEvent(std::move(event)); }));
   }
   BroadcastSceneChanged();
-  AssetRegistryChangedEvent assets(GetAssetManager()->GetKnownModels(), GetAssetManager()->GetKnownTextures());
+  AssetRegistryChangedEvent assets(GetAssetManager()->GetKnownModels(), GetAssetManager()->GetKnownTextures(),
+                                   GetAssetManager()->GetKnownMaterials());
   BroadcastEvent(assets);
 }
 
@@ -410,10 +432,140 @@ void Editor::OnResize(uint32_t width, uint32_t height) { CreateViewport(width, h
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
 void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
-  if (!event || !m_ActiveScene) {
+  if (!event) {
     return;
   }
   Engine::Events::EventDispatcher dispatcher(*event);
+  dispatcher.Dispatch<SceneFileActionRequestedEvent>([this](const auto& request) -> bool {
+    if (GetAssetManager() == nullptr) {
+      ENGINE_LOG_ERROR("Asset", "Cannot process the file action because the asset manager is unavailable");
+      return true;
+    }
+    if (request.GetAction() == SceneFileActionRequestedEvent::Action::NewScene) {
+      std::string error;
+      std::vector<std::string> warnings;
+      if (!LoadSceneDocument(Engine::SceneDocument{}, error, warnings)) {
+        ENGINE_LOG_ERROR("Scene", "Could not create a new scene | reason: {}", error);
+      } else {
+        m_ActiveSceneDocument.Reset();
+      }
+      return true;
+    }
+    if (request.GetAction() == SceneFileActionRequestedEvent::Action::OpenProject) {
+      const auto selected = EditorPlatform::ChooseProjectFolder(GetAssetManager()->GetProjectRoot());
+      std::vector<std::string> warnings;
+      std::string error;
+      const EditorWorkflow::ProjectOpenResult result =
+          EditorWorkflow::OpenProject(*GetAssetManager(), selected, warnings, error);
+      if (result == EditorWorkflow::ProjectOpenResult::Failed) {
+        ENGINE_LOG_ERROR("Asset", "Project selection failed | reason: {}", error);
+      } else if (result == EditorWorkflow::ProjectOpenResult::Opened) {
+        EditorPlatform::RememberProjectRoot(GetAssetManager()->GetProjectRoot());
+        for (const std::string& warning : warnings) {
+          ENGINE_LOG_WARN("Asset", "Project asset warning | {}", warning);
+        }
+        AssetRegistryChangedEvent changed(GetAssetManager()->GetKnownModels(), GetAssetManager()->GetKnownTextures(),
+                                          GetAssetManager()->GetKnownMaterials());
+        BroadcastEvent(changed);
+      }
+      return true;
+    }
+    if (request.GetAction() == SceneFileActionRequestedEvent::Action::OpenScene) {
+      const auto selected =
+          EditorPlatform::ChooseSceneFile(false, m_ActiveSceneDocument.GetPath(), GetAssetManager()->GetProjectRoot());
+      std::string error;
+      std::vector<std::string> warnings;
+      const auto result = m_ActiveSceneDocument.Open(
+          selected,
+          [this](const std::filesystem::path& path, std::string& loadError,
+                 std::vector<std::string>& loadWarnings) -> bool {
+            const Engine::SceneDocumentResult loaded = GetAssetManager()->LoadScene(path);
+            if (!loaded) {
+              loadError = loaded.error;
+              loadWarnings.clear();
+              return false;
+            }
+            std::vector<std::string> parseWarnings = loaded.warnings;
+            if (!LoadSceneDocument(loaded.document, loadError, loadWarnings)) {
+              return false;
+            }
+            loadWarnings.insert(loadWarnings.end(), parseWarnings.begin(), parseWarnings.end());
+            return true;
+          },
+          error, warnings);
+      if (result == EditorSceneDocument::OpenResult::Failed) {
+        ENGINE_LOG_ERROR("Scene", "Scene selection failed | path: {} | reason: {}", selected->generic_string(), error);
+      } else if (result == EditorSceneDocument::OpenResult::Opened) {
+        for (const std::string& warning : warnings) {
+          ENGINE_LOG_WARN("Scene", "Scene loaded with warning | {}", warning);
+        }
+      }
+      return true;
+    }
+    if (request.GetAction() == SceneFileActionRequestedEvent::Action::SaveScene ||
+        request.GetAction() == SceneFileActionRequestedEvent::Action::SaveSceneAs) {
+      if (m_ActiveScene == nullptr) {
+        ENGINE_LOG_ERROR("Scene", "Cannot save a scene because no scene is active");
+        return true;
+      }
+      const bool saveAs = request.GetAction() == SceneFileActionRequestedEvent::Action::SaveSceneAs ||
+                          m_ActiveSceneDocument.GetPath().empty();
+      const std::filesystem::path destination =
+          saveAs ? EditorPlatform::ChooseSceneFile(true, m_ActiveSceneDocument.GetPath(),
+                                                   GetAssetManager()->GetProjectRoot())
+                       .value_or(std::filesystem::path{})
+                 : m_ActiveSceneDocument.GetPath();
+      if (destination.empty()) {
+        return true;
+      }
+      const Engine::SceneDocument snapshot = CreateSceneDocument(*m_ActiveScene);
+      const Engine::Status saveStatus = m_ActiveSceneDocument.Save(*GetAssetManager(), snapshot, destination);
+      if (!saveStatus) {
+        ENGINE_LOG_ERROR("Scene", "Scene save failed | path: {} | reason: {}", destination.generic_string(),
+                         saveStatus.error().Message);
+      } else {
+        ENGINE_LOG_INFO("Scene", "Scene saved | path: {}", destination.generic_string());
+      }
+      return true;
+    }
+    if (request.GetAction() == SceneFileActionRequestedEvent::Action::ResetSandbox) {
+      const std::filesystem::path projectRoot = GetAssetManager()->GetProjectRoot();
+      const std::filesystem::path templatePath = projectRoot / "Sandbox.template.scene.json";
+      std::string error;
+      std::vector<std::string> warnings;
+      const auto result = m_ActiveSceneDocument.Open(
+          templatePath,
+          [this](const std::filesystem::path& path, std::string& loadError,
+                 std::vector<std::string>& loadWarnings) -> bool {
+            const Engine::SceneDocumentResult loaded = GetAssetManager()->LoadScene(path);
+            if (!loaded) {
+              loadError = loaded.error;
+              loadWarnings.clear();
+              return false;
+            }
+            std::vector<std::string> parseWarnings = loaded.warnings;
+            if (!LoadSceneDocument(loaded.document, loadError, loadWarnings)) {
+              return false;
+            }
+            loadWarnings.insert(loadWarnings.end(), parseWarnings.begin(), parseWarnings.end());
+            return true;
+          },
+          error, warnings);
+      if (result == EditorSceneDocument::OpenResult::Failed) {
+        ENGINE_LOG_ERROR("Scene", "Sandbox reset failed | path: {} | reason: {}", templatePath.generic_string(), error);
+      } else if (result == EditorSceneDocument::OpenResult::Opened) {
+        m_ActiveSceneDocument.CommitPath(projectRoot / "Sandbox.scene.json");
+        for (const std::string& warning : warnings) {
+          ENGINE_LOG_WARN("Scene", "Sandbox loaded with warning | {}", warning);
+        }
+      }
+      return true;
+    }
+    return false;
+  });
+  if (!m_ActiveScene) {
+    return;
+  }
   dispatcher.Dispatch<ViewportResizeRequestedEvent>([this](const auto& request) -> bool {
     const uint32_t width = request.GetWidth();
     const uint32_t height = request.GetHeight();
@@ -452,6 +604,46 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
     if (GetAssetManager() == nullptr) {
       return true;
     }
+    if (request.GetAssetType() == AssetImportRequestedEvent::AssetType::Material) {
+      auto created = GetAssetManager()->CreateMaterial("Material");
+      if (!created) {
+        AssetWorkflowFeedbackEvent feedback(false, created.error().Message);
+        BroadcastEvent(feedback);
+        return true;
+      }
+      AssetRegistryChangedEvent changed(GetAssetManager()->GetKnownModels(), GetAssetManager()->GetKnownTextures(),
+                                        GetAssetManager()->GetKnownMaterials());
+      BroadcastEvent(changed);
+      if (request.GetTargetEntity() != Engine::InvalidEntityHandle && m_ActiveScene &&
+          m_ActiveScene->World().IsAlive(request.GetTargetEntity())) {
+        std::string error;
+        const auto& guid = created.value();
+        if (!GetAssetManager()->LoadMaterial(guid, error)) {
+          AssetWorkflowFeedbackEvent feedback(false, error);
+          BroadcastEvent(feedback);
+          return true;
+        }
+        auto* current = m_ActiveScene->World().Get<Engine::Ecs::MeshRenderer>(request.GetTargetEntity());
+        const auto material = GetAssetManager()->GetMaterial(guid);
+        if (current == nullptr || !material) {
+          AssetWorkflowFeedbackEvent feedback(false, "Selected entity has no assignable Mesh Renderer");
+          BroadcastEvent(feedback);
+          return true;
+        }
+        Engine::Ecs::MeshRenderer updated = *current;
+        AssignMaterialAsset(updated, guid, *material);
+        const Engine::Status status = m_ActiveScene->SetInPlace(request.GetTargetEntity(), std::move(updated));
+        if (!status) {
+          AssetWorkflowFeedbackEvent feedback(false, status.error().Message);
+          BroadcastEvent(feedback);
+          return true;
+        }
+        BroadcastSceneChanged();
+      }
+      AssetWorkflowFeedbackEvent feedback(true, "Material asset created");
+      BroadcastEvent(feedback);
+      return true;
+    }
     const auto path = request.GetAssetType() == AssetImportRequestedEvent::AssetType::Texture
                           ? EditorPlatform::ChooseTextureFile(GetAssetManager()->GetProjectRoot())
                           : EditorPlatform::ChooseModelFile(GetAssetManager()->GetProjectRoot());
@@ -472,8 +664,170 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
       ENGINE_LOG_ERROR("Asset", "Asset registry refresh failed after import | reason: {}", error);
       return true;
     }
-    AssetRegistryChangedEvent changed(GetAssetManager()->GetKnownModels(), GetAssetManager()->GetKnownTextures());
+    AssetRegistryChangedEvent changed(GetAssetManager()->GetKnownModels(), GetAssetManager()->GetKnownTextures(),
+                                      GetAssetManager()->GetKnownMaterials());
     BroadcastEvent(changed);
+    return true;
+  });
+  dispatcher.Dispatch<AssetRenameRequestedEvent>([this](const auto& request) -> bool {
+    if (GetAssetManager() == nullptr) {
+      const std::string error = "asset manager is unavailable; open a project before renaming assets";
+      ENGINE_LOG_ERROR("Asset", "Asset rename failed | reason: {}", error);
+      AssetWorkflowFeedbackEvent feedback(false, error);
+      BroadcastEvent(feedback);
+      return true;
+    }
+    std::string error;
+    if (!GetAssetManager()->RenameAsset(request.GetGuid(), request.GetNewName(), error)) {
+      ENGINE_LOG_ERROR("Asset", "Asset rename failed | guid: {} | reason: {}", request.GetGuid(), error);
+      AssetWorkflowFeedbackEvent feedback(false, error);
+      BroadcastEvent(feedback);
+      return true;
+    }
+    AssetRegistryChangedEvent changed(GetAssetManager()->GetKnownModels(), GetAssetManager()->GetKnownTextures(),
+                                      GetAssetManager()->GetKnownMaterials());
+    BroadcastEvent(changed);
+    AssetWorkflowFeedbackEvent feedback(true, "Asset renamed; scene references remain valid");
+    BroadcastEvent(feedback);
+    return true;
+  });
+  dispatcher.Dispatch<MaterialAssetSelectionRequestedEvent>([this](const auto& request) -> bool {
+    const auto fail = [this](std::string message) -> bool {
+      AssetWorkflowFeedbackEvent feedback(false, std::move(message));
+      BroadcastEvent(feedback);
+      return true;
+    };
+    if (GetAssetManager() == nullptr || !m_ActiveScene || !m_ActiveScene->World().IsAlive(request.GetEntity())) {
+      return fail("Material assignment requires an open project and a live mesh entity");
+    }
+    auto* current = m_ActiveScene->World().Get<Engine::Ecs::MeshRenderer>(request.GetEntity());
+    if (current == nullptr) {
+      return fail("The selected entity does not have a Mesh Renderer component");
+    }
+    std::string error;
+    if (!GetAssetManager()->LoadMaterial(request.GetGuid(), error)) {
+      return fail(error);
+    }
+    const auto material = GetAssetManager()->GetMaterial(request.GetGuid());
+    if (!material) {
+      return fail("Material asset could not be read after loading");
+    }
+    if (GetRenderSystem() != nullptr) {
+      for (const auto& [textureGuid, srgb] :
+           {std::pair{material->baseColorTextureGuid, true}, std::pair{material->normalTextureGuid, false}}) {
+        if (!textureGuid) {
+          continue;
+        }
+        if (!GetRenderSystem()->PrepareAssetTexture(*textureGuid, srgb, error)) {
+          return fail(error);
+        }
+      }
+    }
+    Engine::Ecs::MeshRenderer updated = *current;
+    AssignMaterialAsset(updated, request.GetGuid(), *material);
+    const Engine::Status status = m_ActiveScene->SetInPlace(request.GetEntity(), std::move(updated));
+    if (!status) {
+      return fail(status.error().Message);
+    }
+    BroadcastSceneChanged();
+    AssetWorkflowFeedbackEvent feedback(true, "Material assigned to Mesh Renderer");
+    BroadcastEvent(feedback);
+    return true;
+  });
+  dispatcher.Dispatch<MaterialAssetEditRequestedEvent>([this](const auto& request) -> bool {
+    if (GetAssetManager() == nullptr || !m_ActiveScene) {
+      AssetWorkflowFeedbackEvent feedback(false, "Material edits require an open project");
+      BroadcastEvent(feedback);
+      return true;
+    }
+    std::string error;
+    if (GetRenderSystem() != nullptr) {
+      for (const auto& [textureGuid, srgb] : {std::pair{request.GetMaterial().baseColorTextureGuid, true},
+                                              std::pair{request.GetMaterial().normalTextureGuid, false}}) {
+        if (!textureGuid) {
+          continue;
+        }
+        if (!GetRenderSystem()->PrepareAssetTexture(*textureGuid, srgb, error)) {
+          AssetWorkflowFeedbackEvent feedback(false, error);
+          BroadcastEvent(feedback);
+          return true;
+        }
+      }
+    }
+    if (!GetAssetManager()->SaveMaterial(request.GetGuid(), request.GetMaterial(), error)) {
+      AssetWorkflowFeedbackEvent feedback(false, error);
+      BroadcastEvent(feedback);
+      return true;
+    }
+    std::vector<std::pair<Engine::EntityHandle, Engine::Ecs::MeshRenderer>> updates;
+    m_ActiveScene->World().ForEachChunkReadOnly<Engine::Ecs::MeshRenderer>(
+        [&updates, &request](std::span<const Engine::EntityHandle> entities,
+                             std::span<const Engine::Ecs::MeshRenderer> meshes) -> void {
+          for (size_t index = 0; index < entities.size(); ++index) {
+            if (meshes[index].MaterialGuid == request.GetGuid()) {
+              auto updated = meshes[index];
+              if (ApplyMaterialAssetEdit(updated, request.GetGuid(), request.GetMaterial())) {
+                updates.emplace_back(entities[index], std::move(updated));
+              }
+            }
+          }
+        });
+    for (auto& [entity, mesh] : updates) {
+      const Engine::Status status = m_ActiveScene->SetInPlace(entity, std::move(mesh));
+      if (!status) {
+        AssetWorkflowFeedbackEvent feedback(false, status.error().Message);
+        BroadcastEvent(feedback);
+        return true;
+      }
+    }
+    BroadcastSceneChanged();
+    AssetWorkflowFeedbackEvent feedback(true, "Shared material updated");
+    BroadcastEvent(feedback);
+    return true;
+  });
+  dispatcher.Dispatch<ModelReassignmentRequestedEvent>([this](const auto& request) -> bool {
+    std::string error;
+    const auto fail = [this, &error](std::string message) -> bool {
+      error = std::move(message);
+      ENGINE_LOG_ERROR("Asset", "Model assignment failed | reason: {}", error);
+      AssetWorkflowFeedbackEvent feedback(false, error);
+      BroadcastEvent(feedback);
+      return true;
+    };
+    if (GetAssetManager() == nullptr) {
+      return fail("asset manager is unavailable; open a project before assigning models");
+    }
+    if (!m_ActiveScene || m_SelectedEntity == Engine::InvalidEntityHandle ||
+        !m_ActiveScene->World().IsAlive(m_SelectedEntity)) {
+      return fail("Select a live mesh entity before assigning a model");
+    }
+    auto* current = m_ActiveScene->World().Get<Engine::Ecs::MeshRenderer>(m_SelectedEntity);
+    if (current == nullptr) {
+      return fail("The selected entity does not have a Mesh Renderer component");
+    }
+    Engine::Ecs::MeshRenderer updated = *current;
+    const auto models = GetAssetManager()->GetKnownModels();
+    if (!AssignDroppedModel(updated, request.GetGuid(), models, error)) {
+      return fail(error);
+    }
+    if (!GetAssetManager()->LoadModel(request.GetGuid(), error)) {
+      return fail(error);
+    }
+    if (GetRenderSystem() != nullptr) {
+      const auto model = GetAssetManager()->GetModel(request.GetGuid());
+      const auto generation = GetAssetManager()->GetGeneration(request.GetGuid());
+      if (model == nullptr || !generation ||
+          !GetRenderSystem()->PrepareModelResources(request.GetGuid(), *generation, *model, {}, error)) {
+        return fail(error.empty() ? "Model resource preparation failed" : error);
+      }
+    }
+    const Engine::Status status = m_ActiveScene->SetInPlace(m_SelectedEntity, std::move(updated));
+    if (!status) {
+      return fail(status.error().Message);
+    }
+    BroadcastSceneChanged();
+    AssetWorkflowFeedbackEvent feedback(true, "Model assigned to selected Mesh Renderer");
+    BroadcastEvent(feedback);
     return true;
   });
   dispatcher.Dispatch<EcsEntityCreateRequestedEvent>([this](const auto& request) -> bool {
@@ -500,6 +854,8 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
         const Engine::Status status = m_ActiveScene->SetInPlace(entity, std::move(component));
         if (!status) {
           ENGINE_LOG_WARN("Scene", "Editor component edit rejected | reason: {}", status.error().Message);
+          AssetWorkflowFeedbackEvent feedback(false, status.error().Message);
+          BroadcastEvent(feedback);
         }
       }
     };
@@ -529,6 +885,63 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
       if (operation == EcsComponentMutationRequestedEvent::Operation::Remove) {
         (void)m_ActiveScene->QueueRemove<Engine::Ecs::MeshRenderer>(entity);
       } else if (const auto* value = std::get_if<Engine::Ecs::MeshRenderer>(&payload)) {
+        const auto* previous = m_ActiveScene->World().Get<Engine::Ecs::MeshRenderer>(entity);
+        if (!value->ModelGuid.empty() && (previous == nullptr || previous->ModelGuid != value->ModelGuid)) {
+          std::string error;
+          if (GetAssetManager() == nullptr || !GetAssetManager()->LoadModel(value->ModelGuid, error)) {
+            if (error.empty()) {
+              error = "model asset manager is unavailable";
+            }
+          } else if (GetRenderSystem() != nullptr) {
+            const auto loadedModel = GetAssetManager()->GetModel(value->ModelGuid);
+            const auto loadedGeneration = GetAssetManager()->GetGeneration(value->ModelGuid);
+            if (loadedModel == nullptr || !loadedGeneration ||
+                !GetRenderSystem()->PrepareModelResources(value->ModelGuid, *loadedGeneration, *loadedModel, {},
+                                                          error)) {
+              if (error.empty()) {
+                error = "model resource preparation failed";
+              }
+            }
+          }
+          if (!error.empty()) {
+            ENGINE_LOG_ERROR("Asset", "Mesh model assignment rejected | guid: {} | reason: {}", value->ModelGuid,
+                             error);
+            AssetWorkflowFeedbackEvent feedback(false, error);
+            BroadcastEvent(feedback);
+            return true;
+          }
+        }
+        const auto prepareMaterial = [this](const Engine::SceneMaterialDocument& material) -> bool {
+          if (GetRenderSystem() == nullptr) {
+            return true;
+          }
+          const auto prepare = [this](const std::optional<std::string>& guid, bool srgb,
+                                      std::string_view semantic) -> bool {
+            if (!guid) {
+              return true;
+            }
+            std::string error;
+            if (!GetRenderSystem()->PrepareAssetTexture(*guid, srgb, error)) {
+              ENGINE_LOG_ERROR("Asset", "Material texture assignment rejected | slot: {} | guid: {} | reason: {}",
+                               semantic, *guid, error);
+              AssetWorkflowFeedbackEvent feedback(false, error);
+              BroadcastEvent(feedback);
+              return false;
+            }
+            return true;
+          };
+          return prepare(material.baseColorTextureGuid, true, "base-color") &&
+                 prepare(material.normalTextureGuid, false, "normal");
+        };
+        bool texturesReady = !value->Material || prepareMaterial(*value->Material);
+        for (const auto& material : value->MaterialOverrides) {
+          if (material) {
+            texturesReady = prepareMaterial(*material) && texturesReady;
+          }
+        }
+        if (!texturesReady) {
+          return true;
+        }
         queueMutation(*value);
       } else if (operation == EcsComponentMutationRequestedEvent::Operation::Add) {
         queueMutation(Engine::Ecs::MeshRenderer{});
@@ -695,11 +1108,11 @@ void Editor::BuildDefaultDockLayout(uint32_t dockspaceId) {
   ImGui::DockBuilderSplitNode(main, ImGuiDir_Right, 0.25F, &right, &main);
   ImGui::DockBuilderSplitNode(main, ImGuiDir_Down, 0.25F, &bottom, &main);
   ImGui::DockBuilderDockWindow("Scene", left);
-  ImGui::DockBuilderDockWindow("Scene Hierarchy", left);
+  ImGui::DockBuilderDockWindow("Hierarchy", left);
   ImGui::DockBuilderDockWindow("Inspector", right);
-  ImGui::DockBuilderDockWindow("Statistics", bottom);
+  ImGui::DockBuilderDockWindow("Stats", bottom);
   ImGui::DockBuilderDockWindow("Assets", bottom);
-  ImGui::DockBuilderDockWindow("Engine Console", bottom);
+  ImGui::DockBuilderDockWindow("Console", bottom);
   ImGui::DockBuilderDockWindow("Viewport", main);
   ImGui::DockBuilderFinish(dockspaceId);
 }

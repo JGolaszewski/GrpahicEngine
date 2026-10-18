@@ -1,0 +1,616 @@
+{
+  "schemaVersion": 3,
+  "unitsPerMeter": 1.0,
+  "coordinateSystem": "right-handed-y-up",
+  "entities": [
+    {
+      "id": 1,
+      "name": "Sandbox",
+      "sceneRoot": true,
+      "identityGuid": {
+        "high": 0,
+        "low": 1
+      }
+    },
+    {
+      "id": 2,
+      "name": "Sample Model",
+      "sceneRoot": false,
+      "identityGuid": {
+        "high": 0,
+        "low": 2
+      },
+      "parentGuid": {
+        "high": 0,
+        "low": 1
+      },
+      "visible": true,
+      "position": [
+        -3.0,
+        0.6,
+        0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "scale": [
+        1.1,
+        1.1,
+        1.1
+      ],
+      "modelGuid": "a1000000-0000-4000-8000-000000000001",
+      "material": {
+        "baseColor": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "emissive": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "metallic": 0.0,
+        "roughness": 0.5,
+        "gtrGamma": 2.0,
+        "ior": 1.5,
+        "specularF0": [
+          0.04,
+          0.04,
+          0.04
+        ],
+        "brdfModel": "ggx",
+        "workflow": "metallicRoughness",
+        "specularMode": "ior",
+        "alphaMode": "opaque",
+        "alphaCutoff": 0.5,
+        "doubleSided": false,
+        "baseColorTextureGuid": "a1000000-0000-4000-8000-000000000002"
+      }
+    },
+    {
+      "id": 3,
+      "name": "Cube",
+      "sceneRoot": false,
+      "identityGuid": {
+        "high": 0,
+        "low": 3
+      },
+      "parentGuid": {
+        "high": 0,
+        "low": 1
+      },
+      "visible": true,
+      "position": [
+        -1.0,
+        0.5,
+        0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "primitiveType": "cube",
+      "material": {
+        "baseColor": [
+          0.8,
+          0.18,
+          0.12,
+          1
+        ],
+        "emissive": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "metallic": 0.15,
+        "roughness": 0.35,
+        "gtrGamma": 2.0,
+        "ior": 1.5,
+        "specularF0": [
+          0.04,
+          0.04,
+          0.04
+        ],
+        "brdfModel": "ggx",
+        "workflow": "metallicRoughness",
+        "specularMode": "ior",
+        "alphaMode": "opaque",
+        "alphaCutoff": 0.5,
+        "doubleSided": false
+      }
+    },
+    {
+      "id": 4,
+      "name": "Sphere",
+      "sceneRoot": false,
+      "identityGuid": {
+        "high": 0,
+        "low": 4
+      },
+      "parentGuid": {
+        "high": 0,
+        "low": 1
+      },
+      "visible": true,
+      "position": [
+        1.0,
+        0.5,
+        0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "primitiveType": "sphere",
+      "material": {
+        "baseColor": [
+          0.12,
+          0.35,
+          0.85,
+          1
+        ],
+        "emissive": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "metallic": 0.6,
+        "roughness": 0.22,
+        "gtrGamma": 2.0,
+        "ior": 1.5,
+        "specularF0": [
+          0.04,
+          0.04,
+          0.04
+        ],
+        "brdfModel": "ggx",
+        "workflow": "metallicRoughness",
+        "specularMode": "ior",
+        "alphaMode": "opaque",
+        "alphaCutoff": 0.5,
+        "doubleSided": false
+      }
+    },
+    {
+      "id": 5,
+      "name": "Plane",
+      "sceneRoot": false,
+      "identityGuid": {
+        "high": 0,
+        "low": 5
+      },
+      "parentGuid": {
+        "high": 0,
+        "low": 1
+      },
+      "visible": true,
+      "position": [
+        0.0,
+        -0.05,
+        0.0
+      ],
+      "rotation": [
+        0.70710678,
+        0.0,
+        0.0,
+        0.70710678
+      ],
+      "scale": [
+        8.0,
+        1.0,
+        8.0
+      ],
+      "primitiveType": "plane",
+      "material": {
+        "baseColor": [
+          0.22,
+          0.24,
+          0.27,
+          1
+        ],
+        "emissive": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "metallic": 0.0,
+        "roughness": 0.8,
+        "gtrGamma": 2.0,
+        "ior": 1.5,
+        "specularF0": [
+          0.04,
+          0.04,
+          0.04
+        ],
+        "brdfModel": "ggx",
+        "workflow": "metallicRoughness",
+        "specularMode": "ior",
+        "alphaMode": "opaque",
+        "alphaCutoff": 0.5,
+        "doubleSided": false
+      }
+    },
+    {
+      "id": 6,
+      "name": "Cone",
+      "sceneRoot": false,
+      "identityGuid": {
+        "high": 0,
+        "low": 6
+      },
+      "parentGuid": {
+        "high": 0,
+        "low": 1
+      },
+      "visible": true,
+      "position": [
+        3.0,
+        0.5,
+        0.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "primitiveType": "cone",
+      "material": {
+        "baseColor": [
+          0.85,
+          0.55,
+          0.1,
+          1
+        ],
+        "emissive": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "metallic": 0.1,
+        "roughness": 0.4,
+        "gtrGamma": 2.0,
+        "ior": 1.5,
+        "specularF0": [
+          0.04,
+          0.04,
+          0.04
+        ],
+        "brdfModel": "ggx",
+        "workflow": "metallicRoughness",
+        "specularMode": "ior",
+        "alphaMode": "opaque",
+        "alphaCutoff": 0.5,
+        "doubleSided": false
+      }
+    },
+    {
+      "id": 7,
+      "name": "Sun",
+      "sceneRoot": false,
+      "identityGuid": {
+        "high": 0,
+        "low": 7
+      },
+      "parentGuid": {
+        "high": 0,
+        "low": 1
+      },
+      "visible": true,
+      "position": [
+        0,
+        4,
+        0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "id": 8,
+      "name": "Point Light",
+      "sceneRoot": false,
+      "identityGuid": {
+        "high": 0,
+        "low": 8
+      },
+      "parentGuid": {
+        "high": 0,
+        "low": 1
+      },
+      "visible": true,
+      "position": [
+        -2,
+        2,
+        -1
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "id": 9,
+      "name": "Spotlight",
+      "sceneRoot": false,
+      "identityGuid": {
+        "high": 0,
+        "low": 9
+      },
+      "parentGuid": {
+        "high": 0,
+        "low": 1
+      },
+      "visible": true,
+      "position": [
+        2,
+        3,
+        -2
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "id": 10,
+      "name": "Camera",
+      "sceneRoot": false,
+      "identityGuid": {
+        "high": 0,
+        "low": 10
+      },
+      "parentGuid": {
+        "high": 0,
+        "low": 1
+      },
+      "visible": true,
+      "position": [
+        0,
+        1.5,
+        -10
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    }
+  ],
+  "lights": [
+    {
+      "id": 7,
+      "name": "Sun",
+      "identityGuid": {
+        "high": 0,
+        "low": 7
+      },
+      "parentGuid": {
+        "high": 0,
+        "low": 1
+      },
+      "visible": true,
+      "direction": [
+        -0.35,
+        -1.0,
+        0.25
+      ],
+      "position": [
+        0,
+        4,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "color": [
+        1,
+        0.93,
+        0.8
+      ],
+      "intensity": 2.5,
+      "range": 20,
+      "innerAngleDegrees": 15,
+      "outerAngleDegrees": 28,
+      "shadowBias": 0.0015,
+      "shadowNormalBias": 0.0015,
+      "type": "directional",
+      "usePosition": false,
+      "castShadows": true
+    },
+    {
+      "id": 8,
+      "name": "Point Light",
+      "identityGuid": {
+        "high": 0,
+        "low": 8
+      },
+      "parentGuid": {
+        "high": 0,
+        "low": 1
+      },
+      "visible": true,
+      "direction": [
+        0,
+        -1,
+        0
+      ],
+      "position": [
+        -2,
+        2,
+        -1
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "color": [
+        0.35,
+        0.6,
+        1.0
+      ],
+      "intensity": 14,
+      "range": 10,
+      "innerAngleDegrees": 15,
+      "outerAngleDegrees": 28,
+      "shadowBias": 0.0015,
+      "shadowNormalBias": 0.0015,
+      "type": "point",
+      "usePosition": true,
+      "castShadows": false
+    },
+    {
+      "id": 9,
+      "name": "Spotlight",
+      "identityGuid": {
+        "high": 0,
+        "low": 9
+      },
+      "parentGuid": {
+        "high": 0,
+        "low": 1
+      },
+      "visible": true,
+      "direction": [
+        0,
+        -0.7,
+        1
+      ],
+      "position": [
+        2,
+        3,
+        -2
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "color": [
+        1,
+        0.4,
+        0.2
+      ],
+      "intensity": 18,
+      "range": 15,
+      "innerAngleDegrees": 18,
+      "outerAngleDegrees": 32,
+      "shadowBias": 0.0015,
+      "shadowNormalBias": 0.0015,
+      "type": "spot",
+      "usePosition": true,
+      "castShadows": true
+    }
+  ],
+  "cameras": [
+    {
+      "id": 10,
+      "name": "Camera",
+      "identityGuid": {
+        "high": 0,
+        "low": 10
+      },
+      "parentGuid": {
+        "high": 0,
+        "low": 1
+      },
+      "visible": true,
+      "position": [
+        0,
+        1.5,
+        -10
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "fovRadians": 0.95993109,
+      "nearPlane": 0.1,
+      "farPlane": 100,
+      "outputWidth": 1280,
+      "outputHeight": 720,
+      "priority": 10,
+      "active": true
+    }
+  ]
+}

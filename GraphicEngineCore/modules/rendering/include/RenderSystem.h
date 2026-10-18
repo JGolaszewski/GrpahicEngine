@@ -10,6 +10,7 @@
 #include "rendering/include/renderer/ViewportBinding.h"
 #include "runtime/include/CoreExport.h"
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -21,6 +22,7 @@
 #endif
 
 namespace Engine {
+class AssetManager;
 class SceneRenderer;
 namespace Renderer {
 class MaterialSystem;
@@ -35,6 +37,7 @@ struct FrameDiagnostics;
 struct GpuFrameTiming;
 class ResourceManager;
 class ShaderFactory;
+struct DisplayTransformResources;
 class FrameContext;
 class RenderGraph;
 } // namespace Renderer
@@ -56,6 +59,21 @@ public:
   /// Return whether the backend command list is ready for rendering.
   /// @return True when the backend is usable.
   bool IsValid() const;
+  /// Supplies the project asset manager used to resolve authored material texture identities.
+  /// @param assets Asset manager that remains alive for this render system's lifetime.
+  void SetAssetManager(AssetManager* assets);
+  /// Resolves and uploads an authored project texture before frame rendering begins.
+  /// @param guid Stable texture asset identity.
+  /// @param srgb Whether the texture should use sRGB sampling.
+  /// @param error Receives a missing asset or upload diagnostic.
+  /// @return True when the texture resource is ready for scene material bindings.
+  bool PrepareAssetTexture(const std::string& guid, bool srgb, std::string& error);
+  /// Returns a previously prepared authored project texture.
+  /// @param guid Stable texture asset identity.
+  /// @param srgb Whether the texture uses sRGB sampling.
+  /// @return Prepared GPU resource, or empty when it has not been prepared.
+  std::shared_ptr<::Engine::Renderer::TextureResource> GetPreparedAssetTexture(const std::string& guid,
+                                                                               bool srgb) const;
 
   /// Begin frame recording before submitting view work.
   void BeginFrame();
@@ -264,6 +282,8 @@ private:
   std::string m_LastUploadFailure;
   std::string m_LastRenderGraphFailure;
   ShadowSettings m_ShadowSettings;
+  AssetManager* m_AssetManager = nullptr;
+  std::map<std::pair<std::string, bool>, std::shared_ptr<::Engine::Renderer::TextureResource>> m_AuthoredTextures;
 
   std::unique_ptr<::Engine::Renderer::FrameContext> m_FrameContext;
   std::unique_ptr<::Engine::Renderer::RenderGraph> m_RenderGraph;
@@ -273,6 +293,7 @@ private:
   std::unique_ptr<::Engine::Renderer::ModelResourceLibrary> m_ModelResources;
   std::unique_ptr<::Engine::Renderer::ResourceManager> m_ResourceManager;
   std::unique_ptr<::Engine::Renderer::ShaderFactory> m_ShaderFactory;
+  std::shared_ptr<::Engine::Renderer::DisplayTransformResources> m_DisplayTransformResources;
   std::unique_ptr<Engine::PrimitiveFactory> m_PrimitiveFactory;
 };
 } // namespace Engine

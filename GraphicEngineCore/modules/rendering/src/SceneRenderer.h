@@ -3,8 +3,14 @@
 #include "runtime/include/CoreExport.h"
 #include <DirectXMath.h>
 #include <cstddef>
+#include <cstdint>
+#include <functional>
+#include <map>
+#include <memory>
 #include <nvrhi/nvrhi.h>
 #include <optional>
+#include <string>
+#include <tuple>
 #include <unordered_map>
 #include <vector>
 
@@ -54,6 +60,8 @@ public:
   void Init(nvrhi::IDevice* device, ::Engine::Renderer::MaterialSystem* materialSystem,
             ::Engine::Renderer::ShaderFactory* shaderFactory,
             const ::Engine::Renderer::ModelResourceLibrary* modelResources);
+  void SetAssetTextureResolver(
+      std::function<std::shared_ptr<::Engine::Renderer::TextureResource>(const std::string&, bool)> resolver);
 
   void BuildViews(::Engine::Renderer::FrameBlackboard& blackboard, nvrhi::ICommandList* commandList,
                   ::Engine::Renderer::FrameContext& frameContext, ::Engine::Renderer::FrameDiagnostics& diagnostics);
@@ -64,8 +72,14 @@ public:
   static void BuildLighting(Engine::Scene* scene, const std::vector<::Engine::Renderer::RenderView*>& shadowViews,
                             std::vector<::Engine::Renderer::DirectionalLightData>& lights);
   static void BuildShadowData(Engine::Scene* scene, const std::vector<::Engine::Renderer::RenderView*>& shadowViews,
-                              uint32_t firstShadowSlot, uint32_t maxShadowedLights);
+                              uint32_t firstShadowSlot, uint32_t maxShadowedLights,
+                              const ::Engine::Renderer::ModelResourceLibrary* modelResources = nullptr);
   static uint32_t CountShadowCasters(const Engine::Scene* scene, uint32_t limit);
+  /// Counts depth views needed by the selected shadow-casting lights (point lights use six faces).
+  /// @param scene Scene whose light components are counted.
+  /// @param casterLimit Maximum number of shadow-casting lights to include.
+  /// @return Number of shadow-map array slices required.
+  static uint32_t CountShadowViews(const Engine::Scene* scene, uint32_t casterLimit);
 
   static bool EnsureLightBuffers(size_t viewCount, ::Engine::Renderer::FrameContext& frameContext);
   static nvrhi::BufferHandle GetLightBuffer(size_t viewIndex, ::Engine::Renderer::FrameContext& frameContext);
@@ -85,15 +99,19 @@ public:
 private:
   void CullAndFillView(::Engine::Renderer::RenderView* view);
   void SubmitSubmesh(::Engine::Renderer::RenderView* view, const ::Engine::Ecs::WorldTransform& transform,
-                     const ::Engine::Ecs::MeshRenderer& meshRenderer, const ::Engine::Renderer::Submesh& submesh,
-                     DirectX::FXMMATRIX viewProjection, const nvrhi::FramebufferInfoEx& framebufferInfo);
+                     ::Engine::EntityHandle entity, const ::Engine::Ecs::MeshRenderer& meshRenderer,
+                     const ::Engine::Renderer::Submesh& submesh, DirectX::FXMMATRIX viewProjection,
+                     const nvrhi::FramebufferInfoEx& framebufferInfo);
+  auto MaterialForSubmesh(const ::Engine::Renderer::RenderView* view, ::Engine::EntityHandle entity,
+                          const ::Engine::Ecs::MeshRenderer& meshRenderer, const ::Engine::Renderer::Submesh& submesh)
+      -> std::shared_ptr<::Engine::Renderer::Material>;
   bool IsSubmeshVisible(::Engine::Renderer::RenderView* view, const ::Engine::Renderer::Submesh& submesh,
                         DirectX::FXMMATRIX world, const DirectX::XMFLOAT4X4& worldTransform);
   bool ConfigureAndQueuePacket(::Engine::Renderer::RenderView* view, const ::Engine::Ecs::MeshRenderer& meshRenderer,
                                const ::Engine::Renderer::Submesh& submesh,
                                const ::Engine::Renderer::MaterialProperties& materialProperties,
-                               const nvrhi::FramebufferInfoEx& framebufferInfo,
-                               ::Engine::Renderer::RenderPacket& packet);
+                               bool hasTextureOverrides, const nvrhi::FramebufferInfoEx& framebufferInfo,
+                               ::Engine::Renderer::RenderPacket& packet, bool disableFaceCulling);
   static void SortViewQueues(::Engine::Renderer::RenderView* view);
   void EnsureDebugBuffer(nvrhi::BufferHandle& buffer, uint64_t& capacity, size_t vertexCount, const char* debugName);
   nvrhi::GraphicsPipelineHandle GetDebugPipeline(const nvrhi::FramebufferInfo& framebuffer,
@@ -134,7 +152,14 @@ private:
   uint64_t m_DebugTriangleBufferCapacity = 0;
 
   ::Engine::Renderer::MaterialSystem* m_MaterialSystem = nullptr;
+  std::function<std::shared_ptr<::Engine::Renderer::TextureResource>(const std::string&, bool)> m_AssetTextureResolver;
   const ::Engine::Renderer::ModelResourceLibrary* m_ModelResources = nullptr;
+  using MaterialOverrideKey = std::tuple<uintptr_t, uint32_t, uint32_t, std::string, int32_t, uintptr_t>;
+  struct MaterialOverrideCacheEntry {
+    ::Engine::SceneMaterialDocument Source;
+    std::shared_ptr<::Engine::Renderer::Material> Material;
+  };
+  std::map<MaterialOverrideKey, MaterialOverrideCacheEntry> m_MaterialOverrideCache;
   SubmissionStats m_SubmissionStats;
 };
 

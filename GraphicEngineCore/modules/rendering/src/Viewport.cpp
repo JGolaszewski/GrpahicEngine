@@ -20,4 +20,12 @@ float Viewport::GetAspectRatio() const {
   return static_cast<float>(m_Width) / static_cast<float>(m_Height);
 }
 
+auto Viewport::GetSceneFramebufferHandle() const noexcept -> void* {
+  return m_Target ? m_Target->GetSceneFramebufferHandle() : m_Framebuffer;
+}
+
+auto Viewport::GetDisplayColorTextureHandle() const noexcept -> void* {
+  return m_Target ? m_Target->GetColorTextureHandle() : nullptr;
+}
+
 } // namespace Engine

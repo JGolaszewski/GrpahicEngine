@@ -16,6 +16,22 @@ auto EditorSceneDocument::Load(const Engine::AssetManager& assets, const std::fi
   return assets.LoadScene(path);
 }
 
+auto EditorSceneDocument::Open(
+    const std::optional<std::filesystem::path>& path,
+    const std::function<bool(const std::filesystem::path&, std::string&, std::vector<std::string>&)>& activate,
+    std::string& error, std::vector<std::string>& warnings) -> OpenResult {
+  error.clear();
+  warnings.clear();
+  if (!path) {
+    return OpenResult::Cancelled;
+  }
+  if (!activate(*path, error, warnings)) {
+    return OpenResult::Failed;
+  }
+  CommitPath(*path);
+  return OpenResult::Opened;
+}
+
 auto EditorSceneDocument::Save(const Engine::AssetManager& assets, const Engine::SceneDocument& document,
                                const std::filesystem::path& path) -> Engine::Status {
   std::string error;

@@ -78,7 +78,14 @@ void ScenePanel::Draw() {
   bool viewportImageClicked = false;
   ImVec2 viewportMousePosition(0.0F, 0.0F);
   if (m_TextureId != nullptr) {
-    ImGui::Image(m_TextureId, viewportPanelSize);
+    const ImVec2 imageMinimum = ImGui::GetCursorScreenPos();
+    // ImGui::Image is not interactive; claim the image area so drags cannot
+    // be interpreted as drags on the surrounding viewport window. Allow the PiP
+    // image submitted next to own hit-testing where the two images overlap.
+    ImGui::SetNextItemAllowOverlap();
+    ImGui::InvisibleButton("ViewportImage", viewportPanelSize);
+    ImGui::GetWindowDrawList()->AddImage(
+        m_TextureId, imageMinimum, ImVec2(imageMinimum.x + viewportPanelSize.x, imageMinimum.y + viewportPanelSize.y));
 
     if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
       viewportMousePosition = ImGui::GetIO().MousePos;
@@ -96,7 +103,9 @@ void ScenePanel::Draw() {
 
   if (hasCameraPreview) {
     ImGui::SetCursorScreenPos(previewPosition);
-    ImGui::Image(m_CameraPreviewTextureId, previewSize);
+    ImGui::InvisibleButton("CameraPreviewImage", previewSize);
+    ImGui::GetWindowDrawList()->AddImage(m_CameraPreviewTextureId, previewPosition,
+                                         ImVec2(previewPosition.x + previewSize.x, previewPosition.y + previewSize.y));
     ImGui::GetWindowDrawList()->AddRect(previewPosition,
                                         ImVec2(previewPosition.x + previewSize.x, previewPosition.y + previewSize.y),
                                         IM_COL32(255, 210, 64, 255), 0.0F, 0, 3.0F);

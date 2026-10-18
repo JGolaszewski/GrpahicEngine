@@ -2,6 +2,7 @@
 
 #include "assets/include/AssetManager.h"
 #include "events/include/AssetRegistryChangedEvent.h"
+#include "events/include/AssetWorkflowFeedbackEvent.h"
 #include "events/include/EcsComponentMutationRequestedEvent.h"
 #include "events/include/EcsEntitySelectedEvent.h"
 #include "events/include/EntityDeselectedEvent.h"
@@ -11,6 +12,7 @@
 
 #include <array>
 #include <memory>
+#include <string>
 #include <vector>
 
 class InspectorPanel final : public EditorPanel {
@@ -26,5 +28,10 @@ private:
   Engine::EntityHandle m_CustomResolutionEntity = Engine::InvalidEntityHandle;
   Engine::EntityHandle m_MeshSourceSelectionEntity = Engine::InvalidEntityHandle;
   int m_MeshSourceSelectionIndex = 0;
+  bool m_LockTransformScale = false;
   std::vector<Engine::AssetManager::ModelAssetInfo> m_Models;
+  std::vector<Engine::AssetManager::TextureAssetInfo> m_Textures;
+  std::vector<Engine::AssetManager::MaterialAssetInfo> m_Materials;
+  std::string m_AssetFeedback;
+  bool m_AssetFeedbackSucceeded = true;
 };

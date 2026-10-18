@@ -37,13 +37,17 @@ enum class EventType {
   AssetReimportRequested,
   ModelReassignmentRequested,
   AssetRegistryChanged,
+  AssetRenameRequested,
+  AssetWorkflowFeedback,
   AddModelRequested,
   SceneModified,
   EcsEntityCreateRequested,
   EcsEntitySelected,
   EcsEntityDeleteRequested,
   EcsEntityReparentRequested,
-  EcsComponentMutationRequested
+  EcsComponentMutationRequested,
+  MaterialAssetSelectionRequested,
+  MaterialAssetEditRequested
 };
 
 class ENGINE_API Event {

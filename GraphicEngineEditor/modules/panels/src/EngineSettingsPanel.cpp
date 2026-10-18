@@ -12,7 +12,7 @@ void EngineSettingsPanel::Draw() {
     return;
   }
 
-  if (!ImGui::Begin("Engine Settings", &m_Open)) {
+  if (!ImGui::Begin("Settings", &m_Open)) {
     ImGui::End();
     return;
   }
@@ -33,16 +33,22 @@ void EngineSettingsPanel::Draw() {
   int frameLimit = static_cast<int>(m_Application->GetFrameLimiterHz());
   if (ImGui::SliderInt("Frame limit (Hz)", &frameLimit, 0, 240, frameLimit == 0 ? "Off" : "%d Hz")) {
     m_Application->SetFrameLimiterHz(static_cast<uint32_t>((std::max)(frameLimit, 0)));
+    if (m_GetPreferences && m_SetPreferences) {
+      auto preferences = m_GetPreferences();
+      preferences.FrameLimiterHz = static_cast<uint32_t>((std::max)(frameLimit, 0));
+      m_SetPreferences(preferences);
+    }
   }
   // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) // Dear ImGui formats text through its documented variadic API.
   ImGui::SetItemTooltip("0 disables the engine frame limiter. VSync may still limit presentation.");
 
-  ImGui::SeparatorText("Rendering");
+  ImGui::SeparatorText("Editor Rendering");
   if (m_GetPreferences && m_SetPreferences) {
     auto preferences = m_GetPreferences();
     bool changed = ImGui::Checkbox("Show light gizmos", &preferences.ShowLightGizmos);
     changed |= ImGui::Checkbox("Show camera frustums", &preferences.ShowCameraFrustums);
     changed |= ImGui::Checkbox("Show wireframe plane", &preferences.ShowWireframePlane);
+    ImGui::SeparatorText("Preview");
     float displayScale = preferences.CameraPreviewScale * 100.0F;
     float renderQuality = preferences.CameraPreviewQuality * 100.0F;
     if (ImGui::SliderFloat("Camera PiP display scale", &displayScale, 10.0F, 80.0F, "%.0f%%")) {
@@ -59,11 +65,16 @@ void EngineSettingsPanel::Draw() {
   }
   Engine::RenderSystem* renderSystem = m_Application->GetRenderSystem();
   if (renderSystem != nullptr) {
+    ImGui::SeparatorText("Shadows");
     Engine::ShadowSettings shadowSettings = renderSystem->GetShadowSettings();
     int shadowResolution = static_cast<int>(shadowSettings.Resolution);
     if (ImGui::DragInt("Shadow map resolution", &shadowResolution, 64.0F, 128, 8192, "%d px")) {
       shadowSettings.Resolution = static_cast<uint32_t>(std::clamp(shadowResolution, 128, 8192));
-      renderSystem->SetShadowSettings(shadowSettings);
+      if (renderSystem->SetShadowSettings(shadowSettings) && m_GetPreferences && m_SetPreferences) {
+        auto preferences = m_GetPreferences();
+        preferences.ShadowMapResolution = shadowSettings.Resolution;
+        m_SetPreferences(preferences);
+      }
     }
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) // Dear ImGui formats text through its documented variadic API.
     ImGui::SetItemTooltip("Higher resolutions improve shadow detail and use more GPU memory and bandwidth.");
@@ -71,7 +82,11 @@ void EngineSettingsPanel::Draw() {
     int shadowCasters = static_cast<int>(shadowSettings.MaxShadowCastersPerScene);
     if (ImGui::SliderInt("Shadow-casting lights", &shadowCasters, 0, static_cast<int>(Engine::MaxShadowedLights))) {
       shadowSettings.MaxShadowCastersPerScene = static_cast<uint32_t>(shadowCasters);
-      renderSystem->SetShadowSettings(shadowSettings);
+      if (renderSystem->SetShadowSettings(shadowSettings) && m_GetPreferences && m_SetPreferences) {
+        auto preferences = m_GetPreferences();
+        preferences.MaxShadowCasters = shadowSettings.MaxShadowCastersPerScene;
+        m_SetPreferences(preferences);
+      }
     }
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) // Dear ImGui formats text through its documented variadic API.
     ImGui::SetItemTooltip("Maximum shadow maps rendered per scene. The current renderer supports up to %u.",
@@ -81,7 +96,7 @@ void EngineSettingsPanel::Draw() {
     ImGui::TextDisabled("Renderer settings are unavailable.");
   }
 
-  ImGui::SeparatorText("Backend");
+  ImGui::SeparatorText("Graphics Backend");
   Engine::IRenderBackend* backend = m_Application->GetRenderer();
   if (backend != nullptr) {
     Engine::BackendDiagnostics diagnostics = backend->GetDiagnostics();
@@ -94,7 +109,11 @@ void EngineSettingsPanel::Draw() {
     if (backend->SupportsVSyncControl()) {
       bool vsync = diagnostics.VSyncEnabled;
       if (ImGui::Checkbox("VSync", &vsync)) {
-        backend->SetVSyncEnabled(vsync);
+        if (backend->SetVSyncEnabled(vsync) && m_GetPreferences && m_SetPreferences) {
+          auto preferences = m_GetPreferences();
+          preferences.VSyncEnabled = vsync;
+          m_SetPreferences(preferences);
+        }
       }
       // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg)
       ImGui::SetItemTooltip("Applied on the next present. This can cap the frame rate to the display refresh rate.");

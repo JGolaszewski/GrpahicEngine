@@ -4,7 +4,7 @@
 
 class SceneFileActionRequestedEvent final : public Engine::Events::Event {
 public:
-  enum class Action { NewScene, OpenScene, SaveScene, SaveSceneAs, OpenProject };
+  enum class Action { NewScene, OpenScene, SaveScene, SaveSceneAs, OpenProject, ResetSandbox };
 
   explicit SceneFileActionRequestedEvent(Action action) : m_Action(action) {}
   static Engine::Events::EventType GetStaticType() { return Engine::Events::EventType::SceneFileActionRequested; }

@@ -1,6 +1,7 @@
 #include "assets/include/AssetManager.h"
 
 #include <gtest/gtest.h>
+#include <nlohmann/json.hpp>
 
 #include <chrono>
 #include <cstdio>
@@ -51,6 +52,10 @@ TEST(ScenePersistenceTests, RoundTripsFieldsAndRejectsTraversalWithoutOverwritin
   entity.primitiveType = "cube";
   entity.position = {1.0F, -2.0F, 3.5F};
   entity.forceWireframe = true;
+  Engine::SceneMaterialDocument material;
+  material.brdfModel = "gtr";
+  material.gtrGamma = 3.5F;
+  entity.material = material;
   document.entities.push_back(entity);
 
   std::string error;
@@ -72,8 +77,30 @@ TEST(ScenePersistenceTests, RoundTripsFieldsAndRejectsTraversalWithoutOverwritin
   EXPECT_FLOAT_EQ(loaded.document.unitsPerMeter, 0.25F);
   EXPECT_EQ(loaded.document.entities.front().id, 23U);
   EXPECT_EQ(loaded.document.entities.front().name, "persisted entity");
+  ASSERT_TRUE(loaded.document.entities.front().primitiveType.has_value());
+  EXPECT_EQ(*loaded.document.entities.front().primitiveType, "cube");
   EXPECT_EQ(loaded.document.entities.front().position, (std::array<float, 3>{1.0F, -2.0F, 3.5F}));
   EXPECT_TRUE(loaded.document.entities.front().forceWireframe);
+  ASSERT_TRUE(loaded.document.entities.front().material.has_value());
+  EXPECT_EQ(loaded.document.entities.front().material->brdfModel, "gtr");
+  EXPECT_FLOAT_EQ(loaded.document.entities.front().material->gtrGamma, 3.5F);
+  EXPECT_TRUE(loaded.document.entities.front().hasMeshRenderer);
+}
+
+TEST(ScenePersistenceTests, LegacyAuthoredMeshSettingsRestoreMeshRendererPresence) {
+  TemporaryProject project;
+  const auto path = project.Root() / "legacy-mesh.scene.json";
+  {
+    std::ofstream scene(path, std::ios::binary | std::ios::trunc);
+    scene
+        << R"({"schemaVersion":3,"unitsPerMeter":1.0,"entities":[{"id":1,"name":"Mesh","render":{"visible":true,"forceWireframe":true,"disableDepthTest":false,"castShadows":true,"receiveShadows":true}}]})";
+    ASSERT_TRUE(scene.good());
+  }
+
+  const auto loaded = Engine::SceneSerializer::Load(path);
+  ASSERT_TRUE(loaded) << loaded.error;
+  ASSERT_EQ(loaded.document.entities.size(), 1U);
+  EXPECT_TRUE(loaded.document.entities.front().hasMeshRenderer);
 }
 
 TEST(ScenePersistenceTests, SchemaThreeRoundTripsSceneRootAndEmptyHierarchyEntities) {
@@ -85,6 +112,11 @@ TEST(ScenePersistenceTests, SchemaThreeRoundTripsSceneRootAndEmptyHierarchyEntit
   root.identityGuid = Engine::SceneGuidDocument{.high = 8, .low = 1};
   root.name = "Level One";
   root.sceneRoot = true;
+  root.visible = false;
+  root.position = {8.0F, 9.0F, 10.0F};
+  root.rotation = {0.0F, 0.0F, 0.0F, 0.0F};
+  root.scale = {2.0F, 3.0F, 4.0F};
+  root.meshVisible = false;
   document.entities.push_back(root);
   Engine::SceneEntityDocument emptyEntity;
   emptyEntity.id = 2;
@@ -95,13 +127,51 @@ TEST(ScenePersistenceTests, SchemaThreeRoundTripsSceneRootAndEmptyHierarchyEntit
 
   std::string error;
   ASSERT_TRUE(assets.SaveScene("scene-root.scene.json", document, error)) << error;
+  nlohmann::json saved;
+  {
+    std::ifstream input(project.Root() / "scene-root.scene.json", std::ios::binary);
+    input >> saved;
+  }
+  const auto& savedRoot = saved.at("entities").at(0);
+  EXPECT_FALSE(savedRoot.contains("visible"));
+  EXPECT_FALSE(savedRoot.contains("position"));
+  EXPECT_FALSE(savedRoot.contains("rotation"));
+  EXPECT_FALSE(savedRoot.contains("scale"));
+  EXPECT_FALSE(savedRoot.contains("render"));
   const auto loaded = assets.LoadScene("scene-root.scene.json");
   ASSERT_TRUE(loaded) << loaded.error;
   ASSERT_EQ(loaded.document.entities.size(), 2U);
   EXPECT_TRUE(loaded.document.entities[0].sceneRoot);
   EXPECT_EQ(loaded.document.entities[0].name, "Level One");
+  EXPECT_TRUE(loaded.document.entities[0].visible);
+  EXPECT_EQ(loaded.document.entities[0].position, (std::array<float, 3>{0.0F, 0.0F, 0.0F}));
+  EXPECT_EQ(loaded.document.entities[0].rotation, (std::array<float, 4>{0.0F, 0.0F, 0.0F, 1.0F}));
+  EXPECT_EQ(loaded.document.entities[0].scale, (std::array<float, 3>{1.0F, 1.0F, 1.0F}));
   EXPECT_FALSE(loaded.document.entities[1].sceneRoot);
   EXPECT_EQ(loaded.document.entities[1].parentGuid, root.identityGuid);
+}
+
+TEST(ScenePersistenceTests, LegacySceneRootTransformAndVisibilityAreIgnoredWithWarning) {
+  TemporaryProject project;
+  Engine::AssetManager assets(project.Root());
+  {
+    std::ofstream legacy(project.Root() / "legacy-root.scene.json", std::ios::binary);
+    legacy
+        << R"({"schemaVersion":1,"unitsPerMeter":1,"entities":[{"id":1,"sceneRoot":true,"name":"Old Root","visible":false,"position":"obsolete","rotation":[0,0,0,0],"scale":[2,2,2],"render":{"visible":false}}]})";
+  }
+
+  const auto loaded = assets.LoadScene("legacy-root.scene.json");
+  ASSERT_TRUE(loaded) << loaded.error;
+  ASSERT_EQ(loaded.document.entities.size(), 1U);
+  const auto& root = loaded.document.entities.front();
+  EXPECT_TRUE(root.sceneRoot);
+  EXPECT_EQ(root.name, "Old Root");
+  EXPECT_TRUE(root.visible);
+  EXPECT_EQ(root.position, (std::array<float, 3>{0.0F, 0.0F, 0.0F}));
+  EXPECT_EQ(root.rotation, (std::array<float, 4>{0.0F, 0.0F, 0.0F, 1.0F}));
+  EXPECT_EQ(root.scale, (std::array<float, 3>{1.0F, 1.0F, 1.0F}));
+  ASSERT_EQ(loaded.warnings.size(), 1U);
+  EXPECT_NE(loaded.warnings.front().find("legacy scene root transform/visibility fields ignored"), std::string::npos);
 }
 
 TEST(ScenePersistenceTests, PersistsCameraResolutionAndUsesFullHdDefaultsForOlderScenes) {
@@ -110,9 +180,27 @@ TEST(ScenePersistenceTests, PersistsCameraResolutionAndUsesFullHdDefaultsForOlde
   Engine::SceneDocument document;
   Engine::SceneCameraDocument camera;
   camera.id = 7;
+  camera.name = "Main View";
+  camera.rotation = {0.0F, 0.70710677F, 0.0F, 0.70710677F};
+  camera.scale = {1.2F, 1.3F, 1.4F};
   camera.outputWidth = 2560;
   camera.outputHeight = 1440;
+  camera.priority = -4;
+  camera.active = false;
   document.cameras.push_back(camera);
+  Engine::SceneEntityDocument mesh;
+  mesh.id = 9;
+  mesh.name = "Hidden Mesh";
+  mesh.primitiveType = "cube";
+  mesh.meshVisible = false;
+  document.entities.push_back(mesh);
+  Engine::SceneLightDocument light;
+  light.id = 8;
+  light.name = "Fill Light";
+  light.position = {3.0F, 4.0F, 5.0F};
+  light.rotation = {0.0F, 0.0F, 0.38268343F, 0.9238795F};
+  light.scale = {2.0F, 2.0F, 2.0F};
+  document.lights.push_back(light);
 
   std::string error;
   ASSERT_TRUE(assets.SaveScene("camera.scene.json", document, error)) << error;
@@ -121,6 +209,18 @@ TEST(ScenePersistenceTests, PersistsCameraResolutionAndUsesFullHdDefaultsForOlde
   ASSERT_EQ(loaded.document.cameras.size(), 1U);
   EXPECT_EQ(loaded.document.cameras.front().outputWidth, 2560U);
   EXPECT_EQ(loaded.document.cameras.front().outputHeight, 1440U);
+  EXPECT_EQ(loaded.document.cameras.front().name, "Main View");
+  EXPECT_EQ(loaded.document.cameras.front().rotation, camera.rotation);
+  EXPECT_EQ(loaded.document.cameras.front().scale, camera.scale);
+  EXPECT_EQ(loaded.document.cameras.front().priority, -4);
+  EXPECT_FALSE(loaded.document.cameras.front().active);
+  ASSERT_EQ(loaded.document.lights.size(), 1U);
+  EXPECT_EQ(loaded.document.lights.front().name, "Fill Light");
+  EXPECT_EQ(loaded.document.lights.front().position, light.position);
+  EXPECT_EQ(loaded.document.lights.front().rotation, light.rotation);
+  EXPECT_EQ(loaded.document.lights.front().scale, light.scale);
+  ASSERT_EQ(loaded.document.entities.size(), 1U);
+  EXPECT_FALSE(loaded.document.entities.front().meshVisible);
 
   const auto legacyPath = project.Root() / "legacy-camera.scene.json";
   {
@@ -133,6 +233,10 @@ TEST(ScenePersistenceTests, PersistsCameraResolutionAndUsesFullHdDefaultsForOlde
   ASSERT_EQ(legacy.document.cameras.size(), 1U);
   EXPECT_EQ(legacy.document.cameras.front().outputWidth, 1920U);
   EXPECT_EQ(legacy.document.cameras.front().outputHeight, 1080U);
+  EXPECT_EQ(legacy.document.cameras.front().name, "Camera");
+  EXPECT_EQ(legacy.document.cameras.front().scale, (std::array<float, 3>{1.0F, 1.0F, 1.0F}));
+  EXPECT_EQ(legacy.document.cameras.front().priority, 0);
+  EXPECT_TRUE(legacy.document.cameras.front().active);
 }
 
 TEST(ScenePersistenceTests, FailedAtomicReplacementPreservesDestinationAndRemovesTemporaryFile) {
@@ -210,12 +314,12 @@ TEST(ScenePersistenceTests, RejectsUnsupportedSchemaVersion) {
   Engine::AssetManager assets(project.Root());
   {
     std::ofstream scene(project.Root() / "future-schema.scene.json", std::ios::binary);
-    scene << R"({"schemaVersion":3,"unitsPerMeter":1.0,"entities":[]})";
+    scene << R"({"schemaVersion":4,"unitsPerMeter":1.0,"entities":[]})";
   }
 
   const auto loaded = assets.LoadScene("future-schema.scene.json");
   EXPECT_FALSE(loaded);
-  EXPECT_NE(loaded.error.find("unsupported scene schema version 3"), std::string::npos);
+  EXPECT_NE(loaded.error.find("unsupported scene schema version 4"), std::string::npos);
 }
 
 TEST(ScenePersistenceTests, RejectsMalformedEntityLightAndCameraFields) {
@@ -265,12 +369,10 @@ TEST(ScenePersistenceTests, RejectsMalformedEntityLightAndCameraFields) {
                 "modelGuid is not a valid GUID");
   checkRejected("invalid-primitive-type.json", root("\"entities\":[{\"id\":1,\"primitiveType\":7}]"),
                 "primitiveType must be a string or null");
-  checkRejected("entity-needs-asset.json", root("\"entities\":[{\"id\":1}]"),
-                "must specify exactly one of modelGuid or primitiveType");
   checkRejected("entity-has-two-assets.json",
                 root("\"entities\":[{\"id\":1,\"modelGuid\":"
                      "\"11111111-1111-4111-8111-111111111111\",\"primitiveType\":\"cube\"}]"),
-                "must specify exactly one of modelGuid or primitiveType");
+                "cannot specify both modelGuid and primitiveType");
   checkRejected("invalid-material-overrides.json",
                 root("\"entities\":[{\"id\":1,\"modelGuid\":"
                      "\"11111111-1111-4111-8111-111111111111\",\"materialOverrides\":{}}]"),
@@ -292,7 +394,7 @@ TEST(ScenePersistenceTests, RejectsMalformedEntityLightAndCameraFields) {
   checkRejected("lights-not-array.json", root("\"lights\":{}"), "lights must be an array");
   checkRejected("light-not-object.json", root("\"lights\":[null]"), "lights[0] must be an object");
   checkRejected("invalid-light-range.json",
-                root("\"lights\":[{\"id\":1,\"direction\":[0,-1,0],\"position\":[0,0,0],"
+                root("\"lights\":[{\"id\":1,\"type\":\"spot\",\"direction\":[0,-1,0],\"position\":[0,0,0],"
                      "\"color\":[1,1,1],\"intensity\":1,\"range\":0,"
                      "\"innerAngleDegrees\":0,\"outerAngleDegrees\":45,\"shadowBias\":0,"
                      "\"shadowNormalBias\":0,\"usePosition\":false,\"castShadows\":true}]"),
@@ -306,6 +408,8 @@ TEST(ScenePersistenceTests, RejectsMalformedEntityLightAndCameraFields) {
       json.replace(position, oldValue.size(), newValue);
     return json;
   };
+  const std::string validSpotLight =
+      replaceField(validLight, "\"usePosition\":false", "\"type\":\"spot\",\"usePosition\":true");
   checkRejected("light-invalid-direction.json",
                 root("\"lights\":[" + replaceField(validLight, "[0,-1,0]", "[0,0,0]") + "]"),
                 "out-of-range light settings");
@@ -314,7 +418,7 @@ TEST(ScenePersistenceTests, RejectsMalformedEntityLightAndCameraFields) {
                 "out-of-range light settings");
   checkRejected(
       "light-invalid-cone.json",
-      root("\"lights\":[" + replaceField(validLight, "\"outerAngleDegrees\":45", "\"outerAngleDegrees\":-1") + "]"),
+      root("\"lights\":[" + replaceField(validSpotLight, "\"outerAngleDegrees\":45", "\"outerAngleDegrees\":-1") + "]"),
       "out-of-range light settings");
   checkRejected("light-negative-shadow-bias.json",
                 root("\"lights\":[" + replaceField(validLight, "\"shadowBias\":0", "\"shadowBias\":-1") + "]"),
@@ -410,6 +514,10 @@ TEST(ScenePersistenceTests, RejectsInvalidSchemaAndMaterialValues) {
   checkRejected("bad-material-number.json", sceneWithMaterial("{\"metallic\":\"high\"}"), "metallic must be numeric");
   checkRejected("bad-material-number-range.json", sceneWithMaterial("{\"metallic\":1e40}"),
                 "metallic contains a non-finite or unrepresentable value");
+  checkRejected("bad-material-gtr-gamma-low.json", sceneWithMaterial("{\"brdfModel\":\"gtr\",\"gtrGamma\":0.9}"),
+                "out-of-range BRDF settings");
+  checkRejected("bad-material-gtr-gamma-high.json", sceneWithMaterial("{\"brdfModel\":\"gtr\",\"gtrGamma\":8.1}"),
+                "out-of-range BRDF settings");
   checkRejected("bad-material-brdf-type.json", sceneWithMaterial("{\"brdfModel\":7}"), "brdfModel must be a string");
   checkRejected("bad-material-brdf-value.json", sceneWithMaterial("{\"brdfModel\":\"phong\"}"),
                 "brdfModel has an unsupported value");

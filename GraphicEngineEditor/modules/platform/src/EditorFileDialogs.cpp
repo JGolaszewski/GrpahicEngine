@@ -1,4 +1,5 @@
 #include "platform/include/EditorFileDialogs.h"
+#include "runtime/include/LogMacros.h"
 
 #define NOMINMAX
 #include <windows.h>
@@ -41,6 +42,20 @@ auto ProjectPreferencePath() -> std::filesystem::path {
 }
 
 auto EditorPreferencePath() -> std::filesystem::path {
+  const DWORD bufferSize = GetEnvironmentVariableW(L"LOCALAPPDATA", nullptr, 0);
+  if (bufferSize == 0) {
+    return {};
+  }
+  std::wstring appData(bufferSize, L'\0');
+  const DWORD length = GetEnvironmentVariableW(L"LOCALAPPDATA", appData.data(), bufferSize);
+  if (length == 0 || length >= bufferSize) {
+    return {};
+  }
+  appData.resize(length);
+  return std::filesystem::path(appData) / L"GraphicEngine" / L"editor-settings.json";
+}
+
+auto LegacyEditorPreferencePath() -> std::filesystem::path {
   const DWORD bufferSize = GetEnvironmentVariableW(L"LOCALAPPDATA", nullptr, 0);
   if (bufferSize == 0) {
     return {};
@@ -206,29 +221,48 @@ void RememberProjectRoot(const std::filesystem::path& root) {
 }
 
 auto LoadEditorPreferences() -> EditorPreferences {
-  EditorPreferences preferences;
   const auto path = EditorPreferencePath();
   if (path.empty()) {
-    return preferences;
+    ENGINE_LOG_WARN("Editor", "Could not locate the user settings directory; using default preferences");
+    return {};
   }
-  std::wifstream input(path);
-  int lightGizmos = 1;
-  int cameraFrustums = 1;
-  int wireframePlane = 1;
-  float previewScale = preferences.CameraPreviewScale;
-  float previewQuality = preferences.CameraPreviewQuality;
-  if (input >> lightGizmos >> cameraFrustums >> wireframePlane >> previewScale >> previewQuality) {
-    preferences.ShowLightGizmos = lightGizmos != 0;
-    preferences.ShowCameraFrustums = cameraFrustums != 0;
-    preferences.ShowWireframePlane = wireframePlane != 0;
-    if (std::isfinite(previewScale)) {
-      preferences.CameraPreviewScale = std::clamp(previewScale, 0.1F, 0.8F);
-    }
-    if (std::isfinite(previewQuality)) {
-      preferences.CameraPreviewQuality = std::clamp(previewQuality, 0.05F, 1.0F);
+  auto result = LoadEditorSettingsFile(path);
+  if (!result.Found) {
+    const auto legacyPath = LegacyEditorPreferencePath();
+    std::error_code legacyPathError;
+    const bool hasLegacyFile = !legacyPath.empty() && std::filesystem::exists(legacyPath, legacyPathError);
+    if (legacyPathError) {
+      result.Found = true;
+      result.Error = "could not inspect legacy settings file: " + legacyPathError.message();
+    } else if (hasLegacyFile) {
+      std::wifstream legacy(legacyPath);
+      int lightGizmos = 1;
+      int cameraFrustums = 1;
+      int wireframePlane = 1;
+      float previewScale = result.Preferences.CameraPreviewScale;
+      float previewQuality = result.Preferences.CameraPreviewQuality;
+      if (legacy >> lightGizmos >> cameraFrustums >> wireframePlane >> previewScale >> previewQuality) {
+        result.Found = true;
+        result.Preferences.ShowLightGizmos = lightGizmos != 0;
+        result.Preferences.ShowCameraFrustums = cameraFrustums != 0;
+        result.Preferences.ShowWireframePlane = wireframePlane != 0;
+        if (std::isfinite(previewScale)) {
+          result.Preferences.CameraPreviewScale = std::clamp(previewScale, 0.1F, 0.8F);
+        }
+        if (std::isfinite(previewQuality)) {
+          result.Preferences.CameraPreviewQuality = std::clamp(previewQuality, 0.05F, 1.0F);
+        }
+        SaveEditorPreferences(result.Preferences);
+      } else {
+        result.Found = true;
+        result.Error = "legacy settings file could not be parsed";
+      }
     }
   }
-  return preferences;
+  if (!result.Error.empty()) {
+    ENGINE_LOG_ERROR("Editor", "Could not load settings | path: {} | reason: {}", path.generic_string(), result.Error);
+  }
+  return result.Preferences;
 }
 
 void SaveEditorPreferences(const EditorPreferences& preferences) {
@@ -236,16 +270,9 @@ void SaveEditorPreferences(const EditorPreferences& preferences) {
   if (path.empty()) {
     return;
   }
-  std::error_code error;
-  std::filesystem::create_directories(path.parent_path(), error);
-  if (error) {
-    return;
-  }
-  std::wofstream output(path, std::ios::trunc);
-  if (output) {
-    output << (preferences.ShowLightGizmos ? 1 : 0) << L' ' << (preferences.ShowCameraFrustums ? 1 : 0) << L' '
-           << (preferences.ShowWireframePlane ? 1 : 0) << L' ' << preferences.CameraPreviewScale << L' '
-           << preferences.CameraPreviewQuality << L'\n';
+  std::string error;
+  if (!SaveEditorSettingsFile(path, preferences, error)) {
+    ENGINE_LOG_ERROR("Editor", "Could not save settings | path: {} | reason: {}", path.generic_string(), error);
   }
 }
 } // namespace EditorPlatform

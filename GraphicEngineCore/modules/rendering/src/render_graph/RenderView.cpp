@@ -15,7 +15,9 @@ void RenderView::Initialize(const Engine::Scene* scene, const Engine::Renderer::
   ViewportWidth = viewport->GetWidth();
   ViewportHeight = viewport->GetHeight();
 
-  TargetFramebuffer = static_cast<nvrhi::IFramebuffer*>(viewport->GetFramebufferHandle());
+  TargetFramebuffer = static_cast<nvrhi::IFramebuffer*>(viewport->GetSceneFramebufferHandle());
+  DisplayFramebuffer = static_cast<nvrhi::IFramebuffer*>(viewport->GetFramebufferHandle());
+  DisplayColorTexture = static_cast<nvrhi::ITexture*>(viewport->GetDisplayColorTextureHandle());
   const DirectX::XMFLOAT4 rotationValue{camera.Rotation[0], camera.Rotation[1], camera.Rotation[2], camera.Rotation[3]};
   const DirectX::XMFLOAT3 positionValue{camera.Position[0], camera.Position[1], camera.Position[2]};
   const DirectX::XMVECTOR rotation = DirectX::XMQuaternionNormalize(DirectX::XMLoadFloat4(&rotationValue));

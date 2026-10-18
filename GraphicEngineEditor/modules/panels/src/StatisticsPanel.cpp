@@ -57,7 +57,7 @@ void LogBackendSnapshot(const Engine::Application* application) {
 // NOLINTBEGIN(cppcoreguidelines-pro-type-vararg)
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
 void StatWindow::Draw() {
-  ImGui::Begin("Statistics", nullptr);
+  ImGui::Begin("Stats", nullptr);
   if (m_Application == nullptr) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) // Dear ImGui formats text through its documented variadic API.
     ImGui::TextDisabled("Application metrics are unavailable.");

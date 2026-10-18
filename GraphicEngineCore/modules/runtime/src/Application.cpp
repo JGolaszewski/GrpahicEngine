@@ -89,6 +89,7 @@ auto Application::InitializeCore() -> bool {
                      m_RenderBackend->GetDevice() != nullptr);
     return false;
   }
+  m_RenderSystem->SetAssetManager(m_AssetManager.get());
   m_DefaultViewport =
       std::make_shared<Viewport>(m_Window->GetWidth(), m_Window->GetHeight(), m_RenderBackend->GetDefaultFramebuffer());
 
@@ -370,6 +371,29 @@ auto Application::LoadSceneDocument(const SceneDocument& document, std::string& 
                                     std::vector<std::string>& warnings) -> bool {
   error.clear();
   warnings.clear();
+  for (const SceneLightDocument& source : document.lights) {
+    if (source.type != "directional" && source.type != "point" && source.type != "spot") {
+      error = "light '" + source.name + "': unsupported light type '" + source.type + "'";
+      return false;
+    }
+    const Ecs::LightType type = source.type == "point"                        ? Ecs::LightType::Point
+                                : source.type == "spot" || source.usePosition ? Ecs::LightType::Spot
+                                                                              : Ecs::LightType::Directional;
+    const Ecs::Light candidate{.Type = type,
+                               .Direction = source.direction,
+                               .Color = source.color,
+                               .Intensity = source.intensity,
+                               .Range = source.range,
+                               .InnerAngleDegrees = source.innerAngleDegrees,
+                               .OuterAngleDegrees = source.outerAngleDegrees,
+                               .ShadowBias = source.shadowBias,
+                               .ShadowNormalBias = source.shadowNormalBias,
+                               .CastShadows = source.castShadows};
+    if (const Status lightValidation = Ecs::Validate(candidate); !lightValidation) {
+      error = "light '" + source.name + "': " + lightValidation.error().Message;
+      return false;
+    }
+  }
   auto stagedScene = std::make_shared<Scene>();
   stagedScene->SetUnitsPerMeter(document.unitsPerMeter);
 
@@ -390,6 +414,26 @@ auto Application::LoadSceneDocument(const SceneDocument& document, std::string& 
   std::vector<const SceneCameraDocument*> camerasToCreate;
   const SceneEntityDocument* rootDocument = nullptr;
 
+  const auto prepareMaterialTextures = [this, &warnings](const SceneMaterialDocument& material,
+                                                         const std::string& entityName) -> void {
+    if (m_RenderSystem == nullptr) {
+      return;
+    }
+    const auto prepare = [this, &warnings, &entityName](const std::optional<std::string>& guid, bool srgb,
+                                                        std::string_view slotName) -> void {
+      if (!guid) {
+        return;
+      }
+      std::string textureError;
+      if (!m_RenderSystem->PrepareAssetTexture(*guid, srgb, textureError)) {
+        warnings.push_back("entity '" + entityName + "': could not prepare " + std::string(slotName) + " texture " +
+                           *guid + ": " + textureError);
+      }
+    };
+    prepare(material.baseColorTextureGuid, true, "base-color");
+    prepare(material.normalTextureGuid, false, "normal");
+  };
+
   for (const auto& entity : document.entities) {
     if (entity.sceneRoot) {
       if (rootDocument != nullptr) {
@@ -409,21 +453,39 @@ auto Application::LoadSceneDocument(const SceneDocument& document, std::string& 
       setEntityError("cannot specify both modelGuid and primitiveType");
       return false;
     }
+    auto effectiveMaterial = entity.material;
     if (entity.materialGuid) {
-      setEntityError("references an unsupported standalone material asset");
-      return false;
+      std::string materialError;
+      if (m_AssetManager == nullptr) {
+        materialError = "asset manager is unavailable";
+      }
+      if (m_AssetManager == nullptr || !m_AssetManager->LoadMaterial(*entity.materialGuid, materialError)) {
+        warnings.push_back("entity '" + entity.name + "': material asset " + *entity.materialGuid +
+                           " could not be loaded: " + materialError);
+      } else if (const auto assetMaterial = m_AssetManager->GetMaterial(*entity.materialGuid)) {
+        effectiveMaterial = *assetMaterial;
+      }
     }
-    if (entity.modelGuid) {
+    if (effectiveMaterial) {
+      prepareMaterialTextures(*effectiveMaterial, entity.name);
+    }
+    for (const auto& material : entity.materialOverrides) {
+      if (material) {
+        prepareMaterialTextures(*material, entity.name);
+      }
+    }
+    if (const auto modelGuid = entity.modelGuid; modelGuid.has_value()) {
+      const std::string& guid = modelGuid.value();
       std::string assetError;
-      if (!m_AssetManager->LoadModel(*entity.modelGuid, assetError)) {
+      if (!m_AssetManager->LoadModel(guid, assetError)) {
         setEntityError(assetError);
         return false;
       }
       if (m_RenderSystem != nullptr) {
-        const auto model = m_AssetManager->GetModel(*entity.modelGuid);
-        const auto generation = m_AssetManager->GetGeneration(*entity.modelGuid);
-        if (model && generation &&
-            !m_RenderSystem->PrepareModelResources(*entity.modelGuid, *generation, *model, {}, error)) {
+        const auto model = m_AssetManager->GetModel(guid);
+        const auto generation = m_AssetManager->GetGeneration(guid);
+        if (model && generation.has_value() &&
+            !m_RenderSystem->PrepareModelResources(guid, generation.value(), *model, {}, error)) {
           const std::string resourceError = error;
           setEntityError("model resource setup failed: ");
           error += resourceError;
@@ -431,17 +493,19 @@ auto Application::LoadSceneDocument(const SceneDocument& document, std::string& 
         }
       }
     }
-    if (entity.primitiveType && !IsPrimitiveType(*entity.primitiveType)) {
+    const auto primitiveType = entity.primitiveType;
+    if (primitiveType.has_value() && !IsPrimitiveType(primitiveType.value())) {
       setEntityError("uses an unsupported primitive type");
       return false;
     }
-    if (entity.primitiveType && m_RenderSystem != nullptr) {
+    if (primitiveType.has_value() && m_RenderSystem != nullptr) {
+      const std::string& type = primitiveType.value();
       PrimitiveShape shape = PrimitiveShape::Cone;
-      if (*entity.primitiveType == "cube") {
+      if (type == "cube") {
         shape = PrimitiveShape::Cube;
-      } else if (*entity.primitiveType == "sphere") {
+      } else if (type == "sphere") {
         shape = PrimitiveShape::Sphere;
-      } else if (*entity.primitiveType == "plane") {
+      } else if (type == "plane") {
         shape = PrimitiveShape::Plane;
       }
       auto material = m_RenderSystem->CreateMaterial({});
@@ -455,11 +519,11 @@ auto Application::LoadSceneDocument(const SceneDocument& document, std::string& 
   }
   if (document.schemaVersion == 1) {
     for (const auto& light : document.lights) {
-      (void)stagedScene->QueueCreate("Spot Light");
+      (void)stagedScene->QueueCreate(light.name);
       lightsToCreate.push_back(&light);
     }
     for (const auto& camera : document.cameras) {
-      (void)stagedScene->QueueCreate("Camera");
+      (void)stagedScene->QueueCreate(camera.name);
       camerasToCreate.push_back(&camera);
     }
   }
@@ -555,30 +619,56 @@ auto Application::LoadSceneDocument(const SceneDocument& document, std::string& 
 
   for (const PendingEntity& pending : entities) {
     const SceneEntityDocument& source = *pending.Document;
-    Ecs::LocalTransform transform{.Position = source.position, .Rotation = source.rotation, .Scale = source.scale};
-    (void)stagedScene->QueueSet(pending.Handle, transform);
+    if (stagedScene->IsSceneRoot(pending.Handle)) {
+      (void)stagedScene->QueueSet(pending.Handle, Ecs::Name{.Value = source.name});
+    }
     const SceneGuidDocument entityGuid = source.identityGuid.value_or(SceneGuidDocument{.high = 0, .low = source.id});
     (void)stagedScene->QueueSet(pending.Handle,
                                 Ecs::PersistentIdentity{.Guid = {.High = entityGuid.high, .Low = entityGuid.low}});
-    (void)stagedScene->QueueSet(pending.Handle, Ecs::LocalVisibility{.IsVisible = source.visible});
+    if (!stagedScene->IsSceneRoot(pending.Handle)) {
+      Ecs::LocalTransform transform{.Position = source.position,
+                                    .Rotation = source.rotation,
+                                    .Scale = source.scale,
+                                    .FlipHorizontal = source.flipHorizontal,
+                                    .FlipVertical = source.flipVertical};
+      (void)stagedScene->QueueSet(pending.Handle, transform);
+      (void)stagedScene->QueueSet(pending.Handle, Ecs::LocalVisibility{.IsVisible = source.visible});
+    }
     if (!queueParent(pending.Handle, source.parentGuid)) {
       return false;
     }
-    if (source.modelGuid || source.primitiveType) {
-      (void)stagedScene->QueueAdd(pending.Handle, Ecs::MeshRenderer{
-                                                      .ModelGuid = source.modelGuid.value_or(""),
-                                                      .PrimitiveType = source.primitiveType.value_or(""),
-                                                      .CastShadows = source.castShadows,
-                                                      .ReceiveShadows = source.receiveShadows,
-                                                      .Wireframe = source.forceWireframe,
-                                                      .DisableDepthTest = source.disableDepthTest,
-                                                  });
+    if (source.hasMeshRenderer || source.modelGuid || source.materialGuid || source.primitiveType) {
+      (void)stagedScene->QueueAdd(pending.Handle,
+                                  Ecs::MeshRenderer{
+                                      .ModelGuid = source.modelGuid.value_or(""),
+                                      .PrimitiveType = source.primitiveType.value_or(""),
+                                      .MaterialGuid = source.materialGuid.value_or(""),
+                                      .CastShadows = source.castShadows,
+                                      .ReceiveShadows = source.receiveShadows,
+                                      .Visible = source.meshVisible,
+                                      .Wireframe = source.forceWireframe,
+                                      .DisableDepthTest = source.disableDepthTest,
+                                      .Material = source.materialGuid && m_AssetManager != nullptr
+                                                      ? m_AssetManager->GetMaterial(*source.materialGuid)
+                                                            .value_or(source.material.value_or(SceneMaterialDocument{}))
+                                                      : source.material,
+                                      .MaterialOverrides = source.materialOverrides,
+                                  });
     }
   }
   for (const PendingLight& pending : lights) {
     const SceneLightDocument& source = *pending.Document;
-    Ecs::LocalTransform transform{.Position = source.position};
-    Ecs::SpotLight light{
+    Ecs::LocalTransform transform{.Position = source.position,
+                                  .Rotation = source.rotation,
+                                  .Scale = source.scale,
+                                  .FlipHorizontal = source.flipHorizontal,
+                                  .FlipVertical = source.flipVertical};
+    const Ecs::LightType lightType = source.type == "point" ? Ecs::LightType::Point
+                                     : source.type == "spot"
+                                         ? Ecs::LightType::Spot
+                                         : (source.usePosition ? Ecs::LightType::Spot : Ecs::LightType::Directional);
+    Ecs::Light light{
+        .Type = lightType,
         .Direction = source.direction,
         .Color = source.color,
         .Intensity = source.intensity,
@@ -587,7 +677,6 @@ auto Application::LoadSceneDocument(const SceneDocument& document, std::string& 
         .OuterAngleDegrees = source.outerAngleDegrees,
         .ShadowBias = source.shadowBias,
         .ShadowNormalBias = source.shadowNormalBias,
-        .UsePosition = source.usePosition,
         .CastShadows = source.castShadows,
     };
     (void)stagedScene->QueueSet(pending.Handle, transform);
@@ -602,13 +691,19 @@ auto Application::LoadSceneDocument(const SceneDocument& document, std::string& 
   }
   for (const PendingCamera& pending : cameras) {
     const SceneCameraDocument& source = *pending.Document;
-    Ecs::LocalTransform transform{.Position = source.position, .Rotation = source.rotation};
+    Ecs::LocalTransform transform{.Position = source.position,
+                                  .Rotation = source.rotation,
+                                  .Scale = source.scale,
+                                  .FlipHorizontal = source.flipHorizontal,
+                                  .FlipVertical = source.flipVertical};
     Ecs::Camera camera{
         .FieldOfViewDegrees = DirectX::XMConvertToDegrees(source.fovRadians),
         .NearPlane = source.nearPlane,
         .FarPlane = source.farPlane,
         .OutputWidth = source.outputWidth,
         .OutputHeight = source.outputHeight,
+        .Priority = source.priority,
+        .Active = source.active,
     };
     (void)stagedScene->QueueSet(pending.Handle, transform);
     const SceneGuidDocument cameraGuid = source.identityGuid.value_or(SceneGuidDocument{.high = 2, .low = source.id});
@@ -671,7 +766,14 @@ auto Application::CreateSceneDocument(const Scene& scene) const -> SceneDocument
           entity.identityGuid = SceneGuidDocument{.high = identities[row].Guid.High, .low = identities[row].Guid.Low};
           entity.name = names[row].Value;
           entity.sceneRoot = world.Get<Ecs::SceneRoot>(handles[row]) != nullptr;
-          entity.visible = visibility[row].IsVisible;
+          if (!entity.sceneRoot) {
+            entity.visible = visibility[row].IsVisible;
+            entity.position = transforms[row].Position;
+            entity.rotation = transforms[row].Rotation;
+            entity.scale = transforms[row].Scale;
+            entity.flipHorizontal = transforms[row].FlipHorizontal;
+            entity.flipVertical = transforms[row].FlipVertical;
+          }
           if (const auto* parent = world.Get<Ecs::Parent>(handles[row]);
               parent != nullptr && parent->Id != InvalidEntityHandle) {
             if (const auto* identity = world.Get<Ecs::PersistentIdentity>(parent->Id); identity != nullptr) {
@@ -684,14 +786,18 @@ auto Application::CreateSceneDocument(const Scene& scene) const -> SceneDocument
           if (mesh != nullptr && !mesh->PrimitiveType.empty()) {
             entity.primitiveType = mesh->PrimitiveType;
           }
-          entity.position = transforms[row].Position;
-          entity.rotation = transforms[row].Rotation;
-          entity.scale = transforms[row].Scale;
+          if (mesh != nullptr && !mesh->MaterialGuid.empty()) {
+            entity.materialGuid = mesh->MaterialGuid;
+          }
           if (mesh != nullptr) {
+            entity.hasMeshRenderer = true;
             entity.forceWireframe = mesh->Wireframe;
+            entity.meshVisible = mesh->Visible;
             entity.disableDepthTest = mesh->DisableDepthTest;
             entity.castShadows = mesh->CastShadows;
             entity.receiveShadows = mesh->ReceiveShadows;
+            entity.material = mesh->Material;
+            entity.materialOverrides = mesh->MaterialOverrides;
           }
           document.entities.push_back(std::move(entity));
         }
@@ -706,6 +812,7 @@ auto Application::CreateSceneDocument(const Scene& scene) const -> SceneDocument
         for (size_t row = 0; row < handles.size(); ++row) {
           SceneLightDocument light;
           light.id = identities[row].Guid.Low;
+          light.name = names[row].Value;
           light.identityGuid = SceneGuidDocument{.high = identities[row].Guid.High, .low = identities[row].Guid.Low};
           light.visible = visibility[row].IsVisible;
           if (const auto* parent = world.Get<Ecs::Parent>(handles[row]);
@@ -716,6 +823,10 @@ auto Application::CreateSceneDocument(const Scene& scene) const -> SceneDocument
           }
           light.direction = components[row].Direction;
           light.position = transforms[row].Position;
+          light.rotation = transforms[row].Rotation;
+          light.scale = transforms[row].Scale;
+          light.flipHorizontal = transforms[row].FlipHorizontal;
+          light.flipVertical = transforms[row].FlipVertical;
           light.color = components[row].Color;
           light.intensity = components[row].Intensity;
           light.range = components[row].Range;
@@ -723,10 +834,12 @@ auto Application::CreateSceneDocument(const Scene& scene) const -> SceneDocument
           light.outerAngleDegrees = components[row].OuterAngleDegrees;
           light.shadowBias = components[row].ShadowBias;
           light.shadowNormalBias = components[row].ShadowNormalBias;
-          light.usePosition = components[row].UsePosition;
+          light.type = components[row].Type == Ecs::LightType::Directional ? "directional"
+                       : components[row].Type == Ecs::LightType::Point     ? "point"
+                                                                           : "spot";
+          light.usePosition = components[row].Type != Ecs::LightType::Directional;
           light.castShadows = components[row].CastShadows;
           document.lights.push_back(light);
-          (void)names;
         }
       });
 
@@ -739,6 +852,7 @@ auto Application::CreateSceneDocument(const Scene& scene) const -> SceneDocument
             for (size_t row = 0; row < handles.size(); ++row) {
               SceneCameraDocument camera;
               camera.id = identities[row].Guid.Low;
+              camera.name = names[row].Value;
               camera.identityGuid =
                   SceneGuidDocument{.high = identities[row].Guid.High, .low = identities[row].Guid.Low};
               camera.visible = visibility[row].IsVisible;
@@ -750,13 +864,17 @@ auto Application::CreateSceneDocument(const Scene& scene) const -> SceneDocument
               }
               camera.position = transforms[row].Position;
               camera.rotation = transforms[row].Rotation;
+              camera.scale = transforms[row].Scale;
+              camera.flipHorizontal = transforms[row].FlipHorizontal;
+              camera.flipVertical = transforms[row].FlipVertical;
               camera.fovRadians = DirectX::XMConvertToRadians(components[row].FieldOfViewDegrees);
               camera.nearPlane = components[row].NearPlane;
               camera.farPlane = components[row].FarPlane;
               camera.outputWidth = components[row].OutputWidth;
               camera.outputHeight = components[row].OutputHeight;
+              camera.priority = components[row].Priority;
+              camera.active = components[row].Active;
               document.cameras.push_back(camera);
-              (void)names;
             }
           });
   return document;

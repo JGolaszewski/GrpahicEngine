@@ -30,7 +30,8 @@ public:
       std::function<std::optional<std::filesystem::path>(bool, const std::filesystem::path&)>;
   /// Starts an async export for the camera entity, resolving its current scene state in the editor.
   using StartExportFunction = std::function<Engine::Result<Engine::RenderOutputExportService::RequestId>(
-      Engine::EntityHandle, bool, std::vector<Engine::RenderAov>, std::filesystem::path)>;
+      Engine::EntityHandle, bool, std::vector<Engine::RenderAov>, std::filesystem::path,
+      Engine::RenderOutputBackground)>;
   /// Returns the latest async export status for a request.
   using ExportStatusFunction =
       std::function<std::optional<Engine::RenderOutputExportStatus>(Engine::RenderOutputExportService::RequestId)>;
@@ -63,6 +64,7 @@ private:
   std::string m_ExportFormat;
   std::optional<Engine::RenderOutputExportService::RequestId> m_ExportRequest;
   std::array<bool, 5> m_SelectedAovs = {true, true, true, true, true};
+  Engine::RenderOutputBackground m_ExportBackground;
   float m_Zoom = 1.0F;
   std::array<float, 2> m_ImageOffset{};
   std::array<float, 2> m_LastMousePosition{};

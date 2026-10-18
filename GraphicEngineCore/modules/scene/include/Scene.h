@@ -22,7 +22,7 @@ namespace Engine {
 #  pragma warning(disable : 4251)
 #  pragma warning(disable : 4324)
 #endif
-/// Owns an ECS world, permanent scene root, hierarchy, command queue, and scheduled systems.
+/// Owns an ECS world, permanent structural scene root, hierarchy, command queue, and scheduled systems.
 ///
 /// Mutations requested through Queue methods are applied at sync barriers. This
 /// keeps structural changes out of active system iteration.
@@ -81,7 +81,7 @@ public:
   /// Gets the current scene epoch through its explicit accessor name.
   /// @return Monotonically increasing scene epoch.
   [[nodiscard]] auto GetSceneEpoch() const noexcept -> uint64_t { return m_SceneEpoch; }
-  /// Gets the permanent scene root entity.
+  /// Gets the permanent structural root; it owns top-level entities and has no authored transform or visibility.
   /// @return Handle of the permanent root entity.
   [[nodiscard]] auto SceneRootEntity() const noexcept -> EntityHandle { return m_SceneRoot; }
   /// Checks whether an entity is the permanent scene root.
@@ -228,9 +228,9 @@ public:
       } else {
         if (scene.IsSceneRoot(entity) &&
             (std::is_same_v<Component, Ecs::MeshRenderer> || std::is_same_v<Component, Ecs::SpotLight> ||
-             std::is_same_v<Component, Ecs::Camera>)) {
-          return Status(
-              std::unexpected(MakeError("Renderable and authored components cannot be assigned to the scene root")));
+             std::is_same_v<Component, Ecs::Camera> || std::is_same_v<Component, Ecs::LocalTransform> ||
+             std::is_same_v<Component, Ecs::LocalVisibility>)) {
+          return Status(std::unexpected(MakeError("Authored components cannot be assigned to the scene root")));
         }
         if constexpr (std::is_same_v<Component, Ecs::LocalTransform>) {
           component.IsDirty = true;
@@ -269,6 +269,12 @@ public:
                   std::is_same_v<Component, Ecs::GlobalVisibility>) {
       return std::unexpected(MakeError("Scene identity, hierarchy links, and derived state are system-owned"));
     } else {
+      if (IsSceneRoot(entity) &&
+          (std::is_same_v<Component, Ecs::LocalTransform> || std::is_same_v<Component, Ecs::LocalVisibility> ||
+           std::is_same_v<Component, Ecs::MeshRenderer> || std::is_same_v<Component, Ecs::SpotLight> ||
+           std::is_same_v<Component, Ecs::Camera>)) {
+        return std::unexpected(MakeError("Authored components cannot be assigned to the scene root"));
+      }
       if constexpr (std::is_same_v<Component, Ecs::LocalTransform>) {
         component.IsDirty = true;
       }

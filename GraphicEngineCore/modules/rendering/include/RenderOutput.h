@@ -20,29 +20,30 @@ class RenderSystem;
 
 /// Stable render-output plane identifiers used by previews and image exporters.
 enum class RenderAov : uint8_t {
-  FinalColor, ///< Post-processed color and opacity.
-  Depth, ///< Normalized device depth.
-  WorldNormal, ///< World-space shading normal.
+  FinalColor,       ///< Post-processed color and opacity.
+  Depth,            ///< Normalized device depth.
+  WorldNormal,      ///< World-space shading normal.
   SpecularLighting, ///< Direct and environment specular contribution.
-  DiffuseLighting, ///< Direct diffuse, ambient diffuse, and emissive contribution.
+  DiffuseLighting,  ///< Direct diffuse, ambient diffuse, and emissive contribution.
 };
 
 /// Scalar storage format used by all CPU render-output planes.
-enum class RenderOutputFormat : uint8_t { Float32 ///< 32-bit floating-point samples.
+enum class RenderOutputFormat : uint8_t {
+  Float32 ///< 32-bit floating-point samples.
 };
 
 /// Describes a render-output plane's stable name and channel layout.
 struct ENGINE_API RenderAovDescriptor {
-  RenderAov Aov; ///< Stable plane identifier.
-  const char* Name; ///< Stable lower-case plane name.
-  RenderOutputFormat Format; ///< Scalar storage format.
-  uint32_t ChannelCount; ///< Number of scalar values per pixel.
+  RenderAov Aov;                           ///< Stable plane identifier.
+  const char* Name;                        ///< Stable lower-case plane name.
+  RenderOutputFormat Format;               ///< Scalar storage format.
+  uint32_t ChannelCount;                   ///< Number of scalar values per pixel.
   std::array<const char*, 4> ChannelNames; ///< Names of populated channels, in storage order.
 };
 
 /// CPU-owned, tightly packed float32 image plane.
 struct ENGINE_API RenderOutputPlane {
-  RenderAov Aov; ///< Stable plane identifier.
+  RenderAov Aov;             ///< Stable plane identifier.
   uint32_t ChannelCount = 0; ///< Number of scalar values per pixel.
   std::vector<float> Pixels; ///< Tightly packed top-to-bottom pixel samples.
 };
@@ -62,7 +63,7 @@ struct ENGINE_API RenderOutputPlane {
 /// data.
 class ENGINE_API RenderOutput {
 public:
-  uint32_t Width = 0; ///< Image width in pixels.
+  uint32_t Width = 0;  ///< Image width in pixels.
   uint32_t Height = 0; ///< Image height in pixels.
 
   /// Returns the available AOV planes in canonical order.
@@ -88,6 +89,13 @@ private:
 } // namespace Engine
 
 namespace Engine {
+
+/// Optional linear-RGB solid background for image export. When enabled, only
+/// final_color is composited and its alpha is set to one.
+struct ENGINE_API RenderOutputBackground {
+  bool Enabled = false;                         ///< Whether to composite transparent final_color pixels.
+  std::array<float, 3> Color{0.0F, 0.0F, 0.0F}; ///< Solid background color in linear RGB.
+};
 
 /// CPU post-processing hook for final color, called after GPU readback.
 ///

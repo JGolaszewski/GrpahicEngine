@@ -374,6 +374,13 @@ auto GuidJson(const std::optional<SceneGuidDocument>& guid) -> Json {
   return Json{{"high", guid->high}, {"low", guid->low}};
 }
 
+auto HasMeshRenderer(const SceneEntityDocument& entity) -> bool {
+  return entity.hasMeshRenderer || entity.modelGuid.has_value() || entity.materialGuid.has_value() ||
+         entity.primitiveType.has_value() || entity.material.has_value() || !entity.materialOverrides.empty() ||
+         entity.forceWireframe || !entity.meshVisible || entity.disableDepthTest || !entity.castShadows ||
+         !entity.receiveShadows;
+}
+
 auto EntityJson(const SceneEntityDocument& entity) -> Json {
   Json item = Json::object();
   item.emplace("id", entity.id);
@@ -381,19 +388,25 @@ auto EntityJson(const SceneEntityDocument& entity) -> Json {
   item.emplace("sceneRoot", entity.sceneRoot);
   item.emplace("identityGuid", GuidJson(entity.identityGuid));
   item.emplace("parentGuid", GuidJson(entity.parentGuid));
-  item.emplace("visible", entity.visible);
   item.emplace("modelGuid", entity.modelGuid ? Json(*entity.modelGuid) : Json(nullptr));
   item.emplace("materialGuid", entity.materialGuid ? Json(*entity.materialGuid) : Json(nullptr));
   item.emplace("primitiveType", entity.primitiveType ? Json(*entity.primitiveType) : Json(nullptr));
-  item.emplace("position", entity.position);
-  item.emplace("rotation", entity.rotation);
-  item.emplace("scale", entity.scale);
-  Json render = Json::object();
-  render.emplace("forceWireframe", entity.forceWireframe);
-  render.emplace("disableDepthTest", entity.disableDepthTest);
-  render.emplace("castShadows", entity.castShadows);
-  render.emplace("receiveShadows", entity.receiveShadows);
-  item.emplace("render", std::move(render));
+  item.emplace("hasMeshRenderer", !entity.sceneRoot && HasMeshRenderer(entity));
+  if (!entity.sceneRoot) {
+    item.emplace("visible", entity.visible);
+    item.emplace("position", entity.position);
+    item.emplace("rotation", entity.rotation);
+    item.emplace("scale", entity.scale);
+    item.emplace("flipHorizontal", entity.flipHorizontal);
+    item.emplace("flipVertical", entity.flipVertical);
+    Json render = Json::object();
+    render.emplace("visible", entity.meshVisible);
+    render.emplace("forceWireframe", entity.forceWireframe);
+    render.emplace("disableDepthTest", entity.disableDepthTest);
+    render.emplace("castShadows", entity.castShadows);
+    render.emplace("receiveShadows", entity.receiveShadows);
+    item.emplace("render", std::move(render));
+  }
   if (entity.material) {
     item.emplace("material", MaterialJson(*entity.material));
   }
@@ -410,11 +423,16 @@ auto EntityJson(const SceneEntityDocument& entity) -> Json {
 auto LightJson(const SceneLightDocument& light) -> Json {
   return {
       {"id", light.id},
+      {"name", light.name},
       {"identityGuid", GuidJson(light.identityGuid)},
       {"parentGuid", GuidJson(light.parentGuid)},
       {"visible", light.visible},
       {"direction", light.direction},
       {"position", light.position},
+      {"rotation", light.rotation},
+      {"scale", light.scale},
+      {"flipHorizontal", light.flipHorizontal},
+      {"flipVertical", light.flipVertical},
       {"color", light.color},
       {"intensity", light.intensity},
       {"range", light.range},
@@ -422,6 +440,7 @@ auto LightJson(const SceneLightDocument& light) -> Json {
       {"outerAngleDegrees", light.outerAngleDegrees},
       {"shadowBias", light.shadowBias},
       {"shadowNormalBias", light.shadowNormalBias},
+      {"type", light.type},
       {"usePosition", light.usePosition},
       {"castShadows", light.castShadows},
   };
@@ -430,16 +449,22 @@ auto LightJson(const SceneLightDocument& light) -> Json {
 auto CameraJson(const SceneCameraDocument& camera) -> Json {
   return {
       {"id", camera.id},
+      {"name", camera.name},
       {"identityGuid", GuidJson(camera.identityGuid)},
       {"parentGuid", GuidJson(camera.parentGuid)},
       {"visible", camera.visible},
       {"position", camera.position},
       {"rotation", camera.rotation},
+      {"scale", camera.scale},
+      {"flipHorizontal", camera.flipHorizontal},
+      {"flipVertical", camera.flipVertical},
       {"fovRadians", camera.fovRadians},
       {"nearPlane", camera.nearPlane},
       {"farPlane", camera.farPlane},
       {"outputWidth", camera.outputWidth},
       {"outputHeight", camera.outputHeight},
+      {"priority", camera.priority},
+      {"active", camera.active},
   };
 }
 
@@ -479,8 +504,8 @@ auto ValidateEntity(const SceneEntityDocument& entity, std::set<uint64_t>& ids, 
     error = "document contains a duplicate/invalid entity ID or asset GUID";
     return false;
   }
-  if (entity.sceneRoot && (entity.modelGuid || entity.primitiveType || entity.materialGuid || entity.material ||
-                           entity.parentGuid || !entity.materialOverrides.empty())) {
+  if (entity.sceneRoot && (entity.hasMeshRenderer || entity.modelGuid || entity.primitiveType || entity.materialGuid ||
+                           entity.material || entity.parentGuid || !entity.materialOverrides.empty())) {
     error = "scene root cannot contain mesh or material data";
     return false;
   }
@@ -496,17 +521,20 @@ auto ValidateEntity(const SceneEntityDocument& entity, std::set<uint64_t>& ids, 
     error = "document contains an invalid model material override";
     return false;
   }
-  const std::array<float, 10> values = {
-      entity.position.at(0), entity.position.at(1), entity.position.at(2), entity.rotation.at(0), entity.rotation.at(1),
-      entity.rotation.at(2), entity.rotation.at(3), entity.scale.at(0),    entity.scale.at(1),    entity.scale.at(2),
-  };
-  const float rotationLengthSquared =
-      (entity.rotation.at(0) * entity.rotation.at(0)) + (entity.rotation.at(1) * entity.rotation.at(1)) +
-      (entity.rotation.at(2) * entity.rotation.at(2)) + (entity.rotation.at(3) * entity.rotation.at(3));
-  if (!std::ranges::all_of(values, [](float value) -> bool { return std::isfinite(value); }) ||
-      !std::isfinite(rotationLengthSquared) || rotationLengthSquared <= 1.0e-12F) {
-    error = "document contains an invalid entity transform";
-    return false;
+  if (!entity.sceneRoot) {
+    const std::array<float, 10> values = {
+        entity.position.at(0), entity.position.at(1), entity.position.at(2), entity.rotation.at(0),
+        entity.rotation.at(1), entity.rotation.at(2), entity.rotation.at(3), entity.scale.at(0),
+        entity.scale.at(1),    entity.scale.at(2),
+    };
+    const float rotationLengthSquared =
+        (entity.rotation.at(0) * entity.rotation.at(0)) + (entity.rotation.at(1) * entity.rotation.at(1)) +
+        (entity.rotation.at(2) * entity.rotation.at(2)) + (entity.rotation.at(3) * entity.rotation.at(3));
+    if (!std::ranges::all_of(values, [](float value) -> bool { return std::isfinite(value); }) ||
+        !std::isfinite(rotationLengthSquared) || rotationLengthSquared <= 1.0e-12F) {
+      error = "document contains an invalid entity transform";
+      return false;
+    }
   }
   return true;
 }
@@ -529,25 +557,33 @@ auto ValidateEntities(const std::filesystem::path& path, const SceneDocument& do
 }
 
 auto ValidateLight(const SceneLightDocument& light, std::set<uint64_t>& ids) -> bool {
-  const std::array<float, 15> values = {
-      light.direction.at(0),   light.direction.at(1), light.direction.at(2),
-      light.position.at(0),    light.position.at(1),  light.position.at(2),
-      light.color.at(0),       light.color.at(1),     light.color.at(2),
-      light.intensity,         light.range,           light.innerAngleDegrees,
-      light.outerAngleDegrees, light.shadowBias,      light.shadowNormalBias,
+  const bool validType = light.type == "directional" || light.type == "point" || light.type == "spot";
+  const std::array<float, 14> commonValues = {
+      light.direction.at(0), light.direction.at(1),  light.direction.at(2), light.position.at(0), light.position.at(1),
+      light.position.at(2),  light.color.at(0),      light.color.at(1),     light.color.at(2),    light.intensity,
+      light.shadowBias,      light.shadowNormalBias, light.rotation.at(0),  light.rotation.at(1),
   };
-  if (light.id == 0 || !ids.insert(light.id).second ||
-      !std::ranges::all_of(values, [](float value) -> bool { return std::isfinite(value); }) ||
-      light.intensity < 0.0F || light.range <= 0.0F || light.innerAngleDegrees < 0.0F ||
-      light.outerAngleDegrees < light.innerAngleDegrees || light.outerAngleDegrees > 89.5F || light.shadowBias < 0.0F ||
-      light.shadowNormalBias < 0.0F) {
+  if (light.id == 0 || !ids.insert(light.id).second || !validType ||
+      !std::ranges::all_of(commonValues, [](float value) -> bool { return std::isfinite(value); }) ||
+      light.intensity < 0.0F ||
+      ((light.type == "point" || light.type == "spot") && (!std::isfinite(light.range) || light.range <= 0.0F)) ||
+      (light.type == "spot" && (!std::isfinite(light.innerAngleDegrees) || !std::isfinite(light.outerAngleDegrees) ||
+                                light.innerAngleDegrees < 0.0F || light.outerAngleDegrees <= light.innerAngleDegrees ||
+                                light.outerAngleDegrees > 89.5F)) ||
+      light.shadowBias < 0.0F || light.shadowNormalBias < 0.0F) {
     return false;
   }
   const float directionLengthSquared = (light.direction.at(0) * light.direction.at(0)) +
                                        (light.direction.at(1) * light.direction.at(1)) +
                                        (light.direction.at(2) * light.direction.at(2));
-  return std::isfinite(directionLengthSquared) && directionLengthSquared > 1.0e-12F && light.color.at(0) >= 0.0F &&
-         light.color.at(1) >= 0.0F && light.color.at(2) >= 0.0F;
+  const float rotationLengthSquared =
+      (light.rotation.at(0) * light.rotation.at(0)) + (light.rotation.at(1) * light.rotation.at(1)) +
+      (light.rotation.at(2) * light.rotation.at(2)) + (light.rotation.at(3) * light.rotation.at(3));
+  const bool validDirection =
+      std::isfinite(directionLengthSquared) && (light.type == "point" || directionLengthSquared > 1.0e-12F);
+  return validDirection && std::isfinite(rotationLengthSquared) && rotationLengthSquared > 1.0e-12F &&
+         std::ranges::all_of(light.scale, [](float value) { return std::isfinite(value) && value > 0.0F; }) &&
+         light.color.at(0) >= 0.0F && light.color.at(1) >= 0.0F && light.color.at(2) >= 0.0F;
 }
 
 auto ValidateLights(const std::filesystem::path& path, const SceneDocument& document, std::string& error) -> bool {
@@ -573,7 +609,8 @@ auto ValidateCamera(const SceneCameraDocument& camera, std::set<uint64_t>& ids) 
          std::ranges::all_of(values, [](float value) -> bool { return std::isfinite(value); }) &&
          camera.fovRadians > 0.0F && camera.fovRadians < std::numbers::pi_v<float> && camera.nearPlane > 0.0F &&
          camera.farPlane > camera.nearPlane && camera.outputWidth > 0 && camera.outputHeight > 0 &&
-         std::isfinite(rotationLengthSquared) && rotationLengthSquared > 1.0e-12F;
+         std::isfinite(rotationLengthSquared) && rotationLengthSquared > 1.0e-12F &&
+         std::ranges::all_of(camera.scale, [](float value) { return std::isfinite(value) && value > 0.0F; });
 }
 
 auto ValidateCameras(const std::filesystem::path& path, const SceneDocument& document, std::string& error) -> bool {
@@ -709,7 +746,9 @@ auto ReadEntityTransform(const Json& item, SceneEntityDocument& entity, const st
        !ReadFloatArray(item.at("position"), entity.position, context + ".position", fieldError)) ||
       (item.contains("rotation") &&
        !ReadFloatArray(item.at("rotation"), entity.rotation, context + ".rotation", fieldError)) ||
-      (item.contains("scale") && !ReadFloatArray(item.at("scale"), entity.scale, context + ".scale", fieldError))) {
+      (item.contains("scale") && !ReadFloatArray(item.at("scale"), entity.scale, context + ".scale", fieldError)) ||
+      !ReadBool(item, "flipHorizontal", entity.flipHorizontal, fieldError) ||
+      !ReadBool(item, "flipVertical", entity.flipVertical, fieldError)) {
     return false;
   }
   const float rotationLengthSquared =
@@ -732,9 +771,10 @@ auto ReadEntityRenderSettings(const Json& item, SceneEntityDocument& entity, Sce
     fieldError = context + ".render must be an object";
     return false;
   }
-  KnownKeys(render, {"forceWireframe", "disableDepthTest", "castShadows", "receiveShadows"}, result.warnings,
+  KnownKeys(render, {"visible", "forceWireframe", "disableDepthTest", "castShadows", "receiveShadows"}, result.warnings,
             context + ".render");
-  if (!ReadBool(render, "forceWireframe", entity.forceWireframe, fieldError) ||
+  if (!ReadBool(render, "visible", entity.meshVisible, fieldError) ||
+      !ReadBool(render, "forceWireframe", entity.forceWireframe, fieldError) ||
       !ReadBool(render, "disableDepthTest", entity.disableDepthTest, fieldError) ||
       !ReadBool(render, "castShadows", entity.castShadows, fieldError) ||
       !ReadBool(render, "receiveShadows", entity.receiveShadows, fieldError)) {
@@ -757,24 +797,49 @@ auto ReadEntity(const Json& item, SceneEntityDocument& entity, std::set<uint64_t
                 "modelGuid",
                 "materialGuid",
                 "primitiveType",
+                "hasMeshRenderer",
                 "material",
                 "materialOverrides",
                 "position",
                 "rotation",
                 "scale",
+                "flipHorizontal",
+                "flipVertical",
                 "render",
             },
             result.warnings, context);
-  const bool loaded = ReadEntityIdentity(item, entity, entityIds, context, fieldError) &&
-                      ReadGuid(item, "identityGuid", entity.identityGuid, fieldError) &&
-                      ReadGuid(item, "parentGuid", entity.parentGuid, fieldError) &&
-                      ReadBool(item, "visible", entity.visible, fieldError) &&
+  const bool identityLoaded = ReadEntityIdentity(item, entity, entityIds, context, fieldError) &&
+                              ReadGuid(item, "identityGuid", entity.identityGuid, fieldError) &&
+                              ReadGuid(item, "parentGuid", entity.parentGuid, fieldError);
+  if (!identityLoaded) {
+    return false;
+  }
+  if (!ReadBool(item, "hasMeshRenderer", entity.hasMeshRenderer, fieldError)) {
+    fieldError = context + "." + fieldError;
+    return false;
+  }
+  if (entity.sceneRoot) {
+    const bool hasMaterial = (item.contains("material") && !item.at("material").is_null()) ||
+                             (item.contains("materialOverrides") &&
+                              (!item.at("materialOverrides").is_array() || !item.at("materialOverrides").empty()));
+    if (entity.parentGuid || entity.materialGuid || hasMaterial) {
+      fieldError = context + " scene root cannot have a parent or material";
+      return false;
+    }
+    if (item.contains("visible") || item.contains("position") || item.contains("rotation") || item.contains("scale") ||
+        item.contains("flipHorizontal") || item.contains("flipVertical") || item.contains("render")) {
+      result.warnings.push_back(context + " legacy scene root transform/visibility fields ignored");
+    }
+    return true;
+  }
+  const bool loaded = ReadBool(item, "visible", entity.visible, fieldError) &&
                       ReadEntityMaterials(item, entity, result, context, fieldError) &&
                       ReadEntityTransform(item, entity, context, fieldError) &&
                       ReadEntityRenderSettings(item, entity, result, context, fieldError);
   if (!loaded) {
     return false;
   }
+  entity.hasMeshRenderer = HasMeshRenderer(entity);
   if (entity.sceneRoot &&
       (entity.parentGuid || entity.materialGuid || entity.material || !entity.materialOverrides.empty())) {
     fieldError = context + " scene root cannot have a parent or material";
@@ -833,11 +898,16 @@ auto LoadLightArray(const Json& root, SceneDocumentResult& result, const std::fi
       KnownKeys(item,
                 {
                     "id",
+                    "name",
                     "identityGuid",
                     "parentGuid",
                     "visible",
                     "direction",
                     "position",
+                    "rotation",
+                    "scale",
+                    "flipHorizontal",
+                    "flipVertical",
                     "color",
                     "intensity",
                     "range",
@@ -845,17 +915,29 @@ auto LoadLightArray(const Json& root, SceneDocumentResult& result, const std::fi
                     "outerAngleDegrees",
                     "shadowBias",
                     "shadowNormalBias",
+                    "type",
                     "usePosition",
                     "castShadows",
                 },
                 result.warnings, context);
       SceneLightDocument light;
+      if (item.contains("name")) {
+        if (!item.at("name").is_string()) {
+          result.error = FileContext(path, context + ".name must be a string");
+          return false;
+        }
+        light.name = item.at("name").get<std::string>();
+      }
       if (!ReadId(item, light.id, fieldError) || !lightIds.insert(light.id).second ||
           !ReadGuid(item, "identityGuid", light.identityGuid, fieldError) ||
           !ReadGuid(item, "parentGuid", light.parentGuid, fieldError) ||
           !ReadBool(item, "visible", light.visible, fieldError) ||
           !ReadArrayField(item, "direction", light.direction, fieldError) ||
           !ReadArrayField(item, "position", light.position, fieldError) ||
+          !ReadArrayField(item, "rotation", light.rotation, fieldError) ||
+          !ReadArrayField(item, "scale", light.scale, fieldError) ||
+          !ReadBool(item, "flipHorizontal", light.flipHorizontal, fieldError) ||
+          !ReadBool(item, "flipVertical", light.flipVertical, fieldError) ||
           !ReadArrayField(item, "color", light.color, fieldError) ||
           !ReadNumber(item, "intensity", light.intensity, fieldError) ||
           !ReadNumber(item, "range", light.range, fieldError) ||
@@ -868,13 +950,32 @@ auto LoadLightArray(const Json& root, SceneDocumentResult& result, const std::fi
         result.error = FileContext(path, context + ": " + (fieldError.empty() ? "duplicate light ID" : fieldError));
         return false;
       }
+      if (item.contains("type")) {
+        if (!item.at("type").is_string()) {
+          result.error = FileContext(path, context + ".type must be a string");
+          return false;
+        }
+        light.type = item.at("type").get<std::string>();
+      } else {
+        light.type = light.usePosition ? "spot" : "directional";
+      }
       const float directionLengthSquared = (light.direction.at(0) * light.direction.at(0)) +
                                            (light.direction.at(1) * light.direction.at(1)) +
                                            (light.direction.at(2) * light.direction.at(2));
-      if (!std::isfinite(directionLengthSquared) || directionLengthSquared <= 1.0e-12F || light.color.at(0) < 0.0F ||
-          light.color.at(1) < 0.0F || light.color.at(2) < 0.0F || light.intensity < 0.0F || light.range <= 0.0F ||
-          light.innerAngleDegrees < 0.0F || light.outerAngleDegrees < light.innerAngleDegrees ||
-          light.outerAngleDegrees > 89.5F || light.shadowBias < 0.0F || light.shadowNormalBias < 0.0F) {
+      const float rotationLengthSquared =
+          (light.rotation.at(0) * light.rotation.at(0)) + (light.rotation.at(1) * light.rotation.at(1)) +
+          (light.rotation.at(2) * light.rotation.at(2)) + (light.rotation.at(3) * light.rotation.at(3));
+      const bool invalidDirection =
+          !std::isfinite(directionLengthSquared) || (light.type != "point" && directionLengthSquared <= 1.0e-12F);
+      if (invalidDirection || !std::isfinite(rotationLengthSquared) || rotationLengthSquared <= 1.0e-12F ||
+          (light.type != "directional" && light.type != "point" && light.type != "spot") ||
+          std::ranges::any_of(light.scale, [](float value) { return !std::isfinite(value) || value <= 0.0F; }) ||
+          light.color.at(0) < 0.0F || light.color.at(1) < 0.0F || light.color.at(2) < 0.0F || light.intensity < 0.0F ||
+          ((light.type == "point" || light.type == "spot") && light.range <= 0.0F) ||
+          (light.type == "spot" &&
+           (light.innerAngleDegrees < 0.0F || light.outerAngleDegrees <= light.innerAngleDegrees ||
+            light.outerAngleDegrees > 89.5F)) ||
+          light.shadowBias < 0.0F || light.shadowNormalBias < 0.0F) {
         result.error = FileContext(path, context + " contains out-of-range light settings");
         return false;
       }
@@ -902,25 +1003,41 @@ auto LoadCameraArray(const Json& root, SceneDocumentResult& result, const std::f
       KnownKeys(item,
                 {
                     "id",
+                    "name",
                     "identityGuid",
                     "parentGuid",
                     "visible",
                     "position",
                     "rotation",
+                    "scale",
+                    "flipHorizontal",
+                    "flipVertical",
                     "fovRadians",
                     "nearPlane",
                     "farPlane",
                     "outputWidth",
                     "outputHeight",
+                    "priority",
+                    "active",
                 },
                 result.warnings, context);
       SceneCameraDocument camera;
+      if (item.contains("name")) {
+        if (!item.at("name").is_string()) {
+          result.error = FileContext(path, context + ".name must be a string");
+          return false;
+        }
+        camera.name = item.at("name").get<std::string>();
+      }
       if (!ReadId(item, camera.id, fieldError) || !cameraIds.insert(camera.id).second ||
           !ReadGuid(item, "identityGuid", camera.identityGuid, fieldError) ||
           !ReadGuid(item, "parentGuid", camera.parentGuid, fieldError) ||
           !ReadBool(item, "visible", camera.visible, fieldError) ||
           !ReadArrayField(item, "position", camera.position, fieldError) ||
           !ReadArrayField(item, "rotation", camera.rotation, fieldError) ||
+          !ReadArrayField(item, "scale", camera.scale, fieldError) ||
+          !ReadBool(item, "flipHorizontal", camera.flipHorizontal, fieldError) ||
+          !ReadBool(item, "flipVertical", camera.flipVertical, fieldError) ||
           !ReadNumber(item, "fovRadians", camera.fovRadians, fieldError) ||
           !ReadNumber(item, "nearPlane", camera.nearPlane, fieldError) ||
           !ReadNumber(item, "farPlane", camera.farPlane, fieldError) ||
@@ -929,12 +1046,32 @@ auto LoadCameraArray(const Json& root, SceneDocumentResult& result, const std::f
         result.error = FileContext(path, context + ": " + (fieldError.empty() ? "duplicate camera ID" : fieldError));
         return false;
       }
+      if (item.contains("priority")) {
+        const Json& priority = item.at("priority");
+        const bool isOutOfRange =
+            priority.is_number_unsigned()
+                ? priority.get<uint64_t>() > static_cast<uint64_t>(std::numeric_limits<int32_t>::max())
+                : !priority.is_number_integer() || priority.get<int64_t>() < std::numeric_limits<int32_t>::min() ||
+                      priority.get<int64_t>() > std::numeric_limits<int32_t>::max();
+        if (isOutOfRange) {
+          result.error = FileContext(path, context + ".priority must be a 32-bit integer");
+          return false;
+        }
+        camera.priority = item.at("priority").get<int32_t>();
+      }
+      if (!ReadBool(item, "active", camera.active, fieldError)) {
+        std::string fieldContext = context;
+        fieldContext.append(".").append(fieldError);
+        result.error = FileContext(path, fieldContext);
+        return false;
+      }
       const float rotationLengthSquared =
           (camera.rotation.at(0) * camera.rotation.at(0)) + (camera.rotation.at(1) * camera.rotation.at(1)) +
           (camera.rotation.at(2) * camera.rotation.at(2)) + (camera.rotation.at(3) * camera.rotation.at(3));
       if (camera.fovRadians <= 0.0F || camera.fovRadians >= std::numbers::pi_v<float> || camera.nearPlane <= 0.0F ||
           camera.farPlane <= camera.nearPlane || camera.outputWidth == 0 || camera.outputHeight == 0 ||
-          rotationLengthSquared <= 1.0e-12F) {
+          rotationLengthSquared <= 1.0e-12F ||
+          std::ranges::any_of(camera.scale, [](float value) { return !std::isfinite(value) || value <= 0.0F; })) {
         result.error = FileContext(path, context + " contains invalid projection or rotation values");
         return false;
       }

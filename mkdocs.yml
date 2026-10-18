@@ -53,6 +53,7 @@ nav:
   - Architecture and guides:
       - C++ guidelines: cpp-guidelines.md
       - Logging: logging.md
+      - Editor settings: editor-settings.md
       - Rendering:
           - Cameras: rendering/cameras.md
           - Editor render panel: rendering/editor-render-panel.md
@@ -61,6 +62,7 @@ nav:
           - Final rendering: rendering/final-render.md
   - Workflows:
       - Development workflow: development-workflow.md
+      - Editor workflows: editor-workflows.md
       - Testing: testing.md
       - Windows validation: validation/windows.md
   - Core API:

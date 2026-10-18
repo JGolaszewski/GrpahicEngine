@@ -130,6 +130,87 @@ void TestImportAndGuidReload(const std::filesystem::path& project) {
           "repeated GUID loads did not reuse the cached CPU asset");
 }
 
+void TestAssetRenamePreservesGuidAndSceneReferences(const std::filesystem::path& project) {
+  const auto renameProject = project.parent_path() / "rename-test-project";
+  std::filesystem::create_directories(renameProject);
+  WriteMinimalModel(renameProject / "model.gltf");
+  Engine::AssetManager assets(renameProject);
+  std::string guid;
+  std::string error;
+  Require(assets.ImportModel("model.gltf", guid, error), "model import for rename test failed");
+
+  Engine::SceneDocument document;
+  Engine::SceneEntityDocument entity;
+  entity.id = 1;
+  entity.modelGuid = guid;
+  document.entities.push_back(entity);
+  Require(assets.SaveScene("reference.scene.json", document, error), "could not save model reference fixture");
+
+  std::ifstream metadataInput(renameProject / "model.gltf.meta", std::ios::binary);
+  const std::string metadataBefore((std::istreambuf_iterator<char>(metadataInput)), std::istreambuf_iterator<char>());
+  metadataInput.close();
+  const bool renameSucceeded = assets.RenameAsset(guid, "renamed", error);
+  Require(renameSucceeded, ("asset rename failed: " + error).c_str());
+  Require(!std::filesystem::exists(renameProject / "model.gltf") &&
+              !std::filesystem::exists(renameProject / "model.gltf.meta"),
+          "asset rename left the previous source or metadata file behind");
+  Require(std::filesystem::exists(renameProject / "renamed.gltf") &&
+              std::filesystem::exists(renameProject / "renamed.gltf.meta"),
+          "asset rename did not move both source and metadata files");
+  Require(assets.GetSourcePath(guid) == renameProject / "renamed.gltf",
+          "asset rename changed or lost its registered GUID");
+  const auto knownModels = assets.GetKnownModels();
+  Require(knownModels.size() == 1 && knownModels.front().guid == guid && knownModels.front().name == "renamed",
+          "asset registry did not update the renamed asset's display name");
+
+  std::ifstream renamedMetadataInput(renameProject / "renamed.gltf.meta", std::ios::binary);
+  const std::string metadataAfter((std::istreambuf_iterator<char>(renamedMetadataInput)),
+                                  std::istreambuf_iterator<char>());
+  Require(metadataBefore == metadataAfter, "asset rename changed persistent metadata identity");
+  const auto loadedReference = assets.LoadScene("reference.scene.json");
+  Require(loadedReference && loadedReference.document.entities.front().modelGuid == guid,
+          "scene reference no longer points to the renamed asset GUID");
+
+  std::ofstream(renameProject / "occupied.gltf") << "occupied";
+  Require(!assets.RenameAsset(guid, "occupied", error) && !error.empty(),
+          "asset rename overwrote an existing destination");
+  Require(std::filesystem::exists(renameProject / "renamed.gltf") &&
+              assets.GetSourcePath(guid) == renameProject / "renamed.gltf",
+          "failed asset rename changed the registered asset state");
+  Require(!assets.RenameAsset(guid, "../outside", error) && !error.empty(),
+          "asset rename accepted a path traversal name");
+
+  WriteMinimalPng(renameProject / "color.png");
+  std::string textureGuid;
+  Require(assets.ImportTexture("color.png", textureGuid, error), "texture import for rename test failed");
+  std::ifstream textureMetadataInput(renameProject / "color.png.meta", std::ios::binary);
+  const std::string textureMetadataBefore((std::istreambuf_iterator<char>(textureMetadataInput)),
+                                          std::istreambuf_iterator<char>());
+  textureMetadataInput.close();
+  Engine::SceneMaterialDocument material;
+  material.baseColorTextureGuid = textureGuid;
+  document.entities.front().material = material;
+  Require(assets.SaveScene("texture-reference.scene.json", document, error),
+          "could not save texture reference fixture");
+  Require(assets.RenameAsset(textureGuid, "albedo", error), "texture rename failed");
+  Require(assets.GetSourcePath(textureGuid) == renameProject / "albedo.png" &&
+              std::filesystem::exists(renameProject / "albedo.png.meta"),
+          "texture rename did not preserve its registered identity and metadata");
+  const auto knownTextures = assets.GetKnownTextures();
+  Require(knownTextures.size() == 1 && knownTextures.front().guid == textureGuid &&
+              knownTextures.front().name == "albedo",
+          "texture registry did not update the renamed asset's display name");
+  std::ifstream renamedTextureMetadataInput(renameProject / "albedo.png.meta", std::ios::binary);
+  const std::string textureMetadataAfter((std::istreambuf_iterator<char>(renamedTextureMetadataInput)),
+                                         std::istreambuf_iterator<char>());
+  Require(textureMetadataBefore == textureMetadataAfter, "texture rename changed persistent metadata identity");
+  const auto loadedTextureReference = assets.LoadScene("texture-reference.scene.json");
+  Require(loadedTextureReference && loadedTextureReference.document.entities.front().material &&
+              loadedTextureReference.document.entities.front().material->baseColorTextureGuid == textureGuid,
+          "material texture reference no longer resolves to the renamed texture GUID");
+  Require(assets.GetTexture(textureGuid) != nullptr, "texture rename invalidated its decoded image cache");
+}
+
 void TestDuplicateGuidAndProjectBoundary(const std::filesystem::path& workspace, const std::filesystem::path& project) {
   const auto source = project / "model.gltf";
   WriteMinimalModel(source);
@@ -159,6 +240,7 @@ void TestSceneJsonRoundTrip(const std::filesystem::path& project) {
   entity.id = 17;
   entity.name = "serialized entity";
   entity.modelGuid = "e6f7e48a-1d3b-4f65-9d61-5c78d4413001";
+  entity.materialGuid = "00000000-0000-4000-8000-000000000003";
   Engine::SceneMaterialDocument overrideMaterial;
   overrideMaterial.baseColor = {0.2F, 0.4F, 0.6F, 1.0F};
   overrideMaterial.metallic = 0.7F;
@@ -198,6 +280,7 @@ void TestSceneJsonRoundTrip(const std::filesystem::path& project) {
   const auto& result = loaded.document.entities.front();
   Require(result.id == entity.id && result.name == entity.name, "scene round-trip changed durable entity data");
   Require(result.modelGuid == entity.modelGuid, "scene round-trip changed an asset GUID");
+  Require(result.materialGuid == entity.materialGuid, "scene round-trip changed a reusable material GUID");
   Require(result.materialOverrides.size() == 1 && result.materialOverrides.at(0).has_value(),
           "scene round-trip lost a model material override");
   const Engine::SceneMaterialDocument loadedOverride =
@@ -223,6 +306,65 @@ void TestSceneJsonRoundTrip(const std::filesystem::path& project) {
           "scene round-trip changed camera state");
 
   Require(!assets.SaveScene("../escaped.scene.json", document, error), "scene save escaped the project root");
+}
+
+void TestReusableMaterialAssets(const std::filesystem::path& project) {
+  const auto materialProject = project / "material-assets";
+  std::filesystem::create_directories(materialProject);
+  Engine::AssetManager assets(materialProject);
+  Engine::SceneMaterialDocument source;
+  source.baseColor = {0.2F, 0.4F, 0.6F, 1.0F};
+  source.metallic = 0.7F;
+  source.roughness = 0.3F;
+  std::string error;
+  const auto created = assets.CreateMaterial("Shared", source);
+  Require(created.has_value(), "material asset creation failed");
+  const auto& guid = *created;
+  Require(assets.GetMaterial(guid) == source, "new material asset is not cached with its authored properties");
+  auto edited = source;
+  edited.roughness = 0.8F;
+  Require(assets.SaveMaterial(guid, edited, error) && assets.GetMaterial(guid) == edited,
+          "material asset property edits were not persisted");
+
+  Engine::SceneDocument scene;
+  for (uint64_t id = 1; id <= 2; ++id) {
+    Engine::SceneEntityDocument entity;
+    entity.id = id;
+    entity.name = "mesh " + std::to_string(id);
+    entity.modelGuid = "e6f7e48a-1d3b-4f65-9d61-5c78d4413001";
+    entity.materialGuid = guid;
+    scene.entities.push_back(entity);
+  }
+  Require(assets.SaveScene("shared.scene.json", scene, error), "could not save shared material references");
+  const auto loadedScene = assets.LoadScene("shared.scene.json");
+  Require(loadedScene && loadedScene.document.entities.size() == 2 &&
+              loadedScene.document.entities[0].materialGuid == guid &&
+              loadedScene.document.entities[1].materialGuid == guid,
+          "scene round-trip did not preserve shared material references");
+
+  Require(assets.RenameAsset(guid, "RenamedShared", error), "material asset rename failed");
+  Require(assets.GetKnownMaterials().size() == 1 && assets.GetKnownMaterials().front().guid == guid &&
+              assets.GetKnownMaterials().front().name == "RenamedShared",
+          "renaming a material changed or lost its stable identity");
+  const auto persistedScene = assets.LoadScene("shared.scene.json");
+  Require(persistedScene && persistedScene.document.entities.front().materialGuid == guid,
+          "renaming a material invalidated existing scene references");
+
+  Engine::AssetManager reopened(materialProject);
+  std::vector<std::string> warnings;
+  Require(reopened.RefreshRegistry(warnings, error) && warnings.empty(), "material asset registry reload failed");
+  Require(reopened.GetKnownMaterials().size() == 1 && reopened.LoadMaterial(guid, error) &&
+              reopened.GetMaterial(guid) == edited,
+          "material asset did not load in a later manager session");
+  Require(!reopened.LoadMaterial("not-a-guid", error) && error.contains("invalid"),
+          "invalid material identity did not produce a useful diagnostic");
+
+  const auto materialPath = materialProject / reopened.GetKnownMaterials().front().sourcePath;
+  std::ofstream(materialPath, std::ios::binary | std::ios::trunc) << "{not valid JSON";
+  Engine::AssetManager corruptedAsset(materialProject);
+  Require(!corruptedAsset.LoadMaterial(guid, error) && error.contains("invalid material asset document") &&
+              error.contains(materialPath.generic_string()),
+          "malformed registered material did not identify the invalid asset document");
 }
 
 void TestStableSceneIds() {
@@ -273,9 +415,11 @@ auto main() -> int {
   try {
     TestWorkspace workspace;
     TestImportAndGuidReload(workspace.Project());
+    TestAssetRenamePreservesGuidAndSceneReferences(workspace.Project());
     TestTextureImportAndRegistry(workspace.Project());
     TestDuplicateGuidAndProjectBoundary(workspace.Path(), workspace.Project());
     TestSceneJsonRoundTrip(workspace.Project());
+    TestReusableMaterialAssets(workspace.Project());
     TestStableSceneIds();
     TestInvalidInputs(workspace.Project());
     return EXIT_SUCCESS;

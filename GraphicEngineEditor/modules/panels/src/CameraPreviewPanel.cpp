@@ -17,6 +17,10 @@ auto EncodeChannel(float sample) -> uint8_t {
   return static_cast<uint8_t>(std::lround(std::clamp(srgb, 0.0F, 1.0F) * 255.0F));
 }
 
+auto SrgbToLinear(float channel) -> float {
+  return channel <= 0.04045F ? channel / 12.92F : std::pow((channel + 0.055F) / 1.055F, 2.4F);
+}
+
 auto ConvertFinalColorToRgba8(const Engine::RenderOutput& output) -> std::vector<uint8_t> {
   const auto pixels = output.GetPixels(Engine::RenderAov::FinalColor);
   const size_t expected = static_cast<size_t>(output.Width) * output.Height * 4U;
@@ -143,7 +147,11 @@ void CameraPreviewPanel::StartExport(bool exr) {
     return;
   }
 
-  auto request = m_StartExport(m_Camera, exr, std::move(selectedAovs), std::move(*path));
+  Engine::RenderOutputBackground background = m_ExportBackground;
+  for (float& channel : background.Color) {
+    channel = SrgbToLinear(channel);
+  }
+  auto request = m_StartExport(m_Camera, exr, std::move(selectedAovs), std::move(*path), background);
   if (!request) {
     m_ExportRequest.reset();
     m_ExportMessage = std::string(exr ? "EXR" : "PNG") + " export failed to start: " + request.error().Message;
@@ -193,7 +201,9 @@ void CameraPreviewPanel::Draw() {
   const ImVec2 displaySize = mainViewport == nullptr ? ImVec2(1280.0F, 720.0F) : mainViewport->WorkSize;
   ImGui::SetNextWindowSize(ImVec2(displaySize.x * 0.78F, displaySize.y * 0.78F), ImGuiCond_FirstUseEver);
   ImGui::SetNextWindowSizeConstraints(ImVec2(320.0F, 240.0F), ImVec2(displaySize.x, displaySize.y));
-  if (ImGui::Begin("Camera Preview", &m_Open, ImGuiWindowFlags_NoCollapse)) {
+  const ImGuiWindowFlags previewWindowFlags =
+      m_IsPanning ? ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove : ImGuiWindowFlags_NoCollapse;
+  if (ImGui::Begin("Preview", &m_Open, previewWindowFlags)) {
     if (ImGui::Button("Refresh")) {
       (void)RenderSelectedCamera();
     }
@@ -235,6 +245,10 @@ void CameraPreviewPanel::Draw() {
     }
     if (exportBusy) {
       ImGui::EndDisabled();
+    }
+    ImGui::Checkbox("Composite transparent pixels over solid color", &m_ExportBackground.Enabled);
+    if (m_ExportBackground.Enabled) {
+      ImGui::ColorEdit3("Export background", m_ExportBackground.Color.data(), ImGuiColorEditFlags_Float);
     }
     ImGui::SeparatorText("EXR AOVs");
     constexpr std::array<Engine::RenderAov, 5> aovs = {
@@ -284,29 +298,39 @@ void CameraPreviewPanel::Draw() {
         ImGui::SetCursorPos(cursor);
         void* texture = m_GetTexture ? m_GetTexture() : nullptr;
         if (texture != nullptr) {
-          ImGui::Image(texture, ImVec2(imageSize.Width, imageSize.Height));
-          if (ImGui::IsItemHovered()) {
+          const ImVec2 imageMinimum = ImGui::GetCursorScreenPos();
+          const ImVec2 imageExtent(imageSize.Width, imageSize.Height);
+          // ImGui::Image has no interactive ID, so dragging its background can
+          // start moving the parent window. Give the displayed image an item
+          // that captures the pointer, then draw the texture into the same rect.
+          ImGui::InvisibleButton("PreviewImage", imageExtent);
+          ImGui::GetWindowDrawList()->AddImage(texture, imageMinimum,
+                                               ImVec2(imageMinimum.x + imageExtent.x, imageMinimum.y + imageExtent.y));
+          const bool imageHovered = ImGui::IsItemHovered();
+          if (imageHovered) {
             ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
             if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
-              m_IsPanning = true;
               const ImVec2 mouse = ImGui::GetIO().MousePos;
               m_LastMousePosition = {mouse.x, mouse.y};
             }
           }
+          const ImVec2 mouse = ImGui::GetIO().MousePos;
+          const bool clickedImage = imageHovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left);
+          const bool dragging = ImGui::IsMouseDragging(ImGuiMouseButton_Left);
+          const auto pan =
+              CameraPreviewImageLayout::UpdatePan({m_IsPanning, m_ImageOffset[0], m_ImageOffset[1]}, clickedImage,
+                                                  ImGui::IsMouseReleased(ImGuiMouseButton_Left), imageHovered, dragging,
+                                                  mouse.x - m_LastMousePosition[0], mouse.y - m_LastMousePosition[1]);
+          m_IsPanning = pan.IsPanning;
+          m_ImageOffset = {pan.OffsetX, pan.OffsetY};
+          if (m_IsPanning) {
+            if (dragging) {
+              m_LastMousePosition = {mouse.x, mouse.y};
+            }
+            ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+          }
         } else {
           ImGui::TextDisabled("Preview texture is unavailable.");
-        }
-        if (m_IsPanning) {
-          ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
-          if (ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
-            const ImVec2 mouse = ImGui::GetIO().MousePos;
-            m_ImageOffset[0] += mouse.x - m_LastMousePosition[0];
-            m_ImageOffset[1] += mouse.y - m_LastMousePosition[1];
-            m_LastMousePosition = {mouse.x, mouse.y};
-          }
-          if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
-            m_IsPanning = false;
-          }
         }
       } else if (!m_HasImage) {
         ImGui::TextDisabled("No full-resolution preview is available.");

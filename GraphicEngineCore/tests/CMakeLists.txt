@@ -18,6 +18,11 @@ if(BUILD_TESTING)
     # exercise them without exporting implementation details from the engine DLL.
     target_sources(GraphicEngineUnitTests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/../modules/rendering/src/RenderOutputImageWriters.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../../GraphicEngineEditor/modules/application/src/EditorProjectWorkflow.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../../GraphicEngineEditor/modules/application/src/EditorSceneDocument.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../../GraphicEngineEditor/modules/application/src/EditorEventRouter.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../../GraphicEngineEditor/modules/panels/src/AssetDropAssignment.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../../GraphicEngineEditor/modules/panels/src/ScenePanel.cpp"
     )
     target_link_libraries(GraphicEngineUnitTests PRIVATE
         GraphicEngineCore
@@ -33,6 +38,11 @@ if(BUILD_TESTING)
     target_include_directories(GraphicEngineUnitTests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/../modules/rendering/src"
         "${CMAKE_CURRENT_SOURCE_DIR}/../../GraphicEngineEditor/modules"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../../GraphicEngineEditor/modules/panels/src"
+    )
+    file(TO_CMAKE_PATH "${PROJECT_SOURCE_DIR}/SandboxApp/Project" ENGINE_SANDBOX_PROJECT_ROOT)
+    target_compile_definitions(GraphicEngineUnitTests PRIVATE
+        ENGINE_SANDBOX_PROJECT_ROOT="${ENGINE_SANDBOX_PROJECT_ROOT}"
     )
     target_compile_features(GraphicEngineUnitTests PRIVATE cxx_std_23)
     engine_configure_test_target(GraphicEngineUnitTests)
