@@ -103,6 +103,16 @@ inline float EvaluateSchlickNdf(float noH, float alpha) noexcept {
   return (m * m * m * x) / (std::max)(denominator, 1.0e-30f);
 }
 
+/// Evaluates the normalized isotropic Sawicki normal distribution using alpha roughness.
+inline float EvaluateSawickiNdf(float noH, float alpha) noexcept {
+  const float safeNoH = ClampUnit(noH);
+  const float safeAlpha = std::isfinite(alpha) ? (std::clamp)(alpha, MinAlpha, 1.0f) : MinAlpha;
+  const float nds = 4.0f * safeAlpha - 3.0f;
+  const float shifted = (1.0f - nds) * safeNoH + nds + 3.0f;
+  const float denominator = Pi * shifted * shifted * shifted * shifted;
+  return 96.0f * (3.0f + nds) * safeNoH / (std::max)(denominator, 1.0e-30f);
+}
+
 /// Evaluates the normalized Ashikhmin-Shirley anisotropic NDF in a tangent frame.
 /// @param halfTangent Half-vector projected on tangent, bitangent, and normal axes.
 /// @param roughnessU Perceptual roughness along the tangent axis.
@@ -307,8 +317,9 @@ inline DirectX::XMFLOAT3 EvaluateSchlickBrdf(const DirectX::XMFLOAT3& normal, co
   const XMVECTOR l = XMVector3Normalize(XMLoadFloat3(&light));
   const float noV = (std::max)(XMVectorGetX(XMVector3Dot(n, v)), 0.0f);
   const float noL = (std::max)(XMVectorGetX(XMVector3Dot(n, l)), 0.0f);
-  if (noV <= Epsilon || noL <= Epsilon)
+  if (noV <= Epsilon || noL <= Epsilon) {
     return {0.0f, 0.0f, 0.0f};
+  }
   const XMVECTOR h = XMVector3Normalize(XMVectorAdd(v, l));
   const float noH = ClampUnit(XMVectorGetX(XMVector3Dot(n, h)));
   const float voH = ClampUnit(XMVectorGetX(XMVector3Dot(v, h)));
@@ -320,6 +331,34 @@ inline DirectX::XMFLOAT3 EvaluateSchlickBrdf(const DirectX::XMFLOAT3& normal, co
   const float geometry = geometryDenominator > Epsilon ? (2.0f * noV * noL) / geometryDenominator : 0.0f;
   const float fresnelWeight = std::pow(1.0f - voH, 5.0f);
   const float specularScale = EvaluateSchlickNdf(noH, safeAlpha) * geometry / (4.0f * noV * noL);
+  return {diffuseColor.x * (1.0f - f0.x) / Pi + (f0.x + (1.0f - f0.x) * fresnelWeight) * specularScale,
+          diffuseColor.y * (1.0f - f0.y) / Pi + (f0.y + (1.0f - f0.y) * fresnelWeight) * specularScale,
+          diffuseColor.z * (1.0f - f0.z) / Pi + (f0.z + (1.0f - f0.z) * fresnelWeight) * specularScale};
+}
+
+/// Evaluates the single-scatter isotropic Sawicki microfacet BRDF.
+inline DirectX::XMFLOAT3 EvaluateSawickiBrdf(const DirectX::XMFLOAT3& normal, const DirectX::XMFLOAT3& view,
+                                             const DirectX::XMFLOAT3& light, const DirectX::XMFLOAT3& diffuseColor,
+                                             const DirectX::XMFLOAT3& f0, float alpha) noexcept {
+  using namespace DirectX;
+  const XMVECTOR n = XMVector3Normalize(XMLoadFloat3(&normal));
+  const XMVECTOR v = XMVector3Normalize(XMLoadFloat3(&view));
+  const XMVECTOR l = XMVector3Normalize(XMLoadFloat3(&light));
+  const float noV = (std::max)(XMVectorGetX(XMVector3Dot(n, v)), 0.0f);
+  const float noL = (std::max)(XMVectorGetX(XMVector3Dot(n, l)), 0.0f);
+  if (noV <= Epsilon || noL <= Epsilon)
+    return {0.0f, 0.0f, 0.0f};
+  const XMVECTOR h = XMVector3Normalize(XMVectorAdd(v, l));
+  const float noH = ClampUnit(XMVectorGetX(XMVector3Dot(n, h)));
+  const float voH = ClampUnit(XMVectorGetX(XMVector3Dot(v, h)));
+  const float safeAlpha = std::isfinite(alpha) ? (std::clamp)(alpha, MinAlpha, 1.0f) : MinAlpha;
+  const float alphaSquared = safeAlpha * safeAlpha;
+  const float smithV = noL * std::sqrt((std::max)(alphaSquared + (1.0f - alphaSquared) * noV * noV, 0.0f));
+  const float smithL = noV * std::sqrt((std::max)(alphaSquared + (1.0f - alphaSquared) * noL * noL, 0.0f));
+  const float geometryDenominator = smithV + smithL;
+  const float geometry = geometryDenominator > Epsilon ? (2.0f * noV * noL) / geometryDenominator : 0.0f;
+  const float fresnelWeight = std::pow(1.0f - voH, 5.0f);
+  const float specularScale = EvaluateSawickiNdf(noH, safeAlpha) * geometry / (4.0f * noV * noL);
   return {diffuseColor.x * (1.0f - f0.x) / Pi + (f0.x + (1.0f - f0.x) * fresnelWeight) * specularScale,
           diffuseColor.y * (1.0f - f0.y) / Pi + (f0.y + (1.0f - f0.y) * fresnelWeight) * specularScale,
           diffuseColor.z * (1.0f - f0.z) / Pi + (f0.z + (1.0f - f0.z) * fresnelWeight) * specularScale};

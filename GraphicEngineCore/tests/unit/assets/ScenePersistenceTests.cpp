@@ -216,6 +216,27 @@ TEST(ScenePersistenceTests, SchlickMaterialModelRoundTrips) {
   EXPECT_EQ(loaded.document.entities.front().material->brdfModel, "schlick");
 }
 
+TEST(ScenePersistenceTests, SawickiMaterialModelRoundTrips) {
+  TemporaryProject project;
+  Engine::AssetManager assets(project.Root());
+  Engine::SceneDocument document;
+  Engine::SceneEntityDocument entity;
+  entity.id = 12;
+  entity.name = "Sawicki";
+  entity.primitiveType = "sphere";
+  Engine::SceneMaterialDocument material;
+  material.brdfModel = "sawicki";
+  entity.material = material;
+  document.entities.push_back(entity);
+
+  std::string error;
+  ASSERT_TRUE(assets.SaveScene("sawicki.scene.json", document, error)) << error;
+  const auto loaded = assets.LoadScene("sawicki.scene.json");
+  ASSERT_TRUE(loaded) << loaded.error;
+  ASSERT_TRUE(loaded.document.entities.front().material.has_value());
+  EXPECT_EQ(loaded.document.entities.front().material->brdfModel, "sawicki");
+}
+
 TEST(ScenePersistenceTests, SchemaThreeRoundTripsSceneRootAndEmptyHierarchyEntities) {
   TemporaryProject project;
   Engine::AssetManager assets(project.Root());

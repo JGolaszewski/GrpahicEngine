@@ -360,7 +360,7 @@ void InspectorPanel::DrawEntityInspector() {
       materialChanged |= ImGui::SliderFloat("Metallic", &material.metallic, 0.0F, 1.0F);
       materialChanged |= ImGui::SliderFloat("Roughness", &material.roughness, 0.0F, 1.0F);
       constexpr const char* brdfNames[] = {
-          "Legacy", "GGX", "GTR", "Beckmann", "Gauss", "Blinn-Phong", "Ashikhmin-Shirley", "Schlick"};
+          "Legacy", "GGX", "GTR", "Beckmann", "Gauss", "Blinn-Phong", "Ashikhmin-Shirley", "Schlick", "Sawicki"};
       int brdfIndex = material.brdfModel == "ggx"                ? 1
                       : material.brdfModel == "gtr"              ? 2
                       : material.brdfModel == "beckmann"         ? 3
@@ -368,8 +368,9 @@ void InspectorPanel::DrawEntityInspector() {
                       : material.brdfModel == "blinnPhong"       ? 5
                       : material.brdfModel == "ashikhminShirley" ? 6
                       : material.brdfModel == "schlick"          ? 7
+                      : material.brdfModel == "sawicki"          ? 8
                                                                  : 0;
-      if (ImGui::Combo("BRDF", &brdfIndex, brdfNames, 8)) {
+      if (ImGui::Combo("BRDF", &brdfIndex, brdfNames, 9)) {
         material.brdfModel = brdfIndex == 1   ? "ggx"
                              : brdfIndex == 2 ? "gtr"
                              : brdfIndex == 3 ? "beckmann"
@@ -377,6 +378,7 @@ void InspectorPanel::DrawEntityInspector() {
                              : brdfIndex == 5 ? "blinnPhong"
                              : brdfIndex == 6 ? "ashikhminShirley"
                              : brdfIndex == 7 ? "schlick"
+                             : brdfIndex == 8 ? "sawicki"
                                               : "legacy";
         materialChanged = true;
       }
