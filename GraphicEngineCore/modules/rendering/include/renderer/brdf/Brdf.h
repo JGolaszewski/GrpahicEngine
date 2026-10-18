@@ -80,6 +80,15 @@ inline float EvaluateGaussNdf(float noH, float alpha) noexcept {
   return std::exp(exponent) / denominator;
 }
 
+/// Evaluates the normalized isotropic Blinn-Phong normal distribution from slope roughness alpha.
+inline float EvaluateBlinnPhongNdf(float noH, float alpha) noexcept {
+  const float safeNoH = ClampUnit(noH);
+  const float safeAlpha = (std::max)(alpha, MinAlpha);
+  const float exponent = (std::max)(2.0f / (safeAlpha * safeAlpha) - 2.0f, 0.0f);
+  const float cosinePower = safeNoH == 0.0f && exponent == 0.0f ? 1.0f : std::pow(safeNoH, exponent);
+  return ((exponent + 2.0f) / (2.0f * Pi)) * cosinePower;
+}
+
 inline DirectX::XMFLOAT3 EvaluateGgxBrdf(const DirectX::XMFLOAT3& normal, const DirectX::XMFLOAT3& view,
                                          const DirectX::XMFLOAT3& light, const DirectX::XMFLOAT3& diffuseColor,
                                          const DirectX::XMFLOAT3& f0, float alpha) noexcept {
@@ -172,6 +181,40 @@ inline DirectX::XMFLOAT3 EvaluateGaussBrdf(const DirectX::XMFLOAT3& normal, cons
   const float geometry = geometryDenominator > Epsilon ? (2.0f * noV * noL) / geometryDenominator : 0.0f;
   const float fresnelWeight = std::pow(1.0f - voH, 5.0f);
   const float specularScale = EvaluateGaussNdf(noH, safeAlpha) * geometry / (4.0f * noV * noL);
+  XMFLOAT3 result;
+  XMStoreFloat3(
+      &result,
+      XMVectorSet(diffuseColor.x * (1.0f - f0.x) / Pi + (f0.x + (1.0f - f0.x) * fresnelWeight) * specularScale,
+                  diffuseColor.y * (1.0f - f0.y) / Pi + (f0.y + (1.0f - f0.y) * fresnelWeight) * specularScale,
+                  diffuseColor.z * (1.0f - f0.z) / Pi + (f0.z + (1.0f - f0.z) * fresnelWeight) * specularScale, 0.0f));
+  return result;
+}
+
+/// Evaluates the single-scatter isotropic Blinn-Phong microfacet BRDF.
+inline DirectX::XMFLOAT3 EvaluateBlinnPhongBrdf(const DirectX::XMFLOAT3& normal, const DirectX::XMFLOAT3& view,
+                                                const DirectX::XMFLOAT3& light, const DirectX::XMFLOAT3& diffuseColor,
+                                                const DirectX::XMFLOAT3& f0, float alpha) noexcept {
+  using namespace DirectX;
+  const XMVECTOR n = XMVector3Normalize(XMLoadFloat3(&normal));
+  const XMVECTOR v = XMVector3Normalize(XMLoadFloat3(&view));
+  const XMVECTOR l = XMVector3Normalize(XMLoadFloat3(&light));
+  const float noV = (std::max)(XMVectorGetX(XMVector3Dot(n, v)), 0.0f);
+  const float noL = (std::max)(XMVectorGetX(XMVector3Dot(n, l)), 0.0f);
+  if (noV <= Epsilon || noL <= Epsilon) {
+    return {0.0f, 0.0f, 0.0f};
+  }
+
+  const XMVECTOR h = XMVector3Normalize(XMVectorAdd(v, l));
+  const float noH = ClampUnit(XMVectorGetX(XMVector3Dot(n, h)));
+  const float voH = ClampUnit(XMVectorGetX(XMVector3Dot(v, h)));
+  const float safeAlpha = (std::max)(alpha, MinAlpha);
+  const float alphaSquared = safeAlpha * safeAlpha;
+  const float smithV = noL * std::sqrt((std::max)(alphaSquared + (1.0f - alphaSquared) * noV * noV, 0.0f));
+  const float smithL = noV * std::sqrt((std::max)(alphaSquared + (1.0f - alphaSquared) * noL * noL, 0.0f));
+  const float geometryDenominator = smithV + smithL;
+  const float geometry = geometryDenominator > Epsilon ? (2.0f * noV * noL) / geometryDenominator : 0.0f;
+  const float fresnelWeight = std::pow(1.0f - voH, 5.0f);
+  const float specularScale = EvaluateBlinnPhongNdf(noH, safeAlpha) * geometry / (4.0f * noV * noL);
   XMFLOAT3 result;
   XMStoreFloat3(
       &result,

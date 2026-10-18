@@ -357,6 +357,11 @@ PS_OUTPUT main_ps(VS_OUTPUT input)
                 EvaluateGaussBrdfComponents(query, brdfBaseColor, brdfMetallic, brdfF0, alpha,
                     diffuseBrdf, specularBrdf);
             }
+            else if (g_ModelFlags.y == 5u)
+            {
+                EvaluateBlinnPhongBrdfComponents(query, brdfBaseColor, brdfMetallic, brdfF0, alpha,
+                    diffuseBrdf, specularBrdf);
+            }
             else
             {
                 EvaluateGgxBrdfComponents(query, brdfBaseColor, brdfMetallic, brdfF0, alpha,

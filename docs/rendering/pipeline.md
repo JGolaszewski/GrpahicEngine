@@ -80,13 +80,16 @@ layouts.
 
 `Engine::Renderer::MaterialProperties` is the editable CPU-side material
 description. It supports metallic-roughness and specular-glossiness workflows,
-dielectric reflectance from index of refraction or explicit F0, and five BRDF
-choices: `Legacy`, `GGX`, `GTR`, `Beckmann`, and `Gauss`. The default workflow is metallic-roughness,
+dielectric reflectance from index of refraction or explicit F0, and six BRDF
+choices: `Legacy`, `GGX`, `GTR`, `Beckmann`, `Gauss`, and `Blinn-Phong`. The default workflow is metallic-roughness,
 the default model is `Legacy`, and the default alpha mode is opaque. Input
 factors are sanitized and clamped when `BuildMaterialGpu` packs the shader
 constant buffer. Beckmann and Gauss use the same perceptual-roughness-to-alpha
 mapping as the other microfacet distributions. Gauss uses a normalized Gaussian
-slope distribution with a finite zero at the horizon.
+slope distribution with a finite zero at the horizon. Blinn-Phong uses the
+normalized exponent distribution `D(NoH) = (n + 2) / (2π) * NoH^n`, with
+`n = max(2 / alpha² - 2, 0)`. Its microfacet branch remains distinct from the
+Legacy shader path.
 
 The textured shader supports base color, normal, metallic-roughness, occlusion,
 and emissive maps, with a UV set and UV transform per slot. It applies the
