@@ -137,6 +137,7 @@ private:
   std::vector<ModelSelection> m_ModelSelections;
   std::optional<Engine::Renderer::BrdfAnalysis::BrdfAnalysisSnapshot> m_CapturedSnapshot;
   std::optional<Engine::Renderer::BrdfAnalysis::BrdfAnalysisCaptureSession> m_Capture;
+  std::string m_CapturedTargetLabel;
   std::optional<Editor::Panels::AnalyticalFrameSession> m_Session;
   Editor::Panels::AnalyticalFrameViewState m_ViewState;
   std::string m_Status = "Open an .aframe project or capture an Analytical Frame from a scene.";

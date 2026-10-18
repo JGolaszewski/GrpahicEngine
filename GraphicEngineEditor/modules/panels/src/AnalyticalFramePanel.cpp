@@ -133,6 +133,7 @@ void AnalyticalFramePanel::SetSession(Editor::Panels::AnalyticalFrameSession ses
     }
     state = std::move(*decodedState);
   }
+  CancelCapture();
   Open();
   m_Session = std::move(session);
   m_ViewState = state;
@@ -243,12 +244,14 @@ void AnalyticalFramePanel::StartCapture() {
   if (m_OverrideGtrGamma) {
     overrides.GtrGamma = m_GtrGamma;
   }
-  auto snapshot = m_CreateSnapshot(m_Targets.at(m_SelectedTarget), m_Cameras.at(m_SelectedCamera), overrides);
+  const Target selectedTarget = m_Targets.at(m_SelectedTarget);
+  const CameraTarget selectedCamera = m_Cameras.at(m_SelectedCamera);
+  auto snapshot = m_CreateSnapshot(selectedTarget, selectedCamera, overrides);
   if (!snapshot) {
     m_Status = "Scene capture failed: " + snapshot.error().Message;
     return;
   }
-  if (snapshot->TargetEntityId != m_Targets.at(m_SelectedTarget).EntityId) {
+  if (snapshot->TargetEntityId != selectedTarget.EntityId) {
     m_Status = "Scene capture returned a different material target than the selected target.";
     return;
   }
@@ -259,6 +262,7 @@ void AnalyticalFramePanel::StartCapture() {
     return;
   }
   m_CapturedSnapshot = std::move(*snapshot);
+  m_CapturedTargetLabel = selectedTarget.Label;
   m_Capture = std::move(*capture);
   m_Status = "Rendering variant 0 of " + std::to_string(m_Capture->GetTotalCount()) + ".";
 }
@@ -304,11 +308,14 @@ void AnalyticalFramePanel::AdvanceCapture() {
 
 void AnalyticalFramePanel::CancelCapture() {
   if (!m_Capture) {
+    m_CapturedSnapshot.reset();
+    m_CapturedTargetLabel.clear();
     return;
   }
   m_Capture->Cancel();
   m_Capture.reset();
   m_CapturedSnapshot.reset();
+  m_CapturedTargetLabel.clear();
   m_Status = "Capture cancelled; partial Analytical Frame results were discarded.";
 }
 
@@ -331,7 +338,7 @@ void AnalyticalFramePanel::CompleteCapture() {
   }
   Editor::Panels::AnalyticalFrameSession session;
   session.Snapshot = std::move(*m_CapturedSnapshot);
-  session.TargetLabel = m_Targets.at(m_SelectedTarget).Label;
+  session.TargetLabel = m_CapturedTargetLabel;
   session.Variants.reserve(result->Variants.size());
   for (auto& render : result->Variants) {
     auto curve = Engine::Renderer::BrdfAnalysis::AnalyzeBrdfResponse(render.Request.Material, render.Request.Model);
@@ -516,7 +523,8 @@ void AnalyticalFramePanel::DrawCaptureControls() {
   }
   ImGui::Checkbox("GTR gamma override", &m_OverrideGtrGamma);
   if (m_OverrideGtrGamma) {
-    ImGui::SliderFloat("GTR gamma", &m_GtrGamma, 0.05F, 16.0F);
+    ImGui::SliderFloat("GTR gamma", &m_GtrGamma, Engine::Renderer::MaterialMinGtrGamma,
+                       Engine::Renderer::MaterialMaxGtrGamma);
   }
   if (!m_Capture) {
     if (ImGui::Button("Capture Analytical Frame")) {
@@ -802,6 +810,7 @@ void AnalyticalFramePanel::OpenArchive() {
   if (!path) {
     return;
   }
+  CancelCapture();
   auto loaded = Editor::Panels::AnalyticalFrameArchive::Load(*path);
   if (!loaded) {
     m_Status = "Could not open Analytical Frame project: " + loaded.error().Message;
