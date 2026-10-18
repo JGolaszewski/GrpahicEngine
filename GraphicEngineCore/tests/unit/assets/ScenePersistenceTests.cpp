@@ -195,6 +195,27 @@ TEST(ScenePersistenceTests, AshikhminShirleyModelAndAnisotropicRoughnessRoundTri
   EXPECT_FLOAT_EQ(loaded.document.entities.front().material->anisotropicRoughnessV, 0.8F);
 }
 
+TEST(ScenePersistenceTests, SchlickMaterialModelRoundTrips) {
+  TemporaryProject project;
+  Engine::AssetManager assets(project.Root());
+  Engine::SceneDocument document;
+  Engine::SceneEntityDocument entity;
+  entity.id = 11;
+  entity.name = "Schlick";
+  entity.primitiveType = "sphere";
+  Engine::SceneMaterialDocument material;
+  material.brdfModel = "schlick";
+  entity.material = material;
+  document.entities.push_back(entity);
+
+  std::string error;
+  ASSERT_TRUE(assets.SaveScene("schlick.scene.json", document, error)) << error;
+  const auto loaded = assets.LoadScene("schlick.scene.json");
+  ASSERT_TRUE(loaded) << loaded.error;
+  ASSERT_TRUE(loaded.document.entities.front().material.has_value());
+  EXPECT_EQ(loaded.document.entities.front().material->brdfModel, "schlick");
+}
+
 TEST(ScenePersistenceTests, SchemaThreeRoundTripsSceneRootAndEmptyHierarchyEntities) {
   TemporaryProject project;
   Engine::AssetManager assets(project.Root());
