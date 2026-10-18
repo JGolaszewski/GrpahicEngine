@@ -40,26 +40,35 @@ Use **Scene Hierarchy** to inspect and edit the active scene:
 - Use the search field to filter by entity name or component type. Matching
   descendants keep their parent rows visible.
 - Use **+ Create Entity** or the hierarchy background context menu to create an
-  empty entity, mesh entity, spot light, or camera under the scene root.
+  empty entity, mesh entity, light, or camera under the scene root.
 - Right-click an entity to create a child entity or one of the child mesh,
-  spot light, and camera presets, or to delete a non-root entity.
+  light, and camera presets, or to delete a non-root entity.
 - Drag a non-root entity onto another hierarchy row to reparent it. The scene
   root cannot be deleted.
-- In the Inspector, edit position, pitch/yaw/roll, and scale under **Transform**.
-  Component sections expose their current properties; use **Add Component**
-  and the remove buttons to change supported component membership.
+- In the Inspector, edit local position, pitch/yaw/roll, and scale under
+  **Transform**. Scale can be locked to preserve proportions; horizontal and
+  vertical flips are also available.
+- A **Mesh** component can use an imported model or a cube, sphere, plane, or
+  cone primitive. Its controls include visibility, cast/receive shadows,
+  wireframe, depth testing, and material assignment. Use **Add Component** to
+  add Mesh, Light, or Camera components; component headers remove them.
+- A **Light** component supports directional, point, and spot types. The
+  Inspector shows direction, range, and cone controls only when they apply,
+  along with color, intensity, shadow bias, and cast-shadows controls.
 
 Component and hierarchy edits update the active scene immediately. Entity
 selection is separate from the viewport navigation camera, and selecting a
 camera entity also opens its viewport picture-in-picture preview.
 
-The **File** menu currently displays **New**, **Open**, **Save**, and **Save
-As** actions (with `Ctrl+N`, `Ctrl+O`, `Ctrl+S`, and `Ctrl+Shift+S` labels),
-plus **Open Project Folder...**. In the current editor implementation these
-menu actions emit requests that are not yet handled. They do not currently
-create, open, or save scenes or switch project folders. Scene persistence is
-available through the engine's scene-document APIs, but the editor UI workflow
-is not wired up yet. Avoid relying on those menu items to preserve edits.
+Use **File > Open Project Folder...** to select a project and refresh its asset
+registry. Use **File > Open...** to load a `.scene.json` file from the active
+project, **New** to start an empty scene, and **Save** or **Save As...** to
+write the active scene. `Ctrl+N`, `Ctrl+O`, `Ctrl+S`, and `Ctrl+Shift+S` are
+the corresponding shortcuts. Scene files must be saved inside the active
+project. **File > Reset Sandbox** loads the active project's
+`Sandbox.template.scene.json` and sets `Sandbox.scene.json` as the active save
+path. See [Editor workflows](editor-workflows.md) for the repeatable Sandbox
+setup.
 
 ## Scene cameras and previews
 
@@ -87,7 +96,7 @@ resolution and rendering details.
 
 ## Editor settings
 
-Open **Window > Engine Settings** for runtime, rendering, and backend controls.
+Open **Window > Settings** for runtime, rendering, and backend controls.
 
 | Section | Setting | Effect |
 | --- | --- | --- |
@@ -102,7 +111,7 @@ Open **Window > Engine Settings** for runtime, rendering, and backend controls.
 | Rendering | Shadow-casting lights | Sets how many shadow maps the renderer produces per scene, up to its supported maximum. |
 | Backend | VSync | Enables or disables vertical sync when the active backend supports control; changes apply on the next present. |
 
-The Backend section also reports the active backend, device readiness, and
+The **Graphics Backend** section also reports the active backend, device readiness, and
 adapter vendor/device IDs. Backend and adapter selection require restarting the
 editor; selection controls are not provided in this panel. Settings marked as
 editor preferences persist locally in
@@ -111,8 +120,6 @@ are applied to the current application session.
 
 ## Current editor limits
 
-- Scene file and project-folder actions are shown in the File menu but are not
-  connected to handlers yet.
 - The viewport supports camera navigation, not entity picking or transform
   gizmos. Use the hierarchy and Inspector for selection and edits.
 - The navigation camera has no visible settings panel. Authored scene cameras
