@@ -3,6 +3,8 @@
 #include <gtest/gtest.h>
 
 #include <array>
+#include <string_view>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -156,6 +158,44 @@ TEST(BrdfAnalysisSnapshotTests, InlinesCapturedMaterialForSharedAssetTargetWitho
   EXPECT_EQ(snapshot.SourceMaterial.brdfModel, "ggx");
   EXPECT_EQ(snapshot.SourceMaterial.baseColorTextureGuid, "base-color-guid");
   EXPECT_FLOAT_EQ(snapshot.SourceMaterial.roughness, 0.35F);
+}
+
+TEST(BrdfAnalysisSnapshotTests, CreatesVariantsForEverySupportedBrdfModel) {
+  const BrdfAnalysisSnapshot snapshot = MakeSnapshot();
+  const std::array models{
+      std::pair{Engine::Renderer::BrdfModel::Legacy, std::string_view{"legacy"}},
+      std::pair{Engine::Renderer::BrdfModel::GGX, std::string_view{"ggx"}},
+      std::pair{Engine::Renderer::BrdfModel::GTR, std::string_view{"gtr"}},
+      std::pair{Engine::Renderer::BrdfModel::Beckmann, std::string_view{"beckmann"}},
+      std::pair{Engine::Renderer::BrdfModel::Gauss, std::string_view{"gauss"}},
+      std::pair{Engine::Renderer::BrdfModel::BlinnPhong, std::string_view{"blinnPhong"}},
+      std::pair{Engine::Renderer::BrdfModel::AshikhminShirley, std::string_view{"ashikhminShirley"}},
+      std::pair{Engine::Renderer::BrdfModel::Schlick, std::string_view{"schlick"}},
+      std::pair{Engine::Renderer::BrdfModel::Sawicki, std::string_view{"sawicki"}},
+  };
+  std::vector<Engine::Renderer::BrdfModel> requestedModels;
+  requestedModels.reserve(models.size());
+  for (const auto& [model, unusedIdentifier] : models) {
+    (void)unusedIdentifier;
+    requestedModels.push_back(model);
+  }
+  const auto render = [](const auto& request) -> Engine::Result<Engine::RenderOutput> {
+    Engine::RenderOutput output;
+    output.Width = request.Width;
+    output.Height = request.Height;
+    return output;
+  };
+
+  const auto result = ExecuteBrdfAnalysisVariants(snapshot, requestedModels, render);
+  ASSERT_TRUE(result.has_value());
+  ASSERT_EQ(result->size(), models.size());
+  for (size_t index = 0; index < models.size(); ++index) {
+    EXPECT_EQ((*result)[index].Request.Model, models[index].first);
+    EXPECT_EQ((*result)[index].Request.Material.Model, models[index].first);
+    ASSERT_TRUE((*result)[index].Request.Scene.entities[0].materialOverrides[0].has_value());
+    EXPECT_EQ((*result)[index].Request.Scene.entities[0].materialOverrides[0]->brdfModel, models[index].second);
+  }
+  EXPECT_EQ(snapshot.Scene.entities[0].materialOverrides[0]->brdfModel, "ggx");
 }
 
 } // namespace

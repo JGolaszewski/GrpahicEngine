@@ -8,8 +8,19 @@
 namespace {
 
 auto IsSupportedModel(Engine::Renderer::BrdfModel model) noexcept -> bool {
-  return model == Engine::Renderer::BrdfModel::Legacy || model == Engine::Renderer::BrdfModel::GGX ||
-         model == Engine::Renderer::BrdfModel::GTR;
+  switch (model) {
+  case Engine::Renderer::BrdfModel::Legacy:
+  case Engine::Renderer::BrdfModel::GGX:
+  case Engine::Renderer::BrdfModel::GTR:
+  case Engine::Renderer::BrdfModel::Beckmann:
+  case Engine::Renderer::BrdfModel::Gauss:
+  case Engine::Renderer::BrdfModel::BlinnPhong:
+  case Engine::Renderer::BrdfModel::AshikhminShirley:
+  case Engine::Renderer::BrdfModel::Schlick:
+  case Engine::Renderer::BrdfModel::Sawicki:
+    return true;
+  }
+  return false;
 }
 
 auto ModelIdentifier(Engine::Renderer::BrdfModel model) -> std::string {
@@ -20,6 +31,18 @@ auto ModelIdentifier(Engine::Renderer::BrdfModel model) -> std::string {
     return "ggx";
   case Engine::Renderer::BrdfModel::GTR:
     return "gtr";
+  case Engine::Renderer::BrdfModel::Beckmann:
+    return "beckmann";
+  case Engine::Renderer::BrdfModel::Gauss:
+    return "gauss";
+  case Engine::Renderer::BrdfModel::BlinnPhong:
+    return "blinnPhong";
+  case Engine::Renderer::BrdfModel::AshikhminShirley:
+    return "ashikhminShirley";
+  case Engine::Renderer::BrdfModel::Schlick:
+    return "schlick";
+  case Engine::Renderer::BrdfModel::Sawicki:
+    return "sawicki";
   }
   return {};
 }
