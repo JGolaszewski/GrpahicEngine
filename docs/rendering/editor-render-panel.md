@@ -6,12 +6,12 @@ The full viewer renders the current scene at the camera's configured output dime
 
 The viewer provides **Save PNG...** and **Save EXR...**. PNG contains final color. EXR contains the selected AOVs: Final Color, Depth, World Normal, Specular Lighting, and Diffuse Lighting. At least one AOV must be selected. The viewer reports render/readback progress, file writing, completion, and errors. Closing the viewer does not interrupt an accepted export.
 
-Open **Engine Settings** to configure the PiP's displayed scale and render quality independently. Scale changes its size in the editor viewport; quality sets the render resolution as a percentage of the camera output. Debug renderer visibility options are in the same settings window. These preferences persist locally across restarts.
+Open **Window > Settings** to configure the PiP's displayed scale and render quality independently. Scale changes its size in the editor viewport; quality sets the render resolution as a percentage of the camera output. Debug renderer visibility options are in the same settings window. These preferences persist locally across restarts.
 
 ## Manual acceptance
 
 - Select a scene camera and confirm the PiP updates with scene changes, shows its border, and opens the matching full viewer when clicked.
 - In the viewer, check fit, 1:1, wheel zoom, drag panning, and the hand cursor over the image.
-- Adjust PiP display scale and render quality separately in Engine Settings; confirm both survive an editor restart.
+- Adjust PiP display scale and render quality separately in **Window > Settings**; confirm both survive an editor restart.
 - Save PNG and EXR and verify camera dimensions and selected EXR AOVs.
 - Import a model and texture from the Assets panel and confirm each appears in the asset list.

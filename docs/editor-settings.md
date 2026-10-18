@@ -15,20 +15,31 @@ are read once and migrated to JSON when possible; the old file is left untouched
 
 ## Project and scene selection
 
-Use **File > Open Project** to select a project folder. The editor refreshes its asset registry before remembering the
-new project. Cancelling leaves the current project active; an invalid folder or registry error is reported in the
-editor log and leaves the previous project active.
+Use **File > Open Project Folder...** to select a project folder. The editor
+refreshes its asset registry before remembering the new project. Cancelling
+leaves the current project active; an invalid folder or registry error is
+reported in the editor log and leaves the previous project active.
 
-Use **File > Open Scene** to load a `.scene.json` file into the editor. After a successful load, the scene hierarchy
-and inspector refresh to show the new scene. Cancelling or selecting an unreadable scene keeps the current scene
+Use **File > Open...** to load a `.scene.json` file from the active project.
+After a successful load, the scene hierarchy and Inspector refresh to show the
+new scene. Cancelling or selecting an unreadable scene keeps the current scene
 active. The scene document path is updated only after activation succeeds.
+**File > New** creates an empty scene; **Save** writes to the active scene path
+or opens the save dialog when the scene has no path, and **Save As...** always
+opens the dialog. Scene files must remain inside the active project. **Reset
+Sandbox** loads `Sandbox.template.scene.json` and sets `Sandbox.scene.json` as
+the active save path.
 
 ## Asset rename and assignment
 
-Use **Create material** in the Assets panel to create a reusable default material. Materials appear alongside models
-and textures and can be renamed with **Rename selected**; the editor moves the material document and metadata sidecar
-together while preserving its GUID. Material properties and shared material GUID references are stored in project
-assets and scene documents, respectively.
+Use **Create material** in the Assets panel to create a reusable default
+material. Materials appear alongside models and textures and can be renamed
+with **Rename selected**; the editor moves the material document and metadata
+sidecar together while preserving its GUID. Material properties and shared
+material GUID references are stored in project assets and scene documents,
+respectively. The Inspector can assign an asset material to a mesh or edit
+material properties, including base color and normal texture slots, metallic,
+roughness, BRDF, alpha mode, and double-sided rendering.
 
 Select a model or texture in the Assets panel and use **Rename selected** to change its filename. The editor moves the
 asset and its adjacent metadata sidecar together, preserving the asset GUID used by saved scene references.

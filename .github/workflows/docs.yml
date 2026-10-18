@@ -35,6 +35,8 @@ permissions:
 jobs:
   build-docs:
     runs-on: ubuntu-latest
+    outputs:
+      artifact_name: ${{ steps.pages-artifact-name.outputs.name }}
     permissions:
       contents: read
       pages: read
@@ -56,6 +58,11 @@ jobs:
         shell: pwsh
         run: ./scripts/build-docs.ps1
 
+      - name: Set GitHub Pages artifact name
+        id: pages-artifact-name
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        run: echo "name=github-pages-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
+
       - name: Configure GitHub Pages
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         uses: actions/configure-pages@v5
@@ -64,6 +71,7 @@ jobs:
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         uses: actions/upload-pages-artifact@v4
         with:
+          name: ${{ steps.pages-artifact-name.outputs.name }}
           path: out/docs/site
 
   deploy:
@@ -81,3 +89,5 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+        with:
+          artifact_name: ${{ needs.build-docs.outputs.artifact_name }}
