@@ -34,6 +34,40 @@ auto IntegrateNdf(float alpha, float gamma) -> float {
   return 2.0F * ::Engine::Renderer::Brdf::Pi * integral;
 }
 
+auto IntegrateBeckmannNdf(float alpha) -> float {
+  constexpr uint32_t sampleCount = 20000;
+  const float step = DirectX::XM_PIDIV2 / static_cast<float>(sampleCount);
+  float integral = 0.0F;
+  for (uint32_t i = 0; i < sampleCount; ++i) {
+    const float theta = (static_cast<float>(i) + 0.5F) * step;
+    const float cosine = std::cos(theta);
+    const float sine = std::sin(theta);
+    integral += ::Engine::Renderer::Brdf::EvaluateBeckmannNdf(cosine, alpha) * cosine * sine * step;
+  }
+  return 2.0F * ::Engine::Renderer::Brdf::Pi * integral;
+}
+
+void TestBeckmannReferenceAndFiniteEvaluation() {
+  for (float alpha : {0.05F, 0.2F, 0.65F, 1.0F}) {
+    Require(std::abs(IntegrateBeckmannNdf(alpha) - 1.0F) < 2.0e-4F, "Beckmann projected NDF must normalize to one");
+  }
+  const float alpha = 0.4F;
+  const float noH = 0.75F;
+  const float expected = std::exp((noH * noH - 1.0F) / (alpha * alpha * noH * noH)) /
+                         (::Engine::Renderer::Brdf::Pi * alpha * alpha * noH * noH * noH * noH);
+  Require(std::abs(::Engine::Renderer::Brdf::EvaluateBeckmannNdf(noH, alpha) - expected) < 1.0e-6F,
+          "Beckmann NDF must match its reference equation");
+  Require(::Engine::Renderer::Brdf::EvaluateBeckmannNdf(0.0F, alpha) == 0.0F &&
+              std::isfinite(::Engine::Renderer::Brdf::EvaluateBeckmannNdf(1.0F, 0.0F)),
+          "Beckmann NDF must stay finite at grazing and minimum roughness boundaries");
+
+  const auto value = ::Engine::Renderer::Brdf::EvaluateBeckmannBrdf({0.0F, 0.0F, 1.0F}, {0.3F, 0.0F, 0.9539392F},
+                                                                    {-0.1F, 0.5F, 0.8602325F}, {0.7F, 0.4F, 0.2F},
+                                                                    {0.04F, 0.04F, 0.04F}, alpha);
+  Require(std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z),
+          "Beckmann BRDF reference evaluation must remain finite");
+}
+
 auto IntegrateWhiteFurnace(const DirectX::XMFLOAT3& view, float alpha, const DirectX::XMFLOAT3& diffuse,
                            const DirectX::XMFLOAT3& f0) -> float {
   constexpr uint32_t thetaCount = 160;
@@ -139,6 +173,10 @@ void TestMaterialGpuAbiPacking() {
               clamped.SurfaceParams.z == ::Engine::Renderer::MaterialMaxGtrGamma &&
               clamped.SurfaceParams.w == ::Engine::Renderer::MaterialMinIor && clamped.EmissiveMetallic.w == 1.0F,
           "Material GPU packing must clamp model parameters to supported ranges");
+
+  properties.Model = ::Engine::Renderer::BrdfModel::Beckmann;
+  const auto beckmann = ::Engine::Renderer::BuildMaterialGpu(properties);
+  Require(beckmann.ModelFlags.y == 3U, "Beckmann selector must use the appended model value without changing the ABI");
 }
 
 void TestMaterialPropertiesRoundTrip() {
@@ -182,6 +220,7 @@ void TestEcsTransformComponentValidation() {
 auto main() -> int {
   try {
     TestProjectedNdfNormalization();
+    TestBeckmannReferenceAndFiniteEvaluation();
     TestGtrLimitsAndRoughnessMapping();
     TestReciprocityAndWhiteFurnace();
     TestMaterialGpuAbiPacking();

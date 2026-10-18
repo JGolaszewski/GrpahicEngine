@@ -199,7 +199,8 @@ auto ValidateMaterialNames(const Json& value, SceneMaterialDocument& material, s
     material.workflow = "specularGlossiness";
     warnings.push_back(context + " migrated specularGlossiness from brdfModel to workflow with GGX shading");
   }
-  if (material.brdfModel != "legacy" && material.brdfModel != "ggx" && material.brdfModel != "gtr") {
+  if (material.brdfModel != "legacy" && material.brdfModel != "ggx" && material.brdfModel != "gtr" &&
+      material.brdfModel != "beckmann") {
     error = "brdfModel has an unsupported value";
     return false;
   }
@@ -304,7 +305,8 @@ auto IsValidPrimitiveType(const std::string& type) -> bool {
 }
 
 auto IsValidMaterial(const SceneMaterialDocument& material) -> bool {
-  const auto validBrdf = material.brdfModel == "legacy" || material.brdfModel == "ggx" || material.brdfModel == "gtr";
+  const auto validBrdf = material.brdfModel == "legacy" || material.brdfModel == "ggx" || material.brdfModel == "gtr" ||
+                         material.brdfModel == "beckmann";
   const bool validWorkflow = material.workflow == "metallicRoughness" || material.workflow == "specularGlossiness";
   if (!validBrdf || !validWorkflow || (material.specularMode != "ior" && material.specularMode != "explicitF0") ||
       (material.alphaMode != "opaque" && material.alphaMode != "mask" && material.alphaMode != "blend") ||
