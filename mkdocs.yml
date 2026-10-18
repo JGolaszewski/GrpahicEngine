@@ -17,8 +17,8 @@ plugins:
   - search
   - mkdoxy:
       projects:
-        coreApi:
-          src-dirs: GraphicEngineCore/modules
+        engineApi:
+          src-dirs: GraphicEngineCore/modules GraphicEngineEditor/modules GraphicEngineBackends/D3D11/include
           doxy-cfg-file: Doxyfile
           full-doc: true
           doxy-cfg:
@@ -37,7 +37,11 @@ markdown_extensions:
       permalink: true
   - admonition
   - pymdownx.details
-  - pymdownx.superfences
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
   - pymdownx.snippets:
       base_path:
         - scripts
@@ -51,27 +55,33 @@ markdown_extensions:
 nav:
   - Home: index.md
   - Architecture and guides:
+      - Architecture: architecture.md
+      - Editor guide: editor-guide.md
+      - Asset pipeline: asset-pipeline.md
       - C++ guidelines: cpp-guidelines.md
       - Logging: logging.md
       - Editor settings: editor-settings.md
       - Rendering:
+          - Pipeline: rendering/pipeline.md
           - Cameras: rendering/cameras.md
           - Editor render panel: rendering/editor-render-panel.md
           - Render output and image export: rendering/output.md
           - Shadows: rendering/shadows.md
           - Final rendering: rendering/final-render.md
   - Workflows:
+      - Getting started: getting-started.md
       - Development workflow: development-workflow.md
       - Editor workflows: editor-workflows.md
       - Testing: testing.md
       - Windows validation: validation/windows.md
-  - Core API:
+      - Profiling, debugging, and QA: profiling-qa.md
+  - Engine API:
       - Overview: api-reference.md
-      - API index: coreApi/links.md
-      - Classes: coreApi/annotated.md
-      - Class index: coreApi/classes.md
-      - Class hierarchy: coreApi/hierarchy.md
-      - Class members: coreApi/class_members.md
-      - Namespaces: coreApi/namespaces.md
-      - Functions: coreApi/functions.md
-      - Files: coreApi/files.md
+      - API index: engineApi/links.md
+      - Classes: engineApi/annotated.md
+      - Class index: engineApi/classes.md
+      - Class hierarchy: engineApi/hierarchy.md
+      - Class members: engineApi/class_members.md
+      - Namespaces: engineApi/namespaces.md
+      - Functions: engineApi/functions.md
+      - Files: engineApi/files.md

@@ -10,6 +10,8 @@ on:
       - '.pymarkdown.yml'
       - 'docs/**'
       - 'GraphicEngineCore/modules/**/include/**'
+      - 'GraphicEngineEditor/modules/**/include/**'
+      - 'GraphicEngineBackends/D3D11/include/**'
       - 'scripts/LOGGING_CMAKE_SNIPPET.cmake'
       - 'scripts/build-docs.ps1'
   pull_request:
@@ -21,6 +23,8 @@ on:
       - '.pymarkdown.yml'
       - 'docs/**'
       - 'GraphicEngineCore/modules/**/include/**'
+      - 'GraphicEngineEditor/modules/**/include/**'
+      - 'GraphicEngineBackends/D3D11/include/**'
       - 'scripts/LOGGING_CMAKE_SNIPPET.cmake'
       - 'scripts/build-docs.ps1'
   workflow_dispatch:

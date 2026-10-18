@@ -39,7 +39,7 @@ Each handoff reports its issue and branch, commits, changed areas, verification 
 Update relevant docs and public-header API comments when behavior, public APIs, architecture, or developer workflow changes. Add new pages to `mkdocs.yml` navigation. If no docs are affected, state that in the PR summary instead of adding artificial documentation.
 
 The documentation workflow runs `scripts/build-docs.ps1` on relevant pull
-requests. It lints source Markdown, checks the Core API with warning-as-error
+requests. It lints source Markdown, checks the whole-engine API with warning-as-error
 Doxygen settings, and builds the MkDocs Material site from Doxygen XML. A
 successful push to `main` deploys the built site through the GitHub Pages
 Actions artifact workflow; pull requests validate without deploying.
