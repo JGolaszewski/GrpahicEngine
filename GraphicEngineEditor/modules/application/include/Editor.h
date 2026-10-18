@@ -22,6 +22,7 @@ class Viewport;
 class ViewportTarget;
 } // namespace Engine
 class CameraPreviewPanel;
+class BrdfAnalysisPanel;
 
 #ifdef _MSC_VER
 #  pragma warning(push)
@@ -66,6 +67,7 @@ private:
   std::shared_ptr<Engine::ViewportTarget> m_CameraPreviewTarget;
   std::vector<std::unique_ptr<EditorPanel>> m_Panels;
   CameraPreviewPanel* m_CameraPreviewPanel = nullptr;
+  BrdfAnalysisPanel* m_BrdfAnalysisPanel = nullptr;
   EditorEventRouter m_EventRouter;
   std::vector<EditorEventRouter::Connection> m_PanelConnections;
   EditorUiIntegration m_UiIntegration;
