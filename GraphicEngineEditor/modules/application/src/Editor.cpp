@@ -536,6 +536,8 @@ void Editor::OnSetupViews() {
   }
 }
 
+bool Editor::ShouldRegisterDefaultView() const { return !m_SnapshotAnalysisFocusState.IsActive(); }
+
 void Editor::OnRender() {}
 
 void Editor::OnEvent(Engine::Events::Event& event) {

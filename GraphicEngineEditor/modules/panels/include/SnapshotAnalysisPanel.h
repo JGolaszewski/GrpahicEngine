@@ -62,7 +62,7 @@ public:
 
   /// Draws capture controls, static frame tabs, inspectors, histograms, and comparisons.
   void Draw() override;
-  /// Polls any asynchronous capture even when the workspace is not focused.
+  /// Starts a queued capture outside ImGui drawing, then polls its GPU readback.
   void UpdateCaptureProgress() { UpdateCapture(); }
   /// Sets the callback used by the explicit exit control.
   /// @param handler Called when the user exits the focused workspace.
@@ -123,6 +123,7 @@ private:
   float m_HeatmapMaximum = 1.0F;
   float m_WipePosition = 0.5F;
   std::optional<Engine::RenderSystem::SnapshotRenderTicket> m_CaptureTicket;
+  bool m_CaptureRequested = false;
   std::string m_CaptureMessage;
   std::filesystem::path m_WorkspacePath;
   uint32_t m_WidthOverride = 0;

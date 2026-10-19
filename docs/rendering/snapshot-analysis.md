@@ -36,7 +36,11 @@ a **Back to editor** action, and the Main Bar remains available with an **Exit
 Snapshot Analysis** control. Exiting returns to the previous editor view, layout, and
 focus; open frame tabs and their view state remain in memory for the next entry.
 The active scene and authored state are preserved. Choose an authored camera
-from the in-workspace selector. It defaults to the editor's selected camera,
+from the scrollable capture controls above the frame tabs. The controls use a
+bounded part of the window height so the canvas and analysis tools remain
+visible when the editor window is resized. The focused workspace does not
+render a live scene behind the captured frames. The camera selector defaults to
+the editor's selected camera,
 then the highest-priority active camera, then the first valid camera in stable
 entity order. Leave both
 resolution override fields at zero to use the camera's authored resolution;
@@ -47,6 +51,9 @@ Progress and failure messages appear beside the controls. Cancel discards the
 pending capture without adding a frame tab. A new tab appears only after every
 selected plane and any required material manifest are ready. Unselected planes
 are absent from that frame and are never treated as zero-filled data.
+The capture request is submitted during the editor update after the button's
+UI frame has been presented, so the displayed workspace remains intact while
+the offscreen render and GPU readback run.
 
 Use **Open EXR** beside the capture controls to validate and add a saved frame tab, or **Open
 .aframe** to validate its workspace document and every referenced EXR before

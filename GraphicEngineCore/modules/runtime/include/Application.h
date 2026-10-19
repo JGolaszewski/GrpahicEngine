@@ -198,6 +198,9 @@ protected:
   virtual void OnRender() {}
   /// Called before the default camera view is registered.
   virtual void OnSetupViews() {}
+  /// Controls whether an authored camera renders to the default framebuffer when no view was submitted.
+  /// @return True to use the default camera view, or false when the application draws its own content.
+  virtual bool ShouldRegisterDefaultView() const { return true; }
   /// Called to build the application's UI for the current frame.
   virtual void OnUIRender() {}
   /// Called before the application's UI widgets are rendered.
