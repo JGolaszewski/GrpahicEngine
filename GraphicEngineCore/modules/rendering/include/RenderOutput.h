@@ -18,7 +18,11 @@ namespace Engine {
 
 class RenderSystem;
 
-/// Stable render-output plane identifiers used by previews and image exporters.
+/// Stable float render-output plane identifiers used by previews and image exporters.
+///
+/// These five float AOVs form the transient final-render result. Snapshot
+/// Analysis adds typed integer planes and captured metadata in its immutable
+/// frame representation; see the Snapshot Analysis workspace documentation.
 enum class RenderAov : uint8_t {
   FinalColor,       ///< Post-processed color and opacity.
   Depth,            ///< Normalized device depth.
@@ -48,7 +52,7 @@ struct ENGINE_API RenderOutputPlane {
   std::vector<float> Pixels; ///< Tightly packed top-to-bottom pixel samples.
 };
 
-/// Owning CPU result of a completed final render.
+/// Owning CPU result of a completed final render, not a persistent analysis frame.
 ///
 /// Every plane has Width * Height * ChannelCount float32 samples in row-major
 /// top-to-bottom order. `final_color` is linear RGBA; `depth` is normalized
@@ -60,7 +64,8 @@ struct ENGINE_API RenderOutputPlane {
 /// opacity in alpha. Plane spans remain valid until this output is
 /// destroyed or move-assigned. All five canonical planes are present on
 /// success; failed renders return an error instead of partial or placeholder
-/// data.
+/// data. Snapshot Analysis copies the completed output into its own frame only
+/// after all additional typed planes and capture metadata are also complete.
 class ENGINE_API RenderOutput {
 public:
   uint32_t Width = 0;  ///< Image width in pixels.
