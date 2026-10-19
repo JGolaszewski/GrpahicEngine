@@ -2,8 +2,11 @@
 
 #include "application/include/EditorEventRouter.h"
 #include "application/include/EditorSceneDocument.h"
+#include "application/include/SnapshotAnalysisFocusState.h"
 #include "panels/include/EditorConsole.h"
 #include "panels/include/EditorPanel.h"
+#include "panels/include/MainBar.h"
+#include "panels/include/SnapshotAnalysisPanel.h"
 #include "platform/include/EditorFileDialogs.h"
 #include "platform/include/EditorUiIntegration.h"
 #include "rendering/include/RenderOutputExportService.h"
@@ -13,7 +16,9 @@
 
 #include <array>
 #include <cstdint>
+#include <filesystem>
 #include <memory>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -30,7 +35,7 @@ class CameraPreviewPanel;
 class Editor final : public Engine::Application {
 public:
   Editor() = default;
-  ~Editor() override = default;
+  ~Editor() override;
 
 protected:
   void OnInit() override;
@@ -56,6 +61,7 @@ private:
   void BuildDefaultDockLayoutIfNeeded(uint32_t dockspaceId);
   static void BuildDefaultDockLayout(uint32_t dockspaceId);
   void UpdateEditorCamera(float deltaTime);
+  void SetSnapshotAnalysisFocused(bool focused);
   [[nodiscard]] auto GetViewportTextureID() const -> void*;
 
   std::shared_ptr<Engine::Scene> m_ActiveScene;
@@ -65,12 +71,17 @@ private:
   std::shared_ptr<Engine::Viewport> m_CameraPreviewViewport;
   std::shared_ptr<Engine::ViewportTarget> m_CameraPreviewTarget;
   std::vector<std::unique_ptr<EditorPanel>> m_Panels;
+  std::unique_ptr<MainBar> m_MainBar;
+  std::unique_ptr<SnapshotAnalysisPanel> m_SnapshotAnalysisPanel;
   CameraPreviewPanel* m_CameraPreviewPanel = nullptr;
   EditorEventRouter m_EventRouter;
   std::vector<EditorEventRouter::Connection> m_PanelConnections;
   EditorUiIntegration m_UiIntegration;
   EditorConsole m_EditorConsole;
   std::unique_ptr<Engine::RenderOutputExportService> m_RenderOutputExportService;
+  SnapshotAnalysisFocusState m_SnapshotAnalysisFocusState;
+  std::string m_PreviousFocusedWindow;
+  std::string m_WindowToRestoreFocus;
   Engine::EntityHandle m_SelectedEntity = Engine::InvalidEntityHandle;
   Engine::EntityHandle m_CameraPreviewEntity = Engine::InvalidEntityHandle;
   Engine::Renderer::CameraView m_CameraPreviewCamera;
@@ -80,6 +91,7 @@ private:
   Engine::Ecs::Camera m_EditorCameraSettings;
   std::pair<float, float> m_ViewportSize = {0.0F, 0.0F};
   bool m_DefaultLayoutBuilt = false;
+  bool m_RestoreSnapshotFocus = false;
   bool m_EngineConsoleOpen = true;
   EditorPlatform::EditorPreferences m_EditorPreferences;
   std::array<bool, static_cast<size_t>(Engine::Events::KeyCode::Count)> m_CameraKeysDown{};
