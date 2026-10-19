@@ -17,6 +17,7 @@
 namespace Engine {
 
 class RenderSystem;
+class SnapshotFrame;
 
 /// Stable float render-output plane identifiers used by previews and image exporters.
 ///
@@ -89,6 +90,7 @@ public:
 private:
   std::vector<RenderOutputPlane> m_Planes;
   friend class RenderSystem;
+  friend class SnapshotFrame;
 };
 
 } // namespace Engine

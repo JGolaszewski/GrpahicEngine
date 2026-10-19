@@ -75,6 +75,11 @@ public:
   nvrhi::TextureHandle DisplayColorTexture;
   RGResourceID DisplayColorResource;
   Engine::ViewportBinding::Mode RenderMode = Engine::ViewportBinding::Mode::Editor;
+  bool SnapshotCapture = false;
+  nvrhi::TextureHandle SnapshotOverdrawTexture;
+  nvrhi::BufferHandle SnapshotOverflowBuffer;
+  nvrhi::FramebufferHandle SnapshotOverdrawFramebuffer;
+  RGResourceID SnapshotOverdrawResource;
   std::vector<RGViewportAttachment> OutputAttachments;
   DirectX::XMFLOAT3 CameraPosition = {0.0f, 0.0f, 0.0f};
   nvrhi::BufferHandle CameraBuffer;

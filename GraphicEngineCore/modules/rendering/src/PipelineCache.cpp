@@ -110,12 +110,12 @@ void Hash(std::size_t& seed, const nvrhi::RasterState& state) {
 
 auto Engine::PipelineKey::operator==(const PipelineKey& other) const -> bool {
   if (VS != other.VS || PS != other.PS || PerObjectLayout != other.PerObjectLayout ||
-      SceneLayout != other.SceneLayout || MaterialLayout != other.MaterialLayout || Wireframe != other.Wireframe ||
-      DepthTest != other.DepthTest || DepthWrite != other.DepthWrite || CullMode != other.CullMode ||
-      Framebuffer != other.Framebuffer || PrimType != other.PrimType || PrimitiveRestart != other.PrimitiveRestart ||
-      BlendState != other.BlendState || !Equal(DepthStencilState, other.DepthStencilState) ||
-      !Equal(RasterState, other.RasterState) || SinglePassStereoState != other.SinglePassStereoState ||
-      InputLayout.size() != other.InputLayout.size()) {
+      SceneLayout != other.SceneLayout || MaterialLayout != other.MaterialLayout ||
+      AdditionalLayout != other.AdditionalLayout || Wireframe != other.Wireframe || DepthTest != other.DepthTest ||
+      DepthWrite != other.DepthWrite || CullMode != other.CullMode || Framebuffer != other.Framebuffer ||
+      PrimType != other.PrimType || PrimitiveRestart != other.PrimitiveRestart || BlendState != other.BlendState ||
+      !Equal(DepthStencilState, other.DepthStencilState) || !Equal(RasterState, other.RasterState) ||
+      SinglePassStereoState != other.SinglePassStereoState || InputLayout.size() != other.InputLayout.size()) {
     return false;
   }
 
@@ -134,6 +134,7 @@ auto Engine::PipelineKeyHasher::operator()(const PipelineKey& key) const -> std:
   HashCombine(result, key.PerObjectLayout.Get());
   HashCombine(result, key.SceneLayout.Get());
   HashCombine(result, key.MaterialLayout.Get());
+  HashCombine(result, key.AdditionalLayout.Get());
   HashCombine(result, key.Wireframe);
   HashCombine(result, key.DepthTest);
   HashCombine(result, key.DepthWrite);
@@ -218,6 +219,9 @@ auto Engine::PipelineCache::GetOrCreatePipeline(const PipelineKey& key, const nv
   }
   if (effectiveKey.MaterialLayout != nullptr) {
     pdesc.bindingLayouts.push_back(effectiveKey.MaterialLayout);
+  }
+  if (effectiveKey.AdditionalLayout != nullptr) {
+    pdesc.bindingLayouts.push_back(effectiveKey.AdditionalLayout);
   }
 
   pdesc.renderState.blendState = effectiveKey.BlendState;

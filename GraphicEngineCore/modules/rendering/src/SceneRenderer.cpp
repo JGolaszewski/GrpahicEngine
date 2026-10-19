@@ -15,6 +15,60 @@
 #include "scene/include/Scene.h"
 
 namespace {
+
+auto SceneIdentityString(const ::Engine::Ecs::SceneGuid& identity) -> std::string {
+  return std::to_string(identity.High) + ":" + std::to_string(identity.Low);
+}
+
+auto BrdfName(::Engine::Renderer::BrdfModel model) -> const char* {
+  switch (model) {
+  case ::Engine::Renderer::BrdfModel::GGX:
+    return "ggx";
+  case ::Engine::Renderer::BrdfModel::GTR:
+    return "gtr";
+  default:
+    return "legacy";
+  }
+}
+
+auto WorkflowName(::Engine::Renderer::MaterialWorkflow workflow) -> const char* {
+  return workflow == ::Engine::Renderer::MaterialWorkflow::SpecularGlossiness ? "specularGlossiness"
+                                                                              : "metallicRoughness";
+}
+
+auto SpecularModeName(::Engine::Renderer::DielectricSpecularMode mode) -> const char* {
+  return mode == ::Engine::Renderer::DielectricSpecularMode::ExplicitF0 ? "explicitF0" : "ior";
+}
+
+auto AlphaModeName(::Engine::Renderer::MaterialAlphaMode mode) -> const char* {
+  switch (mode) {
+  case ::Engine::Renderer::MaterialAlphaMode::Mask:
+    return "mask";
+  case ::Engine::Renderer::MaterialAlphaMode::Blend:
+    return "blend";
+  default:
+    return "opaque";
+  }
+}
+
+auto SnapshotMaterialValues(const ::Engine::Renderer::MaterialProperties& properties)
+    -> ::Engine::SceneMaterialDocument {
+  ::Engine::SceneMaterialDocument values;
+  values.baseColor = {properties.BaseColor.x, properties.BaseColor.y, properties.BaseColor.z, properties.BaseColor.w};
+  values.emissive = {properties.Emissive.x, properties.Emissive.y, properties.Emissive.z};
+  values.metallic = properties.Metallic;
+  values.roughness = properties.Roughness;
+  values.gtrGamma = properties.GtrGamma;
+  values.ior = properties.Ior;
+  values.specularF0 = {properties.SpecularF0.x, properties.SpecularF0.y, properties.SpecularF0.z};
+  values.brdfModel = BrdfName(properties.Model);
+  values.workflow = WorkflowName(properties.Workflow);
+  values.specularMode = SpecularModeName(properties.SpecularMode);
+  values.alphaMode = AlphaModeName(properties.AlphaMode);
+  values.alphaCutoff = properties.AlphaCutoff;
+  values.doubleSided = properties.DoubleSided;
+  return values;
+}
 struct DebugViewData {
   DirectX::XMFLOAT4X4 ViewProjection;
 };
@@ -303,7 +357,15 @@ void Engine::SceneRenderer::Init(nvrhi::IDevice* device, ::Engine::Renderer::Mat
     m_DebugVS = shaderFactory->GetShader("shaders/debug_vs.dxbc", nvrhi::ShaderType::Vertex);
     m_DebugPS = shaderFactory->GetShader("shaders/debug_ps.dxbc", nvrhi::ShaderType::Pixel);
     m_ShadowMaskPS = shaderFactory->GetShader("shaders/shadow_mask_ps.dxbc", nvrhi::ShaderType::Pixel);
+    m_OverdrawPS = shaderFactory->GetShader("shaders/overdraw_ps.dxbc", nvrhi::ShaderType::Pixel);
+    m_OverdrawTexturedPS = shaderFactory->GetShader("shaders/overdraw_textured_ps.dxbc", nvrhi::ShaderType::Pixel);
   }
+
+  nvrhi::BindingLayoutDesc snapshotOverdrawLayoutDesc;
+  snapshotOverdrawLayoutDesc.visibility = nvrhi::ShaderType::Pixel;
+  snapshotOverdrawLayoutDesc.bindings = {nvrhi::BindingLayoutItem::Texture_UAV(0),
+                                         nvrhi::BindingLayoutItem::RawBuffer_UAV(1)};
+  m_SnapshotOverdrawLayout = device->createBindingLayout(snapshotOverdrawLayoutDesc);
 
   nvrhi::BindingLayoutDesc perObjectLayoutDesc;
   perObjectLayoutDesc.visibility = nvrhi::ShaderType::All;
@@ -348,6 +410,18 @@ void Engine::SceneRenderer::Init(nvrhi::IDevice* device, ::Engine::Renderer::Mat
 void Engine::SceneRenderer::SetAssetTextureResolver(
     std::function<std::shared_ptr<::Engine::Renderer::TextureResource>(const std::string&, bool)> resolver) {
   m_AssetTextureResolver = std::move(resolver);
+}
+
+void Engine::SceneRenderer::BeginSnapshotCapture() {
+  m_SnapshotCaptureActive = true;
+  m_NextSnapshotMaterialId = 0;
+  m_SnapshotManifest.clear();
+  m_SnapshotCaptureFailure.clear();
+}
+
+auto Engine::SceneRenderer::TakeSnapshotManifest() -> std::vector<SnapshotMaterialManifestEntry> {
+  m_SnapshotCaptureActive = false;
+  return std::exchange(m_SnapshotManifest, {});
 }
 
 void Engine::SceneRenderer::EnsureDebugBuffer(nvrhi::BufferHandle& buffer, uint64_t& capacity, size_t vertexCount,
@@ -617,6 +691,72 @@ auto Engine::SceneRenderer::GetSceneBindingSet(size_t viewIndex, nvrhi::BufferHa
   return cache.Bindings;
 }
 
+auto Engine::SceneRenderer::RenderSnapshotOverdraw(nvrhi::ICommandList* commandList,
+                                                   const ::Engine::Renderer::RenderView& view) -> bool {
+  if (commandList == nullptr || !view.SnapshotCapture || view.SnapshotOverdrawTexture == nullptr ||
+      view.SnapshotOverflowBuffer == nullptr || view.SnapshotOverdrawFramebuffer == nullptr ||
+      m_PerObjectBuffer == nullptr || m_PerObjectBindingSet == nullptr || m_SnapshotOverdrawLayout == nullptr) {
+    return false;
+  }
+
+  commandList->setTextureState(view.SnapshotOverdrawTexture, nvrhi::AllSubresources,
+                               nvrhi::ResourceStates::UnorderedAccess);
+  commandList->setBufferState(view.SnapshotOverflowBuffer, nvrhi::ResourceStates::UnorderedAccess);
+  commandList->commitBarriers();
+  commandList->clearTextureUInt(view.SnapshotOverdrawTexture, nvrhi::AllSubresources, 0U);
+  const uint32_t noOverflow = 0;
+  commandList->writeBuffer(view.SnapshotOverflowBuffer, &noOverflow, sizeof(noOverflow));
+
+  nvrhi::BindingSetDesc overdrawSetDesc;
+  overdrawSetDesc.addItem(nvrhi::BindingSetItem::Texture_UAV(0, view.SnapshotOverdrawTexture));
+  overdrawSetDesc.addItem(nvrhi::BindingSetItem::RawBuffer_UAV(1, view.SnapshotOverflowBuffer));
+  const nvrhi::BindingSetHandle overdrawBindings =
+      m_Device->createBindingSet(overdrawSetDesc, m_SnapshotOverdrawLayout);
+  if (overdrawBindings == nullptr) {
+    return false;
+  }
+
+  const nvrhi::Viewport viewport(static_cast<float>(view.ViewportWidth), static_cast<float>(view.ViewportHeight));
+  const nvrhi::Rect scissor(static_cast<int>(view.ViewportWidth), static_cast<int>(view.ViewportHeight));
+  const auto drawQueue = [&](const std::vector<::Engine::Renderer::RenderPacket>& packets) {
+    for (const auto& packet : packets) {
+      if (packet.OverdrawPipeline == nullptr || packet.VertexBuffer == nullptr || packet.MaterialBindings == nullptr) {
+        return false;
+      }
+      commandList->writeBuffer(m_PerObjectBuffer, &packet.PerObjectData, sizeof(packet.PerObjectData));
+      nvrhi::GraphicsState state;
+      state.pipeline = packet.OverdrawPipeline;
+      state.framebuffer = view.SnapshotOverdrawFramebuffer;
+      state.viewport.addViewport(viewport);
+      state.viewport.addScissorRect(scissor);
+      state.bindings = {m_PerObjectBindingSet, packet.MaterialBindings, overdrawBindings};
+      nvrhi::VertexBufferBinding vertexBuffer;
+      vertexBuffer.buffer = packet.VertexBuffer;
+      vertexBuffer.slot = 0;
+      state.vertexBuffers = {vertexBuffer};
+      if (packet.IndexBuffer != nullptr) {
+        state.indexBuffer.buffer = packet.IndexBuffer;
+        state.indexBuffer.format = nvrhi::Format::R32_UINT;
+      }
+      commandList->setGraphicsState(state);
+      nvrhi::DrawArguments arguments;
+      arguments.instanceCount = 1;
+      arguments.startVertexLocation = packet.BaseVertexOffset;
+      if (packet.IndexBuffer != nullptr) {
+        arguments.startIndexLocation = packet.StartIndexLocation;
+        arguments.vertexCount = packet.IndexCount;
+        commandList->drawIndexed(arguments);
+      } else {
+        arguments.vertexCount = packet.VertexCount;
+        commandList->draw(arguments);
+      }
+    }
+    return true;
+  };
+
+  return drawQueue(view.Queues.Opaque) && drawQueue(view.Queues.Masked) && drawQueue(view.Queues.Transparent);
+}
+
 auto Engine::SceneRenderer::EnsurePerObjectResources(size_t maxDrawCount,
                                                      ::Engine::Renderer::FrameContext& frameContext,
                                                      ::Engine::Renderer::FrameDiagnostics& diagnostics) -> bool {
@@ -759,6 +899,19 @@ auto Engine::SceneRenderer::ConfigureAndQueuePacket(
   packet.Pipeline = packet.ShadowAlphaTest && (m_ShadowMaskPS == nullptr)
                         ? nullptr
                         : m_PipelineCache.GetOrCreatePipeline(key, framebufferInfo);
+  if (view->SnapshotCapture) {
+    Engine::PipelineKey overdrawKey = key;
+    overdrawKey.PS = hasTextureOverrides ? m_OverdrawTexturedPS : m_OverdrawPS;
+    overdrawKey.SceneLayout = nullptr;
+    overdrawKey.AdditionalLayout = m_SnapshotOverdrawLayout;
+    overdrawKey.DepthTest = false;
+    overdrawKey.DepthWrite = false;
+    overdrawKey.BlendState = {};
+    overdrawKey.Framebuffer = {};
+    packet.OverdrawPipeline = overdrawKey.PS == nullptr || m_SnapshotOverdrawLayout == nullptr
+                                  ? nullptr
+                                  : m_PipelineCache.GetOrCreatePipeline(overdrawKey, nvrhi::FramebufferInfo{});
+  }
   switch (packet.Queue) {
   case ::Engine::Renderer::RenderQueueType::Masked:
     view->Queues.Masked.push_back(packet);
@@ -779,7 +932,7 @@ auto Engine::SceneRenderer::ConfigureAndQueuePacket(
 
 void Engine::SceneRenderer::SubmitSubmesh(::Engine::Renderer::RenderView* view,
                                           const ::Engine::Ecs::WorldTransform& transform, ::Engine::EntityHandle entity,
-                                          const ::Engine::Ecs::MeshRenderer& meshRenderer,
+                                          const ::Engine::Ecs::MeshRenderer& meshRenderer, uint32_t submeshIndex,
                                           const ::Engine::Renderer::Submesh& submesh, DirectX::FXMMATRIX viewProjection,
                                           const nvrhi::FramebufferInfoEx& framebufferInfo) {
   if (!submesh.mesh || !submesh.material) {
@@ -808,12 +961,49 @@ void Engine::SceneRenderer::SubmitSubmesh(::Engine::Renderer::RenderView* view,
   perObjectData.ObjectParams = {meshRenderer.ReceiveShadows ? 1.0F : 0.0F, meshRenderer.Wireframe ? 1.0F : 0.0F, 0.0F,
                                 0.0F};
   const auto material = MaterialForSubmesh(view, entity, meshRenderer, submesh);
+  const auto materialProperties = material->GetProperties();
+  SnapshotMaterialManifestEntry snapshotEntry;
+  if (view->SnapshotCapture && m_SnapshotCaptureActive) {
+    if (m_NextSnapshotMaterialId == UINT32_MAX) {
+      m_SnapshotCaptureFailure = "snapshot material-instance ID space was exhausted";
+      return;
+    }
+    const auto* persistentIdentity = view->TargetScene->World().Get<::Engine::Ecs::PersistentIdentity>(entity);
+    if (persistentIdentity == nullptr) {
+      m_SnapshotCaptureFailure = "snapshot entity is missing its persistent identity";
+      return;
+    }
+    const std::string entityIdentity = SceneIdentityString(persistentIdentity->Guid);
+    const uint32_t materialSlot = submesh.MaterialSlot < 0 ? 0U : static_cast<uint32_t>(submesh.MaterialSlot);
+    const uint32_t materialId = ++m_NextSnapshotMaterialId;
+    snapshotEntry.Id = materialId;
+    snapshotEntry.EntityIdentity = entityIdentity;
+    snapshotEntry.SubmeshIndex = submeshIndex;
+    snapshotEntry.MaterialSlot = materialSlot;
+    snapshotEntry.MaterialIdentity =
+        meshRenderer.MaterialGuid.empty()
+            ? entityIdentity + ":material:" + std::to_string(submeshIndex) + ":" + std::to_string(materialSlot)
+            : meshRenderer.MaterialGuid;
+    snapshotEntry.CapturedValues = SnapshotMaterialValues(materialProperties);
+    if (material->GetBaseColorTextureGuid().has_value()) {
+      snapshotEntry.ResourceIdentities.push_back(*material->GetBaseColorTextureGuid());
+    }
+    if (material->GetNormalTextureGuid().has_value()) {
+      snapshotEntry.ResourceIdentities.push_back(*material->GetNormalTextureGuid());
+    }
+    perObjectData.MaterialInstanceId = materialId;
+    perObjectData.ObjectParams.z =
+        materialProperties.AlphaMode == ::Engine::Renderer::MaterialAlphaMode::Blend ? 1.0F : 0.0F;
+  }
   auto packet = CreateRenderPacket(submesh.mesh.get(), material.get());
   packet.PerObjectData = perObjectData;
   const bool disableFaceCulling =
       transform.HasAxisFlip || DirectX::XMVectorGetX(DirectX::XMMatrixDeterminant(world)) < 0.0F;
-  if (ConfigureAndQueuePacket(view, meshRenderer, submesh, material->GetProperties(), material->HasTextureOverrides(),
+  if (ConfigureAndQueuePacket(view, meshRenderer, submesh, materialProperties, material->HasTextureOverrides(),
                               framebufferInfo, packet, disableFaceCulling)) {
+    if (view->SnapshotCapture && m_SnapshotCaptureActive) {
+      m_SnapshotManifest.push_back(std::move(snapshotEntry));
+    }
     m_SubmissionStats.PacketBuildTimeMs +=
         std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - packetBuildStart).count();
   }
@@ -939,8 +1129,9 @@ void Engine::SceneRenderer::CullAndFillView(::Engine::Renderer::RenderView* view
                 ++m_SubmissionStats.ObjectsCulled;
                 continue;
               }
-              for (const auto& submesh : *submeshes) {
-                SubmitSubmesh(view, transforms[row], entities[row], meshRenderer, submesh, viewProj, fbInfo);
+              for (uint32_t submeshIndex = 0; submeshIndex < submeshes->size(); ++submeshIndex) {
+                SubmitSubmesh(view, transforms[row], entities[row], meshRenderer, submeshIndex,
+                              submeshes->at(submeshIndex), viewProj, fbInfo);
               }
             }
           });
