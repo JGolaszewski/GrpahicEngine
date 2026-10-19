@@ -69,6 +69,7 @@ struct RenderSystem::FinalReadbackCapture {
   nvrhi::EventQueryHandle CompletionQuery;
   Engine::FinalColorPostProcess PostProcess;
   bool SnapshotCapture = false;
+  SnapshotPlaneMask SnapshotSelectedPlanes = AllSnapshotPlanes;
   SnapshotFrameMetadata SnapshotMetadata;
   std::vector<SnapshotMaterialManifestEntry> SnapshotManifest;
   bool Submitted = false;
@@ -80,6 +81,7 @@ struct RenderSystem::CompletedSnapshotCapture {
   std::vector<SnapshotMaterialManifestEntry> Manifest;
   std::vector<uint32_t> MaterialIds;
   std::vector<uint32_t> Overdraw;
+  SnapshotPlaneMask SelectedPlanes = AllSnapshotPlanes;
   bool OverdrawOverflow = false;
 };
 
@@ -840,6 +842,7 @@ auto RenderSystem::BeginFinalRender(Engine::Scene& scene, const ::Engine::Render
   if (snapshotCapture) {
     capture->SnapshotMetadata = std::move(*m_StartingSnapshotMetadata);
     m_StartingSnapshotMetadata.reset();
+    capture->SnapshotSelectedPlanes = m_StartingSnapshotSelectedPlanes;
   }
   if (capture->Ticket == 0) {
     capture->Ticket = ++m_NextFinalRenderTicket;
@@ -942,8 +945,11 @@ auto RenderSystem::BeginFinalRender(Engine::Scene& scene, const ::Engine::Render
 }
 
 auto RenderSystem::BeginSnapshotRender(Engine::Scene& scene, const ::Engine::Renderer::CameraView& camera,
-                                       SnapshotFrameMetadata metadata, uint32_t width, uint32_t height)
-    -> Engine::Result<SnapshotRenderTicket> {
+                                       SnapshotFrameMetadata metadata, uint32_t width, uint32_t height,
+                                       SnapshotPlaneMask selectedPlanes) -> Engine::Result<SnapshotRenderTicket> {
+  if (selectedPlanes == 0 || (selectedPlanes & ~AllSnapshotPlanes) != 0) {
+    return std::unexpected(Engine::MakeError("snapshot capture must select one or more supported planes"));
+  }
   if (metadata.OutputWidth != width || metadata.OutputHeight != height) {
     return std::unexpected(Engine::MakeError("snapshot metadata dimensions do not match the requested output"));
   }
@@ -953,6 +959,7 @@ auto RenderSystem::BeginSnapshotRender(Engine::Scene& scene, const ::Engine::Ren
   metadata.Camera.NearPlane = camera.NearPlane;
   metadata.Camera.FarPlane = camera.FarPlane;
   m_StartingSnapshotMetadata = std::move(metadata);
+  m_StartingSnapshotSelectedPlanes = selectedPlanes;
   auto ticket = BeginFinalRender(scene, camera, width, height);
   if (!ticket) {
     m_StartingSnapshotMetadata.reset();
@@ -995,9 +1002,21 @@ auto RenderSystem::PollSnapshotRender(SnapshotRenderTicket ticket) -> Engine::Re
     return std::unexpected(Engine::MakeError(mutableStatus.Message));
   }
   auto completed = std::move(m_CompletedSnapshotCapture);
-  auto frame = SnapshotFrame::Create(std::move(completed->Metadata), std::move(completed->Manifest),
-                                     std::move(renderOutput->value()), std::move(completed->MaterialIds),
-                                     std::move(completed->Overdraw));
+  auto& output = renderOutput->value();
+  auto floatPlanes = std::move(output.m_Planes);
+  std::erase_if(floatPlanes, [selected = completed->SelectedPlanes](const RenderOutputPlane& plane) {
+    const auto snapshotPlane = static_cast<SnapshotPlane>(plane.Aov);
+    return (selected & SnapshotPlaneMaskBit(snapshotPlane)) == 0;
+  });
+  if ((completed->SelectedPlanes & SnapshotPlaneMaskBit(SnapshotPlane::MaterialInstanceId)) == 0) {
+    completed->MaterialIds.clear();
+    completed->Manifest.clear();
+  }
+  if ((completed->SelectedPlanes & SnapshotPlaneMaskBit(SnapshotPlane::Overdraw)) == 0)
+    completed->Overdraw.clear();
+  auto frame =
+      SnapshotFrame::Create(std::move(completed->Metadata), std::move(completed->Manifest), output.Width, output.Height,
+                            std::move(floatPlanes), std::move(completed->MaterialIds), std::move(completed->Overdraw));
   auto& mutableStatus = m_SnapshotStatuses.at(ticket);
   if (!frame) {
     mutableStatus.CurrentPhase = SnapshotRenderStatus::Phase::Failed;
@@ -1091,6 +1110,7 @@ auto RenderSystem::PollFinalRenderOutput(FinalRenderTicket ticket)
     completed->Ticket = m_FinalReadbackCapture->Ticket;
     completed->Metadata = std::move(m_FinalReadbackCapture->SnapshotMetadata);
     completed->Manifest = std::move(m_FinalReadbackCapture->SnapshotManifest);
+    completed->SelectedPlanes = m_FinalReadbackCapture->SnapshotSelectedPlanes;
     const size_t pixelCount = static_cast<size_t>(width) * height;
     completed->MaterialIds.resize(pixelCount);
     completed->Overdraw.resize(pixelCount);

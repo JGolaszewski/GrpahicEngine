@@ -31,13 +31,15 @@
 namespace Engine::SnapshotPersistence {
 namespace {
 using Json = nlohmann::json;
-constexpr std::string_view MetadataAttribute = "engine:snapshot_metadata_v1";
-constexpr std::array<RenderAov, 5> FloatAovs = {RenderAov::FinalColor, RenderAov::Depth, RenderAov::WorldNormal,
-                                                RenderAov::SpecularLighting, RenderAov::DiffuseLighting};
+constexpr std::string_view MetadataAttributeV1 = "engine:snapshot_metadata_v1";
+constexpr std::string_view MetadataAttributeV2 = "engine:snapshot_metadata_v2";
 constexpr std::array<SnapshotPlane, 7> Planes = {SnapshotPlane::FinalColor,      SnapshotPlane::Depth,
                                                  SnapshotPlane::WorldNormal,     SnapshotPlane::SpecularLighting,
                                                  SnapshotPlane::DiffuseLighting, SnapshotPlane::MaterialInstanceId,
                                                  SnapshotPlane::Overdraw};
+
+auto PlaneName(SnapshotPlane plane) -> std::string_view;
+auto ParsePlane(std::string_view name) -> std::optional<SnapshotPlane>;
 
 auto Context(const std::filesystem::path& path, std::string_view message) -> Error {
   return MakeError(path.generic_string() + ": " + std::string(message));
@@ -84,7 +86,12 @@ auto MetadataJson(const SnapshotFrame& frame) -> Json {
                           {"baseColorTextureGuid", v.baseColorTextureGuid},
                           {"normalTextureGuid", v.normalTextureGuid}}}});
   }
-  return {{"schema", 1},
+  Json planes = Json::array();
+  for (const SnapshotPlane plane : Planes)
+    if (frame.HasPlane(plane))
+      planes.push_back(PlaneName(plane));
+  return {{"schema", 2},
+          {"planes", std::move(planes)},
           {"captureTimeUtc", m.CaptureTimeUtc},
           {"sceneIdentity", m.SceneIdentity},
           {"camera",
@@ -144,13 +151,30 @@ auto ReadString(const Json& object, const char* key, std::string& result) -> boo
   return true;
 }
 
-auto ParseMetadata(const Json& j, SnapshotFrameMetadata& m, std::vector<SnapshotMaterialManifestEntry>& manifest)
-    -> bool {
-  if (!j.is_object() || !j.contains("schema") || j.at("schema") != 1 || !j.contains("camera") ||
-      !j.at("camera").is_object() || !j.contains("renderSettings") || !j.at("renderSettings").is_object() ||
-      !j.contains("color") || !j.at("color").is_object() || !j.contains("materialManifest") ||
-      !j.at("materialManifest").is_array())
+auto ParseMetadata(const Json& j, SnapshotFrameMetadata& m, std::vector<SnapshotMaterialManifestEntry>& manifest,
+                   SnapshotPlaneMask& selectedPlanes) -> bool {
+  if (!j.is_object() || !j.contains("schema") || !j.at("schema").is_number_integer() ||
+      (j.at("schema") != 1 && j.at("schema") != 2) || !j.contains("camera") || !j.at("camera").is_object() ||
+      !j.contains("renderSettings") || !j.at("renderSettings").is_object() || !j.contains("color") ||
+      !j.at("color").is_object() || !j.contains("materialManifest") || !j.at("materialManifest").is_array())
     return false;
+  const bool versionTwo = j.at("schema") == 2;
+  selectedPlanes = AllSnapshotPlanes;
+  if (versionTwo) {
+    if (!j.contains("planes") || !j.at("planes").is_array() || j.at("planes").empty())
+      return false;
+    selectedPlanes = 0;
+    for (const auto& value : j.at("planes")) {
+      if (!value.is_string())
+        return false;
+      const auto plane = ParsePlane(value.get<std::string>());
+      if (!plane || (selectedPlanes & SnapshotPlaneMaskBit(*plane)) != 0)
+        return false;
+      selectedPlanes = static_cast<SnapshotPlaneMask>(selectedPlanes | SnapshotPlaneMaskBit(*plane));
+    }
+  } else if (j.contains("planes")) {
+    return false;
+  }
   const auto& camera = j.at("camera");
   const auto& settings = j.at("renderSettings");
   const auto& color = j.at("color");
@@ -428,38 +452,51 @@ auto SnapshotExr::Write(const SnapshotFrame& frame, const std::filesystem::path&
   if (path.empty() || !ValidExtension(path, ".exr"))
     return std::unexpected(Context(path, "destination must use .exr"));
   const auto pixelCount = CheckedPixels(frame.GetWidth(), frame.GetHeight());
-  if (!pixelCount || frame.GetFloatPlanes().size() != FloatAovs.size() ||
-      frame.GetMaterialInstanceIds().size() != *pixelCount || frame.GetOverdraw().size() != *pixelCount)
+  std::vector<SnapshotPlane> available;
+  for (const SnapshotPlane plane : Planes)
+    if (frame.HasPlane(plane))
+      available.push_back(plane);
+  if (!pixelCount || available.empty())
     return std::unexpected(Context(path, "snapshot frame is incomplete"));
-  std::array<OIIO::ImageSpec, 7> specs;
-  for (size_t i = 0; i < FloatAovs.size(); ++i) {
-    const auto& plane = frame.GetFloatPlanes()[i];
-    const auto& descriptor = RenderOutput::GetDescriptor(FloatAovs[i]);
-    if (plane.Aov != FloatAovs[i] || plane.ChannelCount != descriptor.ChannelCount ||
-        plane.Pixels.size() != *pixelCount * descriptor.ChannelCount)
-      return std::unexpected(Context(path, "snapshot float AOV layout is invalid"));
-    auto& spec = specs[i];
-    spec = OIIO::ImageSpec(static_cast<int>(frame.GetWidth()), static_cast<int>(frame.GetHeight()),
-                           static_cast<int>(descriptor.ChannelCount), OIIO::TypeDesc::FLOAT);
-    spec.channelnames.clear();
-    for (uint32_t c = 0; c < descriptor.ChannelCount; ++c)
-      spec.channelnames.emplace_back(descriptor.ChannelNames[c]);
-    spec.attribute("oiio:subimagename", descriptor.Name);
-    spec.attribute("engine:plane", descriptor.Name);
-    spec.attribute("engine:storage", "float32");
+  std::vector<OIIO::ImageSpec> specs;
+  specs.reserve(available.size());
+  for (const SnapshotPlane plane : available) {
+    const bool isFloat = plane <= SnapshotPlane::DiffuseLighting;
+    uint32_t channelCount = 1;
+    OIIO::TypeDesc format = OIIO::TypeDesc::UINT32;
+    std::vector<std::string> channels;
+    std::string name(PlaneName(plane));
+    if (isFloat) {
+      const auto found = std::ranges::find_if(frame.GetFloatPlanes(), [plane](const RenderOutputPlane& value) {
+        return static_cast<SnapshotPlane>(value.Aov) == plane;
+      });
+      if (found == frame.GetFloatPlanes().end())
+        return std::unexpected(Context(path, "snapshot float AOV is missing from its availability set"));
+      const auto& descriptor = RenderOutput::GetDescriptor(found->Aov);
+      if (found->ChannelCount != descriptor.ChannelCount ||
+          found->Pixels.size() != *pixelCount * descriptor.ChannelCount)
+        return std::unexpected(Context(path, "snapshot float AOV layout is invalid"));
+      channelCount = descriptor.ChannelCount;
+      format = OIIO::TypeDesc::FLOAT;
+      for (uint32_t c = 0; c < channelCount; ++c)
+        channels.emplace_back(descriptor.ChannelNames[c]);
+    } else {
+      const auto samples =
+          plane == SnapshotPlane::MaterialInstanceId ? frame.GetMaterialInstanceIds() : frame.GetOverdraw();
+      if (samples.size() != *pixelCount)
+        return std::unexpected(Context(path, "snapshot integer plane layout is invalid"));
+      channels.emplace_back(plane == SnapshotPlane::MaterialInstanceId ? "id" : "count");
+    }
+    OIIO::ImageSpec spec(static_cast<int>(frame.GetWidth()), static_cast<int>(frame.GetHeight()),
+                         static_cast<int>(channelCount), format);
+    spec.channelnames = std::move(channels);
+    spec.attribute("oiio:subimagename", name);
+    spec.attribute("engine:plane", name);
+    spec.attribute("engine:storage", isFloat ? "float32" : "uint32");
     spec.attribute("compression", "zip");
-    if (i == 0)
-      spec.attribute(std::string(MetadataAttribute), MetadataJson(frame).dump());
-  }
-  for (size_t i = 5; i < specs.size(); ++i) {
-    specs[i] = OIIO::ImageSpec(static_cast<int>(frame.GetWidth()), static_cast<int>(frame.GetHeight()), 1,
-                               OIIO::TypeDesc::UINT32);
-    const std::string name = i == 5 ? "material_instance_id" : "overdraw";
-    specs[i].channelnames = {i == 5 ? "id" : "count"};
-    specs[i].attribute("oiio:subimagename", name);
-    specs[i].attribute("engine:plane", name);
-    specs[i].attribute("engine:storage", "uint32");
-    specs[i].attribute("compression", "zip");
+    if (specs.empty())
+      spec.attribute(std::string(MetadataAttributeV2), MetadataJson(frame).dump());
+    specs.push_back(std::move(spec));
   }
   const auto temp = TempPath(path);
   auto output = OIIO::ImageOutput::create("openexr");
@@ -474,12 +511,16 @@ auto SnapshotExr::Write(const SnapshotFrame& frame, const std::filesystem::path&
       (void)output->close();
       return std::unexpected(Context(path, "cannot append EXR plane: " + error));
     }
+    const SnapshotPlane plane = available[i];
     bool written = false;
-    if (i < FloatAovs.size())
-      written = output->write_image(
-          OIIO::span<const float>(frame.GetFloatPlanes()[i].Pixels.data(), frame.GetFloatPlanes()[i].Pixels.size()));
-    else {
-      const auto samples = i == 5 ? frame.GetMaterialInstanceIds() : frame.GetOverdraw();
+    if (plane <= SnapshotPlane::DiffuseLighting) {
+      const auto found = std::ranges::find_if(frame.GetFloatPlanes(), [plane](const RenderOutputPlane& value) {
+        return static_cast<SnapshotPlane>(value.Aov) == plane;
+      });
+      written = output->write_image(OIIO::span<const float>(found->Pixels.data(), found->Pixels.size()));
+    } else {
+      const auto samples =
+          plane == SnapshotPlane::MaterialInstanceId ? frame.GetMaterialInstanceIds() : frame.GetOverdraw();
       written = output->write_image(OIIO::span<const uint32_t>(samples.data(), samples.size()));
     }
     if (!written) {
@@ -512,11 +553,10 @@ auto SnapshotExr::Read(const std::filesystem::path& path) -> Result<SnapshotFram
   std::vector<uint32_t> ids, overdraw;
   uint32_t width = 0, height = 0;
   bool parsedMetadata = false;
-  for (int part = 0; part < 7; ++part) {
-    if (part > 0 && !input->seek_subimage(part, 0)) {
-      (void)input->close();
-      return std::unexpected(Context(path, "required EXR plane is missing"));
-    }
+  SnapshotPlaneMask selectedPlanes = AllSnapshotPlanes;
+  std::array<bool, 7> seen{};
+  int part = 0;
+  while (part == 0 || input->seek_subimage(part, 0)) {
     const OIIO::ImageSpec& spec = input->spec();
     if (spec.width <= 0 || spec.height <= 0 || spec.width != (part == 0 ? spec.width : static_cast<int>(width)) ||
         spec.height != (part == 0 ? spec.height : static_cast<int>(height))) {
@@ -538,13 +578,20 @@ auto SnapshotExr::Read(const std::filesystem::path& path) -> Result<SnapshotFram
       return std::unexpected(Context(path, "EXR plane is missing its semantic name"));
     }
     const std::string name = nameAttr->get_string();
+    const auto planeValue = ParsePlane(name);
+    if (!planeValue || seen[static_cast<size_t>(*planeValue)]) {
+      (void)input->close();
+      return std::unexpected(Context(path, "EXR contains an unsupported or duplicate plane"));
+    }
+    const SnapshotPlane planeType = *planeValue;
+    seen[static_cast<size_t>(planeType)] = true;
     const auto* compression = spec.find_attribute("compression", OIIO::TypeDesc::STRING);
     if (compression == nullptr || compression->get_string() != "zip") {
       (void)input->close();
       return std::unexpected(Context(path, "EXR plane uses an unsupported or lossy encoding"));
     }
-    if (part < 5) {
-      const auto& descriptor = RenderOutput::GetDescriptor(FloatAovs[part]);
+    if (planeType <= SnapshotPlane::DiffuseLighting) {
+      const auto& descriptor = RenderOutput::GetDescriptor(static_cast<RenderAov>(planeType));
       if (name != descriptor.Name || spec.format != OIIO::TypeDesc::FLOAT ||
           spec.nchannels != static_cast<int>(descriptor.ChannelCount) ||
           spec.channelnames.size() != descriptor.ChannelCount) {
@@ -556,7 +603,7 @@ auto SnapshotExr::Read(const std::filesystem::path& path) -> Result<SnapshotFram
           (void)input->close();
           return std::unexpected(Context(path, "EXR channel layout does not match the AOV contract"));
         }
-      RenderOutputPlane plane{FloatAovs[part], descriptor.ChannelCount,
+      RenderOutputPlane plane{static_cast<RenderAov>(planeType), descriptor.ChannelCount,
                               std::vector<float>(*pixels * descriptor.ChannelCount)};
       if (!input->read_image(part, 0, 0, spec.nchannels, OIIO::span<float>(plane.Pixels.data(), plane.Pixels.size()))) {
         const auto error = input->geterror();
@@ -564,30 +611,14 @@ auto SnapshotExr::Read(const std::filesystem::path& path) -> Result<SnapshotFram
         return std::unexpected(Context(path, "cannot read EXR float plane: " + error));
       }
       floats.push_back(std::move(plane));
-      if (part == 0) {
-        const auto* attr = spec.find_attribute(std::string(MetadataAttribute), OIIO::TypeDesc::STRING);
-        if (!attr) {
-          (void)input->close();
-          return std::unexpected(Context(path, "EXR capture metadata is missing"));
-        }
-        try {
-          parsedMetadata = ParseMetadata(Json::parse(attr->get_string()), metadata, manifest);
-        } catch (const std::exception&) {
-          parsedMetadata = false;
-        }
-        if (!parsedMetadata) {
-          (void)input->close();
-          return std::unexpected(Context(path, "EXR capture metadata is malformed or unsupported"));
-        }
-      }
     } else {
-      const std::string expected = part == 5 ? "material_instance_id" : "overdraw";
-      if (name != expected || spec.format != OIIO::TypeDesc::UINT32 || spec.nchannels != 1 ||
-          spec.channelnames.size() != 1 || spec.channelnames[0] != (part == 5 ? "id" : "count")) {
+      const std::string expected = planeType == SnapshotPlane::MaterialInstanceId ? "id" : "count";
+      if (spec.format != OIIO::TypeDesc::UINT32 || spec.nchannels != 1 || spec.channelnames.size() != 1 ||
+          spec.channelnames[0] != expected) {
         (void)input->close();
         return std::unexpected(Context(path, "EXR integer plane must be exact single-channel UINT32"));
       }
-      auto& samples = part == 5 ? ids : overdraw;
+      auto& samples = planeType == SnapshotPlane::MaterialInstanceId ? ids : overdraw;
       samples.resize(*pixels);
       if (!input->read_image(part, 0, 0, spec.nchannels, OIIO::span<uint32_t>(samples.data(), samples.size()))) {
         const auto error = input->geterror();
@@ -595,12 +626,39 @@ auto SnapshotExr::Read(const std::filesystem::path& path) -> Result<SnapshotFram
         return std::unexpected(Context(path, "cannot read EXR integer plane: " + error));
       }
     }
-  }
-  if (input->seek_subimage(7, 0)) {
-    (void)input->close();
-    return std::unexpected(Context(path, "EXR contains unsupported extra planes"));
+    if (part == 0) {
+      const auto* attr = spec.find_attribute(std::string(MetadataAttributeV2), OIIO::TypeDesc::STRING);
+      const bool versionTwo = attr != nullptr;
+      if (!attr)
+        attr = spec.find_attribute(std::string(MetadataAttributeV1), OIIO::TypeDesc::STRING);
+      if (!attr) {
+        (void)input->close();
+        return std::unexpected(Context(path, "EXR capture metadata is missing"));
+      }
+      try {
+        const Json jsonMetadata = Json::parse(attr->get_string());
+        parsedMetadata = ParseMetadata(jsonMetadata, metadata, manifest, selectedPlanes);
+        parsedMetadata =
+            parsedMetadata && (versionTwo ? jsonMetadata.at("schema") == 2 : jsonMetadata.at("schema") == 1);
+      } catch (const std::exception&) {
+        parsedMetadata = false;
+      }
+      if (!parsedMetadata) {
+        (void)input->close();
+        return std::unexpected(Context(path, "EXR capture metadata is malformed or unsupported"));
+      }
+    }
+    ++part;
   }
   (void)input->close();
+  if (part == 0 || !parsedMetadata)
+    return std::unexpected(Context(path, "EXR contains no complete snapshot planes"));
+  for (const SnapshotPlane plane : Planes) {
+    const bool expected = (selectedPlanes & SnapshotPlaneMaskBit(plane)) != 0;
+    if (expected != seen[static_cast<size_t>(plane)])
+      return std::unexpected(
+          Context(path, expected ? "EXR is missing a declared plane" : "EXR contains an undeclared plane"));
+  }
   if (metadata.OutputWidth != width || metadata.OutputHeight != height)
     return std::unexpected(Context(path, "EXR metadata dimensions do not match its channels"));
   auto frame = SnapshotFrame::Create(std::move(metadata), std::move(manifest), width, height, std::move(floats),
@@ -672,6 +730,9 @@ auto SnapshotWorkspaceFile::Load(const std::filesystem::path& path) -> Result<Sn
     auto frame = SnapshotExr::Read(resolved);
     if (!frame)
       return std::unexpected(Context(path, frame.error().Message));
+    if (!frame->HasPlane(tab.SelectedPlane))
+      return std::unexpected(
+          Context(path, "workspace selects a plane absent from EXR payload: " + resolved.generic_string()));
     if (tab.PinnedPixel && (tab.PinnedPixel->X >= frame->GetWidth() || tab.PinnedPixel->Y >= frame->GetHeight()))
       return std::unexpected(Context(path, "pinned pixel lies outside EXR payload: " + resolved.generic_string()));
     if (tab.Roi && (static_cast<uint64_t>(tab.Roi->X) + tab.Roi->Width > frame->GetWidth() ||
