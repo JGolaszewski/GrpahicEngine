@@ -169,6 +169,57 @@ TEST(RenderFinalTests, WARPRepeatedSnapshotPollPreservesCompletedStatus) {
   EXPECT_EQ(status->Message, "Snapshot capture completed");
 }
 
+TEST(RenderFinalTests, WARPSnapshotCaptureDrawsGeometryThroughIntegerAndOverdrawPasses) {
+  EngineTests::WarpDevice device;
+  if (!device.Initialize()) {
+    GTEST_SKIP() << "D3D11 WARP device could not be created on this host";
+  }
+
+  EngineTests::WarpRenderBackend backend(device.GetDevice());
+  Engine::RenderSystem renderer(&backend);
+  ASSERT_TRUE(renderer.IsValid());
+
+  const auto material = renderer.CreateMaterial({});
+  ASSERT_NE(material, nullptr);
+  ASSERT_TRUE(renderer.CreatePrimitive(Engine::PrimitiveShape::Cube, material));
+
+  Engine::Scene scene;
+  const uint64_t createSequence = scene.QueueCreate("Snapshot capture geometry");
+  const auto created = scene.sync();
+  ASSERT_EQ(created.size(), 1U);
+  ASSERT_EQ(created.front().Sequence, createSequence);
+  ASSERT_TRUE(created.front().Outcome);
+  const Engine::EntityHandle meshEntity = created.front().Entity;
+  (void)scene.QueueAdd(meshEntity, Engine::Ecs::MeshRenderer{.PrimitiveType = "cube"});
+  ASSERT_TRUE(scene.Update(0.0F));
+  ASSERT_NE(scene.World().Get<Engine::Ecs::PersistentIdentity>(meshEntity), nullptr);
+
+  Engine::Renderer::CameraView camera;
+  camera.Position = {0.0F, 0.0F, -5.0F};
+  Engine::SnapshotFrameMetadata metadata;
+  metadata.CaptureTimeUtc = "2026-10-19T12:00:00Z";
+  metadata.SceneIdentity = "snapshot-geometry-test-scene";
+  metadata.Camera.Identity = "snapshot-geometry-test-camera";
+  metadata.Camera.AuthoredWidth = 32;
+  metadata.Camera.AuthoredHeight = 32;
+  metadata.OutputWidth = 32;
+  metadata.OutputHeight = 32;
+
+  const auto ticket = renderer.BeginSnapshotRender(scene, camera, std::move(metadata), 32, 32);
+  ASSERT_TRUE(ticket.has_value()) << (ticket.has_value() ? "" : ticket.error().Message);
+  device.GetDevice()->waitForIdle();
+
+  const auto result = renderer.PollSnapshotRender(*ticket);
+  ASSERT_TRUE(result.has_value()) << (result.has_value() ? "" : result.error().Message);
+  ASSERT_TRUE(result->has_value());
+  EXPECT_TRUE(result->value().HasPlane(Engine::SnapshotPlane::FinalColor));
+  EXPECT_TRUE(result->value().HasPlane(Engine::SnapshotPlane::MaterialInstanceId));
+  EXPECT_TRUE(result->value().HasPlane(Engine::SnapshotPlane::Overdraw));
+  EXPECT_FALSE(result->value().GetManifest().empty());
+  EXPECT_TRUE(std::ranges::any_of(result->value().GetMaterialInstanceIds(), [](uint32_t id) { return id != 0U; }));
+  EXPECT_TRUE(std::ranges::any_of(result->value().GetOverdraw(), [](uint32_t count) { return count != 0U; }));
+}
+
 TEST(RenderFinalTests, WARPSceneViewportAndPipMatchPngDisplayTransformWhileFinalAovStaysLinear) {
   EngineTests::WarpDevice device;
   if (!device.Initialize()) {

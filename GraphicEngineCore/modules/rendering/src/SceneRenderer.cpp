@@ -733,10 +733,12 @@ auto Engine::SceneRenderer::RenderSnapshotOverdraw(nvrhi::ICommandList* commandL
       nvrhi::VertexBufferBinding vertexBuffer;
       vertexBuffer.buffer = packet.VertexBuffer;
       vertexBuffer.slot = 0;
+      vertexBuffer.offset = 0;
       state.vertexBuffers = {vertexBuffer};
       if (packet.IndexBuffer != nullptr) {
         state.indexBuffer.buffer = packet.IndexBuffer;
         state.indexBuffer.format = nvrhi::Format::R32_UINT;
+        state.indexBuffer.offset = 0;
       }
       commandList->setGraphicsState(state);
       nvrhi::DrawArguments arguments;
