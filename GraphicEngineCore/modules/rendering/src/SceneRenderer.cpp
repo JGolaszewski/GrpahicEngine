@@ -906,7 +906,12 @@ auto Engine::SceneRenderer::ConfigureAndQueuePacket(
     overdrawKey.AdditionalLayout = m_SnapshotOverdrawLayout;
     overdrawKey.DepthTest = false;
     overdrawKey.DepthWrite = false;
-    overdrawKey.BlendState = {};
+    overdrawKey.BlendState = key.BlendState;
+    for (uint32_t targetIndex = 0; targetIndex < nvrhi::c_MaxRenderTargets; ++targetIndex) {
+      auto blendTarget = overdrawKey.BlendState.targets[targetIndex];
+      blendTarget.disableBlend();
+      overdrawKey.BlendState.setRenderTarget(targetIndex, blendTarget);
+    }
     overdrawKey.Framebuffer = {};
     packet.OverdrawPipeline = overdrawKey.PS == nullptr || m_SnapshotOverdrawLayout == nullptr
                                   ? nullptr

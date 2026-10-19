@@ -5,13 +5,20 @@
 #include "scene/include/Scene.h"
 
 #include <algorithm>
+#include <exception>
 #include <utility>
 
 namespace Engine {
 
 RenderOutputExportService::RenderOutputExportService() : m_Worker([this] { WorkerMain(); }) {}
 
-RenderOutputExportService::~RenderOutputExportService() { Shutdown(); }
+RenderOutputExportService::~RenderOutputExportService() noexcept {
+  try {
+    Shutdown();
+  } catch (...) {
+    std::terminate();
+  }
+}
 
 auto RenderOutputExportService::StartPng(RenderSystem& renderer, Scene& scene,
                                          const ::Engine::Renderer::CameraView& camera, uint32_t width, uint32_t height,
@@ -50,7 +57,11 @@ auto RenderOutputExportService::Start(RenderSystem& renderer, Scene& scene,
 
   std::lock_guard lock(m_Mutex);
   if (m_ShuttingDown || m_ActiveReadback.has_value()) {
-    (void)renderer.CancelFinalRender(*renderTicket);
+    const Engine::Status cancelStatus = renderer.CancelFinalRender(*renderTicket);
+    if (!cancelStatus) {
+      return std::unexpected(Engine::MakeError("export request was rejected and render cancellation failed: " +
+                                               cancelStatus.error().Message));
+    }
     return std::unexpected(Engine::MakeError("export service cannot accept another readback request"));
   }
   Request request;
@@ -160,7 +171,15 @@ void RenderOutputExportService::Shutdown() {
     }
   }
   if (renderer != nullptr && ticket.has_value()) {
-    (void)renderer->CancelFinalRender(*ticket);
+    const Engine::Status cancelStatus = renderer->CancelFinalRender(*ticket);
+    if (!cancelStatus) {
+      std::lock_guard lock(m_Mutex);
+      const auto request =
+          std::ranges::find_if(m_Requests, [ticket](const Request& item) { return item.RenderTicket == *ticket; });
+      if (request != m_Requests.end()) {
+        request->Status.Message = "Export shutdown could not cancel the render: " + cancelStatus.error().Message;
+      }
+    }
   }
   m_WorkAvailable.notify_all();
   if (m_Worker.joinable()) {

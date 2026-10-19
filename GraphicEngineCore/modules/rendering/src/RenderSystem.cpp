@@ -771,8 +771,8 @@ void RenderSystem::EndFrame() {
           m_CommandList->Handle->setBufferState(m_FinalReadbackCapture->SnapshotOverflowBuffer,
                                                 nvrhi::ResourceStates::CopySource);
           m_CommandList->Handle->commitBarriers();
-          m_CommandList->Handle->copyBuffer(m_FinalReadbackCapture->SnapshotOverflowStaging,
-                                            m_FinalReadbackCapture->SnapshotOverflowBuffer, 0, 0, sizeof(uint32_t));
+          m_CommandList->Handle->copyBuffer(m_FinalReadbackCapture->SnapshotOverflowStaging, 0,
+                                            m_FinalReadbackCapture->SnapshotOverflowBuffer, 0, sizeof(uint32_t));
         }
         m_FinalReadbackCapture->CompletionQuery = GetNvrhiDevice(m_RenderBackend)->createEventQuery();
         if (m_FinalReadbackCapture->CompletionQuery == nullptr) {
