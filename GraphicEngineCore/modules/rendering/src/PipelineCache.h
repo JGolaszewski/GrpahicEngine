@@ -13,6 +13,7 @@ struct PipelineKey {
   nvrhi::BindingLayoutHandle PerObjectLayout;
   nvrhi::BindingLayoutHandle SceneLayout;
   nvrhi::BindingLayoutHandle MaterialLayout;
+  nvrhi::BindingLayoutHandle AdditionalLayout;
   bool Wireframe = false;
   bool DepthTest = true;
   bool DepthWrite = true;

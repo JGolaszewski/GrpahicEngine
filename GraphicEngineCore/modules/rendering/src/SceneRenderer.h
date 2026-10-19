@@ -14,6 +14,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "rendering/include/SnapshotFrame.h"
 #include "rendering/include/renderer/DebugGeometry.h"
 #include "rendering/include/renderer/Light.h"
 #include "rendering/include/renderer/ModelResourceLibrary.h"
@@ -62,6 +63,14 @@ public:
             const ::Engine::Renderer::ModelResourceLibrary* modelResources);
   void SetAssetTextureResolver(
       std::function<std::shared_ptr<::Engine::Renderer::TextureResource>(const std::string&, bool)> resolver);
+  /// Starts request-time capture of the next main snapshot view's material manifest.
+  void BeginSnapshotCapture();
+  /// Returns manifest values collected while building the current snapshot view's packets.
+  std::vector<SnapshotMaterialManifestEntry> TakeSnapshotManifest();
+  /// Returns a capture failure recorded while assigning IDs or copying manifest values.
+  const std::string& GetSnapshotCaptureFailure() const noexcept { return m_SnapshotCaptureFailure; }
+  /// Replays snapshot geometry into the overdraw counter without depth testing.
+  bool RenderSnapshotOverdraw(nvrhi::ICommandList* commandList, const ::Engine::Renderer::RenderView& view);
 
   void BuildViews(::Engine::Renderer::FrameBlackboard& blackboard, nvrhi::ICommandList* commandList,
                   ::Engine::Renderer::FrameContext& frameContext, ::Engine::Renderer::FrameDiagnostics& diagnostics);
@@ -92,6 +101,7 @@ public:
   inline nvrhi::SamplerHandle GetShadowSampler() const { return m_ShadowSampler; }
   inline nvrhi::BindingLayoutHandle GetPerObjectBindingLayout() const { return m_PerObjectBindingLayout; }
   inline nvrhi::BindingLayoutHandle GetSceneBindingLayout() const { return m_SceneBindingLayout; }
+  inline nvrhi::BindingLayoutHandle GetSnapshotOverdrawLayout() const { return m_SnapshotOverdrawLayout; }
   inline ::Engine::Renderer::MaterialSystem* GetMaterialSystem() const { return m_MaterialSystem; }
   inline PipelineCache* GetPipelineCache() { return &m_PipelineCache; }
   inline const SubmissionStats& GetSubmissionStats() const { return m_SubmissionStats; }
@@ -100,8 +110,8 @@ private:
   void CullAndFillView(::Engine::Renderer::RenderView* view);
   void SubmitSubmesh(::Engine::Renderer::RenderView* view, const ::Engine::Ecs::WorldTransform& transform,
                      ::Engine::EntityHandle entity, const ::Engine::Ecs::MeshRenderer& meshRenderer,
-                     const ::Engine::Renderer::Submesh& submesh, DirectX::FXMMATRIX viewProjection,
-                     const nvrhi::FramebufferInfoEx& framebufferInfo);
+                     uint32_t submeshIndex, const ::Engine::Renderer::Submesh& submesh,
+                     DirectX::FXMMATRIX viewProjection, const nvrhi::FramebufferInfoEx& framebufferInfo);
   auto MaterialForSubmesh(const ::Engine::Renderer::RenderView* view, ::Engine::EntityHandle entity,
                           const ::Engine::Ecs::MeshRenderer& meshRenderer, const ::Engine::Renderer::Submesh& submesh)
       -> std::shared_ptr<::Engine::Renderer::Material>;
@@ -144,6 +154,9 @@ private:
   nvrhi::ShaderHandle m_DebugVS;
   nvrhi::ShaderHandle m_DebugPS;
   nvrhi::ShaderHandle m_ShadowMaskPS;
+  nvrhi::ShaderHandle m_OverdrawPS;
+  nvrhi::ShaderHandle m_OverdrawTexturedPS;
+  nvrhi::BindingLayoutHandle m_SnapshotOverdrawLayout;
   nvrhi::BindingLayoutHandle m_DebugBindingLayout;
   nvrhi::BufferHandle m_DebugViewBuffer;
   nvrhi::BufferHandle m_DebugLineBuffer;
@@ -161,6 +174,10 @@ private:
   };
   std::map<MaterialOverrideKey, MaterialOverrideCacheEntry> m_MaterialOverrideCache;
   SubmissionStats m_SubmissionStats;
+  bool m_SnapshotCaptureActive = false;
+  uint32_t m_NextSnapshotMaterialId = 0;
+  std::vector<SnapshotMaterialManifestEntry> m_SnapshotManifest;
+  std::string m_SnapshotCaptureFailure;
 };
 
 } // namespace Engine

@@ -29,6 +29,7 @@ struct ENGINE_API ViewportBinding {
 
   Renderer::CameraView Camera;    ///< Resolved camera parameters for this view.
   Mode RenderMode = Mode::Editor; ///< Rendering mode applied to the view.
+  bool SnapshotCapture = false;   ///< Enables snapshot-only ID and overdraw passes for a final render.
   /// Deprecated ECS camera reference retained while existing editor callers migrate to CameraView.
   Engine::EntityHandle CameraEntity = Engine::InvalidEntityHandle; ///< Deprecated authored camera handle.
   Engine::Viewport* TargetViewport = nullptr; ///< Destination viewport, when rendering an editor preview.

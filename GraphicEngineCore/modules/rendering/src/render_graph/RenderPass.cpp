@@ -112,6 +112,8 @@ auto ClearForwardAttachments(nvrhi::ICommandList* commandList,
     }
     if (output.IsDepth) {
       commandList->clearDepthStencilTexture(texture, output.Subresources, true, 1.0F, false, 0);
+    } else if (nvrhi::getFormatInfo(texture->getDesc().format).kind == nvrhi::FormatKind::Integer) {
+      commandList->clearTextureUInt(texture, output.Subresources, 0U);
     } else {
       commandList->clearTextureFloat(texture, output.Subresources, output.ClearColor);
     }
@@ -358,6 +360,48 @@ auto ForwardPass::Execute(nvrhi::ICommandList* cmd, const ::Engine::Renderer::Re
 // ==============================================================================
 // DEBUG PASS
 // ==============================================================================
+
+SnapshotOverdrawPass::SnapshotOverdrawPass(Engine::SceneRenderer* sceneRenderer) : m_SceneRenderer(sceneRenderer) {}
+
+void SnapshotOverdrawPass::Setup(::Engine::Renderer::RGBuilder& builder,
+                                 ::Engine::Renderer::FrameBlackboard& blackboard) {
+  for (::Engine::Renderer::RenderView* view : blackboard.GetSceneViews()) {
+    if (view == nullptr || !view->SnapshotCapture || view->SnapshotOverdrawTexture == nullptr) {
+      continue;
+    }
+    const auto output =
+        std::ranges::find_if(view->OutputAttachments, [](const auto& attachment) { return !attachment.IsDepth; });
+    if (output != view->OutputAttachments.end()) {
+      builder.Read(output->Resource); // Explicit ordering after the capture's final/AOV forward pass.
+    }
+    const nvrhi::TextureDesc& texture = view->SnapshotOverdrawTexture->getDesc();
+    ::Engine::Renderer::RGTextureDesc desc;
+    desc.width = texture.width;
+    desc.height = texture.height;
+    desc.arraySize = texture.arraySize;
+    desc.mipLevels = texture.mipLevels;
+    desc.isRenderTarget = texture.isRenderTarget;
+    desc.isShaderResource = texture.isShaderResource;
+    desc.isUnorderedAccess = texture.isUAV;
+    desc.format = texture.format;
+    desc.dimension = texture.dimension;
+    view->SnapshotOverdrawResource = builder.ImportTexture(
+        desc, view->SnapshotOverdrawTexture, nvrhi::ResourceStates::UnorderedAccess, nvrhi::ResourceStates::CopySource);
+    builder.Write(view->SnapshotOverdrawResource, nvrhi::ResourceStates::UnorderedAccess);
+  }
+}
+
+auto SnapshotOverdrawPass::Execute(nvrhi::ICommandList* cmd, const ::Engine::Renderer::RenderContext& ctx) -> bool {
+  if (m_SceneRenderer == nullptr) {
+    return false;
+  }
+  for (const ::Engine::Renderer::RenderView* view : ctx.GetBlackboard().GetSceneViews()) {
+    if (view != nullptr && view->SnapshotCapture && !m_SceneRenderer->RenderSnapshotOverdraw(cmd, *view)) {
+      return false;
+    }
+  }
+  return true;
+}
 
 DebugPass::DebugPass(Engine::SceneRenderer* sceneRenderer) : m_SceneRenderer(sceneRenderer) {}
 
