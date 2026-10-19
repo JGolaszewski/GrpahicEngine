@@ -3,7 +3,7 @@ cbuffer PerObjectCB : register(b0)
     float4x4 g_MVP;
     float4x4 g_World;
     float4x4 g_NormalMatrix;
-    float4   g_ObjectParams;
+    float4   g_ObjectParams; // z > 0.5 marks a transparent replay packet.
     uint     g_MaterialInstanceId;
     uint3    g_ObjectCapturePadding;
 };
@@ -25,8 +25,10 @@ cbuffer MaterialCB : register(b1)
 
 Texture2D<float4> g_BaseColorMap : register(t0);
 SamplerState g_BaseColorSampler : register(s0);
+// Core clears both UAVs for each capture and fails capture if status byte offset 0 becomes nonzero.
+// The replay pass must disable depth testing so depth-rejected fragments still reach this shader.
 RWTexture2D<uint> g_OverdrawCounter : register(u0);
-RWStructuredBuffer<uint> g_OverdrawOverflow : register(u1);
+RWByteAddressBuffer g_OverdrawOverflow : register(u1);
 
 struct PS_INPUT
 {
@@ -57,7 +59,7 @@ float2 GetTextureCoordinate(uint index, PS_INPUT input)
     }
 }
 
-void IncrementOverdraw(uint2 pixel)
+bool IncrementOverdraw(uint2 pixel)
 {
     uint observed;
     InterlockedCompareExchange(g_OverdrawCounter[pixel], 0u, 0u, observed);
@@ -67,16 +69,14 @@ void IncrementOverdraw(uint2 pixel)
     {
         if (observed == 0xffffffffu)
         {
-            uint previousOverflow;
-            InterlockedOr(g_OverdrawOverflow[0], 1u, previousOverflow);
-            return;
+            return true;
         }
 
         uint original;
         InterlockedCompareExchange(g_OverdrawCounter[pixel], observed, observed + 1u, original);
         if (original == observed)
         {
-            return;
+            return false;
         }
         observed = original;
     }
@@ -100,5 +100,9 @@ void main_ps(PS_INPUT input)
         discard;
     }
 
-    IncrementOverdraw(uint2(input.Position.xy));
+    if (IncrementOverdraw(uint2(input.Position.xy)))
+    {
+        uint previousOverflow;
+        g_OverdrawOverflow.InterlockedOr(0u, 1u, previousOverflow);
+    }
 }
