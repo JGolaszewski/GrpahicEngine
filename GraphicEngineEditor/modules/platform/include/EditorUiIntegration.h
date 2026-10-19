@@ -29,6 +29,12 @@ public:
   void* GetCameraPreviewTextureId() const noexcept;
   /// Releases the camera-viewer image texture when its window is closed.
   void ClearCameraPreview() noexcept;
+  /// Uploads the currently selected immutable snapshot's display pixels.
+  bool SetSnapshotImage(uint32_t width, uint32_t height, std::span<const uint8_t> rgbaPixels);
+  /// Returns the current snapshot workspace shader resource view for ImGui.
+  void* GetSnapshotImageTextureId() const noexcept;
+  /// Releases the workspace texture when its viewer window closes.
+  void ClearSnapshotImage() noexcept;
   bool IsInitialized() const noexcept { return m_Initialized; }
 
 private:
@@ -37,6 +43,8 @@ private:
   bool SetPreviewTexture(std::unique_ptr<PreviewTexture>& target, uint32_t width, uint32_t height,
                          std::span<const uint8_t> rgbaPixels);
   std::unique_ptr<PreviewTexture> m_CameraPreviewTexture;
+  std::unique_ptr<PreviewTexture> m_SnapshotImageTexture;
   bool m_ClearCameraPreviewAfterDraw = false;
+  bool m_ClearSnapshotImageAfterDraw = false;
   bool m_Initialized = false;
 };

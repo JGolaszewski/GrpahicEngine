@@ -84,6 +84,10 @@ void EditorUiIntegration::EndFrame() {
     m_CameraPreviewTexture.reset();
     m_ClearCameraPreviewAfterDraw = false;
   }
+  if (m_ClearSnapshotImageAfterDraw) {
+    m_SnapshotImageTexture.reset();
+    m_ClearSnapshotImageAfterDraw = false;
+  }
 }
 
 void EditorUiIntegration::Shutdown() {
@@ -95,7 +99,9 @@ void EditorUiIntegration::Shutdown() {
   ImGui::DestroyContext();
   m_Backend = nullptr;
   m_CameraPreviewTexture.reset();
+  m_SnapshotImageTexture.reset();
   m_ClearCameraPreviewAfterDraw = false;
+  m_ClearSnapshotImageAfterDraw = false;
   m_Initialized = false;
 }
 
@@ -144,6 +150,28 @@ auto EditorUiIntegration::SetPreviewTexture(std::unique_ptr<PreviewTexture>& tar
 
 auto EditorUiIntegration::GetCameraPreviewTextureId() const noexcept -> void* {
   return m_CameraPreviewTexture == nullptr ? nullptr : m_CameraPreviewTexture->View.Get();
+}
+
+auto EditorUiIntegration::SetSnapshotImage(uint32_t width, uint32_t height, std::span<const uint8_t> rgbaPixels)
+    -> bool {
+  const bool uploaded = SetPreviewTexture(m_SnapshotImageTexture, width, height, rgbaPixels);
+  if (uploaded) {
+    m_ClearSnapshotImageAfterDraw = false;
+  }
+  return uploaded;
+}
+
+auto EditorUiIntegration::GetSnapshotImageTextureId() const noexcept -> void* {
+  return m_SnapshotImageTexture == nullptr ? nullptr : m_SnapshotImageTexture->View.Get();
+}
+
+void EditorUiIntegration::ClearSnapshotImage() noexcept {
+  if (m_Initialized) {
+    m_ClearSnapshotImageAfterDraw = true;
+  } else {
+    m_SnapshotImageTexture.reset();
+    m_ClearSnapshotImageAfterDraw = false;
+  }
 }
 
 void EditorUiIntegration::ClearCameraPreview() noexcept {

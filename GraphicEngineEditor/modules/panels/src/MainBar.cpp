@@ -48,5 +48,8 @@ void MainBar::DrawWindowMenu() {
   if (ImGui::MenuItem("Console") && m_ConsoleOpenHandler) {
     m_ConsoleOpenHandler();
   }
+  if (ImGui::MenuItem("Snapshot Analysis") && m_SnapshotAnalysisOpenHandler) {
+    m_SnapshotAnalysisOpenHandler();
+  }
   ImGui::EndMenu();
 }
