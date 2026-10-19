@@ -29,26 +29,26 @@ frame when no other workspace state refers to it.
 
 Open Snapshot Analysis from the editor **Main Bar**. It replaces the editor
 content area with a full-editor focused workspace rather than opening a floating
-or dockable panel. The Main Bar remains available. Exit the focused workspace
-to restore the previous editor view, layout, and focus. Select an authored
-camera and choose the capture layers, then choose **Capture selected camera**.
-All supported layers are selected by default. Leave both
+or dockable panel. The Main Bar remains available with an **Exit Snapshot
+Analysis** control. Exiting returns to the previous editor view, layout, and
+focus; open frame tabs and their view state remain in memory for the next entry.
+The active scene and authored state are preserved. Select an authored camera and
+choose **Capture selected camera**. The current editor captures all supported
+planes. Leave both
 resolution override fields at zero to use the camera's authored resolution;
 enter both dimensions to override the output size for that frame only. Capture
 progress and failure messages appear beside the controls. Cancel discards the
 pending capture without adding a frame tab. A new tab appears only after all
-selected planes and any required captured material manifest are ready. A frame
-stores exactly its selected plane set; unselected planes are absent and are
-never treated as zero-filled values.
+captured planes and any required material manifest are ready.
 
 Use **Open EXR** beside the capture controls to validate and add a saved frame tab, or **Open
 .aframe** to validate its workspace document and every referenced EXR before
 adding its frame tabs. A failure leaves the current tabs and scene untouched.
 **Export frame EXR** writes the selected complete frame, including the exact
 integer planes. **Save workspace .aframe** writes EXR payloads for any unsaved
-frames and then writes the versioned workspace document. Closing a workspace
-with unsaved tabs or view state offers Save, Discard, and Cancel. Save dialogs
-confirm overwrites; capture itself never saves automatically.
+frames and then writes the versioned workspace document. Exiting focused mode
+does not discard open tabs or save them automatically. Save dialogs confirm
+overwrites; capture itself never saves automatically.
 
 Each frame tab retains its own frame data, selected plane, pinned pixel, ROI,
 zoom, and pan. The plane selector displays each of the five float AOVs plus the

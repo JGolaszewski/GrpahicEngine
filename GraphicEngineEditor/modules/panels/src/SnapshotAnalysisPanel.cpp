@@ -156,13 +156,6 @@ SnapshotAnalysisPanel::SnapshotAnalysisPanel(BeginCaptureFunction beginCapture, 
       m_UploadImage(std::move(uploadImage)), m_GetTexture(std::move(getTexture)), m_ClearImage(std::move(clearImage)),
       m_WorkspaceServices(std::move(workspaceServices)) {}
 
-void SnapshotAnalysisPanel::Close() noexcept {
-  m_Open = false;
-  if (m_ClearImage) {
-    m_ClearImage();
-  }
-}
-
 void SnapshotAnalysisPanel::StartCapture() {
   if (m_CaptureTicket || !m_BeginCapture) {
     return;
@@ -191,7 +184,6 @@ void SnapshotAnalysisPanel::UpdateCapture() {
         std::make_unique<Tab>(Tab{.Name = "Frame " + std::to_string(m_Tabs.size() + 1U), .Frame = std::move(**result)});
     m_Tabs.push_back(std::move(tab));
     m_ActiveTab = m_Tabs.size() - 1U;
-    m_Dirty = true;
     m_CaptureMessage = "Captured immutable frame " + std::to_string(m_Tabs.size()) + " (" +
                        std::to_string(m_Tabs.back()->Frame.GetWidth()) + " × " +
                        std::to_string(m_Tabs.back()->Frame.GetHeight()) + ").";
@@ -228,7 +220,6 @@ void SnapshotAnalysisPanel::OpenExr() {
   auto tab = std::make_unique<Tab>(Tab{.Name = path->stem().string(), .Frame = std::move(*frame), .ExrPath = *path});
   m_Tabs.push_back(std::move(tab));
   m_ActiveTab = m_Tabs.size() - 1U;
-  m_Dirty = true;
   m_DisplayDirty = true;
   m_FocusRequested = true;
   m_CaptureMessage = "Opened immutable snapshot frame from " + path->string();
@@ -295,7 +286,6 @@ void SnapshotAnalysisPanel::OpenWorkspace() {
     }
   }
   m_WorkspacePath = *path;
-  m_Dirty = offset > 0U;
   m_DisplayDirty = true;
   m_FocusRequested = true;
   m_CaptureMessage = "Opened workspace and validated all referenced EXR payloads.";
@@ -317,7 +307,6 @@ void SnapshotAnalysisPanel::SaveCurrentFrame() {
     return;
   }
   m_Tabs[*m_ActiveTab]->ExrPath = *path;
-  m_Dirty = true;
   m_CaptureMessage = "Exported complete snapshot frame to " + path->string();
 }
 
@@ -409,7 +398,6 @@ auto SnapshotAnalysisPanel::SaveWorkspaceAs() -> bool {
     m_Tabs[index]->ExrPath = framePaths[index];
   }
   m_WorkspacePath = *path;
-  m_Dirty = false;
   m_CaptureMessage = "Saved workspace and referenced snapshot EXR payloads to " + path->string();
   return true;
 }
@@ -512,7 +500,6 @@ void SnapshotAnalysisPanel::DrawFrame(Tab& tab, size_t tabIndex) {
   int selected = static_cast<int>(tab.SelectedPlane);
   if (ImGui::Combo("Plane", &selected, aovNames.data(), static_cast<int>(aovNames.size()))) {
     tab.SelectedPlane = static_cast<Engine::SnapshotPlane>(selected);
-    m_Dirty = true;
     InvalidateDisplay();
   }
   if (tab.SelectedPlane == Engine::SnapshotPlane::FinalColor) {
@@ -535,7 +522,6 @@ void SnapshotAnalysisPanel::DrawFrame(Tab& tab, size_t tabIndex) {
     int selection = reference;
     if (ImGui::Combo("Reference frame", &selection, frameNames.data(), static_cast<int>(frameNames.size()))) {
       m_ComparisonReference = selection == 0 ? std::nullopt : std::optional<size_t>(static_cast<size_t>(selection - 1));
-      m_Dirty = true;
       m_DisplayDirty = true;
     }
     if (m_ComparisonReference && *m_ComparisonReference < m_Tabs.size() && *m_ComparisonReference != tabIndex) {
@@ -543,7 +529,6 @@ void SnapshotAnalysisPanel::DrawFrame(Tab& tab, size_t tabIndex) {
       constexpr const char* metricNames[] = {"Mean absolute error", "RGB RMS", "Relative luminance"};
       if (ImGui::Combo("Metric", &metric, metricNames, 3)) {
         m_ComparisonMetric = static_cast<Engine::SnapshotAnalysis::DifferenceMetric>(metric);
-        m_Dirty = true;
         m_DisplayDirty = true;
       }
       if (ImGui::Checkbox("Display heatmap", &m_ShowHeatmap)) {
@@ -551,11 +536,9 @@ void SnapshotAnalysisPanel::DrawFrame(Tab& tab, size_t tabIndex) {
       }
       ImGui::SameLine();
       if (ImGui::Checkbox("Wipe A/B", &m_ShowWipe)) {
-        m_Dirty = true;
         m_DisplayDirty = true;
       }
       if (m_ShowWipe && ImGui::SliderFloat("Wipe position", &m_WipePosition, 0.0F, 1.0F)) {
-        m_Dirty = true;
         m_DisplayDirty = true;
       }
       ImGui::SameLine();
@@ -628,7 +611,6 @@ void SnapshotAnalysisPanel::DrawFrame(Tab& tab, size_t tabIndex) {
         const ImGuiIO& io = ImGui::GetIO();
         if (io.MouseWheel != 0.0F) {
           tab.Zoom = CameraPreviewImageLayout::ClampZoom(tab.Zoom * std::pow(1.12F, io.MouseWheel));
-          m_Dirty = true;
         }
         if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !io.KeyShift) {
           const uint32_t x = static_cast<uint32_t>(
@@ -636,7 +618,6 @@ void SnapshotAnalysisPanel::DrawFrame(Tab& tab, size_t tabIndex) {
           const uint32_t y = static_cast<uint32_t>(std::clamp((io.MousePos.y - imageMin.y) / displayScale, 0.0F,
                                                               static_cast<float>(frame.GetHeight() - 1U)));
           tab.PinnedPixel = std::array<uint32_t, 2>{x, y};
-          m_Dirty = true;
           InvalidateDisplay();
         }
         if (io.KeyShift && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
@@ -654,14 +635,12 @@ void SnapshotAnalysisPanel::DrawFrame(Tab& tab, size_t tabIndex) {
           tab.Roi =
               std::array<uint32_t, 4>{(std::min)(m_RoiStart->at(0), x), (std::min)(m_RoiStart->at(1), y),
                                       (std::max)(m_RoiStart->at(0), x) + 1U, (std::max)(m_RoiStart->at(1), y) + 1U};
-          m_Dirty = true;
           m_RoiStart.reset();
         }
         if (ImGui::IsMouseDragging(ImGuiMouseButton_Middle)) {
           const ImVec2 delta = ImGui::GetIO().MouseDelta;
           tab.Pan[0] += delta.x;
           tab.Pan[1] += delta.y;
-          m_Dirty = true;
         }
         ImGui::SetCursorScreenPos(imageMax);
       } else {
@@ -806,17 +785,32 @@ void SnapshotAnalysisPanel::DrawFrame(Tab& tab, size_t tabIndex) {
 }
 
 void SnapshotAnalysisPanel::Draw() {
-  UpdateCapture();
-  if (!m_Open) {
-    return;
-  }
+  ImGuiViewport* viewport = ImGui::GetMainViewport();
+  ImGui::SetNextWindowPos(viewport->WorkPos);
+  ImGui::SetNextWindowSize(viewport->WorkSize);
+  ImGui::SetNextWindowViewport(viewport->ID);
   if (m_FocusRequested) {
     ImGui::SetNextWindowFocus();
     m_FocusRequested = false;
   }
-  ImGui::SetNextWindowSize(ImVec2(1000.0F, 760.0F), ImGuiCond_FirstUseEver);
-  const bool contentsVisible = ImGui::Begin("Snapshot Analysis", &m_Open);
+  ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0F);
+  ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0F);
+  constexpr ImGuiWindowFlags focusedWorkspaceFlags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+                                                     ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse |
+                                                     ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoDocking;
+  const bool contentsVisible = ImGui::Begin("Snapshot Analysis##FocusedWorkspace", nullptr, focusedWorkspaceFlags);
   if (contentsVisible) {
+    if (ImGui::Button("Exit focused view")) {
+      if (m_ExitFocusedHandler) {
+        m_ExitFocusedHandler();
+      }
+      if (m_ClearImage) {
+        m_ClearImage();
+      }
+    }
+    ImGui::SameLine();
+    ImGui::TextDisabled("Captured frames remain stored in the workspace while you return to the editor.");
+    ImGui::Separator();
     ImGui::InputScalar("Width override (0 = authored)", ImGuiDataType_U32, &m_WidthOverride);
     ImGui::InputScalar("Height override (0 = authored)", ImGuiDataType_U32, &m_HeightOverride);
     ImGui::SameLine();
@@ -873,7 +867,6 @@ void SnapshotAnalysisPanel::Draw() {
         if (ImGui::BeginTabItem(label.c_str())) {
           if (m_ActiveTab != index) {
             m_ActiveTab = index;
-            m_Dirty = true;
             m_DisplayDirty = true;
           }
           DrawFrame(*m_Tabs[index], index);
@@ -884,57 +877,5 @@ void SnapshotAnalysisPanel::Draw() {
     }
   }
   ImGui::End();
-
-  if (!m_Open && m_CaptureTicket) {
-    const Engine::Status canceled =
-        m_CancelCapture ? m_CancelCapture(*m_CaptureTicket)
-                        : Engine::Status(std::unexpected(Engine::MakeError("Capture cancellation is unavailable")));
-    if (!canceled) {
-      m_Open = true;
-      m_CaptureMessage =
-          "Could not close the workspace because capture cancellation failed: " + canceled.error().Message;
-    } else {
-      m_CaptureTicket.reset();
-      m_CaptureMessage = "Capture canceled because the workspace was closed; no frame was published.";
-    }
-  }
-  if (!m_Open && m_Dirty) {
-    m_Open = true;
-    m_ClosePrompt = true;
-  }
-  if (m_ClosePrompt) {
-    ImGui::OpenPopup("Unsaved Snapshot Workspace");
-    m_ClosePrompt = false;
-  }
-  if (ImGui::BeginPopupModal("Unsaved Snapshot Workspace", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-    ImGui::TextWrapped("The Snapshot Analysis workspace has unsaved tabs or view state.");
-    if (!m_CaptureMessage.empty()) {
-      ImGui::TextWrapped("%s", m_CaptureMessage.c_str());
-    }
-    if (ImGui::Button("Save workspace...")) {
-      if (SaveWorkspaceAs()) {
-        m_ClosePrompt = false;
-        m_Open = false;
-      }
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("Discard")) {
-      m_Tabs.clear();
-      m_ActiveTab.reset();
-      m_ComparisonReference.reset();
-      m_WorkspacePath.clear();
-      m_Dirty = false;
-      m_ClosePrompt = false;
-      m_Open = false;
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("Cancel")) {
-      m_ClosePrompt = false;
-      m_Open = true;
-    }
-    ImGui::EndPopup();
-  }
-  if (!m_Open && m_ClearImage) {
-    m_ClearImage();
-  }
+  ImGui::PopStyleVar(2);
 }

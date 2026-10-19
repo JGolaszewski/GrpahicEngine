@@ -5,8 +5,16 @@
 
 void MainBar::Draw() {
   if (ImGui::BeginMainMenuBar()) {
-    DrawFileMenu();
-    DrawWindowMenu();
+    if (m_SnapshotAnalysisFocused) {
+      if (ImGui::Button("Exit Snapshot Analysis")) {
+        if (m_SnapshotAnalysisFocusHandler) {
+          m_SnapshotAnalysisFocusHandler(false);
+        }
+      }
+    } else {
+      DrawFileMenu();
+      DrawWindowMenu();
+    }
     ImGui::EndMainMenuBar();
   }
 }
@@ -48,8 +56,8 @@ void MainBar::DrawWindowMenu() {
   if (ImGui::MenuItem("Console") && m_ConsoleOpenHandler) {
     m_ConsoleOpenHandler();
   }
-  if (ImGui::MenuItem("Snapshot Analysis") && m_SnapshotAnalysisOpenHandler) {
-    m_SnapshotAnalysisOpenHandler();
+  if (ImGui::MenuItem("Snapshot Analysis") && m_SnapshotAnalysisFocusHandler) {
+    m_SnapshotAnalysisFocusHandler(true);
   }
   ImGui::EndMenu();
 }

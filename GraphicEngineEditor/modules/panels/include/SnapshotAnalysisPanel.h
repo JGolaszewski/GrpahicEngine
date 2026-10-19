@@ -58,12 +58,15 @@ public:
 
   /// Draws capture controls, static frame tabs, inspectors, histograms, and comparisons.
   void Draw() override;
-  /// Closes the workspace and releases its display texture.
-  void Close() noexcept;
-  /// Reopens the workspace from the Window menu.
+  /// Polls any asynchronous capture even when the workspace is not focused.
+  void UpdateCaptureProgress() { UpdateCapture(); }
+  /// Sets the callback used by the explicit exit control.
+  /// @param handler Called when the user exits the focused workspace.
+  void SetExitFocusedHandler(std::function<void()> handler) { m_ExitFocusedHandler = std::move(handler); }
+  /// Requests the focused workspace to open and focuses its full-editor view.
   void Open() noexcept {
-    m_Open = true;
     m_FocusRequested = true;
+    m_DisplayDirty = true;
   }
 
 private:
@@ -102,6 +105,7 @@ private:
   TextureFunction m_GetTexture;
   ClearImageFunction m_ClearImage;
   WorkspaceServices m_WorkspaceServices;
+  std::function<void()> m_ExitFocusedHandler;
   std::vector<std::unique_ptr<Tab>> m_Tabs;
   std::optional<size_t> m_ActiveTab;
   std::optional<size_t> m_ComparisonReference;
@@ -116,13 +120,10 @@ private:
   uint32_t m_HeightOverride = 0;
   size_t m_UploadedTab = static_cast<size_t>(-1);
   Engine::SnapshotPlane m_UploadedPlane = Engine::SnapshotPlane::FinalColor;
-  bool m_Open = true;
   bool m_FocusRequested = true;
   bool m_DisplayDirty = true;
   bool m_IsolateMaterial = false;
   bool m_ShowHeatmap = false;
   bool m_ShowWipe = false;
-  bool m_Dirty = false;
-  bool m_ClosePrompt = false;
   std::optional<std::array<uint32_t, 2>> m_RoiStart;
 };

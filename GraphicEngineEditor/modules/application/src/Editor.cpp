@@ -40,6 +40,7 @@
 #include <span>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <utility>
 
 namespace {
@@ -75,6 +76,8 @@ auto QuaternionToPitchYawRoll(const std::array<float, 4>& quaternion) -> std::ar
   return {pitch, yaw, roll};
 }
 } // namespace
+
+Editor::~Editor() = default;
 
 void Editor::OnInit() {
   m_EditorPreferences = EditorPlatform::LoadEditorPreferences();
@@ -161,8 +164,9 @@ void Editor::OnInit() {
   }
 
   CreateViewport(1280, 720);
-  auto mainBar = std::make_unique<MainBar>();
-  mainBar->SetConsoleOpenHandler([this] -> void { m_EngineConsoleOpen = true; });
+  m_MainBar = std::make_unique<MainBar>();
+  m_MainBar->SetConsoleOpenHandler([this] -> void { m_EngineConsoleOpen = true; });
+  m_MainBar->SetSnapshotAnalysisFocusHandler([this](bool focused) { SetSnapshotAnalysisFocused(focused); });
   auto snapshotPanel = std::make_unique<SnapshotAnalysisPanel>(
       [this](uint32_t widthOverride,
              uint32_t heightOverride) -> Engine::Result<Engine::RenderSystem::SnapshotRenderTicket> {
@@ -242,9 +246,8 @@ void Editor::OnInit() {
           [](const std::filesystem::path& path, const Engine::SnapshotPersistence::SnapshotWorkspaceDocument& doc) {
             return Engine::SnapshotPersistence::SnapshotWorkspaceFile::Save(path, doc);
           }});
-  auto* snapshotAnalysisPanel = snapshotPanel.get();
-  m_Panels.push_back(std::move(snapshotPanel));
-  mainBar->SetSnapshotAnalysisOpenHandler([snapshotAnalysisPanel]() { snapshotAnalysisPanel->Open(); });
+  m_SnapshotAnalysisPanel = std::move(snapshotPanel);
+  m_SnapshotAnalysisPanel->SetExitFocusedHandler([this]() { SetSnapshotAnalysisFocused(false); });
   auto engineSettings = std::make_unique<EngineSettingsPanel>(
       this, [this] { return m_EditorPreferences; },
       [this](const auto& preferences) {
@@ -252,8 +255,7 @@ void Editor::OnInit() {
         EditorPlatform::SaveEditorPreferences(m_EditorPreferences);
       });
   auto* engineSettingsPanel = engineSettings.get();
-  mainBar->SetSettingsOpenHandler([engineSettingsPanel] -> void { engineSettingsPanel->Open(); });
-  m_Panels.push_back(std::move(mainBar));
+  m_MainBar->SetSettingsOpenHandler([engineSettingsPanel] -> void { engineSettingsPanel->Open(); });
   m_Panels.push_back(std::move(engineSettings));
   m_Panels.push_back(std::make_unique<StatWindow>(this));
   m_Panels.push_back(std::make_unique<ScenePanel>());
@@ -306,7 +308,11 @@ void Editor::OnInit() {
   m_CameraPreviewPanel = cameraPreviewPanel.get();
   m_Panels.push_back(std::move(cameraPreviewPanel));
 
-  m_PanelConnections.reserve(m_Panels.size());
+  m_PanelConnections.reserve(m_Panels.size() + 1U);
+  m_PanelConnections.push_back(
+      m_EventRouter.Subscribe(*m_MainBar, [this](std::unique_ptr<Engine::Events::Event> event) -> void {
+        ProcessPanelEvent(std::move(event));
+      }));
   for (auto& panel : m_Panels) {
     m_PanelConnections.push_back(m_EventRouter.Subscribe(
         *panel, [this](std::unique_ptr<Engine::Events::Event> event) -> void { ProcessPanelEvent(std::move(event)); }));
@@ -327,9 +333,57 @@ void Editor::OnSceneReplaced(const std::shared_ptr<Engine::Scene>& scene) {
   BroadcastSceneChanged();
 }
 
+void Editor::SetSnapshotAnalysisFocused(bool focused) {
+  if (focused) {
+    if (!m_SnapshotAnalysisFocusState.Enter(m_ActiveScene, m_SelectedEntity, m_ActiveSceneDocument.GetPath(),
+                                            m_PreviousFocusedWindow)) {
+      return;
+    }
+    m_CameraKeysDown.fill(false);
+    m_CameraLookActive = false;
+    m_ViewportHovered = false;
+    m_MouseDeltaX = 0.0;
+    m_MouseDeltaY = 0.0;
+    m_MainBar->SetSnapshotAnalysisFocused(true);
+    m_SnapshotAnalysisPanel->Open();
+    return;
+  }
+
+  std::optional<SnapshotAnalysisFocusRestoreState> previous = m_SnapshotAnalysisFocusState.Exit();
+  if (!previous) {
+    return;
+  }
+  if (m_ActiveScene != previous->ActiveScene) {
+    OnSceneReplaced(previous->ActiveScene);
+  }
+  std::filesystem::path sceneDocumentPath = m_ActiveSceneDocument.GetPath();
+  m_SnapshotAnalysisFocusState.ApplyRestoreState(*previous, m_ActiveScene, m_SelectedEntity, sceneDocumentPath,
+                                                 m_WindowToRestoreFocus);
+  if (sceneDocumentPath.empty()) {
+    m_ActiveSceneDocument.Reset();
+  } else {
+    m_ActiveSceneDocument.CommitPath(sceneDocumentPath);
+  }
+  if (m_ActiveScene && m_SelectedEntity != Engine::InvalidEntityHandle &&
+      m_ActiveScene->World().IsAlive(m_SelectedEntity)) {
+    EcsEntitySelectedEvent selected(m_SelectedEntity);
+    BroadcastEvent(selected);
+  } else {
+    m_SelectedEntity = Engine::InvalidEntityHandle;
+    EntityDeselectedEvent deselected;
+    BroadcastEvent(deselected);
+  }
+  m_MainBar->SetSnapshotAnalysisFocused(false);
+  m_RestoreSnapshotFocus = true;
+  m_UiIntegration.ClearSnapshotImage();
+}
+
 void Editor::OnUpdate(float deltaTime) {
   if (m_RenderOutputExportService != nullptr) {
     m_RenderOutputExportService->Update();
+  }
+  if (m_SnapshotAnalysisPanel != nullptr) {
+    m_SnapshotAnalysisPanel->UpdateCaptureProgress();
   }
   if (!m_ActiveScene) {
     return;
@@ -352,7 +406,9 @@ void Editor::OnUpdate(float deltaTime) {
     EntityDeselectedEvent deselected;
     BroadcastEvent(deselected);
   }
-  UpdateEditorCamera(deltaTime);
+  if (!m_SnapshotAnalysisFocusState.IsActive()) {
+    UpdateEditorCamera(deltaTime);
+  }
 }
 
 void Editor::UpdateEditorCamera(float deltaTime) {
@@ -482,18 +538,41 @@ void Editor::OnEvent(Engine::Events::Event& event) {
     m_MouseDeltaY += moved.DeltaY;
     return false;
   });
-  m_EventRouter.DispatchInput(event);
+  if (!m_SnapshotAnalysisFocusState.IsActive()) {
+    m_EventRouter.DispatchInput(event);
+  }
 }
 
 void Editor::OnUIRender() {
   if (!m_UiIntegration.IsInitialized()) {
     return;
   }
+  if (!m_SnapshotAnalysisFocusState.IsActive() && !m_RestoreSnapshotFocus) {
+    ImGuiContext* context = ImGui::GetCurrentContext();
+    if (context != nullptr && context->NavWindow != nullptr &&
+        std::string_view(context->NavWindow->Name) != "##MainMenuBar") {
+      m_PreviousFocusedWindow = context->NavWindow->Name;
+    }
+  }
+  m_MainBar->Draw();
+  const bool snapshotAnalysisFocused = m_SnapshotAnalysisFocusState.IsActive();
   const ImGuiID dockspaceId = ImGui::GetID("MainDockSpace");
-  ImGui::DockSpaceOverViewport(dockspaceId, ImGui::GetMainViewport(), ImGuiDockNodeFlags_PassthruCentralNode);
-  BuildDefaultDockLayoutIfNeeded(dockspaceId);
-  for (auto& panel : m_Panels) {
-    panel->Draw();
+  ImGui::DockSpaceOverViewport(dockspaceId, ImGui::GetMainViewport(),
+                               GetSnapshotAnalysisDockspaceFlags(snapshotAnalysisFocused));
+  if (snapshotAnalysisFocused) {
+    m_SnapshotAnalysisPanel->Draw();
+  } else {
+    BuildDefaultDockLayoutIfNeeded(dockspaceId);
+    for (auto& panel : m_Panels) {
+      panel->Draw();
+    }
+    if (m_RestoreSnapshotFocus) {
+      if (!m_WindowToRestoreFocus.empty()) {
+        ImGui::SetWindowFocus(m_WindowToRestoreFocus.c_str());
+      }
+      m_WindowToRestoreFocus.clear();
+      m_RestoreSnapshotFocus = false;
+    }
   }
   if (m_ActiveScene) {
     for (const auto& result : m_ActiveScene->sync()) {
@@ -510,7 +589,9 @@ void Editor::OnUIRender() {
       BroadcastSceneChanged();
     }
   }
-  m_EditorConsole.UpdateAndRender(&m_EngineConsoleOpen);
+  if (!m_SnapshotAnalysisFocusState.IsActive()) {
+    m_EditorConsole.UpdateAndRender(&m_EngineConsoleOpen);
+  }
 }
 
 void Editor::OnBeginUIFrame() { m_UiIntegration.BeginFrame(); }
