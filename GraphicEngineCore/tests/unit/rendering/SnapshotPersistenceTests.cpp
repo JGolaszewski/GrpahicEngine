@@ -162,8 +162,10 @@ TEST(SnapshotPersistenceTests, ExrRoundTripPreservesSelectedSubsetAndWorkspaceVa
   EXPECT_TRUE(restored->Frames[0].HasPlane(SnapshotPlane::Depth));
 
   document.Tabs[0].SelectedPlane = SnapshotPlane::FinalColor;
-  EXPECT_TRUE(SnapshotWorkspaceFile::Save(workspace, document));
-  EXPECT_FALSE(SnapshotWorkspaceFile::Load(workspace));
+  EXPECT_FALSE(SnapshotWorkspaceFile::Save(workspace, document));
+  restored = SnapshotWorkspaceFile::Load(workspace);
+  ASSERT_TRUE(restored) << restored.error().Message;
+  EXPECT_EQ(restored->Document.Tabs[0].SelectedPlane, SnapshotPlane::Depth);
 }
 
 TEST(SnapshotPersistenceTests, RejectsCorruptAndIncompleteExrPayloads) {

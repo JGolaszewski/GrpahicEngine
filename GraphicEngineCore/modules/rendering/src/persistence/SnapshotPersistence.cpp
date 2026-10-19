@@ -680,6 +680,12 @@ auto SnapshotWorkspaceFile::Save(const std::filesystem::path& path, const Snapsh
     const bool exists = std::filesystem::exists(resolved, existsError);
     if (existsError || !exists)
       return std::unexpected(Context(path, "referenced EXR is missing: " + resolved.generic_string()));
+    auto frame = SnapshotExr::Read(resolved);
+    if (!frame)
+      return std::unexpected(Context(path, "referenced EXR is invalid: " + frame.error().Message));
+    if (!frame->HasPlane(tab.SelectedPlane))
+      return std::unexpected(
+          Context(path, "referenced EXR does not contain the selected plane: " + resolved.generic_string()));
   }
   const auto temporary = TempPath(path);
   try {
