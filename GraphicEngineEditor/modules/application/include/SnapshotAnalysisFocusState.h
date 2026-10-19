@@ -52,6 +52,21 @@ public:
     return previous;
   }
 
+  /// Applies captured state to the editor fields used by the focus-mode exit path.
+  /// @param previous State captured when entering focus mode.
+  /// @param activeScene Scene reference to restore.
+  /// @param selectedEntity Entity selection to restore.
+  /// @param sceneDocumentPath Scene document path to restore.
+  /// @param focusedWindow ImGui window name to focus after the editor view returns.
+  void ApplyRestoreState(const SnapshotAnalysisFocusRestoreState& previous, std::shared_ptr<Engine::Scene>& activeScene,
+                         Engine::EntityHandle& selectedEntity, std::filesystem::path& sceneDocumentPath,
+                         std::string& focusedWindow) const {
+    activeScene = previous.ActiveScene;
+    selectedEntity = previous.SelectedEntity;
+    sceneDocumentPath = previous.SceneDocumentPath;
+    focusedWindow = previous.FocusedWindow;
+  }
+
   /// @return Whether the dedicated Snapshot Analysis view currently owns the editor content area.
   auto IsActive() const noexcept -> bool { return m_PreviousState.has_value(); }
 

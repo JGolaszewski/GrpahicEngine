@@ -356,12 +356,14 @@ void Editor::SetSnapshotAnalysisFocused(bool focused) {
   if (m_ActiveScene != previous->ActiveScene) {
     OnSceneReplaced(previous->ActiveScene);
   }
-  if (previous->SceneDocumentPath.empty()) {
+  std::filesystem::path sceneDocumentPath = m_ActiveSceneDocument.GetPath();
+  m_SnapshotAnalysisFocusState.ApplyRestoreState(*previous, m_ActiveScene, m_SelectedEntity, sceneDocumentPath,
+                                                 m_WindowToRestoreFocus);
+  if (sceneDocumentPath.empty()) {
     m_ActiveSceneDocument.Reset();
   } else {
-    m_ActiveSceneDocument.CommitPath(previous->SceneDocumentPath);
+    m_ActiveSceneDocument.CommitPath(sceneDocumentPath);
   }
-  m_SelectedEntity = previous->SelectedEntity;
   if (m_ActiveScene && m_SelectedEntity != Engine::InvalidEntityHandle &&
       m_ActiveScene->World().IsAlive(m_SelectedEntity)) {
     EcsEntitySelectedEvent selected(m_SelectedEntity);
@@ -372,7 +374,6 @@ void Editor::SetSnapshotAnalysisFocused(bool focused) {
     BroadcastEvent(deselected);
   }
   m_MainBar->SetSnapshotAnalysisFocused(false);
-  m_WindowToRestoreFocus = std::move(previous->FocusedWindow);
   m_RestoreSnapshotFocus = true;
   m_UiIntegration.ClearSnapshotImage();
 }
