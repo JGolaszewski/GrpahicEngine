@@ -251,8 +251,6 @@ void RenderSystem::BeginFrameInternal(bool clearDefaultFramebuffer) {
   if (clearDefaultFramebuffer) {
     ClearFrameBuffer();
   }
-  m_MaterialSystem->UpdateDirtyMaterials(m_CommandList->Handle);
-
   m_FrameContext->BeginGpuTiming(m_CommandList->Handle);
 
   m_RenderGraph->Reset();
@@ -314,6 +312,8 @@ void RenderSystem::SubmitViews(const std::vector<Engine::ViewportBinding>& views
 
   ::Engine::Renderer::FrameDiagnostics& diagnostics = m_FrameContext->GetDiagnostics();
   m_SceneRenderer->BuildViews(bb, m_CommandList->Handle, *m_FrameContext, diagnostics);
+  // View building may create a material override. Initialize its constants before any pass draws it.
+  m_MaterialSystem->UpdateDirtyMaterials(m_CommandList->Handle);
   if (!::Engine::SceneRenderer::EnsureLightBuffers(bb.GetSceneViews().size(), *m_FrameContext)) {
     ENGINE_LOG_ERROR("Render", "Per-view light buffer allocation failed | view_count: {}", bb.GetSceneViews().size());
   }

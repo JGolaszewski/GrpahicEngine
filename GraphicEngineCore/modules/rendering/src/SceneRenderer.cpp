@@ -1055,8 +1055,16 @@ auto Engine::SceneRenderer::MaterialForSubmesh(const ::Engine::Renderer::RenderV
   std::erase_if(m_MaterialOverrideCache,
                 [&belongsToSlot, &key](const auto& item) -> bool { return belongsToSlot(item) && item.first != key; });
   const auto found = m_MaterialOverrideCache.find(key);
-  if (found != m_MaterialOverrideCache.end() && found->second.Source == *source) {
-    return found->second.Material;
+  if (found != m_MaterialOverrideCache.end()) {
+    if (found->second.Source == *source) {
+      return found->second.Material;
+    }
+    if (found->second.Source.baseColorTextureGuid == source->baseColorTextureGuid &&
+        found->second.Source.normalTextureGuid == source->normalTextureGuid) {
+      found->second.Material->SetProperties(MaterialPropertiesFromDocument(*source));
+      found->second.Source = *source;
+      return found->second.Material;
+    }
   }
 
   auto material = m_MaterialSystem->CreateMaterial(MaterialPropertiesFromDocument(*source));
