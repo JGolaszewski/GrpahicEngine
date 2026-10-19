@@ -228,7 +228,9 @@ auto RenderSystem::CreatePrimitive(Engine::PrimitiveShape shape, std::shared_ptr
   return false;
 }
 
-void RenderSystem::BeginFrame() {
+void RenderSystem::BeginFrame() { BeginFrameInternal(true); }
+
+void RenderSystem::BeginFrameInternal(bool clearDefaultFramebuffer) {
   if (!IsValid()) {
     return;
   }
@@ -246,7 +248,9 @@ void RenderSystem::BeginFrame() {
   m_CommandList->Handle->open();
   m_FrameActive = true;
   m_RenderBackend->BeginGpuEvent(L"RenderFrame");
-  ClearFrameBuffer();
+  if (clearDefaultFramebuffer) {
+    ClearFrameBuffer();
+  }
   m_MaterialSystem->UpdateDirtyMaterials(m_CommandList->Handle);
 
   m_FrameContext->BeginGpuTiming(m_CommandList->Handle);
@@ -921,7 +925,9 @@ auto RenderSystem::BeginFinalRender(Engine::Scene& scene, const ::Engine::Render
     m_SceneRenderer->BeginSnapshotCapture();
   }
   m_FinalReadbackCapture = std::move(capture);
-  BeginFrame();
+  // Final outputs render entirely into their own offscreen targets. Avoid
+  // clearing the editor backbuffer while a capture is started from the UI.
+  BeginFrameInternal(false);
   if (!m_FrameActive) {
     m_FinalReadbackCapture.reset();
     if (snapshotCapture) {

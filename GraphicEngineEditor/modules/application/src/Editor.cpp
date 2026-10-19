@@ -507,7 +507,9 @@ void Editor::UpdateEditorCamera(float deltaTime) {
 }
 
 void Editor::OnSetupViews() {
-  if (!m_ActiveScene || !m_EditorViewport) {
+  // The focused snapshot workspace covers the editor viewport. Avoid rendering
+  // the hidden viewport and camera preview while the user inspects stored data.
+  if (m_SnapshotAnalysisFocusState.IsActive() || !m_ActiveScene || !m_EditorViewport) {
     return;
   }
   Engine::ViewportBinding binding;

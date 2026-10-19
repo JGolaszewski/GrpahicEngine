@@ -298,6 +298,7 @@ private:
                               int32_t textureIndex, bool srgb,
                               std::shared_ptr<::Engine::Renderer::TextureResource>& destination, std::string& error);
   void UnregisterMaterials(const std::vector<std::shared_ptr<::Engine::Renderer::Material>>& materials);
+  void BeginFrameInternal(bool clearDefaultFramebuffer);
   void ClearFrameBuffer();
   void ClearSubmittedTargets();
   Engine::Result<std::optional<Engine::RenderOutput>> PollFinalRenderOutput(FinalRenderTicket ticket);
