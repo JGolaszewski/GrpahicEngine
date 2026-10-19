@@ -32,8 +32,12 @@ namespace Engine::SnapshotPersistence {
 namespace {
 using Json = nlohmann::json;
 constexpr std::string_view MetadataAttribute = "engine:snapshot_metadata_v1";
-constexpr std::array<RenderAov, 5> Aovs = {RenderAov::FinalColor, RenderAov::Depth, RenderAov::WorldNormal,
-                                           RenderAov::SpecularLighting, RenderAov::DiffuseLighting};
+constexpr std::array<RenderAov, 5> FloatAovs = {RenderAov::FinalColor, RenderAov::Depth, RenderAov::WorldNormal,
+                                                RenderAov::SpecularLighting, RenderAov::DiffuseLighting};
+constexpr std::array<SnapshotPlane, 7> Planes = {SnapshotPlane::FinalColor,      SnapshotPlane::Depth,
+                                                 SnapshotPlane::WorldNormal,     SnapshotPlane::SpecularLighting,
+                                                 SnapshotPlane::DiffuseLighting, SnapshotPlane::MaterialInstanceId,
+                                                 SnapshotPlane::Overdraw};
 
 auto Context(const std::filesystem::path& path, std::string_view message) -> Error {
   return MakeError(path.generic_string() + ": " + std::string(message));
@@ -248,16 +252,34 @@ auto ValidExtension(const std::filesystem::path& path, std::string_view extensio
   return value == extension;
 }
 
-auto AovIndex(std::string_view name) -> std::optional<size_t> {
-  for (size_t i = 0; i < Aovs.size(); ++i)
-    if (name == RenderOutput::GetDescriptor(Aovs[i]).Name)
-      return i;
+auto PlaneName(SnapshotPlane plane) -> std::string_view {
+  switch (plane) {
+  case SnapshotPlane::FinalColor:
+    return "final_color";
+  case SnapshotPlane::Depth:
+    return "depth";
+  case SnapshotPlane::WorldNormal:
+    return "world_normal";
+  case SnapshotPlane::SpecularLighting:
+    return "specular_lighting";
+  case SnapshotPlane::DiffuseLighting:
+    return "diffuse_lighting";
+  case SnapshotPlane::MaterialInstanceId:
+    return "material_instance_id";
+  case SnapshotPlane::Overdraw:
+    return "overdraw";
+  }
+  return {};
+}
+
+auto ParsePlane(std::string_view name) -> std::optional<SnapshotPlane> {
+  for (const SnapshotPlane plane : Planes)
+    if (name == PlaneName(plane))
+      return plane;
   return std::nullopt;
 }
 
-auto IsValidAov(RenderAov aov) -> bool {
-  return std::ranges::any_of(Aovs, [aov](RenderAov candidate) { return candidate == aov; });
-}
+auto IsValidPlane(SnapshotPlane plane) -> bool { return !PlaneName(plane).empty(); }
 
 auto WorkspaceJson(const SnapshotWorkspaceDocument& document, const std::filesystem::path& path) -> Json {
   Json tabs = Json::array();
@@ -275,7 +297,7 @@ auto WorkspaceJson(const SnapshotWorkspaceDocument& document, const std::filesys
                    ? Json{{"x", tab.Roi->X}, {"y", tab.Roi->Y}, {"width", tab.Roi->Width}, {"height", tab.Roi->Height}}
                    : Json(nullptr);
     tabs.push_back({{"exr", ref.generic_string()},
-                    {"aov", RenderOutput::GetDescriptor(tab.SelectedAov).Name},
+                    {"plane", PlaneName(tab.SelectedPlane)},
                     {"pin", std::move(pin)},
                     {"roi", std::move(roi)},
                     {"zoom", tab.Zoom},
@@ -306,7 +328,7 @@ auto ValidateDocument(const SnapshotWorkspaceDocument& document) -> Status {
   if (document.Tabs.empty() || document.SelectedTab >= document.Tabs.size())
     return std::unexpected(MakeError("workspace must have tabs and a valid selected tab"));
   for (const auto& tab : document.Tabs) {
-    if (tab.ExrPath.empty() || !ValidExtension(tab.ExrPath, ".exr") || !IsValidAov(tab.SelectedAov) ||
+    if (tab.ExrPath.empty() || !ValidExtension(tab.ExrPath, ".exr") || !IsValidPlane(tab.SelectedPlane) ||
         !std::isfinite(tab.Zoom) || tab.Zoom <= 0.0F || !std::isfinite(tab.PanX) || !std::isfinite(tab.PanY))
       return std::unexpected(MakeError("workspace tab has an invalid EXR path or view state"));
     if (tab.Roi && (tab.Roi->Width == 0 || tab.Roi->Height == 0 ||
@@ -337,17 +359,17 @@ auto ReadWorkspaceJson(const Json& j, const std::filesystem::path& path) -> Resu
     document.Version = j.at("version").get<uint32_t>();
     document.SelectedTab = j.at("selectedTab").get<uint32_t>();
     for (const auto& item : j.at("tabs")) {
-      if (!item.is_object() || !item.contains("exr") || !item.at("exr").is_string() || !item.contains("aov") ||
-          !item.at("aov").is_string() || !item.contains("pin") || !item.contains("roi") || !item.contains("zoom") ||
+      if (!item.is_object() || !item.contains("exr") || !item.at("exr").is_string() || !item.contains("plane") ||
+          !item.at("plane").is_string() || !item.contains("pin") || !item.contains("roi") || !item.contains("zoom") ||
           !item.at("zoom").is_number() || !item.contains("pan") || !item.at("pan").is_array() ||
           item.at("pan").size() != 2)
         return std::unexpected(Context(path, "malformed tab state"));
       SnapshotFrameViewState tab;
       tab.ExrPath = item.at("exr").get<std::string>();
-      auto aov = AovIndex(item.at("aov").get<std::string>());
-      if (!aov)
-        return std::unexpected(Context(path, "workspace refers to unsupported AOV"));
-      tab.SelectedAov = Aovs[*aov];
+      const auto plane = ParsePlane(item.at("plane").get<std::string>());
+      if (!plane)
+        return std::unexpected(Context(path, "workspace refers to unsupported snapshot plane"));
+      tab.SelectedPlane = *plane;
       tab.Zoom = item.at("zoom").get<float>();
       if (!item.at("pan").at(0).is_number() || !item.at("pan").at(1).is_number())
         return std::unexpected(Context(path, "invalid pan state"));
@@ -406,14 +428,14 @@ auto SnapshotExr::Write(const SnapshotFrame& frame, const std::filesystem::path&
   if (path.empty() || !ValidExtension(path, ".exr"))
     return std::unexpected(Context(path, "destination must use .exr"));
   const auto pixelCount = CheckedPixels(frame.GetWidth(), frame.GetHeight());
-  if (!pixelCount || frame.GetFloatPlanes().size() != Aovs.size() ||
+  if (!pixelCount || frame.GetFloatPlanes().size() != FloatAovs.size() ||
       frame.GetMaterialInstanceIds().size() != *pixelCount || frame.GetOverdraw().size() != *pixelCount)
     return std::unexpected(Context(path, "snapshot frame is incomplete"));
   std::array<OIIO::ImageSpec, 7> specs;
-  for (size_t i = 0; i < Aovs.size(); ++i) {
+  for (size_t i = 0; i < FloatAovs.size(); ++i) {
     const auto& plane = frame.GetFloatPlanes()[i];
-    const auto& descriptor = RenderOutput::GetDescriptor(Aovs[i]);
-    if (plane.Aov != Aovs[i] || plane.ChannelCount != descriptor.ChannelCount ||
+    const auto& descriptor = RenderOutput::GetDescriptor(FloatAovs[i]);
+    if (plane.Aov != FloatAovs[i] || plane.ChannelCount != descriptor.ChannelCount ||
         plane.Pixels.size() != *pixelCount * descriptor.ChannelCount)
       return std::unexpected(Context(path, "snapshot float AOV layout is invalid"));
     auto& spec = specs[i];
@@ -453,7 +475,7 @@ auto SnapshotExr::Write(const SnapshotFrame& frame, const std::filesystem::path&
       return std::unexpected(Context(path, "cannot append EXR plane: " + error));
     }
     bool written = false;
-    if (i < Aovs.size())
+    if (i < FloatAovs.size())
       written = output->write_image(
           OIIO::span<const float>(frame.GetFloatPlanes()[i].Pixels.data(), frame.GetFloatPlanes()[i].Pixels.size()));
     else {
@@ -522,7 +544,7 @@ auto SnapshotExr::Read(const std::filesystem::path& path) -> Result<SnapshotFram
       return std::unexpected(Context(path, "EXR plane uses an unsupported or lossy encoding"));
     }
     if (part < 5) {
-      const auto& descriptor = RenderOutput::GetDescriptor(Aovs[part]);
+      const auto& descriptor = RenderOutput::GetDescriptor(FloatAovs[part]);
       if (name != descriptor.Name || spec.format != OIIO::TypeDesc::FLOAT ||
           spec.nchannels != static_cast<int>(descriptor.ChannelCount) ||
           spec.channelnames.size() != descriptor.ChannelCount) {
@@ -534,7 +556,7 @@ auto SnapshotExr::Read(const std::filesystem::path& path) -> Result<SnapshotFram
           (void)input->close();
           return std::unexpected(Context(path, "EXR channel layout does not match the AOV contract"));
         }
-      RenderOutputPlane plane{Aovs[part], descriptor.ChannelCount,
+      RenderOutputPlane plane{FloatAovs[part], descriptor.ChannelCount,
                               std::vector<float>(*pixels * descriptor.ChannelCount)};
       if (!input->read_image(part, 0, 0, spec.nchannels, OIIO::span<float>(plane.Pixels.data(), plane.Pixels.size()))) {
         const auto error = input->geterror();

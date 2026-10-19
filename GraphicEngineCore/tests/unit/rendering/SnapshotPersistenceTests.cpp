@@ -142,7 +142,7 @@ TEST(SnapshotPersistenceTests, WorkspaceRoundTripResolvesRelativeExrsAndViewStat
   SnapshotWorkspaceDocument document;
   SnapshotFrameViewState tab;
   tab.ExrPath = std::filesystem::path("captures") / "frame.exr";
-  tab.SelectedAov = RenderAov::WorldNormal;
+  tab.SelectedPlane = SnapshotPlane::MaterialInstanceId;
   tab.PinnedPixel = SnapshotPinnedPixelState{1, 0};
   tab.Roi = SnapshotRoiState{0, 0, 2, 1};
   tab.Zoom = 2.5F;
@@ -161,7 +161,7 @@ TEST(SnapshotPersistenceTests, WorkspaceRoundTripResolvesRelativeExrsAndViewStat
   ASSERT_EQ(loaded->Frames.size(), 2U);
   ASSERT_EQ(loaded->ResolvedExrPaths.size(), 2U);
   EXPECT_EQ(loaded->ResolvedExrPaths[0], std::filesystem::absolute(exr));
-  EXPECT_EQ(loaded->Document.Tabs[0].SelectedAov, RenderAov::WorldNormal);
+  EXPECT_EQ(loaded->Document.Tabs[0].SelectedPlane, SnapshotPlane::MaterialInstanceId);
   EXPECT_EQ(loaded->Document.Tabs[0].PinnedPixel, tab.PinnedPixel);
   EXPECT_EQ(loaded->Document.Tabs[0].Roi->Width, 2U);
   EXPECT_FLOAT_EQ(loaded->Document.Tabs[0].Zoom, 2.5F);
@@ -258,6 +258,47 @@ TEST(SnapshotPersistenceTests, LargePinnedPixelIsCheckedAgainstPayloadDimensions
   const auto loaded = SnapshotWorkspaceFile::Load(workspace);
   ASSERT_FALSE(loaded);
   EXPECT_NE(loaded.error().Message.find("pinned pixel lies outside"), std::string::npos);
+}
+
+TEST(SnapshotPersistenceTests, WorkspaceRoundTripsAllSevenPlaneNamesAndRejectsUnknownPlane) {
+  TempDirectory temp;
+  auto frame = MakeFrame();
+  ASSERT_TRUE(frame);
+  const auto payload = temp.Path() / "capture.exr";
+  ASSERT_TRUE(SnapshotExr::Write(*frame, payload));
+
+  constexpr std::array expectedPlanes = {SnapshotPlane::FinalColor,      SnapshotPlane::Depth,
+                                         SnapshotPlane::WorldNormal,     SnapshotPlane::SpecularLighting,
+                                         SnapshotPlane::DiffuseLighting, SnapshotPlane::MaterialInstanceId,
+                                         SnapshotPlane::Overdraw};
+  SnapshotWorkspaceDocument document;
+  for (const SnapshotPlane plane : expectedPlanes) {
+    SnapshotFrameViewState tab;
+    tab.ExrPath = payload;
+    tab.SelectedPlane = plane;
+    document.Tabs.push_back(std::move(tab));
+  }
+  const auto workspace = temp.Path() / "workspace.aframe";
+  ASSERT_TRUE(SnapshotWorkspaceFile::Save(workspace, document));
+  auto loaded = SnapshotWorkspaceFile::Load(workspace);
+  ASSERT_TRUE(loaded) << loaded.error().Message;
+  ASSERT_EQ(loaded->Document.Tabs.size(), expectedPlanes.size());
+  for (size_t index = 0; index < expectedPlanes.size(); ++index)
+    EXPECT_EQ(loaded->Document.Tabs[index].SelectedPlane, expectedPlanes[index]);
+
+  nlohmann::json json;
+  {
+    std::ifstream input(workspace);
+    input >> json;
+  }
+  json["tabs"][0]["plane"] = "not_a_snapshot_plane";
+  {
+    std::ofstream output(workspace);
+    output << json.dump(2);
+  }
+  const auto invalidPlane = SnapshotWorkspaceFile::Load(workspace);
+  ASSERT_FALSE(invalidPlane);
+  EXPECT_NE(invalidPlane.error().Message.find("unsupported snapshot plane"), std::string::npos);
 }
 
 } // namespace

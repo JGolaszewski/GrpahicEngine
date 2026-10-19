@@ -41,8 +41,8 @@ struct SnapshotPinnedPixelState {
 
 /// Per-frame inspector state. Zoom/pan only affects display and never pixel coordinates.
 struct SnapshotFrameViewState {
-  std::filesystem::path ExrPath; ///< Path relative to the .aframe document when saved.
-  RenderAov SelectedAov = RenderAov::FinalColor;
+  std::filesystem::path ExrPath;                           ///< Path relative to the .aframe document when saved.
+  SnapshotPlane SelectedPlane = SnapshotPlane::FinalColor; ///< Float or integer plane shown in this tab.
   std::optional<SnapshotPinnedPixelState> PinnedPixel;
   std::optional<SnapshotRoiState> Roi;
   float Zoom = 1.0F;
