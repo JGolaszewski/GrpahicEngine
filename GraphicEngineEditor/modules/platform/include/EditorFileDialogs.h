@@ -17,6 +17,11 @@ std::optional<std::filesystem::path> ChooseLogExportFile(const std::filesystem::
 /// @param exr When true, selects the multilayer OpenEXR filter; otherwise PNG.
 /// @param initialPath Initial selection and filename shown by the dialog.
 std::optional<std::filesystem::path> ChooseRenderOutputFile(bool exr, const std::filesystem::path& initialPath);
+/// Opens an EXR or Snapshot Analysis workspace save/open dialog.
+/// @param exr Selects an OpenEXR payload; false selects a versioned .aframe workspace.
+/// @param save Opens a save dialog when true and an existing-file dialog when false.
+/// @param initialPath Initial directory and filename shown by the dialog.
+std::optional<std::filesystem::path> ChooseSnapshotFile(bool exr, bool save, const std::filesystem::path& initialPath);
 bool OpenSourceFile(const std::filesystem::path& path);
 std::optional<std::filesystem::path> ChooseProjectFolder(const std::filesystem::path& initialPath);
 std::filesystem::path LoadRememberedProjectRoot();

@@ -1,4 +1,4 @@
-﻿#include "application/include/Editor.h"
+#include "application/include/Editor.h"
 
 #include "application/include/EditorProjectWorkflow.h"
 #include "events/include/AssetRegistryChangedEvent.h"
@@ -17,6 +17,7 @@
 #include "panels/include/InspectorPanel.h"
 #include "panels/include/MainBar.h"
 #include "panels/include/ScenePanel.h"
+#include "panels/include/SnapshotAnalysisPanel.h"
 #include "panels/include/StatisticsPanel.h"
 #include "platform/include/EditorFileDialogs.h"
 #include "rendering/include/RenderSystem.h"
@@ -30,14 +31,33 @@
 
 #include <DirectXMath.h>
 #include <algorithm>
+#include <chrono>
 #include <cmath>
+#include <ctime>
 #include <imgui.h>
 #include <imgui_internal.h>
+#include <iomanip>
 #include <span>
+#include <sstream>
 #include <string>
 #include <utility>
 
 namespace {
+auto UtcTimestamp() -> std::string {
+  const std::time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+  std::tm utc{};
+  gmtime_s(&utc, &now);
+  std::ostringstream stream;
+  stream << std::put_time(&utc, "%Y-%m-%dT%H:%M:%SZ");
+  return stream.str();
+}
+
+auto GuidString(const Engine::Ecs::SceneGuid& guid) -> std::string {
+  std::ostringstream stream;
+  stream << std::hex << std::setfill('0') << std::setw(16) << guid.High << std::setw(16) << guid.Low;
+  return stream.str();
+}
+
 auto QuaternionToPitchYawRoll(const std::array<float, 4>& quaternion) -> std::array<float, 3> {
   const DirectX::XMVECTOR rotation =
       DirectX::XMQuaternionNormalize(DirectX::XMVectorSet(quaternion[0], quaternion[1], quaternion[2], quaternion[3]));
@@ -143,6 +163,88 @@ void Editor::OnInit() {
   CreateViewport(1280, 720);
   auto mainBar = std::make_unique<MainBar>();
   mainBar->SetConsoleOpenHandler([this] -> void { m_EngineConsoleOpen = true; });
+  auto snapshotPanel = std::make_unique<SnapshotAnalysisPanel>(
+      [this](uint32_t widthOverride,
+             uint32_t heightOverride) -> Engine::Result<Engine::RenderSystem::SnapshotRenderTicket> {
+        Engine::RenderSystem* renderer = GetRenderSystem();
+        if (!m_ActiveScene || renderer == nullptr) {
+          return std::unexpected(Engine::MakeError("No active scene or render system is available"));
+        }
+        const auto request = ResolveCameraPreviewRequest(m_ActiveScene->World(), m_SelectedEntity);
+        if (!request) {
+          return std::unexpected(request.error());
+        }
+        if ((widthOverride == 0U) != (heightOverride == 0U)) {
+          return std::unexpected(Engine::MakeError("A frame-local resolution override requires both dimensions"));
+        }
+        const auto* camera = m_ActiveScene->World().Get<Engine::Ecs::Camera>(m_SelectedEntity);
+        const auto* persistent = m_ActiveScene->World().Get<Engine::Ecs::PersistentIdentity>(m_SelectedEntity);
+        Engine::SnapshotFrameMetadata metadata;
+        metadata.CaptureTimeUtc = UtcTimestamp();
+        metadata.SceneIdentity =
+            m_ActiveSceneDocument.GetPath().empty() ? "unsaved-scene" : m_ActiveSceneDocument.GetPath().string();
+        metadata.Camera.Identity = persistent == nullptr ? "entity-" + std::to_string(m_SelectedEntity.Index) + "-" +
+                                                               std::to_string(m_SelectedEntity.Generation)
+                                                         : GuidString(persistent->Guid);
+        metadata.Camera.Position = request->View.Position;
+        metadata.Camera.Rotation = request->View.Rotation;
+        metadata.Camera.FieldOfViewDegrees = request->View.FieldOfViewDegrees;
+        metadata.Camera.NearPlane = request->View.NearPlane;
+        metadata.Camera.FarPlane = request->View.FarPlane;
+        metadata.Camera.AuthoredWidth = camera->OutputWidth;
+        metadata.Camera.AuthoredHeight = camera->OutputHeight;
+        const auto& shadows = renderer->GetShadowSettings();
+        metadata.RenderSettings.ShadowsEnabled = true;
+        metadata.RenderSettings.ShadowMapResolution = shadows.Resolution;
+        metadata.RenderSettings.MaxShadowCasters = shadows.MaxShadowCastersPerScene;
+        const uint32_t width = widthOverride == 0U ? request->Width : widthOverride;
+        const uint32_t height = heightOverride == 0U ? request->Height : heightOverride;
+        metadata.OutputWidth = width;
+        metadata.OutputHeight = height;
+        return renderer->BeginSnapshotRender(*m_ActiveScene, request->View, std::move(metadata), width, height);
+      },
+      [this](
+          Engine::RenderSystem::SnapshotRenderTicket ticket) -> Engine::Result<std::optional<Engine::SnapshotFrame>> {
+        Engine::RenderSystem* renderer = GetRenderSystem();
+        if (renderer == nullptr) {
+          return std::unexpected(Engine::MakeError("The render system is unavailable"));
+        }
+        return renderer->PollSnapshotRender(ticket);
+      },
+      [this](Engine::RenderSystem::SnapshotRenderTicket ticket)
+          -> std::optional<Engine::RenderSystem::SnapshotRenderStatus> {
+        Engine::RenderSystem* renderer = GetRenderSystem();
+        return renderer == nullptr ? std::nullopt : renderer->GetSnapshotRenderStatus(ticket);
+      },
+      [this](Engine::RenderSystem::SnapshotRenderTicket ticket) {
+        Engine::RenderSystem* renderer = GetRenderSystem();
+        if (renderer == nullptr) {
+          return Engine::Status(std::unexpected(Engine::MakeError("The render system is unavailable")));
+        }
+        return renderer->CancelFinalRender(ticket);
+      },
+      [this](uint32_t width, uint32_t height, std::span<const uint8_t> pixels) {
+        return m_UiIntegration.SetSnapshotImage(width, height, pixels);
+      },
+      [this]() -> void* { return m_UiIntegration.GetSnapshotImageTextureId(); },
+      [this]() { m_UiIntegration.ClearSnapshotImage(); },
+      SnapshotAnalysisPanel::WorkspaceServices{
+          [](bool exr, bool save, const std::filesystem::path& initialPath) {
+            return EditorPlatform::ChooseSnapshotFile(exr, save, initialPath);
+          },
+          [](const std::filesystem::path& path) { return Engine::SnapshotPersistence::SnapshotExr::Read(path); },
+          [](const Engine::SnapshotFrame& frame, const std::filesystem::path& path) {
+            return Engine::SnapshotPersistence::SnapshotExr::Write(frame, path);
+          },
+          [](const std::filesystem::path& path) {
+            return Engine::SnapshotPersistence::SnapshotWorkspaceFile::Load(path);
+          },
+          [](const std::filesystem::path& path, const Engine::SnapshotPersistence::SnapshotWorkspaceDocument& doc) {
+            return Engine::SnapshotPersistence::SnapshotWorkspaceFile::Save(path, doc);
+          }});
+  auto* snapshotAnalysisPanel = snapshotPanel.get();
+  m_Panels.push_back(std::move(snapshotPanel));
+  mainBar->SetSnapshotAnalysisOpenHandler([snapshotAnalysisPanel]() { snapshotAnalysisPanel->Open(); });
   auto engineSettings = std::make_unique<EngineSettingsPanel>(
       this, [this] { return m_EditorPreferences; },
       [this](const auto& preferences) {
