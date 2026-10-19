@@ -29,8 +29,11 @@ frame when no other workspace state refers to it.
 
 Open Snapshot Analysis from the editor **Main Bar**. It replaces the editor
 content area with a full-editor focused workspace rather than opening a floating
-or dockable panel. The Main Bar remains available with an **Exit Snapshot
-Analysis** control. Exiting returns to the previous editor view, layout, and
+or dockable panel. With a frame open, the captured image stays in the main canvas
+and its plane selector, comparison controls, pixel and material inspectors,
+metadata, and ROI histogram stay in a scrollable side panel. The side panel has
+a **Back to editor** action, and the Main Bar remains available with an **Exit
+Snapshot Analysis** control. Exiting returns to the previous editor view, layout, and
 focus; open frame tabs and their view state remain in memory for the next entry.
 The active scene and authored state are preserved. Choose an authored camera
 from the in-workspace selector. It defaults to the editor's selected camera,

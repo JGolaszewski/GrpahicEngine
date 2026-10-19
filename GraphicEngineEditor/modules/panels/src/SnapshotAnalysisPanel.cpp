@@ -577,6 +577,18 @@ void SnapshotAnalysisPanel::DrawFrame(Tab& tab, size_t tabIndex) {
     ImGui::TextDisabled("Frame has no available analysis planes.");
     return;
   }
+  const ImVec2 workspaceSize = ImGui::GetContentRegionAvail();
+  const float toolsWidth = std::clamp(workspaceSize.x * 0.30F, 300.0F, 480.0F);
+  ImGui::BeginChild("snapshot_analysis_tools", ImVec2(toolsWidth, workspaceSize.y), true);
+  ImGui::TextUnformatted("Analysis tools");
+  ImGui::Separator();
+  if (ImGui::Button("Back to editor") && m_ExitFocusedHandler) {
+    m_ExitFocusedHandler();
+    if (m_ClearImage) {
+      m_ClearImage();
+    }
+  }
+  ImGui::Separator();
   if (ImGui::Combo("Plane", &selectedPlaneIndex, availablePlaneNames.data(),
                    static_cast<int>(availablePlaneNames.size()))) {
     tab.SelectedPlane = availablePlanes[static_cast<size_t>(selectedPlaneIndex)];
@@ -691,88 +703,6 @@ void SnapshotAnalysisPanel::DrawFrame(Tab& tab, size_t tabIndex) {
       }
     }
   }
-
-  ImGui::BeginChild("snapshot_canvas", ImVec2(0.0F, ImGui::GetContentRegionAvail().y * 0.60F), true,
-                    ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
-  const ImVec2 available = ImGui::GetContentRegionAvail();
-  const float fit =
-      CameraPreviewImageLayout::ComputeFitScale(frame.GetWidth(), frame.GetHeight(), available.x, available.y);
-  const float displayScale = (std::max)(fit, 0.001F) * tab.Zoom;
-  const ImVec2 size(static_cast<float>(frame.GetWidth()) * displayScale,
-                    static_cast<float>(frame.GetHeight()) * displayScale);
-  const ImVec2 origin(ImGui::GetCursorScreenPos().x + tab.Pan[0], ImGui::GetCursorScreenPos().y + tab.Pan[1]);
-  bool displayAvailable = true;
-  if (m_DisplayDirty || m_UploadedTab != tabIndex || m_UploadedPlane != tab.SelectedPlane) {
-    const std::vector<uint8_t> pixels = BuildDisplayPixels(tab);
-    if (pixels.empty()) {
-      displayAvailable = false;
-      if (m_ClearImage) {
-        m_ClearImage();
-      }
-      m_UploadedTab = static_cast<size_t>(-1);
-      m_DisplayDirty = false;
-    } else if (m_UploadImage && m_UploadImage(frame.GetWidth(), frame.GetHeight(), pixels)) {
-      m_UploadedTab = tabIndex;
-      m_UploadedPlane = tab.SelectedPlane;
-      m_DisplayDirty = false;
-    }
-  }
-  if (displayAvailable && m_GetTexture) {
-    void* texture = m_GetTexture();
-    if (texture != nullptr) {
-      ImGui::SetCursorScreenPos(origin);
-      ImGui::Image(texture, size);
-      const ImVec2 imageMin = ImGui::GetItemRectMin();
-      const ImVec2 imageMax = ImGui::GetItemRectMax();
-      const bool imageHovered = ImGui::IsItemHovered();
-      if (imageHovered) {
-        const ImGuiIO& io = ImGui::GetIO();
-        if (io.MouseWheel != 0.0F) {
-          tab.Zoom = CameraPreviewImageLayout::ClampZoom(tab.Zoom * std::pow(1.12F, io.MouseWheel));
-        }
-        if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !io.KeyShift) {
-          const uint32_t x = static_cast<uint32_t>(
-              std::clamp((io.MousePos.x - imageMin.x) / displayScale, 0.0F, static_cast<float>(frame.GetWidth() - 1U)));
-          const uint32_t y = static_cast<uint32_t>(std::clamp((io.MousePos.y - imageMin.y) / displayScale, 0.0F,
-                                                              static_cast<float>(frame.GetHeight() - 1U)));
-          tab.PinnedPixel = std::array<uint32_t, 2>{x, y};
-          InvalidateDisplay();
-        }
-        if (io.KeyShift && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
-          m_RoiStart = std::array<uint32_t, 2>{
-              static_cast<uint32_t>(std::clamp((io.MousePos.x - imageMin.x) / displayScale, 0.0F,
-                                               static_cast<float>(frame.GetWidth() - 1U))),
-              static_cast<uint32_t>(std::clamp((io.MousePos.y - imageMin.y) / displayScale, 0.0F,
-                                               static_cast<float>(frame.GetHeight() - 1U)))};
-        }
-        if (m_RoiStart && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
-          const uint32_t x = static_cast<uint32_t>(
-              std::clamp((io.MousePos.x - imageMin.x) / displayScale, 0.0F, static_cast<float>(frame.GetWidth() - 1U)));
-          const uint32_t y = static_cast<uint32_t>(std::clamp((io.MousePos.y - imageMin.y) / displayScale, 0.0F,
-                                                              static_cast<float>(frame.GetHeight() - 1U)));
-          tab.Roi =
-              std::array<uint32_t, 4>{(std::min)(m_RoiStart->at(0), x), (std::min)(m_RoiStart->at(1), y),
-                                      (std::max)(m_RoiStart->at(0), x) + 1U, (std::max)(m_RoiStart->at(1), y) + 1U};
-          m_RoiStart.reset();
-        }
-        if (ImGui::IsMouseDragging(ImGuiMouseButton_Middle)) {
-          const ImVec2 delta = ImGui::GetIO().MouseDelta;
-          tab.Pan[0] += delta.x;
-          tab.Pan[1] += delta.y;
-        }
-        ImGui::SetCursorScreenPos(imageMax);
-      } else {
-        ImGui::Dummy(size);
-      }
-    } else {
-      ImGui::TextDisabled("Snapshot image texture is unavailable.");
-    }
-  } else if (!displayAvailable) {
-    ImGui::TextDisabled("Selected snapshot plane is unavailable in this frame.");
-  }
-  ImGui::EndChild();
-  ImGui::TextDisabled("Wheel zooms the displayed image; middle drag pans. Click to pin a source pixel; Shift-drag to "
-                      "set a source-space ROI.");
 
   if (tab.PinnedPixel) {
     const uint32_t x = tab.PinnedPixel->at(0);
@@ -919,6 +849,89 @@ void SnapshotAnalysisPanel::DrawFrame(Tab& tab, size_t tabIndex) {
   } else if (tab.Roi) {
     ImGui::TextDisabled("ROI histogram unavailable: final_color was not captured.");
   }
+  ImGui::EndChild();
+
+  ImGui::SameLine();
+  ImGui::BeginChild("snapshot_canvas", ImVec2(0.0F, workspaceSize.y), true,
+                    ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+  const ImVec2 available = ImGui::GetContentRegionAvail();
+  const float fit =
+      CameraPreviewImageLayout::ComputeFitScale(frame.GetWidth(), frame.GetHeight(), available.x, available.y);
+  const float displayScale = (std::max)(fit, 0.001F) * tab.Zoom;
+  const ImVec2 size(static_cast<float>(frame.GetWidth()) * displayScale,
+                    static_cast<float>(frame.GetHeight()) * displayScale);
+  const ImVec2 origin(ImGui::GetCursorScreenPos().x + tab.Pan[0], ImGui::GetCursorScreenPos().y + tab.Pan[1]);
+  bool displayAvailable = true;
+  if (m_DisplayDirty || m_UploadedTab != tabIndex || m_UploadedPlane != tab.SelectedPlane) {
+    const std::vector<uint8_t> pixels = BuildDisplayPixels(tab);
+    if (pixels.empty()) {
+      displayAvailable = false;
+      if (m_ClearImage) {
+        m_ClearImage();
+      }
+      m_UploadedTab = static_cast<size_t>(-1);
+      m_DisplayDirty = false;
+    } else if (m_UploadImage && m_UploadImage(frame.GetWidth(), frame.GetHeight(), pixels)) {
+      m_UploadedTab = tabIndex;
+      m_UploadedPlane = tab.SelectedPlane;
+      m_DisplayDirty = false;
+    }
+  }
+  if (displayAvailable && m_GetTexture) {
+    void* texture = m_GetTexture();
+    if (texture != nullptr) {
+      ImGui::SetCursorScreenPos(origin);
+      ImGui::Image(texture, size);
+      const ImVec2 imageMin = ImGui::GetItemRectMin();
+      const ImVec2 imageMax = ImGui::GetItemRectMax();
+      const bool imageHovered = ImGui::IsItemHovered();
+      if (imageHovered) {
+        const ImGuiIO& io = ImGui::GetIO();
+        if (io.MouseWheel != 0.0F) {
+          tab.Zoom = CameraPreviewImageLayout::ClampZoom(tab.Zoom * std::pow(1.12F, io.MouseWheel));
+        }
+        if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !io.KeyShift) {
+          const uint32_t x = static_cast<uint32_t>(
+              std::clamp((io.MousePos.x - imageMin.x) / displayScale, 0.0F, static_cast<float>(frame.GetWidth() - 1U)));
+          const uint32_t y = static_cast<uint32_t>(std::clamp((io.MousePos.y - imageMin.y) / displayScale, 0.0F,
+                                                              static_cast<float>(frame.GetHeight() - 1U)));
+          tab.PinnedPixel = std::array<uint32_t, 2>{x, y};
+          InvalidateDisplay();
+        }
+        if (io.KeyShift && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+          m_RoiStart = std::array<uint32_t, 2>{
+              static_cast<uint32_t>(std::clamp((io.MousePos.x - imageMin.x) / displayScale, 0.0F,
+                                               static_cast<float>(frame.GetWidth() - 1U))),
+              static_cast<uint32_t>(std::clamp((io.MousePos.y - imageMin.y) / displayScale, 0.0F,
+                                               static_cast<float>(frame.GetHeight() - 1U)))};
+        }
+        if (m_RoiStart && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+          const uint32_t x = static_cast<uint32_t>(
+              std::clamp((io.MousePos.x - imageMin.x) / displayScale, 0.0F, static_cast<float>(frame.GetWidth() - 1U)));
+          const uint32_t y = static_cast<uint32_t>(std::clamp((io.MousePos.y - imageMin.y) / displayScale, 0.0F,
+                                                              static_cast<float>(frame.GetHeight() - 1U)));
+          tab.Roi =
+              std::array<uint32_t, 4>{(std::min)(m_RoiStart->at(0), x), (std::min)(m_RoiStart->at(1), y),
+                                      (std::max)(m_RoiStart->at(0), x) + 1U, (std::max)(m_RoiStart->at(1), y) + 1U};
+          m_RoiStart.reset();
+        }
+        if (ImGui::IsMouseDragging(ImGuiMouseButton_Middle)) {
+          const ImVec2 delta = ImGui::GetIO().MouseDelta;
+          tab.Pan[0] += delta.x;
+          tab.Pan[1] += delta.y;
+        }
+        ImGui::SetCursorScreenPos(imageMax);
+      } else {
+        ImGui::Dummy(size);
+      }
+    } else {
+      ImGui::TextDisabled("Snapshot image texture is unavailable.");
+    }
+  } else if (!displayAvailable) {
+    ImGui::TextDisabled("Selected snapshot plane is unavailable in this frame.");
+  }
+  ImGui::TextDisabled("Wheel zooms; middle drag pans. Click pins a source pixel; Shift-drag sets a source-space ROI.");
+  ImGui::EndChild();
 }
 
 void SnapshotAnalysisPanel::Draw() {
