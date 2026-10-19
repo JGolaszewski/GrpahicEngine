@@ -1,6 +1,7 @@
 #pragma once
 
 #include "panels/include/EditorPanel.h"
+#include "panels/include/SnapshotAnalysisPanelState.h"
 #include "rendering/include/RenderSystem.h"
 #include "rendering/include/SnapshotFrame.h"
 #include "rendering/include/analysis/SnapshotAnalysis.h"
@@ -21,7 +22,10 @@ class SnapshotAnalysisPanel final : public EditorPanel {
 public:
   /// Starts an authored-camera capture with optional frame-local dimensions.
   using BeginCaptureFunction = std::function<Engine::Result<Engine::RenderSystem::SnapshotRenderTicket>(
-      uint32_t widthOverride, uint32_t heightOverride)>;
+      Engine::EntityHandle camera, uint32_t widthOverride, uint32_t heightOverride,
+      Engine::SnapshotPlaneMask selectedPlanes)>;
+  /// Lists valid authored cameras for selection in the focused workspace.
+  using ListCamerasFunction = std::function<std::vector<SnapshotAnalysisCameraOption>()>;
   /// Polls a capture without publishing an incomplete frame.
   using PollCaptureFunction =
       std::function<Engine::Result<std::optional<Engine::SnapshotFrame>>(Engine::RenderSystem::SnapshotRenderTicket)>;
@@ -51,10 +55,10 @@ public:
   };
 
   /// Creates the workspace panel using the editor capture and texture services.
-  SnapshotAnalysisPanel(BeginCaptureFunction beginCapture, PollCaptureFunction pollCapture,
-                        CaptureStatusFunction getCaptureStatus, CancelCaptureFunction cancelCapture,
-                        UploadImageFunction uploadImage, TextureFunction getTexture, ClearImageFunction clearImage,
-                        WorkspaceServices workspaceServices);
+  SnapshotAnalysisPanel(BeginCaptureFunction beginCapture, ListCamerasFunction listCameras,
+                        PollCaptureFunction pollCapture, CaptureStatusFunction getCaptureStatus,
+                        CancelCaptureFunction cancelCapture, UploadImageFunction uploadImage,
+                        TextureFunction getTexture, ClearImageFunction clearImage, WorkspaceServices workspaceServices);
 
   /// Draws capture controls, static frame tabs, inspectors, histograms, and comparisons.
   void Draw() override;
@@ -65,6 +69,7 @@ public:
   void SetExitFocusedHandler(std::function<void()> handler) { m_ExitFocusedHandler = std::move(handler); }
   /// Requests the focused workspace to open and focuses its full-editor view.
   void Open() noexcept {
+    m_SelectedCamera.reset();
     m_FocusRequested = true;
     m_DisplayDirty = true;
   }
@@ -84,6 +89,7 @@ private:
   };
 
   void UpdateCapture();
+  void RefreshCameraOptions();
   void StartCapture();
   void DrawFrame(Tab& tab, size_t tabIndex);
   void OpenExr();
@@ -98,6 +104,7 @@ private:
   void InvalidateDisplay() noexcept { m_DisplayDirty = true; }
 
   BeginCaptureFunction m_BeginCapture;
+  ListCamerasFunction m_ListCameras;
   PollCaptureFunction m_PollCapture;
   CaptureStatusFunction m_GetCaptureStatus;
   CancelCaptureFunction m_CancelCapture;
@@ -108,6 +115,8 @@ private:
   std::function<void()> m_ExitFocusedHandler;
   std::vector<std::unique_ptr<Tab>> m_Tabs;
   std::optional<size_t> m_ActiveTab;
+  std::vector<SnapshotAnalysisCameraOption> m_CameraOptions;
+  std::optional<Engine::EntityHandle> m_SelectedCamera;
   std::optional<size_t> m_ComparisonReference;
   Engine::SnapshotAnalysis::DifferenceMetric m_ComparisonMetric = Engine::SnapshotAnalysis::DifferenceMetric::RgbRms;
   float m_HeatmapMinimum = 0.0F;
@@ -118,6 +127,7 @@ private:
   std::filesystem::path m_WorkspacePath;
   uint32_t m_WidthOverride = 0;
   uint32_t m_HeightOverride = 0;
+  Engine::SnapshotPlaneMask m_SelectedCapturePlanes = DefaultSnapshotCapturePlanes;
   size_t m_UploadedTab = static_cast<size_t>(-1);
   Engine::SnapshotPlane m_UploadedPlane = Engine::SnapshotPlane::FinalColor;
   bool m_FocusRequested = true;

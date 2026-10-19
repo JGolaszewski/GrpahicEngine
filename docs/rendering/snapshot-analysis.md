@@ -32,14 +32,18 @@ content area with a full-editor focused workspace rather than opening a floating
 or dockable panel. The Main Bar remains available with an **Exit Snapshot
 Analysis** control. Exiting returns to the previous editor view, layout, and
 focus; open frame tabs and their view state remain in memory for the next entry.
-The active scene and authored state are preserved. Select an authored camera and
-choose **Capture selected camera**. The current editor captures all supported
-planes. Leave both
+The active scene and authored state are preserved. Choose an authored camera
+from the in-workspace selector. It defaults to the editor's selected camera,
+then the highest-priority active camera, then the first valid camera in stable
+entity order. Leave both
 resolution override fields at zero to use the camera's authored resolution;
 enter both dimensions to override the output size for that frame only. Capture
-progress and failure messages appear beside the controls. Cancel discards the
-pending capture without adding a frame tab. A new tab appears only after all
-captured planes and any required material manifest are ready.
+the selected planes with **Capture selected camera**. Seven plane toggles are
+available, all enabled by default. At least one plane must stay selected.
+Progress and failure messages appear beside the controls. Cancel discards the
+pending capture without adding a frame tab. A new tab appears only after every
+selected plane and any required material manifest are ready. Unselected planes
+are absent from that frame and are never treated as zero-filled data.
 
 Use **Open EXR** beside the capture controls to validate and add a saved frame tab, or **Open
 .aframe** to validate its workspace document and every referenced EXR before
@@ -50,9 +54,13 @@ frames and then writes the versioned workspace document. Exiting focused mode
 does not discard open tabs or save them automatically. Save dialogs confirm
 overwrites; capture itself never saves automatically.
 
-Each frame tab retains its own frame data, selected plane, pinned pixel, ROI,
-zoom, and pan. The plane selector displays each of the five float AOVs plus the
-exact material-instance ID and overdraw planes. The canvas uses a display
+Each frame tab retains its own frame data, selected available plane, pinned
+pixel, ROI, zoom, and pan. Its plane selector lists only planes captured in
+that frame. Opening a standalone EXR selects its first available plane;
+workspace tabs retain their saved plane and are rejected if that plane is
+missing from the referenced EXR. Integer material-ID and overdraw inspectors,
+material isolation, histograms, and comparisons report when required planes
+are unavailable. The canvas uses a display
 transform for readability; the inspector reports raw stored pixel values.
 Click a source pixel to pin it. The material inspector reads the capture's
 manifest, and **Isolate pinned material** dims other pixels in the displayed
