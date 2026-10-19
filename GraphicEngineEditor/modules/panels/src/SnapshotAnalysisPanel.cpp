@@ -578,8 +578,17 @@ void SnapshotAnalysisPanel::DrawFrame(Tab& tab, size_t tabIndex) {
     return;
   }
   const ImVec2 workspaceSize = ImGui::GetContentRegionAvail();
-  const float toolsWidth = std::clamp(workspaceSize.x * 0.30F, 300.0F, 480.0F);
-  ImGui::BeginChild("snapshot_analysis_tools", ImVec2(toolsWidth, workspaceSize.y), true);
+  const float toolsWidth = (std::min)(480.0F, (std::max)(240.0F, workspaceSize.x * 0.30F));
+  if (!ImGui::BeginTable("snapshot_workspace_layout", 2,
+                         ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_Resizable | ImGuiTableFlags_NoSavedSettings,
+                         workspaceSize)) {
+    return;
+  }
+  ImGui::TableSetupColumn("Analysis tools", ImGuiTableColumnFlags_WidthFixed, toolsWidth);
+  ImGui::TableSetupColumn("Captured frame", ImGuiTableColumnFlags_WidthStretch);
+  ImGui::TableNextRow(ImGuiTableRowFlags_None, workspaceSize.y);
+  ImGui::TableSetColumnIndex(0);
+  ImGui::BeginChild("snapshot_analysis_tools", ImVec2(0.0F, workspaceSize.y), true);
   ImGui::TextUnformatted("Analysis tools");
   ImGui::Separator();
   if (ImGui::Button("Back to editor") && m_ExitFocusedHandler) {
@@ -851,7 +860,7 @@ void SnapshotAnalysisPanel::DrawFrame(Tab& tab, size_t tabIndex) {
   }
   ImGui::EndChild();
 
-  ImGui::SameLine();
+  ImGui::TableSetColumnIndex(1);
   ImGui::BeginChild("snapshot_canvas", ImVec2(0.0F, workspaceSize.y), true,
                     ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
   const ImVec2 available = ImGui::GetContentRegionAvail();
@@ -932,6 +941,7 @@ void SnapshotAnalysisPanel::DrawFrame(Tab& tab, size_t tabIndex) {
   }
   ImGui::TextDisabled("Wheel zooms; middle drag pans. Click pins a source pixel; Shift-drag sets a source-space ROI.");
   ImGui::EndChild();
+  ImGui::EndTable();
 }
 
 void SnapshotAnalysisPanel::Draw() {
