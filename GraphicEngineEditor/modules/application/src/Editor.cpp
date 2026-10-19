@@ -168,27 +168,27 @@ void Editor::OnInit() {
   m_MainBar->SetConsoleOpenHandler([this] -> void { m_EngineConsoleOpen = true; });
   m_MainBar->SetSnapshotAnalysisFocusHandler([this](bool focused) { SetSnapshotAnalysisFocused(focused); });
   auto snapshotPanel = std::make_unique<SnapshotAnalysisPanel>(
-      [this](uint32_t widthOverride,
-             uint32_t heightOverride) -> Engine::Result<Engine::RenderSystem::SnapshotRenderTicket> {
+      [this](Engine::EntityHandle cameraEntity, uint32_t widthOverride, uint32_t heightOverride,
+             Engine::SnapshotPlaneMask selectedPlanes) -> Engine::Result<Engine::RenderSystem::SnapshotRenderTicket> {
         Engine::RenderSystem* renderer = GetRenderSystem();
         if (!m_ActiveScene || renderer == nullptr) {
           return std::unexpected(Engine::MakeError("No active scene or render system is available"));
         }
-        const auto request = ResolveCameraPreviewRequest(m_ActiveScene->World(), m_SelectedEntity);
+        const auto request = ResolveCameraPreviewRequest(m_ActiveScene->World(), cameraEntity);
         if (!request) {
           return std::unexpected(request.error());
         }
         if ((widthOverride == 0U) != (heightOverride == 0U)) {
           return std::unexpected(Engine::MakeError("A frame-local resolution override requires both dimensions"));
         }
-        const auto* camera = m_ActiveScene->World().Get<Engine::Ecs::Camera>(m_SelectedEntity);
-        const auto* persistent = m_ActiveScene->World().Get<Engine::Ecs::PersistentIdentity>(m_SelectedEntity);
+        const auto* camera = m_ActiveScene->World().Get<Engine::Ecs::Camera>(cameraEntity);
+        const auto* persistent = m_ActiveScene->World().Get<Engine::Ecs::PersistentIdentity>(cameraEntity);
         Engine::SnapshotFrameMetadata metadata;
         metadata.CaptureTimeUtc = UtcTimestamp();
         metadata.SceneIdentity =
             m_ActiveSceneDocument.GetPath().empty() ? "unsaved-scene" : m_ActiveSceneDocument.GetPath().string();
-        metadata.Camera.Identity = persistent == nullptr ? "entity-" + std::to_string(m_SelectedEntity.Index) + "-" +
-                                                               std::to_string(m_SelectedEntity.Generation)
+        metadata.Camera.Identity = persistent == nullptr ? "entity-" + std::to_string(cameraEntity.Index) + "-" +
+                                                               std::to_string(cameraEntity.Generation)
                                                          : GuidString(persistent->Guid);
         metadata.Camera.Position = request->View.Position;
         metadata.Camera.Rotation = request->View.Rotation;
@@ -205,7 +205,40 @@ void Editor::OnInit() {
         const uint32_t height = heightOverride == 0U ? request->Height : heightOverride;
         metadata.OutputWidth = width;
         metadata.OutputHeight = height;
-        return renderer->BeginSnapshotRender(*m_ActiveScene, request->View, std::move(metadata), width, height);
+        return renderer->BeginSnapshotRender(*m_ActiveScene, request->View, std::move(metadata), width, height,
+                                             selectedPlanes);
+      },
+      [this]() -> std::vector<SnapshotAnalysisCameraOption> {
+        std::vector<SnapshotAnalysisCameraOption> cameras;
+        if (!m_ActiveScene) {
+          return cameras;
+        }
+        const auto& world = m_ActiveScene->World();
+        world.ForEachChunkReadOnly<Engine::Ecs::Camera>([this, &world, &cameras](
+                                                            std::span<const Engine::EntityHandle> entities,
+                                                            std::span<const Engine::Ecs::Camera> cameraComponents) {
+          for (size_t index = 0; index < entities.size(); ++index) {
+            const Engine::EntityHandle entity = entities[index];
+            const auto* transform = world.Get<Engine::Ecs::WorldTransform>(entity);
+            const Engine::Ecs::Camera& camera = cameraComponents[index];
+            if (transform == nullptr || camera.OutputWidth == 0U || camera.OutputHeight == 0U ||
+                !Engine::Renderer::ResolveSceneCameraView(camera, *transform)) {
+              continue;
+            }
+            const auto* name = world.Get<Engine::Ecs::Name>(entity);
+            std::string label = name == nullptr || name->Value.empty() ? "Camera" : name->Value;
+            if (camera.Active) {
+              label += " (active)";
+            }
+            label += " [" + std::to_string(entity.Index) + "]";
+            cameras.push_back({entity, std::move(label), entity == m_SelectedEntity, camera.Active, camera.Priority});
+          }
+        });
+        std::ranges::sort(cameras, [](const auto& left, const auto& right) {
+          return left.Entity.Index < right.Entity.Index ||
+                 (left.Entity.Index == right.Entity.Index && left.Entity.Generation < right.Entity.Generation);
+        });
+        return cameras;
       },
       [this](
           Engine::RenderSystem::SnapshotRenderTicket ticket) -> Engine::Result<std::optional<Engine::SnapshotFrame>> {

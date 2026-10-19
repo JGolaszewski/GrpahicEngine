@@ -11,6 +11,20 @@
 
 namespace {
 
+constexpr std::array<Engine::SnapshotPlane, 7> SnapshotPlanes = {
+    Engine::SnapshotPlane::FinalColor,      Engine::SnapshotPlane::Depth,
+    Engine::SnapshotPlane::WorldNormal,     Engine::SnapshotPlane::SpecularLighting,
+    Engine::SnapshotPlane::DiffuseLighting, Engine::SnapshotPlane::MaterialInstanceId,
+    Engine::SnapshotPlane::Overdraw};
+constexpr std::array<const char*, 7> SnapshotPlaneNames = {
+    "final_color",          "depth",   "world_normal", "specular_lighting", "diffuse_lighting",
+    "material_instance_id", "overdraw"};
+
+auto GetSnapshotPlaneName(Engine::SnapshotPlane plane) -> const char* {
+  const size_t index = static_cast<size_t>(plane);
+  return index < SnapshotPlaneNames.size() ? SnapshotPlaneNames[index] : "unknown";
+}
+
 auto Encode(float sample) -> uint8_t {
   const float safe = std::isfinite(sample) ? (std::max)(sample, 0.0F) : 0.0F;
   const float mapped = safe / (1.0F + safe);
@@ -59,16 +73,16 @@ auto ToRenderAov(Engine::SnapshotPlane plane) -> std::optional<Engine::RenderAov
 }
 
 auto GetDisplayRgb(const Engine::SnapshotFrame& frame, Engine::SnapshotPlane selectedPlane, size_t pixel)
-    -> std::array<float, 3> {
+    -> std::optional<std::array<float, 3>> {
   if (const auto aov = ToRenderAov(selectedPlane); aov) {
     const auto* plane = FindPlane(frame, *aov);
-    if (plane == nullptr) {
-      return {};
+    if (plane == nullptr || pixel >= static_cast<size_t>(frame.GetWidth()) * frame.GetHeight()) {
+      return std::nullopt;
     }
     const size_t base = pixel * plane->ChannelCount;
     if (*aov == Engine::RenderAov::Depth) {
       const float depth = plane->Pixels[base];
-      return {depth, depth, depth};
+      return std::array<float, 3>{depth, depth, depth};
     }
     std::array<float, 3> rgb{};
     for (size_t channel = 0; channel < (std::min)(3U, plane->ChannelCount); ++channel) {
@@ -78,11 +92,17 @@ auto GetDisplayRgb(const Engine::SnapshotFrame& frame, Engine::SnapshotPlane sel
     return rgb;
   }
   if (selectedPlane == Engine::SnapshotPlane::MaterialInstanceId) {
+    if (!frame.HasPlane(selectedPlane) || pixel >= frame.GetMaterialInstanceIds().size()) {
+      return std::nullopt;
+    }
     const uint32_t id = frame.GetMaterialInstanceIds()[pixel];
     return id == 0U ? std::array<float, 3>{0.0F, 0.0F, 0.0F} : HashColor(id);
   }
+  if (!frame.HasPlane(Engine::SnapshotPlane::Overdraw) || pixel >= frame.GetOverdraw().size()) {
+    return std::nullopt;
+  }
   const float value = std::log2(static_cast<float>(frame.GetOverdraw()[pixel]) + 1.0F) / 8.0F;
-  return {value, value * value, 1.0F - value};
+  return std::array<float, 3>{value, value * value, 1.0F - value};
 }
 
 auto ToAnalysisView(const Engine::SnapshotFrame& frame, Engine::SnapshotPlane selectedPlane)
@@ -146,27 +166,47 @@ auto ToAnalysisView(const Engine::SnapshotFrame& frame, Engine::SnapshotPlane se
 
 } // namespace
 
-SnapshotAnalysisPanel::SnapshotAnalysisPanel(BeginCaptureFunction beginCapture, PollCaptureFunction pollCapture,
-                                             CaptureStatusFunction getCaptureStatus,
+SnapshotAnalysisPanel::SnapshotAnalysisPanel(BeginCaptureFunction beginCapture, ListCamerasFunction listCameras,
+                                             PollCaptureFunction pollCapture, CaptureStatusFunction getCaptureStatus,
                                              CancelCaptureFunction cancelCapture, UploadImageFunction uploadImage,
                                              TextureFunction getTexture, ClearImageFunction clearImage,
                                              WorkspaceServices workspaceServices)
-    : m_BeginCapture(std::move(beginCapture)), m_PollCapture(std::move(pollCapture)),
-      m_GetCaptureStatus(std::move(getCaptureStatus)), m_CancelCapture(std::move(cancelCapture)),
-      m_UploadImage(std::move(uploadImage)), m_GetTexture(std::move(getTexture)), m_ClearImage(std::move(clearImage)),
+    : m_BeginCapture(std::move(beginCapture)), m_ListCameras(std::move(listCameras)),
+      m_PollCapture(std::move(pollCapture)), m_GetCaptureStatus(std::move(getCaptureStatus)),
+      m_CancelCapture(std::move(cancelCapture)), m_UploadImage(std::move(uploadImage)),
+      m_GetTexture(std::move(getTexture)), m_ClearImage(std::move(clearImage)),
       m_WorkspaceServices(std::move(workspaceServices)) {}
 
 void SnapshotAnalysisPanel::StartCapture() {
   if (m_CaptureTicket || !m_BeginCapture) {
     return;
   }
-  auto ticket = m_BeginCapture(m_WidthOverride, m_HeightOverride);
+  if (!HasSnapshotCapturePlaneSelection(m_SelectedCapturePlanes)) {
+    m_CaptureMessage = "Capture requires at least one selected plane.";
+    return;
+  }
+  if (!m_SelectedCamera || std::ranges::none_of(m_CameraOptions, [this](const auto& camera) {
+        return camera.Entity == *m_SelectedCamera;
+      })) {
+    m_CaptureMessage = "Select a valid authored scene camera before capturing.";
+    return;
+  }
+  auto ticket = m_BeginCapture(*m_SelectedCamera, m_WidthOverride, m_HeightOverride, m_SelectedCapturePlanes);
   if (!ticket) {
     m_CaptureMessage = "Capture failed to start: " + ticket.error().Message;
     return;
   }
   m_CaptureTicket = *ticket;
   m_CaptureMessage = "Capture submitted. Waiting for GPU readback...";
+}
+
+void SnapshotAnalysisPanel::RefreshCameraOptions() {
+  m_CameraOptions = m_ListCameras ? m_ListCameras() : std::vector<SnapshotAnalysisCameraOption>{};
+  if (m_SelectedCamera &&
+      std::ranges::any_of(m_CameraOptions, [this](const auto& camera) { return camera.Entity == *m_SelectedCamera; })) {
+    return;
+  }
+  m_SelectedCamera = SelectPreferredSnapshotCamera(m_CameraOptions);
 }
 
 void SnapshotAnalysisPanel::UpdateCapture() {
@@ -182,6 +222,8 @@ void SnapshotAnalysisPanel::UpdateCapture() {
   if (*result) {
     auto tab =
         std::make_unique<Tab>(Tab{.Name = "Frame " + std::to_string(m_Tabs.size() + 1U), .Frame = std::move(**result)});
+    tab->SelectedPlane = SelectAvailableSnapshotPlane(tab->Frame, Engine::SnapshotPlane::FinalColor)
+                             .value_or(Engine::SnapshotPlane::FinalColor);
     m_Tabs.push_back(std::move(tab));
     m_ActiveTab = m_Tabs.size() - 1U;
     m_CaptureMessage = "Captured immutable frame " + std::to_string(m_Tabs.size()) + " (" +
@@ -218,6 +260,8 @@ void SnapshotAnalysisPanel::OpenExr() {
     return;
   }
   auto tab = std::make_unique<Tab>(Tab{.Name = path->stem().string(), .Frame = std::move(*frame), .ExrPath = *path});
+  tab->SelectedPlane = SelectAvailableSnapshotPlane(tab->Frame, Engine::SnapshotPlane::FinalColor)
+                           .value_or(Engine::SnapshotPlane::FinalColor);
   m_Tabs.push_back(std::move(tab));
   m_ActiveTab = m_Tabs.size() - 1U;
   m_DisplayDirty = true;
@@ -243,6 +287,14 @@ void SnapshotAnalysisPanel::OpenWorkspace() {
       loaded->Frames.size() != loaded->ResolvedExrPaths.size()) {
     m_CaptureMessage = "Could not open workspace: loaded tab data is incomplete.";
     return;
+  }
+  for (size_t index = 0; index < loaded->Frames.size(); ++index) {
+    if (!loaded->Frames[index].HasPlane(loaded->Document.Tabs[index].SelectedPlane)) {
+      m_CaptureMessage = "Could not open workspace: tab " + std::to_string(index + 1U) + " selects plane '" +
+                         GetSnapshotPlaneName(loaded->Document.Tabs[index].SelectedPlane) +
+                         "' which its EXR payload does not contain.";
+      return;
+    }
   }
   const size_t offset = m_Tabs.size();
   m_ComparisonReference.reset();
@@ -403,6 +455,9 @@ auto SnapshotAnalysisPanel::SaveWorkspaceAs() -> bool {
 }
 
 auto SnapshotAnalysisPanel::BuildDisplayPixels(const Tab& tab) const -> std::vector<uint8_t> {
+  if (!tab.Frame.HasPlane(tab.SelectedPlane)) {
+    return {};
+  }
   if (m_ShowHeatmap) {
     std::vector<uint8_t> heatmap = BuildHeatmapPixels(tab);
     if (!heatmap.empty()) {
@@ -423,11 +478,17 @@ auto SnapshotAnalysisPanel::BuildDisplayPixels(const Tab& tab) const -> std::vec
   std::vector<uint8_t> rgba(pixelCount * 4U, 255U);
   const auto ids = frame.GetMaterialInstanceIds();
   const std::optional<uint32_t> isolatedId =
-      m_IsolateMaterial && tab.PinnedPixel
+      m_IsolateMaterial && tab.SelectedPlane == Engine::SnapshotPlane::FinalColor &&
+              frame.HasPlane(Engine::SnapshotPlane::MaterialInstanceId) && tab.PinnedPixel &&
+              tab.PinnedPixel->at(0) < frame.GetWidth() && tab.PinnedPixel->at(1) < frame.GetHeight()
           ? std::optional<uint32_t>(ids[tab.PinnedPixel->at(1) * frame.GetWidth() + tab.PinnedPixel->at(0)])
           : std::nullopt;
   for (size_t pixel = 0; pixel < pixelCount; ++pixel) {
-    std::array<float, 3> rgb = GetDisplayRgb(frame, tab.SelectedPlane, pixel);
+    auto displayRgb = GetDisplayRgb(frame, tab.SelectedPlane, pixel);
+    if (!displayRgb) {
+      return {};
+    }
+    std::array<float, 3> rgb = *displayRgb;
     if (isolatedId && ids[pixel] != *isolatedId) {
       rgb = {0.035F, 0.035F, 0.035F};
     }
@@ -444,7 +505,8 @@ auto SnapshotAnalysisPanel::BuildWipePixels(const Tab& tab) const -> std::vector
     return {};
   }
   const Engine::SnapshotFrame& reference = m_Tabs[*m_ComparisonReference]->Frame;
-  if (reference.GetWidth() != tab.Frame.GetWidth() || reference.GetHeight() != tab.Frame.GetHeight()) {
+  if (reference.GetWidth() != tab.Frame.GetWidth() || reference.GetHeight() != tab.Frame.GetHeight() ||
+      !reference.HasPlane(tab.SelectedPlane) || !tab.Frame.HasPlane(tab.SelectedPlane)) {
     return {};
   }
   const uint32_t width = tab.Frame.GetWidth();
@@ -453,7 +515,11 @@ auto SnapshotAnalysisPanel::BuildWipePixels(const Tab& tab) const -> std::vector
   std::vector<uint8_t> rgba(pixelCount * 4U, 255U);
   for (size_t pixel = 0; pixel < pixelCount; ++pixel) {
     const uint32_t x = static_cast<uint32_t>(pixel % width);
-    std::array<float, 3> rgb = GetDisplayRgb(x < divider ? reference : tab.Frame, tab.SelectedPlane, pixel);
+    auto displayRgb = GetDisplayRgb(x < divider ? reference : tab.Frame, tab.SelectedPlane, pixel);
+    if (!displayRgb) {
+      return {};
+    }
+    std::array<float, 3> rgb = *displayRgb;
     if (x == divider) {
       rgb = {4.0F, 4.0F, 4.0F};
     }
@@ -470,6 +536,9 @@ auto SnapshotAnalysisPanel::BuildHeatmapPixels(const Tab& tab) const -> std::vec
     return {};
   }
   const Engine::SnapshotFrame& reference = m_Tabs[*m_ComparisonReference]->Frame;
+  if (!reference.HasPlane(tab.SelectedPlane) || !tab.Frame.HasPlane(tab.SelectedPlane)) {
+    return {};
+  }
   auto result = Engine::SnapshotAnalysis::ComputeComparison(
       ToAnalysisView(reference, tab.SelectedPlane), ToAnalysisView(tab.Frame, tab.SelectedPlane), m_ComparisonMetric);
   if (!result) {
@@ -494,18 +563,34 @@ void SnapshotAnalysisPanel::DrawFrame(Tab& tab, size_t tabIndex) {
   const Engine::SnapshotFrame& frame = tab.Frame;
   const auto dimensions = std::to_string(frame.GetWidth()) + " × " + std::to_string(frame.GetHeight());
   ImGui::Text("%s  |  %s", tab.Name.c_str(), dimensions.c_str());
-  const std::array<const char*, 7> aovNames = {
-      "final_color",          "depth",   "world_normal", "specular_lighting", "diffuse_lighting",
-      "material_instance_id", "overdraw"};
-  int selected = static_cast<int>(tab.SelectedPlane);
-  if (ImGui::Combo("Plane", &selected, aovNames.data(), static_cast<int>(aovNames.size()))) {
-    tab.SelectedPlane = static_cast<Engine::SnapshotPlane>(selected);
+  const std::vector<Engine::SnapshotPlane> availablePlanes = GetAvailableSnapshotPlanes(frame);
+  std::vector<const char*> availablePlaneNames;
+  availablePlaneNames.reserve(availablePlanes.size());
+  int selectedPlaneIndex = 0;
+  for (size_t index = 0; index < availablePlanes.size(); ++index) {
+    availablePlaneNames.push_back(GetSnapshotPlaneName(availablePlanes[index]));
+    if (availablePlanes[index] == tab.SelectedPlane) {
+      selectedPlaneIndex = static_cast<int>(index);
+    }
+  }
+  if (availablePlaneNames.empty()) {
+    ImGui::TextDisabled("Frame has no available analysis planes.");
+    return;
+  }
+  if (ImGui::Combo("Plane", &selectedPlaneIndex, availablePlaneNames.data(),
+                   static_cast<int>(availablePlaneNames.size()))) {
+    tab.SelectedPlane = availablePlanes[static_cast<size_t>(selectedPlaneIndex)];
     InvalidateDisplay();
   }
   if (tab.SelectedPlane == Engine::SnapshotPlane::FinalColor) {
-    ImGui::SameLine();
-    if (ImGui::Checkbox("Isolate pinned material", &m_IsolateMaterial)) {
-      InvalidateDisplay();
+    if (frame.HasPlane(Engine::SnapshotPlane::MaterialInstanceId)) {
+      ImGui::SameLine();
+      if (ImGui::Checkbox("Isolate pinned material", &m_IsolateMaterial)) {
+        InvalidateDisplay();
+      }
+    } else {
+      ImGui::SameLine();
+      ImGui::TextDisabled("Material isolation unavailable: material IDs were not captured.");
     }
   }
   if (m_Tabs.size() > 1U) {
@@ -531,13 +616,35 @@ void SnapshotAnalysisPanel::DrawFrame(Tab& tab, size_t tabIndex) {
         m_ComparisonMetric = static_cast<Engine::SnapshotAnalysis::DifferenceMetric>(metric);
         m_DisplayDirty = true;
       }
+      const auto& referenceFrame = m_Tabs[*m_ComparisonReference]->Frame;
+      const bool equalDimensions =
+          referenceFrame.GetWidth() == frame.GetWidth() && referenceFrame.GetHeight() == frame.GetHeight();
+      const bool selectedPlaneAvailable =
+          referenceFrame.HasPlane(tab.SelectedPlane) && frame.HasPlane(tab.SelectedPlane);
+      const auto comparison =
+          Engine::SnapshotAnalysis::ComputeComparison(ToAnalysisView(referenceFrame, tab.SelectedPlane),
+                                                      ToAnalysisView(frame, tab.SelectedPlane), m_ComparisonMetric);
+      const bool heatmapAvailable = equalDimensions && selectedPlaneAvailable && comparison.has_value();
+      const bool wipeAvailable = equalDimensions && selectedPlaneAvailable;
+      if (!heatmapAvailable && m_ShowHeatmap) {
+        m_ShowHeatmap = false;
+        m_DisplayDirty = true;
+      }
+      if (!wipeAvailable && m_ShowWipe) {
+        m_ShowWipe = false;
+        m_DisplayDirty = true;
+      }
+      ImGui::BeginDisabled(!heatmapAvailable);
       if (ImGui::Checkbox("Display heatmap", &m_ShowHeatmap)) {
         m_DisplayDirty = true;
       }
+      ImGui::EndDisabled();
       ImGui::SameLine();
+      ImGui::BeginDisabled(!wipeAvailable);
       if (ImGui::Checkbox("Wipe A/B", &m_ShowWipe)) {
         m_DisplayDirty = true;
       }
+      ImGui::EndDisabled();
       if (m_ShowWipe && ImGui::SliderFloat("Wipe position", &m_WipePosition, 0.0F, 1.0F)) {
         m_DisplayDirty = true;
       }
@@ -558,26 +665,29 @@ void SnapshotAnalysisPanel::DrawFrame(Tab& tab, size_t tabIndex) {
           ImGui::TextDisabled("Heatmap unavailable: maximum must be greater than minimum.");
         }
       }
-      const auto difference = Engine::SnapshotAnalysis::ComputeComparison(
-          ToAnalysisView(m_Tabs[*m_ComparisonReference]->Frame, tab.SelectedPlane),
-          ToAnalysisView(tab.Frame, tab.SelectedPlane), m_ComparisonMetric);
-      if (difference) {
+      if (!selectedPlaneAvailable) {
+        ImGui::TextDisabled("Comparison unavailable: the selected plane is missing from one of the frames.");
+      } else if (!equalDimensions) {
+        ImGui::TextDisabled("Comparison unavailable: frames have different dimensions.");
+      } else if (comparison) {
         ImGui::Text("B - A | valid %llu | invalid %llu | mean %.8g | RMS %.8g | max %.8g",
-                    static_cast<unsigned long long>(difference->Statistics.ValidSampleCount),
-                    static_cast<unsigned long long>(difference->Statistics.InvalidSampleCount),
-                    difference->Statistics.Mean, difference->Statistics.Rms, difference->Statistics.Maximum);
+                    static_cast<unsigned long long>(comparison->Statistics.ValidSampleCount),
+                    static_cast<unsigned long long>(comparison->Statistics.InvalidSampleCount),
+                    comparison->Statistics.Mean, comparison->Statistics.Rms, comparison->Statistics.Maximum);
         if (tab.PinnedPixel) {
           const size_t pixel = static_cast<size_t>(tab.PinnedPixel->at(1)) * frame.GetWidth() + tab.PinnedPixel->at(0);
-          if (pixel < difference->ScalarValues.size() && difference->ValidSamples[pixel] != 0U) {
-            ImGui::Text("Pinned raw error: %.10g", difference->ScalarValues[pixel]);
+          if (pixel < comparison->ScalarValues.size() && comparison->ValidSamples[pixel] != 0U) {
+            ImGui::Text("Pinned raw error: %.10g", comparison->ScalarValues[pixel]);
           }
         }
       } else {
-        ImGui::TextDisabled("Frames cannot be compared: %s", difference.error().Message.c_str());
+        ImGui::TextDisabled("Frames cannot be compared: %s", comparison.error().Message.c_str());
       }
-      const auto& referenceFrame = m_Tabs[*m_ComparisonReference]->Frame;
-      if (referenceFrame.GetWidth() != frame.GetWidth() || referenceFrame.GetHeight() != frame.GetHeight()) {
-        ImGui::TextDisabled("Wipe requires equal frame dimensions.");
+      if (!wipeAvailable) {
+        ImGui::TextDisabled("Wipe unavailable: frames need equal dimensions and the selected plane.");
+      }
+      if (!heatmapAvailable && equalDimensions && selectedPlaneAvailable) {
+        ImGui::TextDisabled("Heatmap unavailable for this plane and metric: %s", comparison.error().Message.c_str());
       }
     }
   }
@@ -591,15 +701,23 @@ void SnapshotAnalysisPanel::DrawFrame(Tab& tab, size_t tabIndex) {
   const ImVec2 size(static_cast<float>(frame.GetWidth()) * displayScale,
                     static_cast<float>(frame.GetHeight()) * displayScale);
   const ImVec2 origin(ImGui::GetCursorScreenPos().x + tab.Pan[0], ImGui::GetCursorScreenPos().y + tab.Pan[1]);
+  bool displayAvailable = true;
   if (m_DisplayDirty || m_UploadedTab != tabIndex || m_UploadedPlane != tab.SelectedPlane) {
     const std::vector<uint8_t> pixels = BuildDisplayPixels(tab);
-    if (m_UploadImage && !pixels.empty() && m_UploadImage(frame.GetWidth(), frame.GetHeight(), pixels)) {
+    if (pixels.empty()) {
+      displayAvailable = false;
+      if (m_ClearImage) {
+        m_ClearImage();
+      }
+      m_UploadedTab = static_cast<size_t>(-1);
+      m_DisplayDirty = false;
+    } else if (m_UploadImage && m_UploadImage(frame.GetWidth(), frame.GetHeight(), pixels)) {
       m_UploadedTab = tabIndex;
       m_UploadedPlane = tab.SelectedPlane;
       m_DisplayDirty = false;
     }
   }
-  if (m_GetTexture) {
+  if (displayAvailable && m_GetTexture) {
     void* texture = m_GetTexture();
     if (texture != nullptr) {
       ImGui::SetCursorScreenPos(origin);
@@ -649,6 +767,8 @@ void SnapshotAnalysisPanel::DrawFrame(Tab& tab, size_t tabIndex) {
     } else {
       ImGui::TextDisabled("Snapshot image texture is unavailable.");
     }
+  } else if (!displayAvailable) {
+    ImGui::TextDisabled("Selected snapshot plane is unavailable in this frame.");
   }
   ImGui::EndChild();
   ImGui::TextDisabled("Wheel zooms the displayed image; middle drag pans. Click to pin a source pixel; Shift-drag to "
@@ -658,8 +778,21 @@ void SnapshotAnalysisPanel::DrawFrame(Tab& tab, size_t tabIndex) {
     const uint32_t x = tab.PinnedPixel->at(0);
     const uint32_t y = tab.PinnedPixel->at(1);
     const size_t pixel = static_cast<size_t>(y) * frame.GetWidth() + x;
-    ImGui::Text("Pinned pixel (%u, %u) | material id %u | overdraw %u", x, y, frame.GetMaterialInstanceIds()[pixel],
-                frame.GetOverdraw()[pixel]);
+    ImGui::Text("Pinned pixel (%u, %u)", x, y);
+    if (frame.HasPlane(Engine::SnapshotPlane::MaterialInstanceId)) {
+      ImGui::SameLine();
+      ImGui::Text("material id %u", frame.GetMaterialInstanceIds()[pixel]);
+    } else {
+      ImGui::SameLine();
+      ImGui::TextDisabled("material ID plane unavailable");
+    }
+    if (frame.HasPlane(Engine::SnapshotPlane::Overdraw)) {
+      ImGui::SameLine();
+      ImGui::Text("overdraw %u", frame.GetOverdraw()[pixel]);
+    } else {
+      ImGui::SameLine();
+      ImGui::TextDisabled("overdraw plane unavailable");
+    }
     if (ImGui::TreeNode("Captured AOV values")) {
       for (const auto& plane : frame.GetFloatPlanes()) {
         const size_t base = pixel * plane.ChannelCount;
@@ -674,7 +807,9 @@ void SnapshotAnalysisPanel::DrawFrame(Tab& tab, size_t tabIndex) {
       }
       ImGui::TreePop();
     }
-    if (ImGui::TreeNode("Captured material")) {
+    if (!frame.HasPlane(Engine::SnapshotPlane::MaterialInstanceId)) {
+      ImGui::TextDisabled("Captured material data unavailable: material IDs were not captured.");
+    } else if (ImGui::TreeNode("Captured material")) {
       const uint32_t materialId = frame.GetMaterialInstanceIds()[pixel];
       bool found = false;
       for (const auto& material : frame.GetManifest()) {
@@ -781,10 +916,13 @@ void SnapshotAnalysisPanel::DrawFrame(Tab& tab, size_t tabIndex) {
     } else {
       ImGui::TextDisabled("ROI analysis unavailable: %s", histogram.error().Message.c_str());
     }
+  } else if (tab.Roi) {
+    ImGui::TextDisabled("ROI histogram unavailable: final_color was not captured.");
   }
 }
 
 void SnapshotAnalysisPanel::Draw() {
+  RefreshCameraOptions();
   ImGuiViewport* viewport = ImGui::GetMainViewport();
   ImGui::SetNextWindowPos(viewport->WorkPos);
   ImGui::SetNextWindowSize(viewport->WorkSize);
@@ -811,10 +949,44 @@ void SnapshotAnalysisPanel::Draw() {
     ImGui::SameLine();
     ImGui::TextDisabled("Captured frames remain stored in the workspace while you return to the editor.");
     ImGui::Separator();
+    if (m_CameraOptions.empty()) {
+      ImGui::TextDisabled("No valid authored camera is available in the active scene.");
+    } else {
+      std::vector<const char*> cameraNames;
+      cameraNames.reserve(m_CameraOptions.size());
+      int selectedCameraIndex = 0;
+      for (size_t index = 0; index < m_CameraOptions.size(); ++index) {
+        cameraNames.push_back(m_CameraOptions[index].Label.c_str());
+        if (m_SelectedCamera == m_CameraOptions[index].Entity) {
+          selectedCameraIndex = static_cast<int>(index);
+        }
+      }
+      if (ImGui::Combo("Authored camera", &selectedCameraIndex, cameraNames.data(),
+                       static_cast<int>(cameraNames.size()))) {
+        m_SelectedCamera = m_CameraOptions[static_cast<size_t>(selectedCameraIndex)].Entity;
+      }
+    }
+    ImGui::Text("Capture planes");
+    if (ImGui::BeginTable("snapshot_capture_planes", 4)) {
+      for (size_t index = 0; index < SnapshotPlanes.size(); ++index) {
+        ImGui::TableNextColumn();
+        ImGui::PushID(static_cast<int>(index));
+        bool enabled = IsSnapshotCapturePlaneEnabled(m_SelectedCapturePlanes, SnapshotPlanes[index]);
+        if (ImGui::Checkbox(SnapshotPlaneNames[index], &enabled)) {
+          m_SelectedCapturePlanes =
+              SetSnapshotCapturePlaneEnabled(m_SelectedCapturePlanes, SnapshotPlanes[index], enabled);
+        }
+        ImGui::PopID();
+      }
+      ImGui::EndTable();
+    }
+    if (!HasSnapshotCapturePlaneSelection(m_SelectedCapturePlanes)) {
+      ImGui::TextDisabled("Select at least one capture plane.");
+    }
     ImGui::InputScalar("Width override (0 = authored)", ImGuiDataType_U32, &m_WidthOverride);
     ImGui::InputScalar("Height override (0 = authored)", ImGuiDataType_U32, &m_HeightOverride);
-    ImGui::SameLine();
-    ImGui::BeginDisabled(m_CaptureTicket.has_value());
+    ImGui::BeginDisabled(m_CaptureTicket.has_value() || !m_SelectedCamera ||
+                         !HasSnapshotCapturePlaneSelection(m_SelectedCapturePlanes));
     if (ImGui::Button("Capture selected camera")) {
       StartCapture();
     }
