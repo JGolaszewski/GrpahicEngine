@@ -10,6 +10,8 @@ cbuffer PerObjectCB : register(b0)
     float4x4 g_World;
     float4x4 g_NormalMatrix;
     float4   g_ObjectParams;
+    uint     g_MaterialInstanceId;
+    uint3    g_ObjectCapturePadding;
 };
 
 // Material buffer
@@ -166,6 +168,7 @@ struct PS_OUTPUT
     float4 WorldNormal : SV_TARGET2;
     float4 SpecularLighting : SV_TARGET3;
     float4 DiffuseLighting : SV_TARGET4;
+    uint MaterialInstanceId : SV_TARGET5;
 };
 
 PS_OUTPUT main_ps(VS_OUTPUT input)
@@ -185,6 +188,7 @@ PS_OUTPUT main_ps(VS_OUTPUT input)
         output.WorldNormal = float4(BrdfNormalizeOr(input.normalWS, float3(0.0f, 0.0f, 1.0f)), 1.0f);
         output.SpecularLighting = float4(0.0f, 0.0f, 0.0f, baseColor.a);
         output.DiffuseLighting = float4(unlit, baseColor.a);
+        output.MaterialInstanceId = g_MaterialInstanceId;
         return output;
     }
 
@@ -325,5 +329,6 @@ PS_OUTPUT main_ps(VS_OUTPUT input)
     output.WorldNormal = float4(N, 1.0f);
     output.SpecularLighting = float4(specularLighting, baseColor.a);
     output.DiffuseLighting = float4(diffuseLighting, baseColor.a);
+    output.MaterialInstanceId = g_MaterialInstanceId;
     return output;
 }
