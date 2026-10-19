@@ -66,8 +66,7 @@ auto ValidateMetadata(const SnapshotFrameMetadata& metadata, uint32_t width, uin
       metadata.Camera.FarPlane <= metadata.Camera.NearPlane || quaternionLengthSquared < 1.0e-8F) {
     return std::unexpected(MakeError("snapshot camera metadata is invalid"));
   }
-  if (metadata.RenderSettings.SampleCount != 1 || metadata.RenderSettings.ShadowMapResolution == 0 ||
-      metadata.RenderSettings.MaxShadowCasters == 0) {
+  if (metadata.RenderSettings.SampleCount != 1 || metadata.RenderSettings.ShadowMapResolution == 0) {
     return std::unexpected(MakeError("snapshot render settings are invalid"));
   }
   if (metadata.Camera.Projection != SnapshotProjectionType::Perspective ||

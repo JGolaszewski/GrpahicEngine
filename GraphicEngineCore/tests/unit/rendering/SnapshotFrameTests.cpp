@@ -102,4 +102,14 @@ TEST(SnapshotFrameTests, RejectsInvalidCameraTimestampAndSampleCount) {
   EXPECT_FALSE(Engine::SnapshotFrame::Create(std::move(metadata), Manifest(), 2, 1, Planes(), {0U, 0U}, {0U, 0U}));
 }
 
+TEST(SnapshotFrameTests, AllowsZeroShadowCastersButRequiresValidShadowMapResolution) {
+  auto metadata = Metadata();
+  metadata.RenderSettings.MaxShadowCasters = 0;
+  EXPECT_TRUE(Engine::SnapshotFrame::Create(std::move(metadata), {}, 2, 1, Planes(), {0U, 0U}, {0U, 0U}));
+
+  metadata = Metadata();
+  metadata.RenderSettings.ShadowMapResolution = 0;
+  EXPECT_FALSE(Engine::SnapshotFrame::Create(std::move(metadata), {}, 2, 1, Planes(), {0U, 0U}, {0U, 0U}));
+}
+
 } // namespace
