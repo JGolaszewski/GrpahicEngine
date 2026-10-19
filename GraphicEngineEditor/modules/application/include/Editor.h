@@ -45,7 +45,6 @@ protected:
   void OnBeginUIFrame() override;
   void OnEndUIFrame() override;
   void OnShutdownUI() override;
-  void OnResize(uint32_t width, uint32_t height) override;
   void OnEvent(Engine::Events::Event& event) override;
   void OnSetupViews() override;
   void OnSceneReplaced(const std::shared_ptr<Engine::Scene>& scene) override;

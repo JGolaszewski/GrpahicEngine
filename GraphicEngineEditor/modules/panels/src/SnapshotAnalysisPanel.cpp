@@ -871,7 +871,9 @@ void SnapshotAnalysisPanel::DrawFrame(Tab& tab, size_t tabIndex) {
                     static_cast<float>(frame.GetHeight()) * displayScale);
   tab.Pan[0] = CameraPreviewImageLayout::ClampPanOffset(tab.Pan[0], (std::max)(size.x - available.x, 0.0F));
   tab.Pan[1] = CameraPreviewImageLayout::ClampPanOffset(tab.Pan[1], (std::max)(size.y - available.y, 0.0F));
-  const ImVec2 origin(ImGui::GetCursorScreenPos().x + tab.Pan[0], ImGui::GetCursorScreenPos().y + tab.Pan[1]);
+  const ImVec2 canvasOrigin = ImGui::GetCursorScreenPos();
+  const ImVec2 origin(canvasOrigin.x + (std::max)(available.x - size.x, 0.0F) * 0.5F + tab.Pan[0],
+                      canvasOrigin.y + (std::max)(available.y - size.y, 0.0F) * 0.5F + tab.Pan[1]);
   bool displayAvailable = true;
   if (m_DisplayDirty || m_UploadedTab != tabIndex || m_UploadedPlane != tab.SelectedPlane) {
     const std::vector<uint8_t> pixels = BuildDisplayPixels(tab);
@@ -974,6 +976,8 @@ void SnapshotAnalysisPanel::Draw() {
     ImGui::SameLine();
     ImGui::TextDisabled("Captured frames remain stored in the workspace while you return to the editor.");
     ImGui::Separator();
+    const float controlWidth = (std::min)(420.0F, ImGui::GetFontSize() * 26.0F);
+    ImGui::PushItemWidth(controlWidth);
     if (m_CameraOptions.empty()) {
       ImGui::TextDisabled("No valid authored camera is available in the active scene.");
     } else {
@@ -992,7 +996,18 @@ void SnapshotAnalysisPanel::Draw() {
       }
     }
     ImGui::Text("Capture planes");
-    if (ImGui::BeginTable("snapshot_capture_planes", 4)) {
+    const float planeColumnWidth = ImGui::GetFontSize() * 11.0F;
+    const float planeAvailableWidth = ImGui::GetContentRegionAvail().x;
+    const int planeColumnCount = std::clamp(static_cast<int>(planeAvailableWidth / planeColumnWidth), 1, 4);
+    if (ImGui::BeginTable("snapshot_capture_planes", planeColumnCount)) {
+      constexpr const char* PlaneColumnNames[] = {"Capture plane 1", "Capture plane 2", "Capture plane 3",
+                                                  "Capture plane 4"};
+      for (int column = 0; column < planeColumnCount; ++column) {
+        ImGui::TableSetupColumn(PlaneColumnNames[column],
+                                planeAvailableWidth < planeColumnWidth ? ImGuiTableColumnFlags_WidthStretch
+                                                                       : ImGuiTableColumnFlags_WidthFixed,
+                                planeColumnWidth);
+      }
       for (size_t index = 0; index < SnapshotPlanes.size(); ++index) {
         ImGui::TableNextColumn();
         ImGui::PushID(static_cast<int>(index));
@@ -1010,6 +1025,7 @@ void SnapshotAnalysisPanel::Draw() {
     }
     ImGui::InputScalar("Width override (0 = authored)", ImGuiDataType_U32, &m_WidthOverride);
     ImGui::InputScalar("Height override (0 = authored)", ImGuiDataType_U32, &m_HeightOverride);
+    ImGui::PopItemWidth();
     ImGui::BeginDisabled(m_CaptureTicket.has_value() || !m_SelectedCamera ||
                          !HasSnapshotCapturePlaneSelection(m_SelectedCapturePlanes));
     if (ImGui::Button("Capture selected camera")) {

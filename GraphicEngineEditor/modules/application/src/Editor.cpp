@@ -646,8 +646,6 @@ void Editor::OnShutdownUI() {
   m_UiIntegration.Shutdown();
 }
 
-void Editor::OnResize(uint32_t width, uint32_t height) { CreateViewport(width, height); }
-
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
 void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
   if (!event) {
