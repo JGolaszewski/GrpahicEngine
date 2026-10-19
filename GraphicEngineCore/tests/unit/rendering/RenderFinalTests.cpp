@@ -129,6 +129,46 @@ TEST(RenderFinalTests, WARPFinalOutputUsesRequestedDimensionsAndOmitsDebugPass) 
   EXPECT_NE(renderer.GetRenderGraph()->Dump().find("DebugPass"), std::string::npos);
 }
 
+TEST(RenderFinalTests, WARPRepeatedSnapshotPollPreservesCompletedStatus) {
+  EngineTests::WarpDevice device;
+  if (!device.Initialize()) {
+    GTEST_SKIP() << "D3D11 WARP device could not be created on this host";
+  }
+
+  EngineTests::WarpRenderBackend backend(device.GetDevice());
+  Engine::RenderSystem renderer(&backend);
+  ASSERT_TRUE(renderer.IsValid());
+
+  Engine::Scene scene;
+  Engine::Renderer::CameraView camera;
+  Engine::SnapshotFrameMetadata metadata;
+  metadata.CaptureTimeUtc = "2026-10-19T12:00:00Z";
+  metadata.SceneIdentity = "snapshot-poll-test-scene";
+  metadata.Camera.Identity = "snapshot-poll-test-camera";
+  metadata.Camera.AuthoredWidth = 8;
+  metadata.Camera.AuthoredHeight = 6;
+  metadata.OutputWidth = 8;
+  metadata.OutputHeight = 6;
+
+  auto ticket = renderer.BeginSnapshotRender(scene, camera, std::move(metadata), 8, 6);
+  ASSERT_TRUE(ticket.has_value()) << (ticket.has_value() ? "" : ticket.error().Message);
+  device.GetDevice()->waitForIdle();
+
+  auto result = renderer.PollSnapshotRender(*ticket);
+  ASSERT_TRUE(result.has_value()) << (result.has_value() ? "" : result.error().Message);
+  ASSERT_TRUE(result->has_value());
+  auto status = renderer.GetSnapshotRenderStatus(*ticket);
+  ASSERT_TRUE(status.has_value());
+  EXPECT_EQ(status->CurrentPhase, Engine::RenderSystem::SnapshotRenderStatus::Phase::Completed);
+
+  const auto repeatedPoll = renderer.PollSnapshotRender(*ticket);
+  EXPECT_FALSE(repeatedPoll.has_value());
+  status = renderer.GetSnapshotRenderStatus(*ticket);
+  ASSERT_TRUE(status.has_value());
+  EXPECT_EQ(status->CurrentPhase, Engine::RenderSystem::SnapshotRenderStatus::Phase::Completed);
+  EXPECT_EQ(status->Message, "Snapshot capture completed");
+}
+
 TEST(RenderFinalTests, WARPSceneViewportAndPipMatchPngDisplayTransformWhileFinalAovStaysLinear) {
   EngineTests::WarpDevice device;
   if (!device.Initialize()) {

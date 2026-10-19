@@ -975,6 +975,9 @@ auto RenderSystem::PollSnapshotRender(SnapshotRenderTicket ticket) -> Engine::Re
       status->second.CurrentPhase == SnapshotRenderStatus::Phase::Canceled) {
     return std::unexpected(Engine::MakeError(status->second.Message));
   }
+  if (status->second.CurrentPhase == SnapshotRenderStatus::Phase::Completed) {
+    return std::unexpected(Engine::MakeError("snapshot ticket has already been consumed"));
+  }
   auto renderOutput = PollFinalRenderOutput(ticket);
   if (!renderOutput) {
     auto& mutableStatus = m_SnapshotStatuses.at(ticket);

@@ -124,6 +124,7 @@ public:
                                                            SnapshotFrameMetadata metadata, uint32_t width,
                                                            uint32_t height);
   /// Polls a snapshot request. An empty optional means GPU work is still pending; no partial frame is returned.
+  /// A completed frame is returned once; repeated polls report an error without changing the completed status.
   Engine::Result<std::optional<SnapshotFrame>> PollSnapshotRender(SnapshotRenderTicket ticket);
   /// Returns the current progress or terminal result for a snapshot request. Status remains available until the next
   /// snapshot request begins.
