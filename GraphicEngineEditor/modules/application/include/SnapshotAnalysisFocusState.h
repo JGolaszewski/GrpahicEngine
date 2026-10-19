@@ -2,11 +2,20 @@
 
 #include "scene/include/Scene.h"
 
+#include <imgui.h>
+
 #include <filesystem>
 #include <memory>
 #include <optional>
 #include <string>
 #include <utility>
+
+/// Returns dockspace flags that preserve the editor layout while the focused workspace is visible.
+/// @param focused Whether Snapshot Analysis currently owns the editor content area.
+/// @return Keep-alive-only flags during focus mode, or the normal editor dockspace flags.
+constexpr auto GetSnapshotAnalysisDockspaceFlags(bool focused) noexcept -> ImGuiDockNodeFlags {
+  return focused ? ImGuiDockNodeFlags_KeepAliveOnly : ImGuiDockNodeFlags_PassthruCentralNode;
+}
 
 /// Editor state needed to restore the view after leaving Snapshot Analysis focus mode.
 struct SnapshotAnalysisFocusRestoreState {

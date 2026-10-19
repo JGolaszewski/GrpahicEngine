@@ -554,11 +554,13 @@ void Editor::OnUIRender() {
     }
   }
   m_MainBar->Draw();
-  if (m_SnapshotAnalysisFocusState.IsActive()) {
+  const bool snapshotAnalysisFocused = m_SnapshotAnalysisFocusState.IsActive();
+  const ImGuiID dockspaceId = ImGui::GetID("MainDockSpace");
+  ImGui::DockSpaceOverViewport(dockspaceId, ImGui::GetMainViewport(),
+                               GetSnapshotAnalysisDockspaceFlags(snapshotAnalysisFocused));
+  if (snapshotAnalysisFocused) {
     m_SnapshotAnalysisPanel->Draw();
   } else {
-    const ImGuiID dockspaceId = ImGui::GetID("MainDockSpace");
-    ImGui::DockSpaceOverViewport(dockspaceId, ImGui::GetMainViewport(), ImGuiDockNodeFlags_PassthruCentralNode);
     BuildDefaultDockLayoutIfNeeded(dockspaceId);
     for (auto& panel : m_Panels) {
       panel->Draw();

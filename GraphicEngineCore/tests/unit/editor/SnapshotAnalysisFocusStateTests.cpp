@@ -36,3 +36,8 @@ TEST(SnapshotAnalysisFocusStateTests, ClosingFocusModeDoesNotReplaceOrMutateTheA
   EXPECT_EQ(restored->ActiveScene.get(), activeSceneIdentity);
   EXPECT_EQ(restored->ActiveScene, activeScene);
 }
+
+TEST(SnapshotAnalysisFocusStateTests, FocusModeKeepsTheEditorDockspaceAliveWithoutDisplayingIt) {
+  EXPECT_EQ(GetSnapshotAnalysisDockspaceFlags(true), ImGuiDockNodeFlags_KeepAliveOnly);
+  EXPECT_EQ(GetSnapshotAnalysisDockspaceFlags(false), ImGuiDockNodeFlags_PassthruCentralNode);
+}
