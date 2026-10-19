@@ -68,6 +68,21 @@ TEST(SnapshotRoiHistogramTests, ExcludesAndCountsInvalidPixelsAndUsesNitsOnlyWit
   EXPECT_EQ(histogram->Bins[1][0], 1); // Values below minimum clamp into the first bin.
 }
 
+TEST(SnapshotRoiHistogramTests, AppliesPhotometricScaleToLuminanceBinsButKeepsRgbSceneLinear) {
+  const std::array<float, 4> rawPixel{0.2F, 0.2F, 0.2F, 1.0F};
+  const PlaneView plane = ColorPlane(rawPixel, 1, 1, LinearRec709(20.0));
+  const RoiHistogramOptions options{{0, 0, 1, 1}, 4, 0.0F, 4.0F};
+
+  const auto histogram = Engine::SnapshotAnalysis::ComputeRoiHistogram(plane, options);
+
+  ASSERT_TRUE(histogram.has_value()) << histogram.error().Message;
+  EXPECT_EQ(histogram->LuminanceUnits, LuminanceUnit::Nits);
+  EXPECT_EQ(histogram->Bins[0], (std::vector<std::uint64_t>{1, 0, 0, 0}));
+  EXPECT_EQ(histogram->Bins[3], (std::vector<std::uint64_t>{0, 0, 0, 1}));
+  EXPECT_FLOAT_EQ(plane.FloatSamples[0], 0.2F); // Histogram analysis does not alter captured storage.
+  EXPECT_FLOAT_EQ(plane.FloatSamples[1], 0.2F);
+}
+
 TEST(SnapshotRoiHistogramTests, RejectsInvalidRoisAndNonlinearOrNonRec709Color) {
   const std::array<float, 4> pixel{0.1F, 0.2F, 0.3F, 1.0F};
   RoiHistogramOptions options{{0, 0, 1, 1}, 16, 0.0F, 1.0F};
@@ -140,7 +155,7 @@ TEST(SnapshotComparisonTests, ReportsCompatibilityFailuresWithoutResamplingOrRei
   EXPECT_NE(colorMismatch.error().Message.find("color interpretation"), std::string::npos);
   const auto differentCalibration = ColorPlane(pixels, 1, 1, LinearRec709(100.0));
   const auto calibrationMismatch = Engine::SnapshotAnalysis::ComputeComparison(
-      ColorPlane(pixels, 1, 1, LinearRec709(200.0)), differentCalibration, DifferenceMetric::MeanAbsolute);
+      ColorPlane(pixels, 1, 1, LinearRec709(200.0)), differentCalibration, DifferenceMetric::RelativeLuminance);
   ASSERT_FALSE(calibrationMismatch.has_value());
   EXPECT_NE(calibrationMismatch.error().Message.find("color interpretation"), std::string::npos);
 }

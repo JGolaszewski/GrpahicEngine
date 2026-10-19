@@ -76,7 +76,9 @@ struct ENGINE_API RoiHistogramOptions {
 /// RGB and Rec. 709 luminance histograms over source pixels in Region. Values
 /// below/above the requested range are accumulated in the end bins. Invalid
 /// RGB samples are excluded and counted once per pixel. OutOfRangeValueCount
-/// counts individual RGB/luminance values accumulated into an end bin.
+/// counts individual RGB/luminance values accumulated into an end bin. RGB
+/// bins retain captured scene-linear channel values; luminance bins are scaled
+/// to Nits only when NitsPerSceneLinearUnit is present.
 struct ENGINE_API RoiHistogram {
   std::array<std::vector<std::uint64_t>, 4> Bins{};                  ///< R, G, B, luminance.
   std::uint64_t ValidPixelCount = 0;                                 ///< Pixels contributing to each histogram.
