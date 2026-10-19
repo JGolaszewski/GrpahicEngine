@@ -19,6 +19,18 @@
 
 namespace Engine {
 
+/// Stable identifiers for every plane owned by a complete snapshot frame.
+/// The first five values match RenderAov; the integer planes remain typed UInt32 data.
+enum class SnapshotPlane : uint8_t {
+  FinalColor,         ///< Linear RGBA final color.
+  Depth,              ///< Normalized device depth.
+  WorldNormal,        ///< World-space shading normal.
+  SpecularLighting,   ///< Specular lighting contribution.
+  DiffuseLighting,    ///< Diffuse and emissive lighting contribution.
+  MaterialInstanceId, ///< Exact UInt32 capture-local material-instance identity.
+  Overdraw            ///< Exact UInt32 pre-depth fragment count.
+};
+
 /// Authored projection kind recorded with an immutable snapshot frame.
 enum class SnapshotProjectionType : uint8_t { Perspective };
 
