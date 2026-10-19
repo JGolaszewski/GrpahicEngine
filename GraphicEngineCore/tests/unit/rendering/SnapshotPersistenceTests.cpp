@@ -112,6 +112,62 @@ TEST(SnapshotPersistenceTests, ExrRoundTripPreservesFloatUInt32AndMetadata) {
   EXPECT_EQ(loaded->GetManifest()[0].ResourceIdentities, source->GetManifest()[0].ResourceIdentities);
 }
 
+TEST(SnapshotPersistenceTests, ExrRoundTripPreservesSelectedSubsetAndWorkspaceValidatesSelection) {
+  TempDirectory temp;
+  auto full = MakeFrame();
+  ASSERT_TRUE(full);
+  std::vector<RenderOutputPlane> planes{full->GetFloatPlanes()[1]};
+  SnapshotFrameMetadata metadata = full->GetMetadata();
+  auto selected = SnapshotFrame::Create(std::move(metadata), {}, full->GetWidth(), full->GetHeight(), std::move(planes),
+                                        {}, {0U, 7U});
+  ASSERT_TRUE(selected);
+  EXPECT_TRUE(selected->HasPlane(SnapshotPlane::Depth));
+  EXPECT_TRUE(selected->HasPlane(SnapshotPlane::Overdraw));
+  EXPECT_FALSE(selected->HasPlane(SnapshotPlane::FinalColor));
+  const auto exr = temp.Path() / "selected.exr";
+  ASSERT_TRUE(SnapshotExr::Write(*selected, exr));
+  auto loaded = SnapshotExr::Read(exr);
+  ASSERT_TRUE(loaded) << loaded.error().Message;
+  ASSERT_EQ(loaded->GetFloatPlanes().size(), 1U);
+  EXPECT_EQ(loaded->GetFloatPlanes()[0].Aov, RenderAov::Depth);
+  EXPECT_EQ(loaded->GetFloatPlanes()[0].Pixels, selected->GetFloatPlanes()[0].Pixels);
+  EXPECT_TRUE(loaded->GetMaterialInstanceIds().empty());
+  EXPECT_TRUE(std::ranges::equal(loaded->GetOverdraw(), selected->GetOverdraw()));
+
+  const auto truncatedExr = temp.Path() / "truncated.exr";
+  auto reader = OIIO::ImageInput::open(exr.string());
+  ASSERT_TRUE(reader);
+  const OIIO::ImageSpec spec = reader->spec();
+  std::vector<float> firstPlane(static_cast<size_t>(spec.width) * spec.height * spec.nchannels);
+  ASSERT_TRUE(reader->read_image(0, 0, 0, spec.nchannels, OIIO::span<float>(firstPlane.data(), firstPlane.size())));
+  ASSERT_TRUE(reader->close());
+  auto writer = OIIO::ImageOutput::create("openexr");
+  ASSERT_TRUE(writer);
+  ASSERT_TRUE(writer->open(truncatedExr.string(), spec));
+  ASSERT_TRUE(writer->write_image(OIIO::span<const float>(firstPlane.data(), firstPlane.size())));
+  ASSERT_TRUE(writer->close());
+  auto truncated = SnapshotExr::Read(truncatedExr);
+  ASSERT_FALSE(truncated);
+  EXPECT_NE(truncated.error().Message.find("missing a declared plane"), std::string::npos);
+
+  SnapshotWorkspaceDocument document;
+  SnapshotFrameViewState tab;
+  tab.ExrPath = exr.filename();
+  tab.SelectedPlane = SnapshotPlane::Depth;
+  document.Tabs.push_back(tab);
+  const auto workspace = temp.Path() / "selected.aframe";
+  ASSERT_TRUE(SnapshotWorkspaceFile::Save(workspace, document));
+  auto restored = SnapshotWorkspaceFile::Load(workspace);
+  ASSERT_TRUE(restored) << restored.error().Message;
+  EXPECT_TRUE(restored->Frames[0].HasPlane(SnapshotPlane::Depth));
+
+  document.Tabs[0].SelectedPlane = SnapshotPlane::FinalColor;
+  EXPECT_FALSE(SnapshotWorkspaceFile::Save(workspace, document));
+  restored = SnapshotWorkspaceFile::Load(workspace);
+  ASSERT_TRUE(restored) << restored.error().Message;
+  EXPECT_EQ(restored->Document.Tabs[0].SelectedPlane, SnapshotPlane::Depth);
+}
+
 TEST(SnapshotPersistenceTests, RejectsCorruptAndIncompleteExrPayloads) {
   TempDirectory temp;
   const auto corrupt = temp.Path() / "broken.exr";

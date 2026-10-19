@@ -4,7 +4,8 @@ Snapshot Analysis captures one completed render from an authored scene camera
 and then works from the captured CPU-owned data. Inspection, pinning, material
 isolation, ROI analysis, comparison, and exports do not update the scene or
 render another frame. A capture becomes visible as a frame tab only after all
-required planes and metadata have been produced successfully.
+selected planes and metadata have been produced successfully. All seven supported
+planes are selected by default; users may capture a nonempty subset.
 
 ## Capture contract
 
@@ -26,15 +27,21 @@ frame when no other workspace state refers to it.
 
 ## Workspace controls
 
-Open the workspace from **Window > Snapshot Analysis**. Select an authored
-camera in the Hierarchy, then choose **Capture selected camera**. Leave both
+Open Snapshot Analysis from the editor **Main Bar**. It replaces the editor
+content area with a full-editor focused workspace rather than opening a floating
+or dockable panel. The Main Bar remains available. Exit the focused workspace
+to restore the previous editor view, layout, and focus. Select an authored
+camera and choose the capture layers, then choose **Capture selected camera**.
+All supported layers are selected by default. Leave both
 resolution override fields at zero to use the camera's authored resolution;
 enter both dimensions to override the output size for that frame only. Capture
 progress and failure messages appear beside the controls. Cancel discards the
 pending capture without adding a frame tab. A new tab appears only after all
-seven planes and the captured material manifest are ready.
+selected planes and any required captured material manifest are ready. A frame
+stores exactly its selected plane set; unselected planes are absent and are
+never treated as zero-filled values.
 
-Use **Open EXR** to validate and add a complete saved frame tab, or **Open
+Use **Open EXR** beside the capture controls to validate and add a saved frame tab, or **Open
 .aframe** to validate its workspace document and every referenced EXR before
 adding its frame tabs. A failure leaves the current tabs and scene untouched.
 **Export frame EXR** writes the selected complete frame, including the exact
@@ -71,8 +78,9 @@ analysis diagnostic and are not resampled or reinterpreted.
 
 ## Plane and pixel contract
 
-All seven planes have identical nonzero width and height and address the same
-source pixel. Coordinates use an origin at the upper-left; `x` increases to the
+All present planes have identical nonzero width and height and address the same
+source pixel. A frame contains at least one plane; plane availability is
+explicit. Coordinates use an origin at the upper-left; `x` increases to the
 right and `y` downwards. Rows are tightly packed in top-to-bottom order, so the
 sample index is `y * width + x`. Canvas zoom and pan transform display
 coordinates only. They do not resample pixels or change pinned-pixel and ROI
@@ -80,15 +88,15 @@ coordinates.
 
 | Plane | Storage and channels | Interpretation |
 | --- | --- | --- |
-| `final_color` | Float32 RGBA | Linear scene-referred color and opacity, after the optional final-color hook. RGB uses the captured color-space interpretation. |
-| `depth` | Float32 Z | Normalized device depth in `[0, 1]`; background is `1`. |
-| `world_normal` | Float32 XYZ | Normalized world-space shading normal. |
-| `specular_lighting` | Float32 RGB | Direct and environment specular contribution, before the final-color hook. |
-| `diffuse_lighting` | Float32 RGB | Direct diffuse, ambient/image-based diffuse, and emissive contribution, before the final-color hook. |
-| `material_instance_id` | UInt32 ID | Capture-local material-instance identity. `0` means no material/background. Nonzero values are keys into the frame manifest. IDs are never converted to floating point. |
-| `overdraw` | UInt32 count | Number of eligible scene-geometry fragments covering the pixel before depth testing. |
+| `final_color` | Float32 RGBA | Optional linear scene-referred color and opacity, after the optional final-color hook. RGB uses the captured color-space interpretation. |
+| `depth` | Float32 Z | Optional normalized device depth in `[0, 1]`; background is `1`. |
+| `world_normal` | Float32 XYZ | Optional normalized world-space shading normal. |
+| `specular_lighting` | Float32 RGB | Optional direct and environment specular contribution, before the final-color hook. |
+| `diffuse_lighting` | Float32 RGB | Optional direct diffuse, ambient/image-based diffuse, and emissive contribution, before the final-color hook. |
+| `material_instance_id` | UInt32 ID | Optional capture-local material-instance identity. `0` means no material/background. Nonzero values are keys into the frame manifest. IDs are never converted to floating point. |
+| `overdraw` | UInt32 count | Optional number of eligible scene-geometry fragments covering the pixel before depth testing. |
 
-The material manifest maps each nonzero ID to the captured entity identity,
+When `material_instance_id` is present, the material manifest maps each nonzero ID to the captured entity identity,
 submesh index, material slot, material identity, and captured material values
 and resource identities. It contains values and stable identities, not live
 object pointers. One manifest entry represents one entity/submesh/material
@@ -152,10 +160,10 @@ the heatmap range and metric.
 
 ## Persistence contract
 
-OpenEXR is the captured-data payload. It contains one named part per plane,
+OpenEXR is the captured-data payload. It contains one named part for each present plane,
 with float planes stored as FLOAT channels and `material_instance_id` and
 `overdraw` stored as UINT channels. Stable part/channel names and interpretation
-metadata travel with the payload. The reader validates required parts, channel
+metadata travel with the payload. The reader requires at least one plane and validates unique part names, channel
 types and layouts, dimensions, metadata, and material-manifest references
 before returning a frame. Missing, duplicate, unsupported, malformed, or
 corrupt input returns a path-specific error and no partial frame.
@@ -166,7 +174,8 @@ pinned pixels, source-space ROI, zoom and pan, and comparison pair, metric, and
 wipe position. Saving writes a complete valid document atomically. Opening an
 EXR creates a new frame tab; opening an `.aframe` creates a new workspace tab
 set. Neither operation loads source scene assets or changes the active scene.
-All referenced payloads are validated before the new tabs are committed to the
-workspace, preserving existing tabs on failure. Capture does not auto-save;
+Each tab's selected inspection plane must be present in its EXR. All referenced
+payloads are validated before the new tabs are committed to the workspace,
+preserving existing tabs on failure. Capture does not auto-save;
 save/export uses an explicit destination and confirms overwrite. Closing an
 unsaved workspace offers save, discard, or cancel.

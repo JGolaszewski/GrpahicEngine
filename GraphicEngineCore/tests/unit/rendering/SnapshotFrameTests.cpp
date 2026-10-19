@@ -61,11 +61,37 @@ TEST(SnapshotFrameTests, OwnsCompleteFloatAndExactIntegerPlanesAndMetadata) {
   EXPECT_EQ(frame.GetManifest()[0].Id, 0xF0000001U);
 }
 
-TEST(SnapshotFrameTests, RejectsMissingFloatPlaneAndIntegerExtentMismatch) {
+TEST(SnapshotFrameTests, AcceptsSelectedPlaneSubsetAndReportsAvailability) {
   auto planes = Planes();
-  planes.pop_back();
+  planes.erase(planes.begin());
+  planes.erase(planes.begin() + 1, planes.end());
+  auto result = Engine::SnapshotFrame::Create(Metadata(), {}, 2, 1, std::move(planes), {}, {0U, 4U});
+  ASSERT_TRUE(result);
+  EXPECT_EQ(result->GetWidth(), 2U);
+  EXPECT_EQ(result->GetHeight(), 1U);
+  EXPECT_TRUE(result->HasPlane(Engine::SnapshotPlane::Depth));
+  EXPECT_TRUE(result->HasPlane(Engine::SnapshotPlane::Overdraw));
+  EXPECT_FALSE(result->HasPlane(Engine::SnapshotPlane::FinalColor));
+  EXPECT_FALSE(result->HasPlane(Engine::SnapshotPlane::MaterialInstanceId));
+  EXPECT_TRUE(result->GetFloatPlanes().front().Aov == Engine::RenderAov::Depth);
+  EXPECT_TRUE(result->GetMaterialInstanceIds().empty());
+}
+
+TEST(SnapshotFrameTests, RejectsEmptySelectionAndMismatchedSelectedIntegerExtent) {
+  EXPECT_FALSE(Engine::SnapshotFrame::Create(Metadata(), {}, 2, 1, {}, {}, {}));
+  EXPECT_FALSE(Engine::SnapshotFrame::Create(Metadata(), {}, 2, 1, Planes(), {}, {0U}));
+}
+
+TEST(SnapshotFrameTests, RejectsUnsortedFloatPlanes) {
+  auto planes = Planes();
+  std::swap(planes[0], planes[1]);
   EXPECT_FALSE(Engine::SnapshotFrame::Create(Metadata(), Manifest(), 2, 1, std::move(planes), {0U, 0U}, {0U, 0U}));
-  EXPECT_FALSE(Engine::SnapshotFrame::Create(Metadata(), Manifest(), 2, 1, Planes(), {0U}, {0U, 0U}));
+}
+
+TEST(SnapshotFrameTests, RejectsDuplicateFloatPlanes) {
+  auto planes = Planes();
+  planes[1] = planes[0];
+  EXPECT_FALSE(Engine::SnapshotFrame::Create(Metadata(), Manifest(), 2, 1, std::move(planes), {0U, 0U}, {0U, 0U}));
 }
 
 TEST(SnapshotFrameTests, RejectsDimensionMismatchAndInvalidPhotometricCalibration) {

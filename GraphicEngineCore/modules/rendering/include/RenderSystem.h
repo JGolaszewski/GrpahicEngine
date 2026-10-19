@@ -119,10 +119,12 @@ public:
                                                      const Engine::FinalColorPostProcess& postProcess = {});
   /// Captures one complete immutable analysis frame. Scene packet construction and input/resource capture happen
   /// synchronously before this function returns; polling only waits for GPU readback and never revisits the scene.
+  /// Selected planes are retained in the immutable frame; an empty or unsupported mask is rejected.
   Engine::Result<SnapshotRenderTicket> BeginSnapshotRender(Engine::Scene& scene,
                                                            const ::Engine::Renderer::CameraView& camera,
                                                            SnapshotFrameMetadata metadata, uint32_t width,
-                                                           uint32_t height);
+                                                           uint32_t height,
+                                                           SnapshotPlaneMask selectedPlanes = AllSnapshotPlanes);
   /// Polls a snapshot request. An empty optional means GPU work is still pending; no partial frame is returned.
   /// A completed frame is returned once; repeated polls report an error without changing the completed status.
   Engine::Result<std::optional<SnapshotFrame>> PollSnapshotRender(SnapshotRenderTicket ticket);
@@ -305,6 +307,7 @@ private:
   std::unique_ptr<FinalReadbackCapture> m_FinalReadbackCapture;
   FinalRenderTicket m_NextFinalRenderTicket = 0;
   std::optional<SnapshotFrameMetadata> m_StartingSnapshotMetadata;
+  SnapshotPlaneMask m_StartingSnapshotSelectedPlanes = AllSnapshotPlanes;
   std::unique_ptr<CompletedSnapshotCapture> m_CompletedSnapshotCapture;
   std::map<SnapshotRenderTicket, SnapshotRenderStatus> m_SnapshotStatuses;
   bool m_FrameActive = false;

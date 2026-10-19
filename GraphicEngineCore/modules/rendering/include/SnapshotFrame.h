@@ -31,6 +31,14 @@ enum class SnapshotPlane : uint8_t {
   Overdraw            ///< Exact UInt32 pre-depth fragment count.
 };
 
+/// Bit mask used to choose the planes retained by a snapshot capture. The default
+/// selection includes every supported plane. A published frame stores only selected planes.
+using SnapshotPlaneMask = uint8_t;
+inline constexpr SnapshotPlaneMask SnapshotPlaneMaskBit(SnapshotPlane plane) noexcept {
+  return static_cast<SnapshotPlaneMask>(1U << static_cast<uint8_t>(plane));
+}
+inline constexpr SnapshotPlaneMask AllSnapshotPlanes = (1U << 7U) - 1U;
+
 /// Authored projection kind recorded with an immutable snapshot frame.
 enum class SnapshotProjectionType : uint8_t { Perspective };
 
@@ -90,8 +98,8 @@ struct ENGINE_API SnapshotMaterialManifestEntry {
   std::vector<std::string> ResourceIdentities; ///< Stable identities of captured material texture resources.
 };
 
-/// Immutable CPU-owned analysis frame. Construction validates all seven complete planes and
-/// the material-ID manifest; published accessors expose only const views into owned storage.
+/// Immutable CPU-owned analysis frame. Construction validates a nonempty selected subset of
+/// planes and the material-ID manifest; published accessors expose only const views into owned storage.
 class ENGINE_API SnapshotFrame {
 public:
   SnapshotFrame(const SnapshotFrame&) = delete;
@@ -99,15 +107,17 @@ public:
   SnapshotFrame(SnapshotFrame&&) noexcept = default;
   SnapshotFrame& operator=(SnapshotFrame&&) noexcept = delete;
 
-  /// Validates and publishes one complete frame. No partial frame escapes validation failure.
+  /// Validates and publishes one frame containing a nonempty selected subset of planes. Empty
+  /// integer vectors mean that integer plane was not captured; float planes may be any nonempty
+  /// canonical subset. No partially constructed frame escapes validation failure.
   /// @param metadata Captured frame interpretation metadata.
   /// @param manifest Capture-local material-instance mapping.
   /// @param width Captured image width.
   /// @param height Captured image height.
-  /// @param floatPlanes Completed five-AOV render planes in canonical order.
-  /// @param materialInstanceIds Exact UInt32 material-instance ID samples.
-  /// @param overdraw Exact UInt32 pre-depth fragment counts.
-  /// @return Complete immutable frame, or a diagnostic when any input is invalid.
+  /// @param floatPlanes Selected completed float AOVs in canonical order.
+  /// @param materialInstanceIds Exact UInt32 material-instance ID samples, or empty when not selected.
+  /// @param overdraw Exact UInt32 pre-depth fragment counts, or empty when not selected.
+  /// @return Immutable frame, or a diagnostic when no planes are selected or input is invalid.
   static auto Create(SnapshotFrameMetadata metadata, std::vector<SnapshotMaterialManifestEntry> manifest,
                      uint32_t width, uint32_t height, std::vector<RenderOutputPlane> floatPlanes,
                      std::vector<uint32_t> materialInstanceIds, std::vector<uint32_t> overdraw)
@@ -123,10 +133,12 @@ public:
                      RenderOutput floatOutput, std::vector<uint32_t> materialInstanceIds,
                      std::vector<uint32_t> overdraw) -> Result<SnapshotFrame>;
 
-  /// @return Captured width in pixels.
-  uint32_t GetWidth() const noexcept { return m_FloatPlanes.Width; }
+  /// @return Captured width in pixels, independent of which planes were selected.
+  uint32_t GetWidth() const noexcept { return m_Width; }
   /// @return Captured height in pixels.
-  uint32_t GetHeight() const noexcept { return m_FloatPlanes.Height; }
+  uint32_t GetHeight() const noexcept { return m_Height; }
+  /// @return Whether the requested plane is present in this captured frame.
+  bool HasPlane(SnapshotPlane plane) const noexcept;
   /// @return Read-only five-AOV float plane span.
   std::span<const RenderOutputPlane> GetFloatPlanes() const noexcept { return m_FloatPlanes.GetPlanes(); }
   /// @return Read-only exact UInt32 material-instance ID samples.
@@ -148,6 +160,8 @@ private:
   RenderOutput m_FloatPlanes;
   std::vector<uint32_t> m_MaterialInstanceIds;
   std::vector<uint32_t> m_Overdraw;
+  uint32_t m_Width = 0;
+  uint32_t m_Height = 0;
 };
 
 } // namespace Engine

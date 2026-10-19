@@ -86,27 +86,37 @@ auto ValidateMetadata(const SnapshotFrameMetadata& metadata, uint32_t width, uin
 }
 
 auto ValidateFloatPlanes(uint32_t width, uint32_t height, std::span<const RenderOutputPlane> planes) -> Status {
-  if (planes.size() != CanonicalAovs.size()) {
-    return std::unexpected(MakeError("snapshot must contain all five canonical float AOVs"));
-  }
+  if (planes.size() > CanonicalAovs.size())
+    return std::unexpected(MakeError("snapshot contains more float AOVs than the contract supports"));
   const uint64_t pixels = static_cast<uint64_t>(width) * height;
-  for (size_t index = 0; index < CanonicalAovs.size(); ++index) {
-    const auto& plane = planes[index];
-    const auto& descriptor = RenderOutput::GetDescriptor(CanonicalAovs[index]);
-    if (plane.Aov != CanonicalAovs[index] || plane.ChannelCount != descriptor.ChannelCount ||
+  size_t previousIndex = 0;
+  bool first = true;
+  for (const auto& plane : planes) {
+    const auto position = std::ranges::find(CanonicalAovs, plane.Aov);
+    if (position == CanonicalAovs.end())
+      return std::unexpected(MakeError("snapshot contains an unsupported float AOV"));
+    const size_t index = static_cast<size_t>(std::distance(CanonicalAovs.begin(), position));
+    const auto& descriptor = RenderOutput::GetDescriptor(plane.Aov);
+    if ((!first && index <= previousIndex) || plane.ChannelCount != descriptor.ChannelCount ||
         plane.Pixels.size() != pixels * descriptor.ChannelCount) {
-      return std::unexpected(MakeError("snapshot float AOV layout is invalid or not in canonical order"));
+      return std::unexpected(MakeError("snapshot float AOV layout is invalid, duplicated, or not in canonical order"));
     }
+    first = false;
+    previousIndex = index;
   }
   return {};
 }
 
 auto ValidateFloatOutput(const RenderOutput& output) -> Status {
+  if (output.GetPlanes().size() != CanonicalAovs.size())
+    return std::unexpected(MakeError("completed render output must contain all five canonical float AOVs"));
   return ValidateFloatPlanes(output.Width, output.Height, output.GetPlanes());
 }
 
 auto ValidateManifest(std::span<const SnapshotMaterialManifestEntry> manifest, std::span<const uint32_t> materialIds)
     -> Status {
+  if (materialIds.empty() && !manifest.empty())
+    return std::unexpected(MakeError("snapshot material manifest requires a material-instance ID plane"));
   std::unordered_set<uint32_t> knownIds;
   knownIds.reserve(manifest.size());
   for (const auto& entry : manifest) {
@@ -129,7 +139,27 @@ SnapshotFrame::SnapshotFrame(SnapshotFrameMetadata metadata, std::vector<Snapsho
                              RenderOutput floatPlanes, std::vector<uint32_t> materialInstanceIds,
                              std::vector<uint32_t> overdraw) noexcept
     : m_Metadata(std::move(metadata)), m_Manifest(std::move(manifest)), m_FloatPlanes(std::move(floatPlanes)),
-      m_MaterialInstanceIds(std::move(materialInstanceIds)), m_Overdraw(std::move(overdraw)) {}
+      m_MaterialInstanceIds(std::move(materialInstanceIds)), m_Overdraw(std::move(overdraw)),
+      m_Width(m_Metadata.OutputWidth), m_Height(m_Metadata.OutputHeight) {}
+
+bool SnapshotFrame::HasPlane(SnapshotPlane plane) const noexcept {
+  switch (plane) {
+  case SnapshotPlane::FinalColor:
+  case SnapshotPlane::Depth:
+  case SnapshotPlane::WorldNormal:
+  case SnapshotPlane::SpecularLighting:
+  case SnapshotPlane::DiffuseLighting: {
+    const RenderAov aov = static_cast<RenderAov>(plane);
+    return std::ranges::any_of(m_FloatPlanes.GetPlanes(),
+                               [aov](const RenderOutputPlane& item) { return item.Aov == aov; });
+  }
+  case SnapshotPlane::MaterialInstanceId:
+    return !m_MaterialInstanceIds.empty();
+  case SnapshotPlane::Overdraw:
+    return !m_Overdraw.empty();
+  }
+  return false;
+}
 
 auto SnapshotFrame::Create(SnapshotFrameMetadata metadata, std::vector<SnapshotMaterialManifestEntry> manifest,
                            uint32_t width, uint32_t height, std::vector<RenderOutputPlane> floatPlanes,
@@ -139,8 +169,12 @@ auto SnapshotFrame::Create(SnapshotFrameMetadata metadata, std::vector<SnapshotM
     return std::unexpected(MakeError("snapshot dimensions must be nonzero and representable"));
   }
   const size_t pixelCount = static_cast<size_t>(width) * height;
-  if (materialInstanceIds.size() != pixelCount || overdraw.size() != pixelCount) {
-    return std::unexpected(MakeError("snapshot integer planes must match the captured dimensions"));
+  if (floatPlanes.empty() && materialInstanceIds.empty() && overdraw.empty()) {
+    return std::unexpected(MakeError("snapshot must contain at least one selected plane"));
+  }
+  if ((!materialInstanceIds.empty() && materialInstanceIds.size() != pixelCount) ||
+      (!overdraw.empty() && overdraw.size() != pixelCount)) {
+    return std::unexpected(MakeError("selected snapshot integer planes must match the captured dimensions"));
   }
   if (auto status = ValidateMetadata(metadata, width, height); !status) {
     return std::unexpected(status.error());
