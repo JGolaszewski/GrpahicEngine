@@ -6,6 +6,7 @@
 
 #include <GLFW/glfw3.h>
 #include <algorithm>
+#include <cmath>
 #include <d3d11.h>
 #include <imgui.h>
 #include <imgui_impl_dx11.h>
@@ -49,19 +50,35 @@ auto EditorUiIntegration::Initialize(Engine::IWindow* window, Engine::IRenderBac
   float yScale = 1.0F;
   glfwGetWindowContentScale(glfwWindow, &xScale, &yScale);
   const float uiScale = (std::max)(xScale, yScale);
-  if (uiScale > 1.0F) {
+  if (uiScale > 0.0F) {
     ImGui::GetStyle().ScaleAllSizes(uiScale);
     io.FontGlobalScale = uiScale;
   }
 
   m_Backend = d3d11Backend;
+  m_Window = glfwWindow;
+  m_UiScale = uiScale > 0.0F ? uiScale : 1.0F;
   m_Initialized = true;
   return true;
 }
 
-void EditorUiIntegration::BeginFrame() const {
+void EditorUiIntegration::BeginFrame() {
   if (!m_Initialized) {
     return;
+  }
+  // GLFW content scale can change when the window is moved between monitors
+  // with different Windows scaling settings. Apply the change before ImGui
+  // builds hit boxes and draw data so pointer and visual geometry stay aligned.
+  if (m_Window != nullptr) {
+    float xScale = 1.0F;
+    float yScale = 1.0F;
+    glfwGetWindowContentScale(static_cast<GLFWwindow*>(m_Window), &xScale, &yScale);
+    const float currentScale = (std::max)(xScale, yScale);
+    if (std::isfinite(currentScale) && currentScale > 0.0F && std::abs(currentScale - m_UiScale) > 0.001F) {
+      ImGui::GetStyle().ScaleAllSizes(currentScale / m_UiScale);
+      ImGui::GetIO().FontGlobalScale = currentScale;
+      m_UiScale = currentScale;
+    }
   }
   ImGui_ImplDX11_NewFrame();
   ImGui_ImplGlfw_NewFrame();
@@ -98,6 +115,8 @@ void EditorUiIntegration::Shutdown() {
   ImGui_ImplGlfw_Shutdown();
   ImGui::DestroyContext();
   m_Backend = nullptr;
+  m_Window = nullptr;
+  m_UiScale = 1.0F;
   m_CameraPreviewTexture.reset();
   m_SnapshotImageTexture.reset();
   m_ClearCameraPreviewAfterDraw = false;

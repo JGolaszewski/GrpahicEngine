@@ -19,7 +19,7 @@ public:
   EditorUiIntegration();
   ~EditorUiIntegration();
   bool Initialize(Engine::IWindow* window, Engine::IRenderBackend* backend);
-  void BeginFrame() const;
+  void BeginFrame();
   void EndFrame();
   void Shutdown();
   void* GetTextureId(const Engine::ViewportTarget* target) const noexcept;
@@ -39,6 +39,8 @@ public:
 
 private:
   Engine::D3D11Backend* m_Backend = nullptr;
+  void* m_Window = nullptr;
+  float m_UiScale = 1.0F;
   struct PreviewTexture;
   bool SetPreviewTexture(std::unique_ptr<PreviewTexture>& target, uint32_t width, uint32_t height,
                          std::span<const uint8_t> rgbaPixels);

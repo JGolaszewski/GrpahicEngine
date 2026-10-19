@@ -869,6 +869,8 @@ void SnapshotAnalysisPanel::DrawFrame(Tab& tab, size_t tabIndex) {
   const float displayScale = (std::max)(fit, 0.001F) * tab.Zoom;
   const ImVec2 size(static_cast<float>(frame.GetWidth()) * displayScale,
                     static_cast<float>(frame.GetHeight()) * displayScale);
+  tab.Pan[0] = CameraPreviewImageLayout::ClampPanOffset(tab.Pan[0], (std::max)(size.x - available.x, 0.0F));
+  tab.Pan[1] = CameraPreviewImageLayout::ClampPanOffset(tab.Pan[1], (std::max)(size.y - available.y, 0.0F));
   const ImVec2 origin(ImGui::GetCursorScreenPos().x + tab.Pan[0], ImGui::GetCursorScreenPos().y + tab.Pan[1]);
   bool displayAvailable = true;
   if (m_DisplayDirty || m_UploadedTab != tabIndex || m_UploadedPlane != tab.SelectedPlane) {
