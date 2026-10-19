@@ -57,6 +57,15 @@ inline auto ClampZoom(float zoom) noexcept -> float {
   return std::clamp(zoom, 0.05F, 32.0F);
 }
 
+/// Keeps a panned image within the visible range after zoom or viewport resizing.
+/// Images that fit on an axis use a zero offset so they remain centered.
+inline auto ClampPanOffset(float offset, float scrollMax) noexcept -> float {
+  if (!std::isfinite(offset) || !std::isfinite(scrollMax) || scrollMax <= 0.0F) {
+    return 0.0F;
+  }
+  return std::clamp(offset, -scrollMax, 0.0F);
+}
+
 /// Computes the visible image size and the scroll range used to pan a zoomed image.
 inline auto ComputeImageSize(uint32_t imageWidth, uint32_t imageHeight, float availableWidth, float availableHeight,
                              float zoom) noexcept -> ImageSize {
