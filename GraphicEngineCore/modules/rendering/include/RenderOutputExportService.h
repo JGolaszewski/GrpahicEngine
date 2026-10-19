@@ -47,7 +47,7 @@ public:
   using RequestId = uint64_t;
 
   RenderOutputExportService();
-  ~RenderOutputExportService();
+  ~RenderOutputExportService() noexcept;
   RenderOutputExportService(const RenderOutputExportService&) = delete;
   RenderOutputExportService& operator=(const RenderOutputExportService&) = delete;
 

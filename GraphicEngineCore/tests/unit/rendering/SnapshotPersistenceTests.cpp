@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <limits>
@@ -37,8 +38,12 @@ public:
     std::filesystem::create_directories(m_Path);
   }
   ~TempDirectory() noexcept {
-    std::error_code ignored;
-    std::filesystem::remove_all(m_Path, ignored);
+    try {
+      std::error_code ignored;
+      std::filesystem::remove_all(m_Path, ignored);
+    } catch (...) {
+      std::terminate();
+    }
   }
   auto Path() const -> const std::filesystem::path& { return m_Path; }
 
@@ -163,7 +168,12 @@ TEST(SnapshotPersistenceTests, WorkspaceRoundTripResolvesRelativeExrsAndViewStat
   EXPECT_EQ(loaded->ResolvedExrPaths[0], std::filesystem::absolute(exr));
   EXPECT_EQ(loaded->Document.Tabs[0].SelectedPlane, SnapshotPlane::MaterialInstanceId);
   EXPECT_EQ(loaded->Document.Tabs[0].PinnedPixel, tab.PinnedPixel);
-  EXPECT_EQ(loaded->Document.Tabs[0].Roi->Width, 2U);
+  const auto roi = loaded->Document.Tabs[0].Roi;
+  if (!roi.has_value()) {
+    FAIL() << "workspace ROI was not restored";
+    return;
+  }
+  EXPECT_EQ(roi->Width, 2U);
   EXPECT_FLOAT_EQ(loaded->Document.Tabs[0].Zoom, 2.5F);
   EXPECT_FLOAT_EQ(loaded->Document.Tabs[0].PanX, -12.0F);
   ASSERT_TRUE(loaded->Document.Comparison);
