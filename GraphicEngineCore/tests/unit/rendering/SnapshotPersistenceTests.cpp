@@ -19,6 +19,7 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <string>
 #include <system_error>
 #include <utility>
@@ -238,6 +239,25 @@ TEST(SnapshotPersistenceTests, MalformedWorkspaceJsonReturnsPathAwareError) {
   const auto loaded = SnapshotWorkspaceFile::Load(file);
   ASSERT_FALSE(loaded);
   EXPECT_NE(loaded.error().Message.find(file.generic_string()), std::string::npos);
+}
+
+TEST(SnapshotPersistenceTests, LargePinnedPixelIsCheckedAgainstPayloadDimensions) {
+  TempDirectory temp;
+  auto frame = MakeFrame();
+  ASSERT_TRUE(frame);
+  const auto payload = temp.Path() / "capture.exr";
+  ASSERT_TRUE(SnapshotExr::Write(*frame, payload));
+
+  SnapshotWorkspaceDocument document;
+  SnapshotFrameViewState tab;
+  tab.ExrPath = payload;
+  tab.PinnedPixel = SnapshotPinnedPixelState{std::numeric_limits<uint32_t>::max(), 0};
+  document.Tabs.push_back(tab);
+  const auto workspace = temp.Path() / "workspace.aframe";
+  ASSERT_TRUE(SnapshotWorkspaceFile::Save(workspace, document));
+  const auto loaded = SnapshotWorkspaceFile::Load(workspace);
+  ASSERT_FALSE(loaded);
+  EXPECT_NE(loaded.error().Message.find("pinned pixel lies outside"), std::string::npos);
 }
 
 } // namespace

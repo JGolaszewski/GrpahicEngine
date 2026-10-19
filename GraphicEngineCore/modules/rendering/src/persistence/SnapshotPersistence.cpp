@@ -309,8 +309,6 @@ auto ValidateDocument(const SnapshotWorkspaceDocument& document) -> Status {
     if (tab.ExrPath.empty() || !ValidExtension(tab.ExrPath, ".exr") || !IsValidAov(tab.SelectedAov) ||
         !std::isfinite(tab.Zoom) || tab.Zoom <= 0.0F || !std::isfinite(tab.PanX) || !std::isfinite(tab.PanY))
       return std::unexpected(MakeError("workspace tab has an invalid EXR path or view state"));
-    if (tab.PinnedPixel && (tab.PinnedPixel->X >= 1000000000U || tab.PinnedPixel->Y >= 1000000000U))
-      return std::unexpected(MakeError("workspace pinned pixel is out of supported range"));
     if (tab.Roi && (tab.Roi->Width == 0 || tab.Roi->Height == 0 ||
                     static_cast<uint64_t>(tab.Roi->X) + tab.Roi->Width > std::numeric_limits<uint32_t>::max() ||
                     static_cast<uint64_t>(tab.Roi->Y) + tab.Roi->Height > std::numeric_limits<uint32_t>::max()))
