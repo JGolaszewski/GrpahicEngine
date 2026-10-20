@@ -356,24 +356,29 @@ void InspectorPanel::DrawEntityInspector() {
       ImGui::SeparatorText("General Material Properties");
       materialChanged |= ImGui::ColorEdit4("Base color factor", material.baseColor.data());
       drawTextureTarget("Color texture", MaterialTextureSlot::BaseColor, material.baseColorTextureGuid);
-      int baseColorTexCoord = static_cast<int>(material.baseColorTexCoord);
-      if (ImGui::DragInt("Color UV set", &baseColorTexCoord, 0.1F, 0, 7)) {
-        material.baseColorTexCoord = static_cast<uint32_t>(std::clamp(baseColorTexCoord, 0, 7));
-        materialChanged = true;
-      }
-      materialChanged |= ImGui::DragFloat2("Color UV offset", material.baseColorTextureTransform.offset.data(), 0.01F);
-      materialChanged |= ImGui::DragFloat2("Color UV scale", material.baseColorTextureTransform.scale.data(), 0.01F);
-      materialChanged |= ImGui::DragFloat("Color UV rotation", &material.baseColorTextureTransform.rotation, 0.01F);
       drawTextureTarget("Normal texture", MaterialTextureSlot::Normal, material.normalTextureGuid);
       materialChanged |= ImGui::DragFloat("Normal map strength", &material.normalScale, 0.01F, 0.0F, 10.0F);
-      int normalTexCoord = static_cast<int>(material.normalTexCoord);
-      if (ImGui::DragInt("Normal UV set", &normalTexCoord, 0.1F, 0, 7)) {
-        material.normalTexCoord = static_cast<uint32_t>(std::clamp(normalTexCoord, 0, 7));
-        materialChanged = true;
+      if (ImGui::TreeNode("UV Settings")) {
+        int baseColorTexCoord = static_cast<int>(material.baseColorTexCoord);
+        if (ImGui::DragInt("Color UV set", &baseColorTexCoord, 0.1F, 0, 7)) {
+          material.baseColorTexCoord = static_cast<uint32_t>(std::clamp(baseColorTexCoord, 0, 7));
+          materialChanged = true;
+        }
+        materialChanged |=
+            ImGui::DragFloat2("Color UV offset", material.baseColorTextureTransform.offset.data(), 0.01F);
+        materialChanged |= ImGui::DragFloat2("Color UV scale", material.baseColorTextureTransform.scale.data(), 0.01F);
+        materialChanged |= ImGui::DragFloat("Color UV rotation", &material.baseColorTextureTransform.rotation, 0.01F);
+
+        int normalTexCoord = static_cast<int>(material.normalTexCoord);
+        if (ImGui::DragInt("Normal UV set", &normalTexCoord, 0.1F, 0, 7)) {
+          material.normalTexCoord = static_cast<uint32_t>(std::clamp(normalTexCoord, 0, 7));
+          materialChanged = true;
+        }
+        materialChanged |= ImGui::DragFloat2("Normal UV offset", material.normalTextureTransform.offset.data(), 0.01F);
+        materialChanged |= ImGui::DragFloat2("Normal UV scale", material.normalTextureTransform.scale.data(), 0.01F);
+        materialChanged |= ImGui::DragFloat("Normal UV rotation", &material.normalTextureTransform.rotation, 0.01F);
+        ImGui::TreePop();
       }
-      materialChanged |= ImGui::DragFloat2("Normal UV offset", material.normalTextureTransform.offset.data(), 0.01F);
-      materialChanged |= ImGui::DragFloat2("Normal UV scale", material.normalTextureTransform.scale.data(), 0.01F);
-      materialChanged |= ImGui::DragFloat("Normal UV rotation", &material.normalTextureTransform.rotation, 0.01F);
       materialChanged |= ImGui::SliderFloat("Metallic", &material.metallic, 0.0F, 1.0F);
       materialChanged |= ImGui::SliderFloat("Roughness", &material.roughness, 0.0F, 1.0F);
       materialChanged |= ImGui::ColorEdit3("Emissive", material.emissive.data());
