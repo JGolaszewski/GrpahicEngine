@@ -9,16 +9,18 @@ passes. D3D11 is the shipped backend; Core records work through NVRHI.
 ## Frame and render graph
 
 At `BeginFrame`, the render system opens its command list, applies queued GPU
-uploads, updates dirty material constants, and resets the frame graph. View
-submission resolves scene objects and cameras, builds per-view draw queues and
-lighting data, and creates shadow views for shadow-casting lights. `EndFrame`
-compiles and executes the graph, records GPU timing, closes and submits the
-command list, and advances frame resources.
+uploads, and resets the frame graph. View submission resolves scene objects and
+cameras, builds per-view draw queues and lighting data, and creates shadow views
+for shadow-casting lights. It then uploads dirty material constants, including
+materials first created while building the views, before any draw pass executes.
+`EndFrame` compiles and executes the graph, records GPU timing, closes and submits
+the command list, and advances frame resources.
 
 ```mermaid
 flowchart LR
-  Begin[BeginFrame: uploads and material updates] --> Views[Submit views: build queues and lighting]
-  Views --> Shadow[ShadowPass: depth array]
+  Begin[BeginFrame: queued uploads] --> Views[Submit views: build queues and lighting]
+  Views --> Materials[Upload material constants]
+  Materials --> Shadow[ShadowPass: depth array]
   Shadow --> Forward[ForwardPass: scene attachments]
   Forward --> Debug{Any editor view?}
   Debug -->|Yes| Overlay[DebugPass: editor geometry]
@@ -107,6 +109,10 @@ Sawicki uses the normalized rational distribution
 where `Nds = 4 * alpha - 3` and alpha is the squared perceptual roughness
 clamped to the material minimum. The implementation stays finite at grazing
 angles and minimum roughness.
+
+Editing material factors updates the cached GPU material in place when its
+texture bindings stay the same. A texture change creates a material with new
+texture bindings.
 
 The textured shader supports base color, normal, metallic-roughness, occlusion,
 and emissive maps, with a UV set and UV transform per slot. It applies the

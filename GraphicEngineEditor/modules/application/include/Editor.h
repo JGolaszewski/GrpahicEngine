@@ -50,6 +50,7 @@ protected:
   void OnShutdownUI() override;
   void OnEvent(Engine::Events::Event& event) override;
   void OnSetupViews() override;
+  bool ShouldRegisterDefaultView() const override;
   void OnSceneReplaced(const std::shared_ptr<Engine::Scene>& scene) override;
 
 private:

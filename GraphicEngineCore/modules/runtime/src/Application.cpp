@@ -268,7 +268,7 @@ void Application::UpdateScenes(float deltaTime) {
 }
 
 void Application::RegisterDefaultView() {
-  if (!m_ActiveViews.empty() || !m_DefaultViewport) {
+  if (!ShouldRegisterDefaultView() || !m_ActiveViews.empty() || !m_DefaultViewport) {
     return;
   }
 

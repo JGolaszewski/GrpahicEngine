@@ -178,7 +178,7 @@ SnapshotAnalysisPanel::SnapshotAnalysisPanel(BeginCaptureFunction beginCapture, 
       m_WorkspaceServices(std::move(workspaceServices)) {}
 
 void SnapshotAnalysisPanel::StartCapture() {
-  if (m_CaptureTicket || !m_BeginCapture) {
+  if (m_CaptureRequested || m_CaptureTicket || !m_BeginCapture) {
     return;
   }
   if (!HasSnapshotCapturePlaneSelection(m_SelectedCapturePlanes)) {
@@ -191,13 +191,8 @@ void SnapshotAnalysisPanel::StartCapture() {
     m_CaptureMessage = "Select a valid authored scene camera before capturing.";
     return;
   }
-  auto ticket = m_BeginCapture(*m_SelectedCamera, m_WidthOverride, m_HeightOverride, m_SelectedCapturePlanes);
-  if (!ticket) {
-    m_CaptureMessage = "Capture failed to start: " + ticket.error().Message;
-    return;
-  }
-  m_CaptureTicket = *ticket;
-  m_CaptureMessage = "Capture submitted. Waiting for GPU readback...";
+  m_CaptureRequested = true;
+  m_CaptureMessage = "Capture queued.";
 }
 
 void SnapshotAnalysisPanel::RefreshCameraOptions() {
@@ -210,6 +205,21 @@ void SnapshotAnalysisPanel::RefreshCameraOptions() {
 }
 
 void SnapshotAnalysisPanel::UpdateCapture() {
+  if (m_CaptureRequested) {
+    m_CaptureRequested = false;
+    if (!m_SelectedCamera || !m_BeginCapture) {
+      m_CaptureMessage = "Capture failed to start: no camera is selected.";
+      return;
+    }
+    auto ticket = m_BeginCapture(*m_SelectedCamera, m_WidthOverride, m_HeightOverride, m_SelectedCapturePlanes);
+    if (!ticket) {
+      m_CaptureMessage = "Capture failed to start: " + ticket.error().Message;
+      return;
+    }
+    m_CaptureTicket = *ticket;
+    m_CaptureMessage = "Capture submitted. Waiting for GPU readback...";
+    return;
+  }
   if (!m_CaptureTicket || !m_PollCapture) {
     return;
   }
@@ -578,7 +588,9 @@ void SnapshotAnalysisPanel::DrawFrame(Tab& tab, size_t tabIndex) {
     return;
   }
   const ImVec2 workspaceSize = ImGui::GetContentRegionAvail();
-  const float toolsWidth = (std::min)(480.0F, (std::max)(240.0F, workspaceSize.x * 0.30F));
+  const float fontSize = ImGui::GetFontSize();
+  const float toolsWidth =
+      (std::min)(workspaceSize.x * 0.45F, std::clamp(workspaceSize.x * 0.32F, fontSize * 18.0F, fontSize * 30.0F));
   if (!ImGui::BeginTable("snapshot_workspace_layout", 2,
                          ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_Resizable | ImGuiTableFlags_NoSavedSettings,
                          workspaceSize)) {
@@ -588,7 +600,7 @@ void SnapshotAnalysisPanel::DrawFrame(Tab& tab, size_t tabIndex) {
   ImGui::TableSetupColumn("Captured frame", ImGuiTableColumnFlags_WidthStretch);
   ImGui::TableNextRow(ImGuiTableRowFlags_None, workspaceSize.y);
   ImGui::TableSetColumnIndex(0);
-  ImGui::BeginChild("snapshot_analysis_tools", ImVec2(0.0F, workspaceSize.y), true);
+  ImGui::BeginChild("snapshot_analysis_tools", ImVec2(0.0F, 0.0F), true);
   ImGui::TextUnformatted("Analysis tools");
   ImGui::Separator();
   if (ImGui::Button("Back to editor") && m_ExitFocusedHandler) {
@@ -670,12 +682,12 @@ void SnapshotAnalysisPanel::DrawFrame(Tab& tab, size_t tabIndex) {
         m_DisplayDirty = true;
       }
       ImGui::SameLine();
-      ImGui::SetNextItemWidth(90.0F);
+      ImGui::SetNextItemWidth(fontSize * 5.5F);
       if (ImGui::DragFloat("Min", &m_HeatmapMinimum, 0.01F, 0.0F, 100000.0F)) {
         m_DisplayDirty = true;
       }
       ImGui::SameLine();
-      ImGui::SetNextItemWidth(90.0F);
+      ImGui::SetNextItemWidth(fontSize * 5.5F);
       if (ImGui::DragFloat("Max", &m_HeatmapMaximum, 0.01F, 0.0001F, 100000.0F)) {
         m_DisplayDirty = true;
       }
@@ -817,10 +829,10 @@ void SnapshotAnalysisPanel::DrawFrame(Tab& tab, size_t tabIndex) {
   const auto* colorPlane = FindPlane(frame, Engine::RenderAov::FinalColor);
   if (tab.Roi && colorPlane != nullptr) {
     ImGui::SeparatorText("ROI histogram");
-    ImGui::SetNextItemWidth(110.0F);
+    ImGui::SetNextItemWidth(fontSize * 7.0F);
     (void)ImGui::DragFloat("Histogram min", &tab.HistogramMinimum, 0.05F, -100000.0F, 100000.0F, "%.4g");
     ImGui::SameLine();
-    ImGui::SetNextItemWidth(110.0F);
+    ImGui::SetNextItemWidth(fontSize * 7.0F);
     (void)ImGui::DragFloat("Histogram max", &tab.HistogramMaximum, 0.05F, -100000.0F, 100000.0F, "%.4g");
     const Engine::SnapshotAnalysis::PlaneView view = ToAnalysisView(frame, Engine::SnapshotPlane::FinalColor);
     Engine::SnapshotAnalysis::RoiHistogramOptions options;
@@ -861,7 +873,7 @@ void SnapshotAnalysisPanel::DrawFrame(Tab& tab, size_t tabIndex) {
   ImGui::EndChild();
 
   ImGui::TableSetColumnIndex(1);
-  ImGui::BeginChild("snapshot_canvas", ImVec2(0.0F, workspaceSize.y), true,
+  ImGui::BeginChild("snapshot_canvas", ImVec2(0.0F, 0.0F), true,
                     ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
   const ImVec2 available = ImGui::GetContentRegionAvail();
   const float fit =
@@ -973,10 +985,12 @@ void SnapshotAnalysisPanel::Draw() {
         m_ClearImage();
       }
     }
-    ImGui::SameLine();
-    ImGui::TextDisabled("Captured frames remain stored in the workspace while you return to the editor.");
     ImGui::Separator();
-    const float controlWidth = (std::min)(420.0F, ImGui::GetFontSize() * 26.0F);
+    const float availableHeight = ImGui::GetContentRegionAvail().y;
+    const float controlsHeight =
+        (std::max)(1.0F, (std::min)(availableHeight * (m_Tabs.empty() ? 0.75F : 0.38F), ImGui::GetFontSize() * 22.0F));
+    ImGui::BeginChild("snapshot_capture_controls", ImVec2(0.0F, controlsHeight), true);
+    const float controlWidth = (std::min)(ImGui::GetContentRegionAvail().x, ImGui::GetFontSize() * 26.0F);
     ImGui::PushItemWidth(controlWidth);
     if (m_CameraOptions.empty()) {
       ImGui::TextDisabled("No valid authored camera is available in the active scene.");
@@ -996,7 +1010,8 @@ void SnapshotAnalysisPanel::Draw() {
       }
     }
     ImGui::Text("Capture planes");
-    const float planeColumnWidth = ImGui::GetFontSize() * 11.0F;
+    const float planeColumnWidth =
+        ImGui::CalcTextSize("material_instance_id").x + ImGui::GetFrameHeight() + ImGui::GetStyle().ItemInnerSpacing.x;
     const float planeAvailableWidth = ImGui::GetContentRegionAvail().x;
     const int planeColumnCount = std::clamp(static_cast<int>(planeAvailableWidth / planeColumnWidth), 1, 4);
     if (ImGui::BeginTable("snapshot_capture_planes", planeColumnCount)) {
@@ -1026,14 +1041,18 @@ void SnapshotAnalysisPanel::Draw() {
     ImGui::InputScalar("Width override (0 = authored)", ImGuiDataType_U32, &m_WidthOverride);
     ImGui::InputScalar("Height override (0 = authored)", ImGuiDataType_U32, &m_HeightOverride);
     ImGui::PopItemWidth();
-    ImGui::BeginDisabled(m_CaptureTicket.has_value() || !m_SelectedCamera ||
+    ImGui::EndChild();
+    const bool wideActions = ImGui::GetContentRegionAvail().x >= ImGui::GetFontSize() * 36.0F;
+    ImGui::BeginDisabled(m_CaptureRequested || m_CaptureTicket.has_value() || !m_SelectedCamera ||
                          !HasSnapshotCapturePlaneSelection(m_SelectedCapturePlanes));
     if (ImGui::Button("Capture selected camera")) {
       StartCapture();
     }
     ImGui::EndDisabled();
     if (m_CaptureTicket) {
-      ImGui::SameLine();
+      if (wideActions) {
+        ImGui::SameLine();
+      }
       if (ImGui::Button("Cancel capture") && m_CancelCapture) {
         const Engine::Status canceled = m_CancelCapture(*m_CaptureTicket);
         if (canceled) {
@@ -1043,10 +1062,12 @@ void SnapshotAnalysisPanel::Draw() {
           m_CaptureMessage = "Capture cancellation failed: " + canceled.error().Message;
         }
       }
-      if (m_GetCaptureStatus) {
+      if (m_CaptureTicket && m_GetCaptureStatus) {
         const auto status = m_GetCaptureStatus(*m_CaptureTicket);
         if (status) {
-          ImGui::SameLine();
+          if (wideActions) {
+            ImGui::SameLine();
+          }
           ImGui::Text("%.0f%%", std::clamp(status->Progress, 0.0F, 1.0F) * 100.0F);
         }
       }
@@ -1054,23 +1075,28 @@ void SnapshotAnalysisPanel::Draw() {
     if (ImGui::Button("Open EXR...")) {
       OpenExr();
     }
-    ImGui::SameLine();
+    if (wideActions) {
+      ImGui::SameLine();
+    }
     if (ImGui::Button("Open .aframe...")) {
       OpenWorkspace();
     }
-    ImGui::SameLine();
     ImGui::BeginDisabled(!m_ActiveTab.has_value());
     if (ImGui::Button("Export frame EXR...")) {
       SaveCurrentFrame();
     }
     ImGui::EndDisabled();
-    ImGui::SameLine();
+    if (wideActions) {
+      ImGui::SameLine();
+    }
     ImGui::BeginDisabled(m_Tabs.empty());
     if (ImGui::Button("Save workspace .aframe...")) {
       (void)SaveWorkspaceAs();
     }
     ImGui::EndDisabled();
-    ImGui::TextWrapped("%s", m_CaptureMessage.c_str());
+    if (!m_CaptureMessage.empty()) {
+      ImGui::TextWrapped("%s", m_CaptureMessage.c_str());
+    }
     if (m_Tabs.empty()) {
       ImGui::Separator();
       ImGui::TextDisabled("Capture an authored scene camera or open a snapshot file to create a frame tab.");
