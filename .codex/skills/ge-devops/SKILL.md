@@ -9,7 +9,7 @@ Handle safe Git/GitHub operations. This skill carries its own essential reposito
 
 ## Task, branch, and review boundaries
 
-- For implementation work, use a repository issue linked to the user-owned **Graphics Engine** project (#1). Search for an existing issue before creating one, define its scope and acceptance criteria, and keep its status current. If project access is unavailable, stop before implementation.
+- For implementation work, use a repository issue linked to the user-owned **Graphics Engine** project (#1). Search for an existing issue before creating one, define its impact map and acceptance criteria, and keep its status current. Resolve the live project's Status field and options; verify issue state separately. If project access is unavailable, stop before implementation.
 - For one task, branch from `main` as `feat/<issue>-<slug>` or `fix/<issue>-<slug>`. Do not commit or push directly to `main`.
 - For at least two independently tracked child tasks or parallel coding, use a parent issue and an `epic/<issue>-<slug>` branch from `main`; task branches start from the epic, their PRs target it, and one integration PR targets `main`. The task coordinator owns issue breakdown, project status, and integration decisions.
 - Bring changes into `main` through a pull request. Require human approval and passing required checks. Never approve or self-approve an agent-authored PR targeting `main`; merge only through the approved PR after explicit user authorization.
@@ -25,7 +25,7 @@ Handle safe Git/GitHub operations. This skill carries its own essential reposito
 
 - Before editing a workflow, inspect its triggers, path filters, permissions, referenced scripts/actions, and secret requirements. Keep changes scoped to the requested automation and repository conventions.
 - For failed runs, inspect the run summary and failed-step logs; distinguish code failures from credentials, runner, or external-service issues. Do not dispatch workflows with side effects unless requested.
-- Create or update a PR only when requested. Find and follow the repository PR template when present. Apply the task, branch, and review boundaries above.
+- Create or update a PR only when requested. Fill the repository PR template with issue/project links, affected subsystems, documentation impact, observed check results, and risks. The PR metadata CI check cannot verify the private board or the truth of those claims; check them directly. Apply the task, branch, and review boundaries above.
 - Before handoff, report the exact branch/worktrees, changed areas, PR target/state, Actions checks and results, cleanup performed, and unresolved risks.
 
 ## Useful inspection commands

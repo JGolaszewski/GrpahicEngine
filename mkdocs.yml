@@ -72,6 +72,8 @@ nav:
   - Workflows:
       - Getting started: getting-started.md
       - Development workflow: development-workflow.md
+      - Agentic development: agentic-development.md
+      - Codex hooks: codex-hooks.md
       - Editor workflows: editor-workflows.md
       - Testing: testing.md
       - Windows validation: validation/windows.md
