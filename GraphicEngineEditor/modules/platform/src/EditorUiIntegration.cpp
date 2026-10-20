@@ -84,6 +84,10 @@ void EditorUiIntegration::EndFrame() {
     m_CameraPreviewTexture.reset();
     m_ClearCameraPreviewAfterDraw = false;
   }
+  if (m_ClearAnalyticalFrameAfterDraw) {
+    m_AnalyticalFrameTexture.reset();
+    m_ClearAnalyticalFrameAfterDraw = false;
+  }
 }
 
 void EditorUiIntegration::Shutdown() {
@@ -95,7 +99,9 @@ void EditorUiIntegration::Shutdown() {
   ImGui::DestroyContext();
   m_Backend = nullptr;
   m_CameraPreviewTexture.reset();
+  m_AnalyticalFrameTexture.reset();
   m_ClearCameraPreviewAfterDraw = false;
+  m_ClearAnalyticalFrameAfterDraw = false;
   m_Initialized = false;
 }
 
@@ -109,6 +115,11 @@ auto EditorUiIntegration::GetTextureId(const Engine::ViewportTarget* target) con
 auto EditorUiIntegration::SetCameraPreview(uint32_t width, uint32_t height, std::span<const uint8_t> rgbaPixels)
     -> bool {
   return SetPreviewTexture(m_CameraPreviewTexture, width, height, rgbaPixels);
+}
+
+auto EditorUiIntegration::SetAnalyticalFrameImage(uint32_t width, uint32_t height, std::span<const uint8_t> rgbaPixels)
+    -> bool {
+  return SetPreviewTexture(m_AnalyticalFrameTexture, width, height, rgbaPixels);
 }
 
 auto EditorUiIntegration::SetPreviewTexture(std::unique_ptr<PreviewTexture>& target, uint32_t width, uint32_t height,
@@ -137,6 +148,8 @@ auto EditorUiIntegration::SetPreviewTexture(std::unique_ptr<PreviewTexture>& tar
   }
   if (&target == &m_CameraPreviewTexture) {
     m_ClearCameraPreviewAfterDraw = false;
+  } else if (&target == &m_AnalyticalFrameTexture) {
+    m_ClearAnalyticalFrameAfterDraw = false;
   }
   target = std::move(preview);
   return true;
@@ -152,5 +165,18 @@ void EditorUiIntegration::ClearCameraPreview() noexcept {
   } else {
     m_CameraPreviewTexture.reset();
     m_ClearCameraPreviewAfterDraw = false;
+  }
+}
+
+auto EditorUiIntegration::GetAnalyticalFrameTextureId() const noexcept -> void* {
+  return m_AnalyticalFrameTexture == nullptr ? nullptr : m_AnalyticalFrameTexture->View.Get();
+}
+
+void EditorUiIntegration::ClearAnalyticalFrameImage() noexcept {
+  if (m_Initialized) {
+    m_ClearAnalyticalFrameAfterDraw = true;
+  } else {
+    m_AnalyticalFrameTexture.reset();
+    m_ClearAnalyticalFrameAfterDraw = false;
   }
 }

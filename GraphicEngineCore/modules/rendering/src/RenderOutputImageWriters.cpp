@@ -234,6 +234,41 @@ auto WritePngFile(uint32_t width, uint32_t height, std::span<const float> finalC
   return {};
 }
 
+auto WritePngRgba8File(uint32_t width, uint32_t height, std::span<const uint8_t> rgba,
+                       const std::filesystem::path& path) -> Status {
+  if (!ValidDimensions(width, height)) {
+    return std::unexpected(IoError("Cannot write PNG", path, "image dimensions must be non-zero and supported"));
+  }
+  if (path.empty() || !PngExtension(path)) {
+    return std::unexpected(IoError("Cannot write PNG", path, "destination must have a .png extension"));
+  }
+  const auto expectedSamples = CheckedSampleCount(width, height, 4);
+  if (!expectedSamples || rgba.size() != *expectedSamples) {
+    return std::unexpected(IoError("Cannot write PNG", path, "RGBA8 pixels must contain width * height * 4 bytes"));
+  }
+
+  auto output = OIIO::ImageOutput::create(FormatFor(path));
+  if (!output) {
+    return std::unexpected(IoError("Cannot create PNG encoder for", path, OIIO::geterror()));
+  }
+  OIIO::ImageSpec spec(static_cast<int>(width), static_cast<int>(height), 4, OIIO::TypeDesc::UINT8);
+  spec.channelnames = {"R", "G", "B", "A"};
+  spec.alpha_channel = 3;
+  spec.attribute("oiio:ColorSpace", "sRGB");
+  if (!output->open(path.wstring(), spec)) {
+    return std::unexpected(IoError("Cannot open PNG destination", path, output->geterror()));
+  }
+  if (!output->write_image(OIIO::span<const uint8_t>(rgba.data(), rgba.size()))) {
+    const auto detail = output->geterror();
+    (void)output->close();
+    return std::unexpected(IoError("Cannot write PNG", path, detail));
+  }
+  if (!output->close()) {
+    return std::unexpected(IoError("Cannot close PNG", path, output->geterror()));
+  }
+  return {};
+}
+
 auto WriteMultilayerExrFile(uint32_t width, uint32_t height, std::span<const RenderOutputPlane> planes,
                             std::span<const RenderAov> selectedAovs, const std::filesystem::path& path,
                             const RenderOutputBackground& background) -> Status {

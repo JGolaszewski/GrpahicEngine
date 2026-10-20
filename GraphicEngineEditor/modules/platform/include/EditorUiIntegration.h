@@ -29,6 +29,12 @@ public:
   void* GetCameraPreviewTextureId() const noexcept;
   /// Releases the camera-viewer image texture when its window is closed.
   void ClearCameraPreview() noexcept;
+  /// Uploads top-to-bottom RGBA8 pixels for the static Analytical Frame viewer.
+  bool SetAnalyticalFrameImage(uint32_t width, uint32_t height, std::span<const uint8_t> rgbaPixels);
+  /// Returns the current static Analytical Frame shader resource view for ImGui.
+  void* GetAnalyticalFrameTextureId() const noexcept;
+  /// Releases the Analytical Frame display texture after the current UI draw.
+  void ClearAnalyticalFrameImage() noexcept;
   bool IsInitialized() const noexcept { return m_Initialized; }
 
 private:
@@ -37,6 +43,8 @@ private:
   bool SetPreviewTexture(std::unique_ptr<PreviewTexture>& target, uint32_t width, uint32_t height,
                          std::span<const uint8_t> rgbaPixels);
   std::unique_ptr<PreviewTexture> m_CameraPreviewTexture;
+  std::unique_ptr<PreviewTexture> m_AnalyticalFrameTexture;
   bool m_ClearCameraPreviewAfterDraw = false;
+  bool m_ClearAnalyticalFrameAfterDraw = false;
   bool m_Initialized = false;
 };

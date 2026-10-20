@@ -2,6 +2,7 @@
 
 #include "platform/include/EditorSettings.h"
 
+#include <cstdint>
 #include <filesystem>
 #include <optional>
 
@@ -17,6 +18,17 @@ std::optional<std::filesystem::path> ChooseLogExportFile(const std::filesystem::
 /// @param exr When true, selects the multilayer OpenEXR filter; otherwise PNG.
 /// @param initialPath Initial selection and filename shown by the dialog.
 std::optional<std::filesystem::path> ChooseRenderOutputFile(bool exr, const std::filesystem::path& initialPath);
+/// Opens an overwrite-confirming save dialog for a BRDF analysis artifact.
+/// @param json When true, selects the JSON measurements filter; otherwise PNG chart.
+/// @param initialPath Initial selection and filename shown by the dialog.
+std::optional<std::filesystem::path> ChooseBrdfAnalysisFile(bool json, const std::filesystem::path& initialPath);
+/// File operation used to choose an Analytical Frame archive or export destination.
+enum class AnalyticalFrameFileOperation : uint8_t { OpenArchive, SaveArchive, ExportChart, ExportMeasurements };
+/// Opens or saves a self-contained Analytical Frame project, chart, or measurement file.
+/// @param operation Archive or export operation.
+/// @param initialPath Initial selection and filename shown by the dialog.
+std::optional<std::filesystem::path> ChooseAnalyticalFrameFile(AnalyticalFrameFileOperation operation,
+                                                               const std::filesystem::path& initialPath);
 bool OpenSourceFile(const std::filesystem::path& path);
 std::optional<std::filesystem::path> ChooseProjectFolder(const std::filesystem::path& initialPath);
 std::filesystem::path LoadRememberedProjectRoot();

@@ -118,6 +118,88 @@ float BrdfGgxNdf(float noH, float alpha)
     return alphaSquared / (BRDF_PI * safeDenominator * safeDenominator);
 }
 
+float BrdfBeckmannNdf(float noH, float alpha)
+{
+    const float safeNoH = saturate(noH);
+    const float noHSquared = safeNoH * safeNoH;
+    if (noHSquared <= BRDF_EPSILON)
+    {
+        return 0.0f;
+    }
+
+    const float safeAlpha = max(alpha, BRDF_MIN_ALPHA);
+    const float alphaSquared = safeAlpha * safeAlpha;
+    const float denominator = max(BRDF_PI * alphaSquared * noHSquared * noHSquared, BRDF_EPSILON);
+    const float exponent = (noHSquared - 1.0f) / (alphaSquared * noHSquared);
+    return exp(exponent) / denominator;
+}
+
+float BrdfGaussNdf(float noH, float alpha)
+{
+    const float safeNoH = saturate(noH);
+    const float noHSquared = safeNoH * safeNoH;
+    if (safeNoH <= 0.0f)
+    {
+        return 0.0f;
+    }
+    const float safeAlpha = max(alpha, BRDF_MIN_ALPHA);
+    const float alphaSquared = safeAlpha * safeAlpha;
+    const float tanSquared = (1.0f - noHSquared) / max(noHSquared, BRDF_EPSILON);
+    const float exponent = -tanSquared / (2.0f * alphaSquared);
+    const float cosFourth = noHSquared * noHSquared;
+    const float denominator = max(2.0f * BRDF_PI * alphaSquared * cosFourth, BRDF_EPSILON);
+    return exp(exponent) / denominator;
+}
+
+float BrdfBlinnPhongNdf(float noH, float alpha)
+{
+    const float safeNoH = saturate(noH);
+    const float safeAlpha = max(alpha, BRDF_MIN_ALPHA);
+    const float exponent = max(2.0f / (safeAlpha * safeAlpha) - 2.0f, 0.0f);
+    const float cosinePower = safeNoH == 0.0f && exponent == 0.0f ? 1.0f : pow(safeNoH, exponent);
+    return ((exponent + 2.0f) / (2.0f * BRDF_PI)) * cosinePower;
+}
+
+float BrdfSchlickNdf(float noH, float alpha)
+{
+    const float safeNoH = saturate(noH);
+    const float m = clamp(alpha, BRDF_MIN_ALPHA, 1.0f);
+    const float x = safeNoH + m - 1.0f;
+    if (safeNoH <= 0.0f || x <= 0.0f)
+    {
+        return 0.0f;
+    }
+    const float inner = (m - 1.0f) * x * x + m * m;
+    const float denominator = BRDF_PI * safeNoH * inner * inner;
+    return (m * m * m * x) / max(denominator, 1.0e-30f);
+}
+
+float BrdfSawickiNdf(float noH, float alpha)
+{
+    const float safeNoH = saturate(noH);
+    const float safeAlpha = clamp(alpha, BRDF_MIN_ALPHA, 1.0f);
+    const float nds = 4.0f * safeAlpha - 3.0f;
+    const float shifted = (1.0f - nds) * safeNoH + nds + 3.0f;
+    const float denominator = BRDF_PI * shifted * shifted * shifted * shifted;
+    return 96.0f * (3.0f + nds) * safeNoH / max(denominator, 1.0e-30f);
+}
+
+float BrdfAshikhminShirleyNdf(float3 halfTangent, float roughnessU, float roughnessV)
+{
+    const float noH = saturate(halfTangent.z);
+    const float alphaU = max(roughnessU * roughnessU, BRDF_MIN_ALPHA);
+    const float alphaV = max(roughnessV * roughnessV, BRDF_MIN_ALPHA);
+    const float nu = max(2.0f / (alphaU * alphaU) - 2.0f, 0.0f);
+    const float nv = max(2.0f / (alphaV * alphaV) - 2.0f, 0.0f);
+    const float tangentSquared = dot(halfTangent.xy, halfTangent.xy);
+    const float exponent = tangentSquared > BRDF_EPSILON
+        ? (nu * halfTangent.x * halfTangent.x + nv * halfTangent.y * halfTangent.y) / tangentSquared
+        : 0.5f * (nu + nv);
+    const float cosPower = noH == 0.0f && exponent == 0.0f ? 1.0f : pow(noH, exponent);
+    const float normalization = sqrt((nu + 2.0f) * (nv + 2.0f)) / (2.0f * BRDF_PI);
+    return normalization * cosPower;
+}
+
 float BrdfGtrLogNormalization(float alpha, float gamma)
 {
     const float safeAlpha = max(alpha, BRDF_MIN_ALPHA);
@@ -205,6 +287,66 @@ void EvaluateGtrBrdfComponents(BrdfQuery query, float3 baseColor, float metallic
 {
     EvaluateMicrofacetBrdfComponents(query, baseColor, metallic, dielectricF0, alpha,
         BrdfGtrNdf(query.NoH, alpha, gamma), diffuse, specular);
+}
+
+void EvaluateBeckmannBrdfComponents(BrdfQuery query, float3 baseColor, float metallic, float3 dielectricF0,
+    float alpha, out float3 diffuse, out float3 specular)
+{
+    EvaluateMicrofacetBrdfComponents(query, baseColor, metallic, dielectricF0, alpha,
+        BrdfBeckmannNdf(query.NoH, alpha), diffuse, specular);
+}
+
+void EvaluateGaussBrdfComponents(BrdfQuery query, float3 baseColor, float metallic, float3 dielectricF0,
+    float alpha, out float3 diffuse, out float3 specular)
+{
+    EvaluateMicrofacetBrdfComponents(query, baseColor, metallic, dielectricF0, alpha,
+        BrdfGaussNdf(query.NoH, alpha), diffuse, specular);
+}
+
+void EvaluateBlinnPhongBrdfComponents(BrdfQuery query, float3 baseColor, float metallic, float3 dielectricF0,
+    float alpha, out float3 diffuse, out float3 specular)
+{
+    EvaluateMicrofacetBrdfComponents(query, baseColor, metallic, dielectricF0, alpha,
+        BrdfBlinnPhongNdf(query.NoH, alpha), diffuse, specular);
+}
+
+void EvaluateSchlickBrdfComponents(BrdfQuery query, float3 baseColor, float metallic, float3 dielectricF0,
+    float alpha, out float3 diffuse, out float3 specular)
+{
+    const float3 diffuseColor = baseColor * (1.0f - saturate(metallic));
+    const float3 f0 = lerp(dielectricF0, baseColor, saturate(metallic));
+    const float3 fresnel = BrdfFresnelSchlick(f0, query.VoH);
+    const float geometry = BrdfSmithGgxCorrelated(query.NoV, query.NoL, alpha);
+    diffuse = BrdfLambert(diffuseColor * (1.0f - fresnel));
+    specular = fresnel * (BrdfSchlickNdf(query.NoH, alpha) * geometry /
+        max(4.0f * query.NoV * query.NoL, BRDF_EPSILON));
+}
+
+void EvaluateSawickiBrdfComponents(BrdfQuery query, float3 baseColor, float metallic, float3 dielectricF0,
+    float alpha, out float3 diffuse, out float3 specular)
+{
+    EvaluateMicrofacetBrdfComponents(query, baseColor, metallic, dielectricF0, alpha,
+        BrdfSawickiNdf(query.NoH, alpha), diffuse, specular);
+}
+
+void EvaluateAshikhminShirleyBrdfComponents(BrdfQuery query, float3 tangent, float3 bitangent,
+    float3 baseColor, float metallic, float3 dielectricF0, float roughnessU, float roughnessV,
+    out float3 diffuse, out float3 specular)
+{
+    if (query.NoV <= BRDF_EPSILON || query.NoL <= BRDF_EPSILON)
+    {
+        diffuse = 0.0f;
+        specular = 0.0f;
+        return;
+    }
+    const float3 f0 = lerp(dielectricF0, baseColor, saturate(metallic));
+    const float3 fresnel = BrdfFresnelSchlick(f0, query.VoH);
+    const float alpha = max(max(roughnessU * roughnessU, roughnessV * roughnessV), BRDF_MIN_ALPHA);
+    const float geometry = BrdfSmithGgxCorrelated(query.NoV, query.NoL, alpha);
+    const float3 halfTangent = float3(dot(query.H, tangent), dot(query.H, bitangent), dot(query.H, query.N));
+    const float distribution = BrdfAshikhminShirleyNdf(halfTangent, roughnessU, roughnessV);
+    diffuse = BrdfLambert(baseColor * (1.0f - saturate(metallic)) * (1.0f - fresnel));
+    specular = fresnel * (distribution * geometry / max(4.0f * query.NoV * query.NoL, BRDF_EPSILON));
 }
 
 #endif

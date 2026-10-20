@@ -65,6 +65,8 @@ nav:
           - Pipeline: rendering/pipeline.md
           - Cameras: rendering/cameras.md
           - Editor render panel: rendering/editor-render-panel.md
+          - BRDF analysis: rendering/brdf-analysis.md
+          - Analytical Frames: rendering/analytical-frames.md
           - Render output and image export: rendering/output.md
           - Shadows: rendering/shadows.md
           - Final rendering: rendering/final-render.md

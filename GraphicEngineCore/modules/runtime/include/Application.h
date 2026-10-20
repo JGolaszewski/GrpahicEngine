@@ -2,6 +2,7 @@
 
 #include "rendering/include/renderer/ViewportBinding.h"
 #include "runtime/include/CoreExport.h"
+#include "runtime/include/Result.h"
 
 #include <array>
 #include <atomic>
@@ -118,6 +119,14 @@ public:
   /// @return True when the document is instantiated successfully.
   bool LoadSceneDocument(const SceneDocument& document, std::string& error, std::vector<std::string>& warnings);
 
+  /// Instantiates a scene document without registering or replacing any active scene.
+  /// The returned scene owns independent ECS state; renderer and asset resources may be prepared or shared.
+  /// @param document Parsed scene data to instantiate.
+  /// @param warnings Receives non-fatal asset-resolution warnings.
+  /// @return The detached scene, or an error when validation or instantiation fails.
+  Result<std::shared_ptr<Scene>> CreateDetachedSceneFromDocument(const SceneDocument& document,
+                                                                 std::vector<std::string>& warnings);
+
   /// Creates a serializable snapshot of one scene.
   /// @param scene Scene to snapshot.
   /// @return A document containing the scene's persistent data.
@@ -224,6 +233,8 @@ private:
   bool InitializeCore();
   void RegisterDefaultView();
   void UpdateScenes(float deltaTime);
+  bool BuildSceneFromDocument(const SceneDocument& document, std::shared_ptr<Scene>& stagedScene, std::string& error,
+                              std::vector<std::string>& warnings);
 
   bool m_IsRunning = false;
   std::atomic<bool> m_SimulationPaused{false};

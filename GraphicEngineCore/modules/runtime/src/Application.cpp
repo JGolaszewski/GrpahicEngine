@@ -371,6 +371,35 @@ auto Application::LoadSceneDocument(const SceneDocument& document, std::string& 
                                     std::vector<std::string>& warnings) -> bool {
   error.clear();
   warnings.clear();
+  auto stagedScene = CreateDetachedSceneFromDocument(document, warnings);
+  if (!stagedScene) {
+    error = stagedScene.error().Message;
+    return false;
+  }
+  m_ActiveViews.clear();
+  m_ActiveScenes.clear();
+  m_ActiveScenes.push_back(*stagedScene);
+  OnSceneReplaced(*stagedScene);
+  ENGINE_LOG_INFO("Core", "Active ECS scene replaced | entities: {} | lights: {} | cameras: {}",
+                  document.entities.size(), document.lights.size(), document.cameras.size());
+  return true;
+}
+
+auto Application::CreateDetachedSceneFromDocument(const SceneDocument& document, std::vector<std::string>& warnings)
+    -> Result<std::shared_ptr<Scene>> {
+  warnings.clear();
+  std::string error;
+  std::shared_ptr<Scene> stagedScene;
+  if (!BuildSceneFromDocument(document, stagedScene, error, warnings)) {
+    return std::unexpected(MakeError(std::move(error)));
+  }
+  return stagedScene;
+}
+
+auto Application::BuildSceneFromDocument(const SceneDocument& document, std::shared_ptr<Scene>& stagedScene,
+                                         std::string& error, std::vector<std::string>& warnings) -> bool {
+  error.clear();
+  warnings.clear();
   for (const SceneLightDocument& source : document.lights) {
     if (source.type != "directional" && source.type != "point" && source.type != "spot") {
       error = "light '" + source.name + "': unsupported light type '" + source.type + "'";
@@ -394,7 +423,7 @@ auto Application::LoadSceneDocument(const SceneDocument& document, std::string& 
       return false;
     }
   }
-  auto stagedScene = std::make_shared<Scene>();
+  stagedScene = std::make_shared<Scene>();
   stagedScene->SetUnitsPerMeter(document.unitsPerMeter);
 
   struct PendingEntity {
@@ -731,12 +760,6 @@ auto Application::LoadSceneDocument(const SceneDocument& document, std::string& 
     }
   }
 
-  m_ActiveViews.clear();
-  m_ActiveScenes.clear();
-  m_ActiveScenes.push_back(stagedScene);
-  OnSceneReplaced(stagedScene);
-  ENGINE_LOG_INFO("Core", "Active ECS scene replaced | entities: {} | lights: {} | cameras: {}",
-                  document.entities.size(), document.lights.size(), document.cameras.size());
   return true;
 }
 auto Application::SaveScene(const std::filesystem::path& path, const Scene& scene, std::string& error) const -> bool {

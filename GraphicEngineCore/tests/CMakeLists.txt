@@ -23,6 +23,9 @@ if(BUILD_TESTING)
         "${CMAKE_CURRENT_SOURCE_DIR}/../../GraphicEngineEditor/modules/application/src/EditorEventRouter.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/../../GraphicEngineEditor/modules/panels/src/AssetDropAssignment.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/../../GraphicEngineEditor/modules/panels/src/ScenePanel.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../../GraphicEngineEditor/modules/panels/src/BrdfAnalysisExport.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../../GraphicEngineEditor/modules/panels/src/AnalyticalFrameArchive.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../../GraphicEngineEditor/modules/panels/src/AnalyticalFrameViewModel.cpp"
     )
     target_link_libraries(GraphicEngineUnitTests PRIVATE
         GraphicEngineCore
@@ -39,6 +42,7 @@ if(BUILD_TESTING)
         "${CMAKE_CURRENT_SOURCE_DIR}/../modules/rendering/src"
         "${CMAKE_CURRENT_SOURCE_DIR}/../../GraphicEngineEditor/modules"
         "${CMAKE_CURRENT_SOURCE_DIR}/../../GraphicEngineEditor/modules/panels/src"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../../GraphicEngineEditor/modules"
     )
     file(TO_CMAKE_PATH "${PROJECT_SOURCE_DIR}/SandboxApp/Project" ENGINE_SANDBOX_PROJECT_ROOT)
     target_compile_definitions(GraphicEngineUnitTests PRIVATE
