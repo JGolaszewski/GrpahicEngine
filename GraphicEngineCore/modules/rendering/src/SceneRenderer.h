@@ -61,7 +61,8 @@ public:
             ::Engine::Renderer::ShaderFactory* shaderFactory,
             const ::Engine::Renderer::ModelResourceLibrary* modelResources);
   void SetAssetTextureResolver(
-      std::function<std::shared_ptr<::Engine::Renderer::TextureResource>(const std::string&, bool)> resolver);
+      std::function<std::shared_ptr<::Engine::Renderer::TextureResource>(const std::string&, bool, bool, bool, float)>
+          resolver);
 
   void BuildViews(::Engine::Renderer::FrameBlackboard& blackboard, nvrhi::ICommandList* commandList,
                   ::Engine::Renderer::FrameContext& frameContext, ::Engine::Renderer::FrameDiagnostics& diagnostics);
@@ -73,7 +74,9 @@ public:
                             std::vector<::Engine::Renderer::DirectionalLightData>& lights);
   static void BuildShadowData(Engine::Scene* scene, const std::vector<::Engine::Renderer::RenderView*>& shadowViews,
                               uint32_t firstShadowSlot, uint32_t maxShadowedLights,
-                              const ::Engine::Renderer::ModelResourceLibrary* modelResources = nullptr);
+                              const ::Engine::Renderer::ModelResourceLibrary* modelResources = nullptr,
+                              const std::vector<::Engine::Renderer::RenderView*>& sceneViews = {},
+                              uint32_t shadowMapResolution = 2048);
   static uint32_t CountShadowCasters(const Engine::Scene* scene, uint32_t limit);
   /// Counts depth views needed by the selected shadow-casting lights (point lights use six faces).
   /// @param scene Scene whose light components are counted.
@@ -152,7 +155,8 @@ private:
   uint64_t m_DebugTriangleBufferCapacity = 0;
 
   ::Engine::Renderer::MaterialSystem* m_MaterialSystem = nullptr;
-  std::function<std::shared_ptr<::Engine::Renderer::TextureResource>(const std::string&, bool)> m_AssetTextureResolver;
+  std::function<std::shared_ptr<::Engine::Renderer::TextureResource>(const std::string&, bool, bool, bool)>
+      m_AssetTextureResolver;
   const ::Engine::Renderer::ModelResourceLibrary* m_ModelResources = nullptr;
   using MaterialOverrideKey = std::tuple<uintptr_t, uint32_t, uint32_t, std::string, int32_t, uintptr_t>;
   struct MaterialOverrideCacheEntry {

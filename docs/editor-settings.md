@@ -38,8 +38,12 @@ with **Rename selected**; the editor moves the material document and metadata
 sidecar together while preserving its GUID. Material properties and shared
 material GUID references are stored in project assets and scene documents,
 respectively. The Inspector can assign an asset material to a mesh or edit
-material properties, including base color and normal texture slots, metallic,
-roughness, BRDF, alpha mode, and double-sided rendering.
+material properties. General Material Properties include the base-color factor,
+color and normal texture slots, their UV set, offset, scale, and rotation, plus
+normal-map strength, metallic, roughness, emissive color, workflow, and
+dielectric specular controls.
+MDF Parameters list every supported distribution and expose its specific
+parameters. Alpha mode, mask cutoff, and double-sided rendering are also editable.
 
 Select a model or texture in the Assets panel and use **Rename selected** to change its filename. The editor moves the
 asset and its adjacent metadata sidecar together, preserving the asset GUID used by saved scene references.

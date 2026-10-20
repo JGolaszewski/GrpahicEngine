@@ -147,13 +147,15 @@ void RenderSystem::SetAssetManager(AssetManager* assets) {
   m_AssetManager = assets;
   if (m_SceneRenderer != nullptr) {
     m_SceneRenderer->SetAssetTextureResolver(
-        [this](const std::string& guid, bool srgb) -> std::shared_ptr<::Engine::Renderer::TextureResource> {
-          return GetPreparedAssetTexture(guid, srgb);
+        [this](const std::string& guid, bool srgb, bool normalMap, bool preserveAlphaCoverage,
+               float alphaCutoff) -> std::shared_ptr<::Engine::Renderer::TextureResource> {
+          return GetPreparedAssetTexture(guid, srgb, normalMap, preserveAlphaCoverage, alphaCutoff);
         });
   }
 }
 
-bool RenderSystem::PrepareAssetTexture(const std::string& guid, bool srgb, std::string& error) {
+bool RenderSystem::PrepareAssetTexture(const std::string& guid, bool srgb, std::string& error, bool normalMap,
+                                       bool preserveAlphaCoverage, float alphaCutoff) {
   error.clear();
   if (m_FrameActive) {
     error = "authored textures must be prepared between render frames";
@@ -172,17 +174,19 @@ bool RenderSystem::PrepareAssetTexture(const std::string& guid, bool srgb, std::
     error = "texture GUID is registered without a decoded image or generation: " + guid;
     return false;
   }
-  auto texture = GetOrCreateTexture(guid, *generation, *image, srgb, error);
+  auto texture = GetOrCreateTexture(guid, *generation, *image, srgb, error, nullptr, normalMap,
+                                    preserveAlphaCoverage, alphaCutoff);
   if (texture == nullptr) {
     return false;
   }
-  m_AuthoredTextures.insert_or_assign({guid, srgb}, std::move(texture));
+  m_AuthoredTextures.insert_or_assign({guid, srgb, normalMap, preserveAlphaCoverage, alphaCutoff}, std::move(texture));
   return true;
 }
 
-auto RenderSystem::GetPreparedAssetTexture(const std::string& guid, bool srgb) const
+auto RenderSystem::GetPreparedAssetTexture(const std::string& guid, bool srgb, bool normalMap,
+                                           bool preserveAlphaCoverage, float alphaCutoff) const
     -> std::shared_ptr<::Engine::Renderer::TextureResource> {
-  const auto found = m_AuthoredTextures.find({guid, srgb});
+  const auto found = m_AuthoredTextures.find({guid, srgb, normalMap, preserveAlphaCoverage, alphaCutoff});
   return found == m_AuthoredTextures.end() ? nullptr : found->second;
 }
 
@@ -284,8 +288,14 @@ void RenderSystem::SubmitViews(const std::vector<Engine::ViewportBinding>& views
       shadowViews.push_back(view.get());
       m_FrameContext->GetViews().push_back(std::move(view));
     }
+    std::vector<::Engine::Renderer::RenderView*> sceneCameraViews;
+    for (auto* sceneView : bb.GetSceneViews()) {
+      if (sceneView != nullptr && sceneView->TargetScene == scene) {
+        sceneCameraViews.push_back(sceneView);
+      }
+    }
     ::Engine::SceneRenderer::BuildShadowData(scene, shadowViews, firstShadowSlot, shadowCasterCount,
-                                             m_ModelResources.get());
+                                             m_ModelResources.get(), sceneCameraViews, m_ShadowSettings.Resolution);
   }
   bb.SetShadowViews(std::move(shadowViews));
   bb.Set<uint32_t>("ShadowMapSize", m_ShadowSettings.Resolution);
@@ -354,7 +364,8 @@ auto RenderSystem::GetOrCreateMesh(const std::string& guid, uint64_t generation,
 }
 
 auto RenderSystem::GetOrCreateTexture(const std::string& identity, uint64_t generation, const ImportedImage& image,
-                                      bool srgb, std::string& error, const ImportedTexture* sampler)
+                                      bool srgb, std::string& error, const ImportedTexture* sampler, bool normalMap,
+                                      bool preserveAlphaCoverage, float alphaCutoff)
     -> std::shared_ptr<::Engine::Renderer::TextureResource> {
   if (m_FrameActive || !m_ResourceManager) {
     error = "texture upload requires an initialized renderer outside an active frame";
@@ -362,7 +373,8 @@ auto RenderSystem::GetOrCreateTexture(const std::string& identity, uint64_t gene
                      generation, m_FrameActive);
     return nullptr;
   }
-  return m_ResourceManager->GetOrCreateTexture(identity, generation, image, srgb, error, sampler);
+  return m_ResourceManager->GetOrCreateTexture(identity, generation, image, srgb, error, sampler, normalMap,
+                                               preserveAlphaCoverage, alphaCutoff);
 }
 
 auto RenderSystem::CreateMaterial(const ::Engine::Renderer::MaterialProperties& properties)
@@ -505,7 +517,8 @@ void RenderSystem::UnregisterMaterials(const std::vector<std::shared_ptr<::Engin
 }
 
 auto RenderSystem::ResolveImportedTexture(const std::string& guid, uint64_t generation, const ImportedModel& model,
-                                          int32_t textureIndex, bool srgb,
+                                          int32_t textureIndex, bool srgb, bool normalMap, bool preserveAlphaCoverage,
+                                          float alphaCutoff,
                                           std::shared_ptr<::Engine::Renderer::TextureResource>& destination,
                                           std::string& error) -> bool {
   if (textureIndex < 0) {
@@ -523,7 +536,8 @@ auto RenderSystem::ResolveImportedTexture(const std::string& guid, uint64_t gene
   }
   const auto& image = model.images.at(static_cast<size_t>(imageIndex));
   destination = m_ResourceManager->GetOrCreateTexture(guid + "/texture/" + std::to_string(textureIndex), generation,
-                                                      image, srgb, error, &texture);
+                                                      image, srgb, error, &texture, normalMap, preserveAlphaCoverage,
+                                                      alphaCutoff);
   return destination != nullptr;
 }
 
@@ -591,13 +605,17 @@ auto RenderSystem::CreateImportedMaterial(
   auto occlusionTexture = m_ResourceManager->GetFallbackTexture(false);
   auto emissiveTexture = m_ResourceManager->GetFallbackTexture(true);
   const bool texturesResolved =
-      ResolveImportedTexture(guid, generation, model, sourceMaterial.baseColorTexture, true, baseColorTexture, error) &&
-      ResolveImportedTexture(guid, generation, model, sourceMaterial.normalTexture, false, normalTexture, error) &&
+      ResolveImportedTexture(guid, generation, model, sourceMaterial.baseColorTexture, true, false,
+                             properties.AlphaMode == ::Engine::Renderer::MaterialAlphaMode::Mask,
+                             properties.AlphaCutoff, baseColorTexture, error) &&
+      ResolveImportedTexture(guid, generation, model, sourceMaterial.normalTexture, false, true, false, 0.5F,
+                             normalTexture, error) &&
       ResolveImportedTexture(guid, generation, model, sourceMaterial.metallicRoughnessTexture,
-                             sourceMaterial.specularGlossiness, metallicRoughnessTexture, error) &&
-      ResolveImportedTexture(guid, generation, model, sourceMaterial.occlusionTexture, false, occlusionTexture,
-                             error) &&
-      ResolveImportedTexture(guid, generation, model, sourceMaterial.emissiveTexture, true, emissiveTexture, error);
+                             sourceMaterial.specularGlossiness, false, false, 0.5F, metallicRoughnessTexture, error) &&
+      ResolveImportedTexture(guid, generation, model, sourceMaterial.occlusionTexture, false, false, false, 0.5F,
+                             occlusionTexture, error) &&
+      ResolveImportedTexture(guid, generation, model, sourceMaterial.emissiveTexture, true, false, false, 0.5F,
+                             emissiveTexture, error);
   const bool bindingsSet = texturesResolved && m_MaterialSystem->SetPbrTextureBindings(
                                                    material, baseColorTexture, normalTexture, metallicRoughnessTexture,
                                                    occlusionTexture, emissiveTexture, true);

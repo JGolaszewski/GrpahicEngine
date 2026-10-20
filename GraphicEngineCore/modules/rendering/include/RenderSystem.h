@@ -14,6 +14,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <tuple>
 #include <vector>
 
 #ifdef _MSC_VER
@@ -66,14 +67,22 @@ public:
   /// @param guid Stable texture asset identity.
   /// @param srgb Whether the texture should use sRGB sampling.
   /// @param error Receives a missing asset or upload diagnostic.
+  /// @param normalMap Whether generated mip levels should preserve normal direction.
+  /// @param preserveAlphaCoverage Whether generated mip levels should preserve masked alpha coverage.
+  /// @param alphaCutoff Alpha threshold used when preserving coverage for masked materials.
   /// @return True when the texture resource is ready for scene material bindings.
-  bool PrepareAssetTexture(const std::string& guid, bool srgb, std::string& error);
+  bool PrepareAssetTexture(const std::string& guid, bool srgb, std::string& error, bool normalMap = false,
+                           bool preserveAlphaCoverage = false, float alphaCutoff = 0.5F);
   /// Returns a previously prepared authored project texture.
   /// @param guid Stable texture asset identity.
   /// @param srgb Whether the texture uses sRGB sampling.
+  /// @param normalMap Whether the texture is a normal map.
+  /// @param preserveAlphaCoverage Whether masked alpha coverage is preserved in its mip levels.
+  /// @param alphaCutoff Alpha threshold used when preserving coverage for masked materials.
   /// @return Prepared GPU resource, or empty when it has not been prepared.
-  std::shared_ptr<::Engine::Renderer::TextureResource> GetPreparedAssetTexture(const std::string& guid,
-                                                                               bool srgb) const;
+  std::shared_ptr<::Engine::Renderer::TextureResource>
+  GetPreparedAssetTexture(const std::string& guid, bool srgb, bool normalMap = false,
+                          bool preserveAlphaCoverage = false, float alphaCutoff = 0.5F) const;
 
   /// Begin frame recording before submitting view work.
   void BeginFrame();
@@ -147,10 +156,14 @@ public:
   /// @param srgb Whether the texture uses sRGB sampling.
   /// @param error Receives a failure description when creation fails.
   /// @param sampler Optional sampler settings from the imported texture.
+  /// @param normalMap Whether generated mip levels should preserve normal direction.
+  /// @param preserveAlphaCoverage Whether generated mip levels should preserve masked alpha coverage.
+  /// @param alphaCutoff Alpha threshold used when preserving coverage for masked materials.
   /// @return GPU texture resource, or an empty pointer on failure.
   std::shared_ptr<::Engine::Renderer::TextureResource>
   GetOrCreateTexture(const std::string& identity, uint64_t generation, const ImportedImage& image, bool srgb,
-                     std::string& error, const ImportedTexture* sampler = nullptr);
+                     std::string& error, const ImportedTexture* sampler = nullptr, bool normalMap = false,
+                     bool preserveAlphaCoverage = false, float alphaCutoff = 0.5F);
   /// Creates a material from renderer properties.
   /// @param properties Material parameters and texture transforms.
   /// @return New material, or an empty pointer on failure.
@@ -268,7 +281,8 @@ private:
                               const std::vector<std::optional<::Engine::Renderer::MaterialProperties>>& overrides,
                               std::shared_ptr<::Engine::Renderer::Material>& material, std::string& error);
   bool ResolveImportedTexture(const std::string& guid, uint64_t generation, const ImportedModel& model,
-                              int32_t textureIndex, bool srgb,
+                              int32_t textureIndex, bool srgb, bool normalMap, bool preserveAlphaCoverage,
+                              float alphaCutoff,
                               std::shared_ptr<::Engine::Renderer::TextureResource>& destination, std::string& error);
   void UnregisterMaterials(const std::vector<std::shared_ptr<::Engine::Renderer::Material>>& materials);
   void ClearFrameBuffer();
@@ -283,7 +297,8 @@ private:
   std::string m_LastRenderGraphFailure;
   ShadowSettings m_ShadowSettings;
   AssetManager* m_AssetManager = nullptr;
-  std::map<std::pair<std::string, bool>, std::shared_ptr<::Engine::Renderer::TextureResource>> m_AuthoredTextures;
+  std::map<std::tuple<std::string, bool, bool, bool, float>, std::shared_ptr<::Engine::Renderer::TextureResource>>
+      m_AuthoredTextures;
 
   std::unique_ptr<::Engine::Renderer::FrameContext> m_FrameContext;
   std::unique_ptr<::Engine::Renderer::RenderGraph> m_RenderGraph;

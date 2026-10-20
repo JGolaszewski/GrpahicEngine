@@ -1,83 +1,14 @@
 #include "rendering/src/ResourceManager.h"
 #include "MeshBackend.h"
 #include "TextureBackend.h"
+#include "rendering/src/TextureMipBuilder.h"
 #include "runtime/include/LogMacros.h"
 
 #include <algorithm>
-#include <array>
-#include <cmath>
 #include <functional>
 
 namespace Engine::Renderer {
-namespace {
-struct TextureMip {
-  uint32_t Width = 0;
-  uint32_t Height = 0;
-  std::vector<uint8_t> Pixels;
-};
-
-auto DecodeColor(uint8_t value, bool srgb) -> float {
-  const float normalized = static_cast<float>(value) / 255.0F;
-  if (!srgb || normalized <= 0.04045F) {
-    return srgb ? normalized / 12.92F : normalized;
-  }
-  return std::pow((normalized + 0.055F) / 1.055F, 2.4F);
-}
-
-auto EncodeColor(float value, bool srgb) -> uint8_t {
-  value = std::clamp(value, 0.0F, 1.0F);
-  if (srgb) {
-    value = value <= 0.0031308F ? value * 12.92F : (1.055F * std::pow(value, 1.0F / 2.4F)) - 0.055F;
-  }
-  return static_cast<uint8_t>(std::lround(value * 255.0F));
-}
-
-auto AverageSourceTexel(const TextureMip& source, uint32_t targetX, uint32_t targetY, bool srgb)
-    -> std::array<float, 4> {
-  std::array<float, 4> sum{};
-  uint32_t sampleCount = 0;
-  for (uint32_t offsetY = 0; offsetY < 2; ++offsetY) {
-    for (uint32_t offsetX = 0; offsetX < 2; ++offsetX) {
-      const uint32_t sourceX = (std::min)((targetX * 2) + offsetX, source.Width - 1);
-      const uint32_t sourceY = (std::min)((targetY * 2) + offsetY, source.Height - 1);
-      const size_t pixelOffset = ((static_cast<size_t>(sourceY) * source.Width) + sourceX) * 4;
-      for (size_t channel = 0; channel < 3; ++channel) {
-        sum.at(channel) += DecodeColor(source.Pixels.at(pixelOffset + channel), srgb);
-      }
-      sum.at(3) += static_cast<float>(source.Pixels.at(pixelOffset + 3)) / 255.0F;
-      ++sampleCount;
-    }
-  }
-  for (float& channel : sum) {
-    channel /= static_cast<float>(sampleCount);
-  }
-  return sum;
-}
-
-auto BuildTextureMips(const Engine::ImportedImage& image, bool srgb) -> std::vector<TextureMip> {
-  std::vector<TextureMip> mips;
-  mips.push_back({.Width = image.width, .Height = image.height, .Pixels = image.rgba8});
-  while (mips.back().Width > 1 || mips.back().Height > 1) {
-    const TextureMip& source = mips.back();
-    TextureMip mip;
-    mip.Width = (std::max)(1U, source.Width / 2);
-    mip.Height = (std::max)(1U, source.Height / 2);
-    mip.Pixels.resize(static_cast<size_t>(mip.Width) * mip.Height * 4);
-    for (uint32_t row = 0; row < mip.Height; ++row) {
-      for (uint32_t column = 0; column < mip.Width; ++column) {
-        const std::array<float, 4> average = AverageSourceTexel(source, column, row, srgb);
-        const size_t offset = ((static_cast<size_t>(row) * mip.Width) + column) * 4;
-        for (size_t channel = 0; channel < 3; ++channel) {
-          mip.Pixels.at(offset + channel) = EncodeColor(average.at(channel), srgb);
-        }
-        mip.Pixels.at(offset + 3) = EncodeColor(average.at(3), false);
-      }
-    }
-    mips.push_back(std::move(mip));
-  }
-  return mips;
-}
-} // namespace
+namespace {} // namespace
 
 ResourceManager::ResourceManager(nvrhi::IDevice* device) : m_Device(device), m_RenderDevice(device) {
   Engine::ImportedImage color;
@@ -87,7 +18,7 @@ ResourceManager::ResourceManager(nvrhi::IDevice* device) : m_Device(device), m_R
   std::string error;
   m_FallbackColor = m_RenderDevice.CreateTexture(color, true, error);
   if (m_FallbackColor) {
-    QueueTextureUpload(m_FallbackColor, color, true);
+    QueueTextureUpload(m_FallbackColor, color, true, false, false, 0.5F);
   }
 
   Engine::ImportedImage normal;
@@ -96,7 +27,7 @@ ResourceManager::ResourceManager(nvrhi::IDevice* device) : m_Device(device), m_R
   normal.rgba8 = {128, 128, 255, 255};
   m_FallbackNormal = m_RenderDevice.CreateTexture(normal, false, error);
   if (m_FallbackNormal) {
-    QueueTextureUpload(m_FallbackNormal, normal, false);
+    QueueTextureUpload(m_FallbackNormal, normal, false, true, false, 0.5F);
   }
 }
 
@@ -118,7 +49,9 @@ auto ResourceManager::KeyHash::operator()(const Key& key) const noexcept -> size
   const size_t guidHash = std::hash<std::string>{}(key.Guid);
   const size_t generationHash = std::hash<uint64_t>{}(key.Generation);
   const size_t combined = guidHash ^ (generationHash + 0x9e3779b9 + (guidHash << 6) + (guidHash >> 2));
-  return combined ^ (key.Srgb ? 0x85ebca6b : 0U);
+  const size_t cutoffHash = std::hash<float>{}(key.AlphaCutoff);
+  return combined ^ (key.Srgb ? 0x85ebca6b : 0U) ^ (key.NormalMap ? 0xc2b2ae35 : 0U) ^
+         (key.PreserveAlphaCoverage ? 0x27d4eb2f : 0U) ^ cutoffHash;
 }
 
 auto ResourceManager::GetOrCreateMesh(const std::string& guid, uint64_t generation, const std::vector<Vertex>& vertices,
@@ -168,14 +101,21 @@ auto ResourceManager::GetMesh(const std::string& guid, uint64_t generation) cons
 
 auto ResourceManager::GetOrCreateTexture(const std::string& identity, uint64_t generation,
                                          const Engine::ImportedImage& image, bool srgb, std::string& error,
-                                         const Engine::ImportedTexture* sampler) -> std::shared_ptr<TextureResource> {
+                                         const Engine::ImportedTexture* sampler, bool normalMap,
+                                         bool preserveAlphaCoverage, float alphaCutoff)
+    -> std::shared_ptr<TextureResource> {
   error.clear();
   if (identity.empty()) {
     error = "texture cache requires a non-empty asset or subresource identity";
     ENGINE_LOG_ERROR("Asset", "Texture allocation rejected | identity_length: 0 | generation: {}", generation);
     return nullptr;
   }
-  const Key key{.Guid = identity, .Generation = generation, .Srgb = srgb};
+  const Key key{.Guid = identity,
+                .Generation = generation,
+                .Srgb = srgb,
+                .NormalMap = normalMap,
+                .PreserveAlphaCoverage = preserveAlphaCoverage,
+                .AlphaCutoff = alphaCutoff};
   if (const auto it = m_Textures.find(key); it != m_Textures.end()) {
     ENGINE_LOG_TRACE("Asset", "Texture cache hit | identity: {} | generation: {} | srgb: {}", identity, generation,
                      srgb);
@@ -191,7 +131,7 @@ auto ResourceManager::GetOrCreateTexture(const std::string& identity, uint64_t g
         identity, generation, image.width, image.height, error);
     return nullptr;
   }
-  QueueTextureUpload(texture, image, srgb);
+  QueueTextureUpload(texture, image, srgb, normalMap, preserveAlphaCoverage, alphaCutoff);
   for (auto it = m_Textures.begin(); it != m_Textures.end();) {
     if ((it->first.Guid == identity || it->first.Guid.starts_with(identity + "/")) &&
         it->first.Generation != generation) {
@@ -368,11 +308,13 @@ void ResourceManager::QueueMeshUpload(const std::shared_ptr<Mesh>& mesh, std::ve
 }
 
 void ResourceManager::QueueTextureUpload(const std::shared_ptr<TextureResource>& texture,
-                                         const Engine::ImportedImage& image, bool srgb) {
+                                         const Engine::ImportedImage& image, bool srgb, bool normalMap,
+                                         bool preserveAlphaCoverage, float alphaCutoff) {
   if (!texture || (TextureBackendAccess::GetTexture(*texture) == nullptr)) {
     return;
   }
-  std::vector<TextureMip> mips = BuildTextureMips(image, srgb);
+  std::vector<Detail::TextureMipLevel> mips =
+      Detail::BuildTextureMips(image, srgb, normalMap, preserveAlphaCoverage, alphaCutoff);
   uint64_t bytes = 0;
   for (const auto& mip : mips) {
     bytes += mip.Pixels.size();

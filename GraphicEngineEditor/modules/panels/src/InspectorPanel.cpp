@@ -353,33 +353,67 @@ void InspectorPanel::DrawEntityInspector() {
         }
         ImGui::EndDragDropTarget();
       };
-      drawTextureTarget("Base color", MaterialTextureSlot::BaseColor, material.baseColorTextureGuid);
-      drawTextureTarget("Normal", MaterialTextureSlot::Normal, material.normalTextureGuid);
-      materialChanged |= ImGui::ColorEdit4("Base color", material.baseColor.data());
-      materialChanged |= ImGui::ColorEdit3("Emissive", material.emissive.data());
+      ImGui::SeparatorText("General Material Properties");
+      materialChanged |= ImGui::ColorEdit4("Base color factor", material.baseColor.data());
+      drawTextureTarget("Color texture", MaterialTextureSlot::BaseColor, material.baseColorTextureGuid);
+      int baseColorTexCoord = static_cast<int>(material.baseColorTexCoord);
+      if (ImGui::DragInt("Color UV set", &baseColorTexCoord, 0.1F, 0, 7)) {
+        material.baseColorTexCoord = static_cast<uint32_t>(std::clamp(baseColorTexCoord, 0, 7));
+        materialChanged = true;
+      }
+      materialChanged |= ImGui::DragFloat2("Color UV offset", material.baseColorTextureTransform.offset.data(), 0.01F);
+      materialChanged |= ImGui::DragFloat2("Color UV scale", material.baseColorTextureTransform.scale.data(), 0.01F);
+      materialChanged |= ImGui::DragFloat("Color UV rotation", &material.baseColorTextureTransform.rotation, 0.01F);
+      drawTextureTarget("Normal texture", MaterialTextureSlot::Normal, material.normalTextureGuid);
+      materialChanged |= ImGui::DragFloat("Normal map strength", &material.normalScale, 0.01F, 0.0F, 10.0F);
+      int normalTexCoord = static_cast<int>(material.normalTexCoord);
+      if (ImGui::DragInt("Normal UV set", &normalTexCoord, 0.1F, 0, 7)) {
+        material.normalTexCoord = static_cast<uint32_t>(std::clamp(normalTexCoord, 0, 7));
+        materialChanged = true;
+      }
+      materialChanged |= ImGui::DragFloat2("Normal UV offset", material.normalTextureTransform.offset.data(), 0.01F);
+      materialChanged |= ImGui::DragFloat2("Normal UV scale", material.normalTextureTransform.scale.data(), 0.01F);
+      materialChanged |= ImGui::DragFloat("Normal UV rotation", &material.normalTextureTransform.rotation, 0.01F);
       materialChanged |= ImGui::SliderFloat("Metallic", &material.metallic, 0.0F, 1.0F);
       materialChanged |= ImGui::SliderFloat("Roughness", &material.roughness, 0.0F, 1.0F);
-      constexpr const char* brdfNames[] = {
-          "Legacy", "GGX", "GTR", "Beckmann", "Gauss", "Blinn-Phong", "Ashikhmin-Shirley", "Schlick", "Sawicki"};
-      int brdfIndex = material.brdfModel == "ggx"                ? 1
-                      : material.brdfModel == "gtr"              ? 2
-                      : material.brdfModel == "beckmann"         ? 3
-                      : material.brdfModel == "gauss"            ? 4
-                      : material.brdfModel == "blinnPhong"       ? 5
-                      : material.brdfModel == "ashikhminShirley" ? 6
-                      : material.brdfModel == "schlick"          ? 7
-                      : material.brdfModel == "sawicki"          ? 8
+      materialChanged |= ImGui::ColorEdit3("Emissive", material.emissive.data());
+      constexpr const char* workflowNames[] = {"Metallic-Roughness", "Specular-Glossiness"};
+      int workflowIndex = material.workflow == "specularGlossiness" ? 1 : 0;
+      if (ImGui::Combo("Workflow", &workflowIndex, workflowNames, 2)) {
+        material.workflow = workflowIndex == 1 ? "specularGlossiness" : "metallicRoughness";
+        materialChanged = true;
+      }
+      constexpr const char* specularModeNames[] = {"Index of refraction", "Explicit F0"};
+      int specularModeIndex = material.specularMode == "explicitF0" ? 1 : 0;
+      if (ImGui::Combo("Dielectric specular", &specularModeIndex, specularModeNames, 2)) {
+        material.specularMode = specularModeIndex == 1 ? "explicitF0" : "ior";
+        materialChanged = true;
+      }
+      if (material.specularMode == "explicitF0") {
+        materialChanged |= ImGui::ColorEdit3("Specular F0", material.specularF0.data());
+      } else {
+        materialChanged |= ImGui::SliderFloat("Index of refraction", &material.ior, 1.0F, 3.0F, "%.2f");
+      }
+      ImGui::SeparatorText("MDF Parameters");
+      constexpr const char* brdfNames[] = {"GGX",     "GTR",    "Beckmann", "Gauss", "Blinn-Phong", "Ashikhmin-Shirley",
+                                           "Schlick", "Sawicki"};
+      int brdfIndex = material.brdfModel == "gtr"                ? 1
+                      : material.brdfModel == "beckmann"         ? 2
+                      : material.brdfModel == "gauss"            ? 3
+                      : material.brdfModel == "blinnPhong"       ? 4
+                      : material.brdfModel == "ashikhminShirley" ? 5
+                      : material.brdfModel == "schlick"          ? 6
+                      : material.brdfModel == "sawicki"          ? 7
                                                                  : 0;
-      if (ImGui::Combo("BRDF", &brdfIndex, brdfNames, 9)) {
-        material.brdfModel = brdfIndex == 1   ? "ggx"
-                             : brdfIndex == 2 ? "gtr"
-                             : brdfIndex == 3 ? "beckmann"
-                             : brdfIndex == 4 ? "gauss"
-                             : brdfIndex == 5 ? "blinnPhong"
-                             : brdfIndex == 6 ? "ashikhminShirley"
-                             : brdfIndex == 7 ? "schlick"
-                             : brdfIndex == 8 ? "sawicki"
-                                              : "legacy";
+      if (ImGui::Combo("BRDF distribution", &brdfIndex, brdfNames, 8)) {
+        material.brdfModel = brdfIndex == 1   ? "gtr"
+                             : brdfIndex == 2 ? "beckmann"
+                             : brdfIndex == 3 ? "gauss"
+                             : brdfIndex == 4 ? "blinnPhong"
+                             : brdfIndex == 5 ? "ashikhminShirley"
+                             : brdfIndex == 6 ? "schlick"
+                             : brdfIndex == 7 ? "sawicki"
+                                              : "ggx";
         materialChanged = true;
       }
       if (material.brdfModel == "gtr") {

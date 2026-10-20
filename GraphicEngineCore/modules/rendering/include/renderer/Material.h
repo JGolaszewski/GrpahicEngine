@@ -25,7 +25,6 @@ namespace Engine::Renderer {
 
 /// BRDF family selected for shading a material.
 enum class BrdfModel : uint32_t {
-  Legacy = 0,
   GGX = 1,
   GTR = 2,
   Beckmann = 3,
@@ -107,7 +106,7 @@ struct MaterialProperties {
   float AnisotropicRoughnessV = 0.5f;                     ///< Ashikhmin-Shirley roughness along the bitangent axis.
   float Ior = 1.5f;                                       ///< Index of refraction used to derive dielectric F0.
   DirectX::XMFLOAT3 SpecularF0 = {0.04f, 0.04f, 0.04f};   ///< Explicit dielectric normal-incidence reflectance.
-  BrdfModel Model = BrdfModel::Legacy;                    ///< BRDF distribution used by the shader.
+  BrdfModel Model = BrdfModel::GGX;                       ///< BRDF distribution used by the shader.
   MaterialWorkflow Workflow = MaterialWorkflow::MetallicRoughness;                 ///< Active material workflow.
   DielectricSpecularMode SpecularMode = DielectricSpecularMode::IndexOfRefraction; ///< Source for dielectric F0.
   MaterialAlphaMode AlphaMode = MaterialAlphaMode::Opaque;                         ///< Alpha test or blend mode.
@@ -134,7 +133,10 @@ inline MaterialGpu BuildMaterialGpu(const MaterialProperties& properties) noexce
   const float roughness = ClampFinite(properties.Roughness, 0.5f, 0.0f, 1.0f);
   const float ior = ClampFinite(properties.Ior, 1.5f, MaterialMinIor, MaterialMaxIor);
   const auto validModel = [](BrdfModel model) {
-    return static_cast<uint32_t>(model) <= static_cast<uint32_t>(BrdfModel::Sawicki) ? model : BrdfModel::Legacy;
+    return static_cast<uint32_t>(model) >= static_cast<uint32_t>(BrdfModel::GGX) &&
+                   static_cast<uint32_t>(model) <= static_cast<uint32_t>(BrdfModel::Sawicki)
+               ? model
+               : BrdfModel::GGX;
   };
   const auto validWorkflow = [](MaterialWorkflow workflow) {
     return static_cast<uint32_t>(workflow) <= static_cast<uint32_t>(MaterialWorkflow::SpecularGlossiness)
