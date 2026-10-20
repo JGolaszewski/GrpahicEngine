@@ -420,19 +420,21 @@ auto Application::LoadSceneDocument(const SceneDocument& document, std::string& 
       return;
     }
     const auto prepare = [this, &warnings, &entityName](const std::optional<std::string>& guid, bool srgb,
-                                                        bool normalMap, bool preserveAlphaCoverage,
+                                                        bool normalMap, bool preserveAlphaCoverage, float alphaCutoff,
                                                         std::string_view slotName) -> void {
       if (!guid) {
         return;
       }
       std::string textureError;
-      if (!m_RenderSystem->PrepareAssetTexture(*guid, srgb, textureError, normalMap, preserveAlphaCoverage)) {
+      if (!m_RenderSystem->PrepareAssetTexture(*guid, srgb, textureError, normalMap, preserveAlphaCoverage,
+                                               alphaCutoff)) {
         warnings.push_back("entity '" + entityName + "': could not prepare " + std::string(slotName) + " texture " +
                            *guid + ": " + textureError);
       }
     };
-    prepare(material.baseColorTextureGuid, true, false, material.alphaMode == "mask", "base-color");
-    prepare(material.normalTextureGuid, false, true, false, "normal");
+    prepare(material.baseColorTextureGuid, true, false, material.alphaMode == "mask", material.alphaCutoff,
+            "base-color");
+    prepare(material.normalTextureGuid, false, true, false, 0.5F, "normal");
   };
 
   for (const auto& entity : document.entities) {

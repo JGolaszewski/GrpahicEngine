@@ -714,13 +714,14 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
       return fail("Material asset could not be read after loading");
     }
     if (GetRenderSystem() != nullptr) {
-      for (const auto& [textureGuid, srgb, normalMap, preserveAlphaCoverage] :
-           {std::tuple{material->baseColorTextureGuid, true, false, material->alphaMode == "mask"},
-            std::tuple{material->normalTextureGuid, false, true, false}}) {
+      for (const auto& [textureGuid, srgb, normalMap, preserveAlphaCoverage, alphaCutoff] :
+           {std::tuple{material->baseColorTextureGuid, true, false, material->alphaMode == "mask", material->alphaCutoff},
+            std::tuple{material->normalTextureGuid, false, true, false, 0.5F}}) {
         if (!textureGuid) {
           continue;
         }
-        if (!GetRenderSystem()->PrepareAssetTexture(*textureGuid, srgb, error, normalMap, preserveAlphaCoverage)) {
+        if (!GetRenderSystem()->PrepareAssetTexture(*textureGuid, srgb, error, normalMap, preserveAlphaCoverage,
+                                                    alphaCutoff)) {
           return fail(error);
         }
       }
@@ -744,14 +745,15 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
     }
     std::string error;
     if (GetRenderSystem() != nullptr) {
-      for (const auto& [textureGuid, srgb, normalMap, preserveAlphaCoverage] :
+      for (const auto& [textureGuid, srgb, normalMap, preserveAlphaCoverage, alphaCutoff] :
            {std::tuple{request.GetMaterial().baseColorTextureGuid, true, false,
-                       request.GetMaterial().alphaMode == "mask"},
-            std::tuple{request.GetMaterial().normalTextureGuid, false, true, false}}) {
+                       request.GetMaterial().alphaMode == "mask", request.GetMaterial().alphaCutoff},
+            std::tuple{request.GetMaterial().normalTextureGuid, false, true, false, 0.5F}}) {
         if (!textureGuid) {
           continue;
         }
-        if (!GetRenderSystem()->PrepareAssetTexture(*textureGuid, srgb, error, normalMap, preserveAlphaCoverage)) {
+        if (!GetRenderSystem()->PrepareAssetTexture(*textureGuid, srgb, error, normalMap, preserveAlphaCoverage,
+                                                    alphaCutoff)) {
           AssetWorkflowFeedbackEvent feedback(false, error);
           BroadcastEvent(feedback);
           return true;
@@ -920,12 +922,14 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
             return true;
           }
           const auto prepare = [this](const std::optional<std::string>& guid, bool srgb, bool normalMap,
-                                      bool preserveAlphaCoverage, std::string_view semantic) -> bool {
+                                      bool preserveAlphaCoverage, float alphaCutoff,
+                                      std::string_view semantic) -> bool {
             if (!guid) {
               return true;
             }
             std::string error;
-            if (!GetRenderSystem()->PrepareAssetTexture(*guid, srgb, error, normalMap, preserveAlphaCoverage)) {
+            if (!GetRenderSystem()->PrepareAssetTexture(*guid, srgb, error, normalMap, preserveAlphaCoverage,
+                                                        alphaCutoff)) {
               ENGINE_LOG_ERROR("Asset", "Material texture assignment rejected | slot: {} | guid: {} | reason: {}",
                                semantic, *guid, error);
               AssetWorkflowFeedbackEvent feedback(false, error);
@@ -934,8 +938,9 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
             }
             return true;
           };
-          return prepare(material.baseColorTextureGuid, true, false, material.alphaMode == "mask", "base-color") &&
-                 prepare(material.normalTextureGuid, false, true, false, "normal");
+          return prepare(material.baseColorTextureGuid, true, false, material.alphaMode == "mask",
+                         material.alphaCutoff, "base-color") &&
+                 prepare(material.normalTextureGuid, false, true, false, 0.5F, "normal");
         };
         bool texturesReady = !value->Material || prepareMaterial(*value->Material);
         for (const auto& material : value->MaterialOverrides) {

@@ -61,7 +61,7 @@ public:
             ::Engine::Renderer::ShaderFactory* shaderFactory,
             const ::Engine::Renderer::ModelResourceLibrary* modelResources);
   void SetAssetTextureResolver(
-      std::function<std::shared_ptr<::Engine::Renderer::TextureResource>(const std::string&, bool, bool, bool)>
+      std::function<std::shared_ptr<::Engine::Renderer::TextureResource>(const std::string&, bool, bool, bool, float)>
           resolver);
 
   void BuildViews(::Engine::Renderer::FrameBlackboard& blackboard, nvrhi::ICommandList* commandList,

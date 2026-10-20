@@ -493,11 +493,11 @@ TEST(RenderFinalTests, WARPAssignedMaterialTextureGuidsReachLiveTextureResolver)
   gpuTextures[1] = renderer.GetOrCreateTexture(normalGuid, 1U, normalImage, false, error, nullptr, true);
   ASSERT_NE(gpuTextures[1], nullptr) << error;
 
-  std::vector<std::tuple<std::string, bool, bool, bool>> resolved;
+  std::vector<std::tuple<std::string, bool, bool, bool, float>> resolved;
   renderer.GetSceneRenderer()->SetAssetTextureResolver(
-      [&resolved, &gpuTextures](const std::string& guid, bool srgb, bool normalMap,
-                                bool preserveAlphaCoverage) -> std::shared_ptr<Engine::Renderer::TextureResource> {
-        resolved.emplace_back(guid, srgb, normalMap, preserveAlphaCoverage);
+      [&resolved, &gpuTextures](const std::string& guid, bool srgb, bool normalMap, bool preserveAlphaCoverage,
+                                float alphaCutoff) -> std::shared_ptr<Engine::Renderer::TextureResource> {
+        resolved.emplace_back(guid, srgb, normalMap, preserveAlphaCoverage, alphaCutoff);
         if (guid == "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee" && srgb) {
           return gpuTextures[0];
         }
@@ -548,7 +548,7 @@ TEST(RenderFinalTests, WARPAssignedMaterialTextureGuidsReachLiveTextureResolver)
   const auto baseColorOutput = renderer.RenderFinal(scene, camera, 32, 32);
   ASSERT_TRUE(baseColorOutput.has_value()) << (baseColorOutput.has_value() ? "" : baseColorOutput.error().Message);
   ASSERT_EQ(resolved.size(), 1U);
-  EXPECT_EQ(resolved[0], (std::tuple<std::string, bool, bool, bool>{baseColorGuid, true, false, false}));
+  EXPECT_EQ(resolved[0], (std::tuple<std::string, bool, bool, bool, float>{baseColorGuid, true, false, false, 0.5F}));
   const auto baseColorWarmOutput = renderer.RenderFinal(scene, camera, 32, 32);
   ASSERT_TRUE(baseColorWarmOutput.has_value())
       << (baseColorWarmOutput.has_value() ? "" : baseColorWarmOutput.error().Message);
@@ -559,8 +559,8 @@ TEST(RenderFinalTests, WARPAssignedMaterialTextureGuidsReachLiveTextureResolver)
   const auto output = renderer.RenderFinal(scene, camera, 32, 32);
   ASSERT_TRUE(output.has_value()) << (output.has_value() ? "" : output.error().Message);
   ASSERT_EQ(resolved.size(), 2U);
-  EXPECT_EQ(resolved[0], (std::tuple<std::string, bool, bool, bool>{baseColorGuid, true, false, false}));
-  EXPECT_EQ(resolved[1], (std::tuple<std::string, bool, bool, bool>{normalGuid, false, true, false}));
+  EXPECT_EQ(resolved[0], (std::tuple<std::string, bool, bool, bool, float>{baseColorGuid, true, false, false, 0.5F}));
+  EXPECT_EQ(resolved[1], (std::tuple<std::string, bool, bool, bool, float>{normalGuid, false, true, false, 0.5F}));
   ASSERT_TRUE(renderer.RenderFinal(scene, camera, 32, 32).has_value());
 
   const auto untextured = withoutTextures->GetPixels(Engine::RenderAov::FinalColor);

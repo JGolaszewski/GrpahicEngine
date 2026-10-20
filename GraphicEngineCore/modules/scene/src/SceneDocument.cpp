@@ -279,6 +279,10 @@ auto ReadMaterial(const Json& value, SceneMaterialDocument& material, std::vecto
   if (value.contains("normalScale") && !ReadNumber(value, "normalScale", material.normalScale, error)) {
     return false;
   }
+  if (!std::isfinite(material.normalScale) || material.normalScale < 0.0F) {
+    error = "normalScale must be a finite non-negative number";
+    return false;
+  }
   const auto readTexCoord = [&value, &error](const char* key, uint32_t& output) -> bool {
     if (!value.contains(key)) {
       return true;

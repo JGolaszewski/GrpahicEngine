@@ -32,7 +32,8 @@ inline auto EncodeMipColor(float value, bool srgb) -> uint8_t {
 }
 
 inline auto BuildTextureMips(const Engine::ImportedImage& image, bool srgb, bool normalMap = false,
-                             bool preserveAlphaCoverage = false) -> std::vector<TextureMipLevel> {
+                             bool preserveAlphaCoverage = false, float alphaCutoff = 0.5F)
+    -> std::vector<TextureMipLevel> {
   std::vector<TextureMipLevel> mips;
   if (image.width == 0 || image.height == 0 || image.rgba8.size() != static_cast<size_t>(image.width) * image.height * 4) {
     return mips;
@@ -46,7 +47,7 @@ inline auto BuildTextureMips(const Engine::ImportedImage& image, bool srgb, bool
     mip.Pixels.resize(static_cast<size_t>(mip.Width) * mip.Height * 4);
     uint32_t sourceCovered = 0;
     for (size_t pixel = 3; pixel < source.Pixels.size(); pixel += 4) {
-      sourceCovered += source.Pixels[pixel] >= 128 ? 1U : 0U;
+      sourceCovered += static_cast<float>(source.Pixels[pixel]) / 255.0F >= alphaCutoff ? 1U : 0U;
     }
     const float sourceCoverage = preserveAlphaCoverage
                                      ? static_cast<float>(sourceCovered) / static_cast<float>(source.Pixels.size() / 4)
@@ -58,20 +59,35 @@ inline auto BuildTextureMips(const Engine::ImportedImage& image, bool srgb, bool
         const uint32_t x0 = x * source.Width / mip.Width;
         const uint32_t x1 = (x + 1) * source.Width / mip.Width;
         std::array<float, 4> sum{};
-        uint32_t sampleCount = 0;
+        float totalWeight = 0.0F;
+        const float destinationLeft = static_cast<float>(x) * image.width / mip.Width;
+        const float destinationRight = static_cast<float>(x + 1) * image.width / mip.Width;
+        const float destinationTop = static_cast<float>(y) * image.height / mip.Height;
+        const float destinationBottom = static_cast<float>(y + 1) * image.height / mip.Height;
         for (uint32_t sy = y0; sy < (std::max)(y0 + 1, y1); ++sy) {
           for (uint32_t sx = x0; sx < (std::max)(x0 + 1, x1); ++sx) {
+            const float sourceLeft = static_cast<float>(sx) * image.width / source.Width;
+            const float sourceRight = static_cast<float>(sx + 1) * image.width / source.Width;
+            const float sourceTop = static_cast<float>(sy) * image.height / source.Height;
+            const float sourceBottom = static_cast<float>(sy + 1) * image.height / source.Height;
+            const float weight = (std::max)(0.0F, (std::min)(destinationRight, sourceRight) -
+                                                       (std::max)(destinationLeft, sourceLeft)) *
+                                 (std::max)(0.0F, (std::min)(destinationBottom, sourceBottom) -
+                                                       (std::max)(destinationTop, sourceTop));
+            if (weight <= 0.0F) {
+              continue;
+            }
             const size_t offset = (static_cast<size_t>(sy) * source.Width + sx) * 4;
             for (size_t channel = 0; channel < 3; ++channel) {
-              sum[channel] += normalMap ? static_cast<float>(source.Pixels[offset + channel]) / 255.0F
-                                        : DecodeMipColor(source.Pixels[offset + channel], srgb);
+              sum[channel] += (normalMap ? static_cast<float>(source.Pixels[offset + channel]) / 255.0F
+                                         : DecodeMipColor(source.Pixels[offset + channel], srgb)) * weight;
             }
-            sum[3] += static_cast<float>(source.Pixels[offset + 3]) / 255.0F;
-            ++sampleCount;
+            sum[3] += static_cast<float>(source.Pixels[offset + 3]) / 255.0F * weight;
+            totalWeight += weight;
           }
         }
         for (float& channel : sum) {
-          channel /= static_cast<float>(sampleCount);
+          channel /= totalWeight;
         }
         if (normalMap) {
           float nx = sum[0] * 2.0F - 1.0F;
@@ -100,6 +116,8 @@ inline auto BuildTextureMips(const Engine::ImportedImage& image, bool srgb, bool
     }
     if (preserveAlphaCoverage && sourceCoverage > 0.0F && sourceCoverage < 1.0F) {
       const uint32_t targetCount = static_cast<uint32_t>(std::lround(sourceCoverage * mip.Width * mip.Height));
+      const uint8_t coveredAlpha = static_cast<uint8_t>(std::clamp(std::ceil(alphaCutoff * 255.0F), 0.0F, 255.0F));
+      const uint8_t uncoveredAlpha = coveredAlpha == 0 ? 0 : static_cast<uint8_t>(coveredAlpha - 1);
       std::vector<size_t> alphaOffsets;
       alphaOffsets.reserve(static_cast<size_t>(mip.Width) * mip.Height);
       for (size_t pixel = 3; pixel < mip.Pixels.size(); pixel += 4) {
@@ -110,10 +128,10 @@ inline auto BuildTextureMips(const Engine::ImportedImage& image, bool srgb, bool
       });
       for (size_t rank = 0; rank < alphaOffsets.size(); ++rank) {
         uint8_t& alpha = mip.Pixels[alphaOffsets[rank]];
-        if (rank < targetCount && alpha < 128) {
-          alpha = 128;
-        } else if (rank >= targetCount && alpha >= 128) {
-          alpha = 127;
+        if (rank < targetCount && static_cast<float>(alpha) / 255.0F < alphaCutoff) {
+          alpha = coveredAlpha;
+        } else if (rank >= targetCount && static_cast<float>(alpha) / 255.0F >= alphaCutoff) {
+          alpha = uncoveredAlpha;
         }
       }
     }

@@ -18,7 +18,7 @@ ResourceManager::ResourceManager(nvrhi::IDevice* device) : m_Device(device), m_R
   std::string error;
   m_FallbackColor = m_RenderDevice.CreateTexture(color, true, error);
   if (m_FallbackColor) {
-    QueueTextureUpload(m_FallbackColor, color, true, false, false);
+    QueueTextureUpload(m_FallbackColor, color, true, false, false, 0.5F);
   }
 
   Engine::ImportedImage normal;
@@ -27,7 +27,7 @@ ResourceManager::ResourceManager(nvrhi::IDevice* device) : m_Device(device), m_R
   normal.rgba8 = {128, 128, 255, 255};
   m_FallbackNormal = m_RenderDevice.CreateTexture(normal, false, error);
   if (m_FallbackNormal) {
-    QueueTextureUpload(m_FallbackNormal, normal, false, true, false);
+    QueueTextureUpload(m_FallbackNormal, normal, false, true, false, 0.5F);
   }
 }
 
@@ -49,8 +49,9 @@ auto ResourceManager::KeyHash::operator()(const Key& key) const noexcept -> size
   const size_t guidHash = std::hash<std::string>{}(key.Guid);
   const size_t generationHash = std::hash<uint64_t>{}(key.Generation);
   const size_t combined = guidHash ^ (generationHash + 0x9e3779b9 + (guidHash << 6) + (guidHash >> 2));
+  const size_t cutoffHash = std::hash<float>{}(key.AlphaCutoff);
   return combined ^ (key.Srgb ? 0x85ebca6b : 0U) ^ (key.NormalMap ? 0xc2b2ae35 : 0U) ^
-         (key.PreserveAlphaCoverage ? 0x27d4eb2f : 0U);
+         (key.PreserveAlphaCoverage ? 0x27d4eb2f : 0U) ^ cutoffHash;
 }
 
 auto ResourceManager::GetOrCreateMesh(const std::string& guid, uint64_t generation, const std::vector<Vertex>& vertices,
@@ -101,7 +102,8 @@ auto ResourceManager::GetMesh(const std::string& guid, uint64_t generation) cons
 auto ResourceManager::GetOrCreateTexture(const std::string& identity, uint64_t generation,
                                          const Engine::ImportedImage& image, bool srgb, std::string& error,
                                          const Engine::ImportedTexture* sampler, bool normalMap,
-                                         bool preserveAlphaCoverage) -> std::shared_ptr<TextureResource> {
+                                         bool preserveAlphaCoverage, float alphaCutoff)
+    -> std::shared_ptr<TextureResource> {
   error.clear();
   if (identity.empty()) {
     error = "texture cache requires a non-empty asset or subresource identity";
@@ -112,7 +114,8 @@ auto ResourceManager::GetOrCreateTexture(const std::string& identity, uint64_t g
                 .Generation = generation,
                 .Srgb = srgb,
                 .NormalMap = normalMap,
-                .PreserveAlphaCoverage = preserveAlphaCoverage};
+                .PreserveAlphaCoverage = preserveAlphaCoverage,
+                .AlphaCutoff = alphaCutoff};
   if (const auto it = m_Textures.find(key); it != m_Textures.end()) {
     ENGINE_LOG_TRACE("Asset", "Texture cache hit | identity: {} | generation: {} | srgb: {}", identity, generation,
                      srgb);
@@ -128,7 +131,7 @@ auto ResourceManager::GetOrCreateTexture(const std::string& identity, uint64_t g
         identity, generation, image.width, image.height, error);
     return nullptr;
   }
-  QueueTextureUpload(texture, image, srgb, normalMap, preserveAlphaCoverage);
+  QueueTextureUpload(texture, image, srgb, normalMap, preserveAlphaCoverage, alphaCutoff);
   for (auto it = m_Textures.begin(); it != m_Textures.end();) {
     if ((it->first.Guid == identity || it->first.Guid.starts_with(identity + "/")) &&
         it->first.Generation != generation) {
@@ -306,11 +309,12 @@ void ResourceManager::QueueMeshUpload(const std::shared_ptr<Mesh>& mesh, std::ve
 
 void ResourceManager::QueueTextureUpload(const std::shared_ptr<TextureResource>& texture,
                                          const Engine::ImportedImage& image, bool srgb, bool normalMap,
-                                         bool preserveAlphaCoverage) {
+                                         bool preserveAlphaCoverage, float alphaCutoff) {
   if (!texture || (TextureBackendAccess::GetTexture(*texture) == nullptr)) {
     return;
   }
-  std::vector<Detail::TextureMipLevel> mips = Detail::BuildTextureMips(image, srgb, normalMap, preserveAlphaCoverage);
+  std::vector<Detail::TextureMipLevel> mips =
+      Detail::BuildTextureMips(image, srgb, normalMap, preserveAlphaCoverage, alphaCutoff);
   uint64_t bytes = 0;
   for (const auto& mip : mips) {
     bytes += mip.Pixels.size();
