@@ -67,12 +67,16 @@ public:
   /// @param guid Stable texture asset identity.
   /// @param srgb Whether the texture should use sRGB sampling.
   /// @param error Receives a missing asset or upload diagnostic.
+  /// @param normalMap Whether generated mip levels should preserve normal direction.
+  /// @param preserveAlphaCoverage Whether generated mip levels should preserve masked alpha coverage.
   /// @return True when the texture resource is ready for scene material bindings.
   bool PrepareAssetTexture(const std::string& guid, bool srgb, std::string& error, bool normalMap = false,
                            bool preserveAlphaCoverage = false);
   /// Returns a previously prepared authored project texture.
   /// @param guid Stable texture asset identity.
   /// @param srgb Whether the texture uses sRGB sampling.
+  /// @param normalMap Whether the texture is a normal map.
+  /// @param preserveAlphaCoverage Whether masked alpha coverage is preserved in its mip levels.
   /// @return Prepared GPU resource, or empty when it has not been prepared.
   std::shared_ptr<::Engine::Renderer::TextureResource>
   GetPreparedAssetTexture(const std::string& guid, bool srgb, bool normalMap = false,
