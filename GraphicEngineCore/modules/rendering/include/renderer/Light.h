@@ -23,8 +23,10 @@ struct DirectionalLightData {
 /// Array of active light data and its count for the shader constant buffer.
 struct LightsCBData {
   DirectionalLightData Lights[ENGINE_MAX_LIGHTS]{}; ///< Shader data for each light slot.
-  uint32_t LightCount = 0; ///< Number of populated light slots.
-  float Padding[3] = {0.0f, 0.0f, 0.0f}; ///< Padding that aligns the constant buffer size.
+  uint32_t LightCount = 0;                          ///< Number of populated light slots.
+  uint32_t EnvironmentEnabled = 0;                  ///< Whether this view adds environment lighting.
+  float EnvironmentIntensity = 1.0F;                ///< Scale applied to the environment contribution.
+  float Padding[1] = {0.0F};                        ///< Padding that aligns the constant buffer size.
 };
 
 static_assert(sizeof(DirectionalLightData) == 144);
@@ -35,5 +37,7 @@ static_assert(offsetof(DirectionalLightData, ConeParams) == 48);
 static_assert(offsetof(DirectionalLightData, LightViewProj) == 64);
 static_assert(offsetof(DirectionalLightData, ShadowParams) == 128);
 static_assert(offsetof(LightsCBData, LightCount) == ENGINE_MAX_LIGHTS * sizeof(DirectionalLightData));
+static_assert(offsetof(LightsCBData, EnvironmentEnabled) == offsetof(LightsCBData, LightCount) + sizeof(uint32_t));
+static_assert(offsetof(LightsCBData, EnvironmentIntensity) == offsetof(LightsCBData, EnvironmentEnabled) + sizeof(uint32_t));
 static_assert(sizeof(LightsCBData) == ENGINE_MAX_LIGHTS * sizeof(DirectionalLightData) + 16);
 } // namespace Engine::Renderer

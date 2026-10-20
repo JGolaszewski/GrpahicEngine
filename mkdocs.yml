@@ -68,6 +68,7 @@ nav:
           - Render output and image export: rendering/output.md
           - Shadows: rendering/shadows.md
           - Final rendering: rendering/final-render.md
+          - Environment lighting: rendering/environment-lighting.md
   - Workflows:
       - Getting started: getting-started.md
       - Development workflow: development-workflow.md

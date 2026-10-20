@@ -261,6 +261,11 @@ void RenderSystem::SubmitViews(const std::vector<Engine::ViewportBinding>& views
     view->Initialize(binding.TargetScene, binding.Camera, binding.TargetViewport);
     view->TargetScene = binding.TargetScene;
     view->RenderMode = binding.RenderMode;
+    view->Environment = binding.Environment;
+    if (!std::isfinite(view->Environment.Intensity)) {
+      view->Environment.Intensity = 0.0F;
+    }
+    view->Environment.Intensity = (std::max)(view->Environment.Intensity, 0.0F);
     if (view->RenderMode == Engine::ViewportBinding::Mode::Editor) {
       view->DebugSettings = binding.DebugSettings;
     }
@@ -796,7 +801,8 @@ void RenderSystem::EndFrame() {
 }
 
 auto RenderSystem::BeginFinalRender(Engine::Scene& scene, const ::Engine::Renderer::CameraView& camera, uint32_t width,
-                                    uint32_t height, const Engine::FinalColorPostProcess& postProcess)
+                                    uint32_t height, const Engine::FinalColorPostProcess& postProcess,
+                                    const Engine::EnvironmentLightingSettings& environment)
     -> Engine::Result<FinalRenderTicket> {
   if (m_FrameActive || (m_FinalReadbackCapture != nullptr)) {
     return std::unexpected(Engine::MakeError("final rendering requires an idle render system"));
@@ -868,6 +874,7 @@ auto RenderSystem::BeginFinalRender(Engine::Scene& scene, const ::Engine::Render
   binding.TargetScene = &scene;
   binding.OutputWidth = width;
   binding.OutputHeight = height;
+  binding.Environment = environment;
   m_FinalReadbackCapture = std::move(capture);
   BeginFrame();
   if (!m_FrameActive) {
@@ -964,9 +971,10 @@ auto RenderSystem::CancelFinalRender(FinalRenderTicket ticket) -> Engine::Status
 }
 
 auto RenderSystem::RenderFinal(Engine::Scene& scene, const ::Engine::Renderer::CameraView& camera, uint32_t width,
-                               uint32_t height, const Engine::FinalColorPostProcess& postProcess)
+                               uint32_t height, const Engine::FinalColorPostProcess& postProcess,
+                               const Engine::EnvironmentLightingSettings& environment)
     -> Engine::Result<Engine::RenderOutput> {
-  auto ticket = BeginFinalRender(scene, camera, width, height, postProcess);
+  auto ticket = BeginFinalRender(scene, camera, width, height, postProcess, environment);
   if (!ticket) {
     return std::unexpected(ticket.error());
   }

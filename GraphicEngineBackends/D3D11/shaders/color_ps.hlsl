@@ -42,7 +42,9 @@ cbuffer LightsCB : register(b2)
 {
     LightData g_Lights[ENGINE_MAX_LIGHTS];
     uint      g_LightCount;
-    float3    g_LightPadding;
+    uint      g_EnvironmentEnabled;
+    float     g_EnvironmentIntensity;
+    float     g_LightPadding;
 };
 
 cbuffer CameraCB : register(b4)
@@ -316,7 +318,7 @@ PS_OUTPUT main_ps(VS_OUTPUT input)
 
     float3 ambientDiffuse = 0.0f;
     float3 ambientSpecular = 0.0f;
-    if (g_LightPadding.x > 0.5f)
+    if (g_EnvironmentEnabled != 0)
     {
         const float3 viewDirection = BrdfNormalizeOr(V, N);
         const float3 reflectionDirection = reflect(-viewDirection, N);
@@ -337,8 +339,8 @@ PS_OUTPUT main_ps(VS_OUTPUT input)
     }
     float3 emissive = g_EmissiveMetallic.rgb;
 
-    const float3 diffuseLighting = ambientDiffuse + diffuseAccum + emissive;
-    const float3 specularLighting = ambientSpecular + specAccum;
+    const float3 diffuseLighting = (ambientDiffuse * max(g_EnvironmentIntensity, 0.0f)) + diffuseAccum + emissive;
+    const float3 specularLighting = (ambientSpecular * max(g_EnvironmentIntensity, 0.0f)) + specAccum;
     output.FinalColor = float4(diffuseLighting + specularLighting, baseColor.a);
     output.Depth = input.pos.z;
     output.WorldNormal = float4(N, 1.0f);

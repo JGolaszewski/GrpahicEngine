@@ -399,6 +399,12 @@ void Engine::SceneRenderer::Init(nvrhi::IDevice* device, ::Engine::Renderer::Mat
 
   m_Device = device;
 
+  std::string environmentError;
+  m_EnvironmentLightingReady = m_EnvironmentLighting.Initialize(device, environmentError);
+  if (!m_EnvironmentLightingReady) {
+    ENGINE_LOG_ERROR("Render", "Environment lighting setup failed | reason: {}", environmentError);
+  }
+
   if (shaderFactory != nullptr) {
     m_DebugVS = shaderFactory->GetShader("shaders/debug_vs.dxbc", nvrhi::ShaderType::Vertex);
     m_DebugPS = shaderFactory->GetShader("shaders/debug_ps.dxbc", nvrhi::ShaderType::Pixel);
@@ -413,10 +419,11 @@ void Engine::SceneRenderer::Init(nvrhi::IDevice* device, ::Engine::Renderer::Mat
   nvrhi::BindingLayoutDesc sceneLayoutDesc;
   sceneLayoutDesc.visibility = nvrhi::ShaderType::All;
   sceneLayoutDesc.bindings = {
-      nvrhi::BindingLayoutItem::ConstantBuffer(2),
-      nvrhi::BindingLayoutItem::Texture_SRV(6),
-      nvrhi::BindingLayoutItem::Sampler(6),
-      nvrhi::BindingLayoutItem::ConstantBuffer(4),
+      nvrhi::BindingLayoutItem::ConstantBuffer(2), nvrhi::BindingLayoutItem::Texture_SRV(6),
+      nvrhi::BindingLayoutItem::Sampler(6),        nvrhi::BindingLayoutItem::Texture_SRV(7),
+      nvrhi::BindingLayoutItem::Sampler(7),        nvrhi::BindingLayoutItem::Texture_SRV(8),
+      nvrhi::BindingLayoutItem::Sampler(8),        nvrhi::BindingLayoutItem::Texture_SRV(9),
+      nvrhi::BindingLayoutItem::Sampler(9),        nvrhi::BindingLayoutItem::ConstantBuffer(4),
   };
   m_SceneBindingLayout = device->createBindingLayout(sceneLayoutDesc);
 
@@ -686,7 +693,7 @@ auto Engine::SceneRenderer::GetSceneBindingSet(size_t viewIndex, nvrhi::BufferHa
                                                ::Engine::Renderer::FrameDiagnostics& diagnostics)
     -> nvrhi::BindingSetHandle {
   if ((m_Device == nullptr) || (lightBuffer == nullptr) || (shadowMap == nullptr) || (shadowSampler == nullptr) ||
-      (cameraBuffer == nullptr) || (m_SceneBindingLayout == nullptr)) {
+      (cameraBuffer == nullptr) || (m_SceneBindingLayout == nullptr) || !m_EnvironmentLightingReady) {
     return nullptr;
   }
   if (m_SceneBindingCaches.size() <= viewIndex) {
@@ -703,9 +710,17 @@ auto Engine::SceneRenderer::GetSceneBindingSet(size_t viewIndex, nvrhi::BufferHa
   desc.addItem(nvrhi::BindingSetItem::ConstantBuffer(2, lightBuffer));
   desc.addItem(nvrhi::BindingSetItem::Texture_SRV(6, shadowMap));
   desc.addItem(nvrhi::BindingSetItem::Sampler(6, shadowSampler));
+  desc.addItem(nvrhi::BindingSetItem::Texture_SRV(7, m_EnvironmentLighting.IrradianceMap));
+  desc.addItem(nvrhi::BindingSetItem::Sampler(7, m_EnvironmentLighting.IrradianceSampler));
+  desc.addItem(nvrhi::BindingSetItem::Texture_SRV(8, m_EnvironmentLighting.PrefilteredEnvironment));
+  desc.addItem(nvrhi::BindingSetItem::Sampler(8, m_EnvironmentLighting.PrefilteredEnvironmentSampler));
+  desc.addItem(nvrhi::BindingSetItem::Texture_SRV(9, m_EnvironmentLighting.BrdfIntegrationLut));
+  desc.addItem(nvrhi::BindingSetItem::Sampler(9, m_EnvironmentLighting.BrdfIntegrationSampler));
   desc.addItem(nvrhi::BindingSetItem::ConstantBuffer(4, cameraBuffer));
   nvrhi::BindingSetHandle bindings = m_Device->createBindingSet(desc, m_SceneBindingLayout);
   if (bindings == nullptr) {
+    ENGINE_LOG_ERROR("Render", "Scene binding-set creation failed | view_index: {} | environment_ready: {}",
+                     viewIndex, m_EnvironmentLightingReady);
     return nullptr;
   }
   cache.LightBuffer = std::move(lightBuffer);

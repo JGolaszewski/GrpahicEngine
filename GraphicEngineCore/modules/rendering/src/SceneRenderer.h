@@ -19,6 +19,7 @@
 #include "rendering/include/renderer/ModelResourceLibrary.h"
 #include "rendering/include/renderer/RenderResources.h"
 #include "rendering/src/MaterialSystem.h"
+#include "rendering/src/EnvironmentLighting.h"
 #include "rendering/src/PipelineCache.h"
 #include "rendering/src/RenderPacket.h"
 #include "rendering/src/ShaderFactory.h"
@@ -138,6 +139,8 @@ private:
     nvrhi::BindingSetHandle Bindings;
   };
   std::vector<SceneBindingCache> m_SceneBindingCaches;
+  ::Engine::Renderer::EnvironmentLightingResources m_EnvironmentLighting;
+  bool m_EnvironmentLightingReady = false;
   nvrhi::BindingLayoutHandle m_PerObjectBindingLayout;
   nvrhi::BufferHandle m_PerObjectBuffer;
   nvrhi::BindingSetHandle m_PerObjectBindingSet;

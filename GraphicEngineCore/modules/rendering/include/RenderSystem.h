@@ -111,9 +111,11 @@ public:
   /// Submit a scene-camera render and GPU-to-staging copies without waiting for
   /// the GPU. PollFinalRender must be called on the render thread until it
   /// returns an output or an error. Only one final-render ticket may be active.
+  /// @param environment Per-view environment source and intensity.
   Engine::Result<FinalRenderTicket> BeginFinalRender(Engine::Scene& scene, const ::Engine::Renderer::CameraView& camera,
                                                      uint32_t width, uint32_t height,
-                                                     const Engine::FinalColorPostProcess& postProcess = {});
+                                                     const Engine::FinalColorPostProcess& postProcess = {},
+                                                     const Engine::EnvironmentLightingSettings& environment = {});
   /// Poll a submitted final render without blocking. An empty optional means
   /// the GPU copy has not completed; the ticket is consumed on output or error.
   Engine::Result<std::optional<Engine::RenderOutput>> PollFinalRender(FinalRenderTicket ticket);
@@ -129,10 +131,12 @@ public:
   /// @param width Output width in pixels.
   /// @param height Output height in pixels.
   /// @param postProcess Optional in-place final-color hook.
+  /// @param environment Per-view environment source and intensity.
   /// @return CPU-owned AOV output, or an error when rendering or readback fails.
   Engine::Result<Engine::RenderOutput> RenderFinal(Engine::Scene& scene, const ::Engine::Renderer::CameraView& camera,
                                                    uint32_t width, uint32_t height,
-                                                   const Engine::FinalColorPostProcess& postProcess = {});
+                                                   const Engine::FinalColorPostProcess& postProcess = {},
+                                                   const Engine::EnvironmentLightingSettings& environment = {});
   /// Creates a built-in primitive and registers it for scene rendering.
   /// @param shape Primitive shape to create.
   /// @param material Material applied to the primitive.

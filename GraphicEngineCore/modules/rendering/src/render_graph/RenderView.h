@@ -75,6 +75,7 @@ public:
   nvrhi::TextureHandle DisplayColorTexture;
   RGResourceID DisplayColorResource;
   Engine::ViewportBinding::Mode RenderMode = Engine::ViewportBinding::Mode::Editor;
+  Engine::EnvironmentLightingSettings Environment;
   std::vector<RGViewportAttachment> OutputAttachments;
   DirectX::XMFLOAT3 CameraPosition = {0.0f, 0.0f, 0.0f};
   nvrhi::BufferHandle CameraBuffer;

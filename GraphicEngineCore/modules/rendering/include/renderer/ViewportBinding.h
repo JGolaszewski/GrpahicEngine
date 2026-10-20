@@ -15,6 +15,18 @@ class Scene;
 
 namespace Engine {
 
+/// Selects the environment source used for indirect lighting in a rendered view.
+enum class EnvironmentPreset : uint8_t {
+  Disabled, ///< Do not add environment lighting.
+  Studio    ///< Use the renderer's built-in studio environment.
+};
+
+/// Per-view environment lighting configuration.
+struct EnvironmentLightingSettings {
+  EnvironmentPreset Preset = EnvironmentPreset::Disabled; ///< Environment source for this view.
+  float Intensity = 1.0F; ///< Non-negative scale applied to indirect diffuse and specular lighting.
+};
+
 /// Binds a scene and camera to an editor viewport or final-render output.
 struct ENGINE_API ViewportBinding {
   /// Rendering behavior for an individual submitted view.
@@ -37,6 +49,7 @@ struct ENGINE_API ViewportBinding {
   uint32_t OutputHeight = 0; ///< Explicit final-output height; for Mode::Final it must match the target viewport.
 
   ::Engine::Renderer::DebugRenderSettings DebugSettings; ///< Debug geometry settings for editor views.
+  EnvironmentLightingSettings Environment;               ///< Environment source and intensity for this view.
 
   /// Checks whether required targets and final-render dimensions are valid.
   /// @return True when the binding can be submitted to the renderer.
