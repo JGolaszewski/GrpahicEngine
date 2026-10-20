@@ -186,6 +186,10 @@ auto ReadMaterialTextFields(const Json& value, SceneMaterialDocument& material, 
 
 auto ValidateMaterialNames(const Json& value, SceneMaterialDocument& material, std::vector<std::string>& warnings,
                            const std::string& context, std::string& error) -> bool {
+  if (material.brdfModel == "legacy") {
+    error = context + " uses the unsupported Legacy BRDF; reauthor this material with a supported BRDF distribution";
+    return false;
+  }
   if (material.brdfModel == "neural") {
     warnings.push_back(context + " uses the unsupported neural BRDF; GGX will be used instead");
     material.brdfModel = "ggx";
@@ -199,9 +203,9 @@ auto ValidateMaterialNames(const Json& value, SceneMaterialDocument& material, s
     material.workflow = "specularGlossiness";
     warnings.push_back(context + " migrated specularGlossiness from brdfModel to workflow with GGX shading");
   }
-  if (material.brdfModel != "legacy" && material.brdfModel != "ggx" && material.brdfModel != "gtr" &&
-      material.brdfModel != "beckmann" && material.brdfModel != "gauss" && material.brdfModel != "blinnPhong" &&
-      material.brdfModel != "ashikhminShirley" && material.brdfModel != "schlick" && material.brdfModel != "sawicki") {
+  if (material.brdfModel != "ggx" && material.brdfModel != "gtr" && material.brdfModel != "beckmann" &&
+      material.brdfModel != "gauss" && material.brdfModel != "blinnPhong" && material.brdfModel != "ashikhminShirley" &&
+      material.brdfModel != "schlick" && material.brdfModel != "sawicki") {
     error = "brdfModel has an unsupported value";
     return false;
   }
@@ -245,6 +249,15 @@ auto ReadMaterial(const Json& value, SceneMaterialDocument& material, std::vecto
                 "doubleSided",
                 "baseColorTextureGuid",
                 "normalTextureGuid",
+                "baseColorTexCoord",
+                "normalTexCoord",
+                "baseColorTextureOffset",
+                "baseColorTextureScale",
+                "baseColorTextureRotation",
+                "normalTextureOffset",
+                "normalTextureScale",
+                "normalTextureRotation",
+                "normalScale",
             },
             warnings, context);
   if (!ReadArrayField(value, "baseColor", material.baseColor, error) ||
@@ -254,7 +267,36 @@ auto ReadMaterial(const Json& value, SceneMaterialDocument& material, std::vecto
       !ReadNumber(value, "gtrGamma", material.gtrGamma, error) || !ReadNumber(value, "ior", material.ior, error) ||
       !ReadArrayField(value, "specularF0", material.specularF0, error) ||
       !ReadOptionalGuid(value, "baseColorTextureGuid", material.baseColorTextureGuid, error) ||
-      !ReadOptionalGuid(value, "normalTextureGuid", material.normalTextureGuid, error)) {
+      !ReadOptionalGuid(value, "normalTextureGuid", material.normalTextureGuid, error) ||
+      !ReadArrayField(value, "baseColorTextureOffset", material.baseColorTextureTransform.offset, error) ||
+      !ReadArrayField(value, "baseColorTextureScale", material.baseColorTextureTransform.scale, error) ||
+      !ReadNumber(value, "baseColorTextureRotation", material.baseColorTextureTransform.rotation, error) ||
+      !ReadArrayField(value, "normalTextureOffset", material.normalTextureTransform.offset, error) ||
+      !ReadArrayField(value, "normalTextureScale", material.normalTextureTransform.scale, error) ||
+      !ReadNumber(value, "normalTextureRotation", material.normalTextureTransform.rotation, error)) {
+    return false;
+  }
+  if (value.contains("normalScale") && !ReadNumber(value, "normalScale", material.normalScale, error)) {
+    return false;
+  }
+  const auto readTexCoord = [&value, &error](const char* key, uint32_t& output) -> bool {
+    if (!value.contains(key)) {
+      return true;
+    }
+    if (!value.at(key).is_number_unsigned() && !value.at(key).is_number_integer()) {
+      error = std::string(key) + " must be an integer";
+      return false;
+    }
+    const auto coordinate = value.at(key).get<int64_t>();
+    if (coordinate < 0 || coordinate >= 8) {
+      error = std::string(key) + " must be in [0, 7]";
+      return false;
+    }
+    output = static_cast<uint32_t>(coordinate);
+    return true;
+  };
+  if (!readTexCoord("baseColorTexCoord", material.baseColorTexCoord) ||
+      !readTexCoord("normalTexCoord", material.normalTexCoord)) {
     return false;
   }
   if (!ReadMaterialTextFields(value, material, error)) {
@@ -284,6 +326,15 @@ auto ReadMaterial(const Json& value, SceneMaterialDocument& material, std::vecto
   }
   if (!std::isfinite(material.anisotropicRoughnessU) || !std::isfinite(material.anisotropicRoughnessV)) {
     error = "anisotropic roughness values must be finite";
+    return false;
+  }
+  const auto validTransform = [](const SceneMaterialTextureTransform& transform) -> bool {
+    return std::ranges::all_of(transform.offset, [](float value) { return std::isfinite(value); }) &&
+           std::ranges::all_of(transform.scale, [](float value) { return std::isfinite(value); }) &&
+           std::isfinite(transform.rotation);
+  };
+  if (!validTransform(material.baseColorTextureTransform) || !validTransform(material.normalTextureTransform)) {
+    error = "material texture transforms must contain finite values";
     return false;
   }
   if (material.metallic < 0.0F || material.metallic > 1.0F || material.roughness < 0.0F || material.roughness > 1.0F ||
@@ -319,7 +370,7 @@ auto IsValidPrimitiveType(const std::string& type) -> bool {
 }
 
 auto IsValidMaterial(const SceneMaterialDocument& material) -> bool {
-  const auto validBrdf = material.brdfModel == "legacy" || material.brdfModel == "ggx" || material.brdfModel == "gtr" ||
+  const auto validBrdf = material.brdfModel == "ggx" || material.brdfModel == "gtr" ||
                          material.brdfModel == "beckmann" || material.brdfModel == "gauss" ||
                          material.brdfModel == "blinnPhong" || material.brdfModel == "ashikhminShirley" ||
                          material.brdfModel == "schlick" || material.brdfModel == "sawicki";
@@ -327,18 +378,26 @@ auto IsValidMaterial(const SceneMaterialDocument& material) -> bool {
   if (!validBrdf || !validWorkflow || (material.specularMode != "ior" && material.specularMode != "explicitF0") ||
       (material.alphaMode != "opaque" && material.alphaMode != "mask" && material.alphaMode != "blend") ||
       !std::isfinite(material.metallic) || !std::isfinite(material.roughness) || !std::isfinite(material.gtrGamma) ||
-      !std::isfinite(material.ior) || !std::isfinite(material.alphaCutoff) ||
-      !std::isfinite(material.anisotropicRoughnessU) || !std::isfinite(material.anisotropicRoughnessV) ||
-      material.metallic < 0.0F || material.metallic > 1.0F || material.roughness < 0.0F || material.roughness > 1.0F ||
-      material.gtrGamma < 1.0F || material.gtrGamma > 8.0F || material.ior < 1.0F || material.ior > 3.0F ||
-      material.alphaCutoff < 0.0F || material.alphaCutoff > 1.0F || material.anisotropicRoughnessU < 0.0F ||
-      material.anisotropicRoughnessU > 1.0F || material.anisotropicRoughnessV < 0.0F ||
-      material.anisotropicRoughnessV > 1.0F) {
+      !std::isfinite(material.ior) || !std::isfinite(material.alphaCutoff) || !std::isfinite(material.normalScale) ||
+      material.normalScale < 0.0F || !std::isfinite(material.anisotropicRoughnessU) ||
+      !std::isfinite(material.anisotropicRoughnessV) || !std::isfinite(material.baseColorTextureTransform.rotation) ||
+      !std::isfinite(material.normalTextureTransform.rotation) || material.baseColorTexCoord >= 8 ||
+      material.normalTexCoord >= 8 || material.metallic < 0.0F || material.metallic > 1.0F ||
+      material.roughness < 0.0F || material.roughness > 1.0F || material.gtrGamma < 1.0F || material.gtrGamma > 8.0F ||
+      material.ior < 1.0F || material.ior > 3.0F || material.alphaCutoff < 0.0F || material.alphaCutoff > 1.0F ||
+      material.anisotropicRoughnessU < 0.0F || material.anisotropicRoughnessU > 1.0F ||
+      material.anisotropicRoughnessV < 0.0F || material.anisotropicRoughnessV > 1.0F) {
     return false;
   }
   if ((material.baseColorTextureGuid && !IsGuid(*material.baseColorTextureGuid)) ||
       (material.normalTextureGuid && !IsGuid(*material.normalTextureGuid))) {
     return false;
+  }
+  for (const auto* transform : {&material.baseColorTextureTransform, &material.normalTextureTransform}) {
+    if (!std::ranges::all_of(transform->offset, [](float value) { return std::isfinite(value); }) ||
+        !std::ranges::all_of(transform->scale, [](float value) { return std::isfinite(value); })) {
+      return false;
+    }
   }
   for (float value : material.baseColor) {
     if (!std::isfinite(value) || value < 0.0F || value > 1.0F) {
@@ -387,6 +446,15 @@ auto MaterialJson(const SceneMaterialDocument& material) -> Json {
       {"doubleSided", material.doubleSided},
       {"baseColorTextureGuid", material.baseColorTextureGuid ? Json(*material.baseColorTextureGuid) : Json(nullptr)},
       {"normalTextureGuid", material.normalTextureGuid ? Json(*material.normalTextureGuid) : Json(nullptr)},
+      {"baseColorTexCoord", material.baseColorTexCoord},
+      {"normalTexCoord", material.normalTexCoord},
+      {"baseColorTextureOffset", material.baseColorTextureTransform.offset},
+      {"baseColorTextureScale", material.baseColorTextureTransform.scale},
+      {"baseColorTextureRotation", material.baseColorTextureTransform.rotation},
+      {"normalTextureOffset", material.normalTextureTransform.offset},
+      {"normalTextureScale", material.normalTextureTransform.scale},
+      {"normalTextureRotation", material.normalTextureTransform.rotation},
+      {"normalScale", material.normalScale},
   };
 }
 
@@ -725,9 +793,10 @@ auto ReadEntityIdentity(const Json& item, SceneEntityDocument& entity, std::set<
 
 auto ReadEntityMaterials(const Json& item, SceneEntityDocument& entity, SceneDocumentResult& result,
                          const std::string& context, std::string& fieldError) -> bool {
+  const std::string materialContext = entity.name.empty() ? context : context + " ('" + entity.name + "')";
   if (item.contains("material") && !item.at("material").is_null()) {
     SceneMaterialDocument material;
-    if (!ReadMaterial(item.at("material"), material, result.warnings, context + ".material", fieldError)) {
+    if (!ReadMaterial(item.at("material"), material, result.warnings, materialContext + ".material", fieldError)) {
       const std::string detail = std::move(fieldError);
       fieldError = context;
       fieldError += ".material: ";
@@ -750,10 +819,10 @@ auto ReadEntityMaterials(const Json& item, SceneEntityDocument& entity, SceneDoc
       continue;
     }
     SceneMaterialDocument material;
-    const std::string materialContext = context + ".materialOverrides[" + std::to_string(materialIndex) + "]";
-    if (!ReadMaterial(overrides.at(materialIndex), material, result.warnings, materialContext, fieldError)) {
+    const std::string overrideContext = materialContext + ".materialOverrides[" + std::to_string(materialIndex) + "]";
+    if (!ReadMaterial(overrides.at(materialIndex), material, result.warnings, overrideContext, fieldError)) {
       const std::string detail = std::move(fieldError);
-      fieldError = materialContext;
+      fieldError = overrideContext;
       fieldError += ": ";
       fieldError += detail;
       return false;

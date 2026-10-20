@@ -23,6 +23,13 @@ struct SceneGuidDocument {
 };
 
 /// Material properties serialized with a scene entity.
+struct SceneMaterialTextureTransform {
+  std::array<float, 2> offset{};
+  std::array<float, 2> scale = {1.0f, 1.0f};
+  float rotation = 0.0f;
+  auto operator==(const SceneMaterialTextureTransform& other) const noexcept -> bool = default;
+};
+
 struct SceneMaterialDocument {
   std::array<float, 4> baseColor = {1.0f, 1.0f, 1.0f, 1.0f}; ///< Linear RGBA base color.
   std::array<float, 3> emissive{};                           ///< Linear RGB emissive contribution.
@@ -33,15 +40,19 @@ struct SceneMaterialDocument {
   float anisotropicRoughnessV = 0.5f;                        ///< Ashikhmin-Shirley bitangent-axis roughness.
   float ior = 1.5f; ///< Index of refraction used to derive dielectric reflectance.
   std::array<float, 3> specularF0 = {0.04f, 0.04f, 0.04f}; ///< RGB reflectance at normal incidence.
-  std::string brdfModel =
-      "legacy"; ///< BRDF identifier, including stable "blinnPhong", "schlick", and "sawicki" tokens.
+  std::string brdfModel = "ggx"; ///< BRDF identifier, including stable "blinnPhong", "schlick", and "sawicki" tokens.
   std::string workflow = "metallicRoughness";      ///< Material parameter workflow identifier.
   std::string specularMode = "ior";                ///< Source mode used to derive specular reflectance.
   std::string alphaMode = "opaque";                ///< Alpha handling mode for the material.
   float alphaCutoff = 0.5f;                        ///< Mask threshold used when alpha mode is masked.
   bool doubleSided = false;                        ///< Whether the material renders both face orientations.
+  float normalScale = 1.0f;                        ///< Strength applied to the tangent-space normal map.
   std::optional<std::string> baseColorTextureGuid; ///< Optional base-color texture identity.
   std::optional<std::string> normalTextureGuid;    ///< Optional tangent-space normal texture identity.
+  uint32_t baseColorTexCoord = 0;
+  uint32_t normalTexCoord = 0;
+  SceneMaterialTextureTransform baseColorTextureTransform;
+  SceneMaterialTextureTransform normalTextureTransform;
   /// Compares every serialized material property.
   /// @param other Material document to compare with.
   /// @return True when all properties match.

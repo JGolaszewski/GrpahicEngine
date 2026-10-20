@@ -80,18 +80,20 @@ layouts.
 
 `Engine::Renderer::MaterialProperties` is the editable CPU-side material
 description. It supports metallic-roughness and specular-glossiness workflows,
-dielectric reflectance from index of refraction or explicit F0, and nine BRDF
-choices: `Legacy`, `GGX`, `GTR`, `Beckmann`, `Gauss`, `Blinn-Phong`,
+dielectric reflectance from index of refraction or explicit F0, and eight BRDF
+distributions: `GGX`, `GTR`, `Beckmann`, `Gauss`, `Blinn-Phong`,
 `Ashikhmin-Shirley`, `Schlick`, and `Sawicki`. The default workflow is
-metallic-roughness,
-the default model is `Legacy`, and the default alpha mode is opaque. Input
+metallic-roughness, the default model is `GGX`, and the default alpha mode is
+opaque. Input
 factors are sanitized and clamped when `BuildMaterialGpu` packs the shader
 constant buffer. Beckmann and Gauss use the same perceptual-roughness-to-alpha
 mapping as the other microfacet distributions. Gauss uses a normalized Gaussian
 slope distribution with a finite zero at the horizon. Blinn-Phong uses the
 normalized exponent distribution `D(NoH) = (n + 2) / (2π) * NoH^n`, with
 `n = max(2 / alpha² - 2, 0)`. Its microfacet branch remains distinct from the
-Legacy shader path.
+Legacy material data is rejected with a diagnostic that identifies the scene
+entity or material and asks the author to reauthor it using a supported
+distribution. It is never silently shaded as a different model.
 
 Ashikhmin-Shirley uses separate perceptual roughness controls along the mesh
 tangent and bitangent, both defaulting to `0.5` for isotropic behavior. The

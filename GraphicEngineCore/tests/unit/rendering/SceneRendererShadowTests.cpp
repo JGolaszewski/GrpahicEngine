@@ -131,6 +131,55 @@ TEST(SceneRendererShadowTests, DirectionalProjectionTracksVisibleSceneGeometryBo
   }
 }
 
+TEST(SceneRendererShadowTests, DirectionalProjectionIgnoresGeometryOutsideSceneCameras) {
+  Engine::Scene scene;
+  (void)AddLight(scene, Engine::Ecs::LightType::Directional);
+  Engine::Renderer::ModelResourceLibrary resources;
+  Engine::Renderer::Submesh submesh;
+  submesh.BoundsMin = {-1.0F, -1.0F, -1.0F};
+  submesh.BoundsMax = {1.0F, 1.0F, 1.0F};
+  resources.Register("camera-fit", {submesh});
+
+  const auto createMesh = [&scene](const char* name, DirectX::XMFLOAT3 position) {
+    (void)scene.QueueCreate(name, Engine::InvalidEntityHandle, Engine::Scene::EntityPreset::Mesh);
+    const auto created = scene.sync();
+    if (created.empty() || !created.front().Outcome) {
+      return Engine::InvalidEntityHandle;
+    }
+    Engine::Ecs::MeshRenderer mesh;
+    mesh.ModelGuid = "camera-fit";
+    (void)scene.QueueSet(created.front().Entity, mesh);
+    Engine::Ecs::LocalTransform transform;
+    transform.Position = {position.x, position.y, position.z};
+    (void)scene.QueueSet(created.front().Entity, transform);
+    (void)scene.sync();
+    return created.front().Entity;
+  };
+  ASSERT_NE(createMesh("Camera receiver", {0.0F, 0.0F, 0.0F}), Engine::InvalidEntityHandle);
+
+  Engine::Viewport viewport(128, 128, nullptr);
+  Engine::Renderer::CameraView camera;
+  camera.Position = {0.0F, 0.0F, -10.0F};
+  camera.NearPlane = 0.1F;
+  camera.FarPlane = 100.0F;
+  Engine::Renderer::RenderView cameraView;
+  cameraView.Initialize(&scene, camera, &viewport);
+
+  Engine::Renderer::RenderView shadowView;
+  shadowView.ViewType = Engine::Renderer::RenderView::Type::Shadow;
+  std::vector<Engine::Renderer::RenderView*> shadowViews{&shadowView};
+  std::vector<Engine::Renderer::RenderView*> sceneViews{&cameraView};
+  Engine::SceneRenderer::BuildShadowData(&scene, shadowViews, 0, 1, &resources, sceneViews, 1024);
+  const DirectX::XMMATRIX cameraRegionProjection = shadowView.ViewProjection;
+
+  ASSERT_NE(createMesh("Distant offscreen mesh", {500.0F, 0.0F, 0.0F}), Engine::InvalidEntityHandle);
+  Engine::SceneRenderer::BuildShadowData(&scene, shadowViews, 0, 1, &resources, sceneViews, 1024);
+  EXPECT_TRUE(DirectX::XMVector4EqualInt(cameraRegionProjection.r[0], shadowView.ViewProjection.r[0]) &&
+              DirectX::XMVector4EqualInt(cameraRegionProjection.r[1], shadowView.ViewProjection.r[1]) &&
+              DirectX::XMVector4EqualInt(cameraRegionProjection.r[2], shadowView.ViewProjection.r[2]) &&
+              DirectX::XMVector4EqualInt(cameraRegionProjection.r[3], shadowView.ViewProjection.r[3]));
+}
+
 TEST(SceneRendererShadowTests, DisabledLightsDoNotReceiveShadowSlots) {
   Engine::Scene scene;
   (void)AddLight(scene, Engine::Ecs::LightType::Point, false);

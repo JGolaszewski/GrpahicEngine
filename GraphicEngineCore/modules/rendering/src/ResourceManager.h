@@ -41,7 +41,8 @@ public:
   std::shared_ptr<Mesh> GetMesh(const std::string& guid, uint64_t generation) const;
   std::shared_ptr<TextureResource> GetOrCreateTexture(const std::string& identity, uint64_t generation,
                                                       const Engine::ImportedImage& image, bool srgb, std::string& error,
-                                                      const Engine::ImportedTexture* sampler = nullptr);
+                                                      const Engine::ImportedTexture* sampler = nullptr,
+                                                      bool normalMap = false, bool preserveAlphaCoverage = false);
   std::shared_ptr<TextureResource> GetFallbackTexture(bool srgb) const;
   bool FlushUploads(std::string& error);
   UploadProgress GetUploadProgress() const { return m_UploadProgress; }
@@ -53,6 +54,8 @@ private:
     std::string Guid;
     uint64_t Generation = 0;
     bool Srgb = false;
+    bool NormalMap = false;
+    bool PreserveAlphaCoverage = false;
     bool operator==(const Key&) const = default;
   };
   struct KeyHash {
@@ -76,7 +79,7 @@ private:
   };
   void QueueMeshUpload(const std::shared_ptr<Mesh>& mesh, std::vector<Vertex> vertices, std::vector<uint32_t> indices);
   void QueueTextureUpload(const std::shared_ptr<TextureResource>& texture, const Engine::ImportedImage& image,
-                          bool srgb);
+                          bool srgb, bool normalMap, bool preserveAlphaCoverage);
   void RetireCompletedUploads();
   void Retire(std::shared_ptr<Mesh> mesh);
   void Retire(std::shared_ptr<TextureResource> texture);

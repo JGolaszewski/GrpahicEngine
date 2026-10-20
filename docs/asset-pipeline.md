@@ -79,6 +79,11 @@ double-sided state, sampler settings, and the supported
 Textures are decoded to four-channel, 8-bit RGBA pixels for the CPU asset
 representation.
 
+GPU mip chains cover the complete source footprint for odd and non-square
+images. Normal-map mips average tangent-space vectors and renormalize each
+result. Masked base-color textures use alpha-coverage adjustment at the
+standard 0.5 cutoff; other texture uses keep their filtered alpha values.
+
 ## Limitations and troubleshooting
 
 - Skinning and animation are not imported. Models with skins produce a warning

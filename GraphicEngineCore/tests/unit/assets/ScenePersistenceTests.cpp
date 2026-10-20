@@ -55,6 +55,15 @@ TEST(ScenePersistenceTests, RoundTripsFieldsAndRejectsTraversalWithoutOverwritin
   Engine::SceneMaterialDocument material;
   material.brdfModel = "gtr";
   material.gtrGamma = 3.5F;
+  material.baseColorTexCoord = 2;
+  material.normalTexCoord = 3;
+  material.normalScale = 2.25F;
+  material.baseColorTextureTransform.offset = {0.25F, -0.5F};
+  material.baseColorTextureTransform.scale = {2.0F, 0.5F};
+  material.baseColorTextureTransform.rotation = 0.75F;
+  material.normalTextureTransform.offset = {-0.25F, 0.5F};
+  material.normalTextureTransform.scale = {0.5F, 2.0F};
+  material.normalTextureTransform.rotation = -0.5F;
   entity.material = material;
   document.entities.push_back(entity);
 
@@ -84,6 +93,19 @@ TEST(ScenePersistenceTests, RoundTripsFieldsAndRejectsTraversalWithoutOverwritin
   ASSERT_TRUE(loaded.document.entities.front().material.has_value());
   EXPECT_EQ(loaded.document.entities.front().material->brdfModel, "gtr");
   EXPECT_FLOAT_EQ(loaded.document.entities.front().material->gtrGamma, 3.5F);
+  EXPECT_EQ(loaded.document.entities.front().material->baseColorTexCoord, 2U);
+  EXPECT_EQ(loaded.document.entities.front().material->normalTexCoord, 3U);
+  EXPECT_FLOAT_EQ(loaded.document.entities.front().material->normalScale, 2.25F);
+  EXPECT_EQ(loaded.document.entities.front().material->baseColorTextureTransform.offset,
+            (std::array<float, 2>{0.25F, -0.5F}));
+  EXPECT_EQ(loaded.document.entities.front().material->baseColorTextureTransform.scale,
+            (std::array<float, 2>{2.0F, 0.5F}));
+  EXPECT_FLOAT_EQ(loaded.document.entities.front().material->baseColorTextureTransform.rotation, 0.75F);
+  EXPECT_EQ(loaded.document.entities.front().material->normalTextureTransform.offset,
+            (std::array<float, 2>{-0.25F, 0.5F}));
+  EXPECT_EQ(loaded.document.entities.front().material->normalTextureTransform.scale,
+            (std::array<float, 2>{0.5F, 2.0F}));
+  EXPECT_FLOAT_EQ(loaded.document.entities.front().material->normalTextureTransform.rotation, -0.5F);
   EXPECT_TRUE(loaded.document.entities.front().hasMeshRenderer);
 }
 
@@ -588,7 +610,7 @@ TEST(ScenePersistenceTests, RejectsMalformedEntityLightAndCameraFields) {
                 "invalid projection or rotation values");
 }
 
-TEST(ScenePersistenceTests, WarnsForUnknownFieldsAndNormalizesUnsupportedLegacyMaterial) {
+TEST(ScenePersistenceTests, WarnsForUnknownFieldsAndNormalizesUnsupportedNeuralMaterial) {
   TemporaryProject project;
   Engine::AssetManager assets(project.Root());
   {
@@ -607,6 +629,21 @@ TEST(ScenePersistenceTests, WarnsForUnknownFieldsAndNormalizesUnsupportedLegacyM
   EXPECT_NE(loaded.warnings[1].find("extraEntity"), std::string::npos);
   EXPECT_NE(loaded.warnings[2].find("extraMaterial"), std::string::npos);
   EXPECT_NE(loaded.warnings[3].find("unsupported neural BRDF"), std::string::npos);
+}
+
+TEST(ScenePersistenceTests, RejectsLegacyMaterialWithEntityNameAndReauthoringGuidance) {
+  TemporaryProject project;
+  Engine::AssetManager assets(project.Root());
+  {
+    std::ofstream scene(project.Root() / "legacy-material.scene.json", std::ios::binary | std::ios::trunc);
+    scene
+        << R"({"schemaVersion":1,"unitsPerMeter":1.0,"entities":[{"id":1,"name":"Old brass","primitiveType":"cube","material":{"brdfModel":"legacy"}}]})";
+  }
+  const auto loaded = assets.LoadScene("legacy-material.scene.json");
+  EXPECT_FALSE(loaded);
+  EXPECT_NE(loaded.error.find("Old brass"), std::string::npos);
+  EXPECT_NE(loaded.error.find("unsupported Legacy BRDF"), std::string::npos);
+  EXPECT_NE(loaded.error.find("reauthor this material"), std::string::npos);
 }
 
 TEST(ScenePersistenceTests, RejectsInvalidSchemaAndMaterialValues) {

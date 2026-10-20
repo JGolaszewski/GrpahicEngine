@@ -2,6 +2,7 @@
 #include "runtime/include/LogMacros.h"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <cstring>
@@ -62,7 +63,7 @@ auto MaterialPropertiesFromDocument(const ::Engine::SceneMaterialDocument& docum
                      : document.brdfModel == "ashikhminShirley" ? ::Engine::Renderer::BrdfModel::AshikhminShirley
                      : document.brdfModel == "schlick"          ? ::Engine::Renderer::BrdfModel::Schlick
                      : document.brdfModel == "sawicki"          ? ::Engine::Renderer::BrdfModel::Sawicki
-                                                                : ::Engine::Renderer::BrdfModel::Legacy;
+                                                                : ::Engine::Renderer::BrdfModel::GGX;
   properties.Workflow = document.workflow == "specularGlossiness"
                             ? ::Engine::Renderer::MaterialWorkflow::SpecularGlossiness
                             : ::Engine::Renderer::MaterialWorkflow::MetallicRoughness;
@@ -74,6 +75,17 @@ auto MaterialPropertiesFromDocument(const ::Engine::SceneMaterialDocument& docum
                                                          : ::Engine::Renderer::MaterialAlphaMode::Opaque;
   properties.AlphaCutoff = document.alphaCutoff;
   properties.DoubleSided = document.doubleSided;
+  properties.BaseColorTexCoord = document.baseColorTexCoord;
+  properties.NormalTexCoord = document.normalTexCoord;
+  properties.NormalScale = document.normalScale;
+  const auto setTransform = [](::Engine::Renderer::MaterialTextureTransform& target,
+                               const ::Engine::SceneMaterialTextureTransform& source) -> void {
+    target.Offset = {source.offset[0], source.offset[1]};
+    target.Scale = {source.scale[0], source.scale[1]};
+    target.Rotation = source.rotation;
+  };
+  setTransform(properties.TextureTransforms[0], document.baseColorTextureTransform);
+  setTransform(properties.TextureTransforms[1], document.normalTextureTransform);
   return properties;
 }
 
@@ -112,8 +124,9 @@ auto ComputeSpotLightViewProj(const ::Engine::Renderer::DirectionalLightData& li
 
 auto ComputeDirectionalLightViewProj(const ::Engine::Renderer::DirectionalLightData& lightData,
                                      const ::Engine::Scene& scene,
-                                     const ::Engine::Renderer::ModelResourceLibrary* modelResources)
-    -> DirectX::XMMATRIX {
+                                     const ::Engine::Renderer::ModelResourceLibrary* modelResources,
+                                     const std::vector<::Engine::Renderer::RenderView*>& sceneViews,
+                                     uint32_t shadowMapResolution) -> DirectX::XMMATRIX {
   using namespace DirectX;
   const XMVECTOR direction = NormalizeOrDefault(
       XMFLOAT3(lightData.DirectionIntensity.x, lightData.DirectionIntensity.y, lightData.DirectionIntensity.z));
@@ -126,10 +139,15 @@ auto ComputeDirectionalLightViewProj(const ::Engine::Renderer::DirectionalLightD
   scene.World()
       .ForEachChunkReadOnly<::Engine::Ecs::MeshRenderer, ::Engine::Ecs::WorldTransform,
                             ::Engine::Ecs::GlobalVisibility>(
-          [&minimum, &maximum, &foundMesh,
+          [&minimum, &maximum, &foundMesh, &sceneViews,
            modelResources](std::span<const ::Engine::EntityHandle>, std::span<const ::Engine::Ecs::MeshRenderer> meshes,
                            std::span<const ::Engine::Ecs::WorldTransform> transforms,
                            std::span<const ::Engine::Ecs::GlobalVisibility> visibility) -> void {
+            const auto isRelevant = [&sceneViews](const DirectX::XMFLOAT3& center, float radius) -> bool {
+              return sceneViews.empty() || std::ranges::any_of(sceneViews, [&center, radius](const auto* view) {
+                       return view != nullptr && view->IsSphereVisible(center, radius);
+                     });
+            };
             for (size_t i = 0; i < meshes.size(); ++i) {
               if (!visibility[i].IsVisible || !meshes[i].Visible) {
                 continue;
@@ -143,23 +161,51 @@ auto ComputeDirectionalLightViewProj(const ::Engine::Renderer::DirectionalLightD
               if (submeshes != nullptr && !submeshes->empty()) {
                 for (const auto& submesh : *submeshes) {
                   const DirectX::XMMATRIX world = XMLoadFloat4x4(&submesh.LocalTransform) * entityWorld;
+                  std::array<DirectX::XMFLOAT3, 8> corners{};
+                  DirectX::XMFLOAT3 submeshMinimum{std::numeric_limits<float>::max(), std::numeric_limits<float>::max(),
+                                                   std::numeric_limits<float>::max()};
+                  DirectX::XMFLOAT3 submeshMaximum{std::numeric_limits<float>::lowest(),
+                                                   std::numeric_limits<float>::lowest(),
+                                                   std::numeric_limits<float>::lowest()};
                   for (uint32_t corner = 0; corner < 8; ++corner) {
                     const XMFLOAT3 localPoint{(corner & 1U) != 0U ? submesh.BoundsMax.x : submesh.BoundsMin.x,
                                               (corner & 2U) != 0U ? submesh.BoundsMax.y : submesh.BoundsMin.y,
                                               (corner & 4U) != 0U ? submesh.BoundsMax.z : submesh.BoundsMin.z};
-                    XMFLOAT3 worldPoint{};
+                    auto& worldPoint = corners[corner];
                     XMStoreFloat3(&worldPoint, XMVector3TransformCoord(XMLoadFloat3(&localPoint), world));
+                    submeshMinimum.x = (std::min)(submeshMinimum.x, worldPoint.x);
+                    submeshMinimum.y = (std::min)(submeshMinimum.y, worldPoint.y);
+                    submeshMinimum.z = (std::min)(submeshMinimum.z, worldPoint.z);
+                    submeshMaximum.x = (std::max)(submeshMaximum.x, worldPoint.x);
+                    submeshMaximum.y = (std::max)(submeshMaximum.y, worldPoint.y);
+                    submeshMaximum.z = (std::max)(submeshMaximum.z, worldPoint.z);
+                  }
+                  const XMFLOAT3 center{(submeshMinimum.x + submeshMaximum.x) * 0.5F,
+                                        (submeshMinimum.y + submeshMaximum.y) * 0.5F,
+                                        (submeshMinimum.z + submeshMaximum.z) * 0.5F};
+                  const XMVECTOR extent = XMVectorSet((submeshMaximum.x - submeshMinimum.x) * 0.5F,
+                                                      (submeshMaximum.y - submeshMinimum.y) * 0.5F,
+                                                      (submeshMaximum.z - submeshMinimum.z) * 0.5F, 0.0F);
+                  const float submeshRadius = XMVectorGetX(XMVector3Length(extent));
+                  if (!isRelevant(center, submeshRadius)) {
+                    continue;
+                  }
+                  for (const auto& worldPoint : corners) {
                     minimum.x = (std::min)(minimum.x, worldPoint.x);
                     minimum.y = (std::min)(minimum.y, worldPoint.y);
                     minimum.z = (std::min)(minimum.z, worldPoint.z);
                     maximum.x = (std::max)(maximum.x, worldPoint.x);
                     maximum.y = (std::max)(maximum.y, worldPoint.y);
                     maximum.z = (std::max)(maximum.z, worldPoint.z);
-                    foundMesh = true;
                   }
+                  foundMesh = true;
                 }
               } else {
                 const auto& matrix = transforms[i].Matrix;
+                const XMFLOAT3 center{matrix._41, matrix._42, matrix._43};
+                if (!isRelevant(center, 1.0F)) {
+                  continue;
+                }
                 minimum.x = (std::min)(minimum.x, matrix._41);
                 minimum.y = (std::min)(minimum.y, matrix._42);
                 minimum.z = (std::min)(minimum.z, matrix._43);
@@ -182,12 +228,20 @@ auto ComputeDirectionalLightViewProj(const ::Engine::Renderer::DirectionalLightD
     radius = (std::max)(XMVectorGetX(XMVector3Length(extent)) + 0.01F, 1.0F);
   }
 
-  const XMVECTOR eye = XMVectorSubtract(target, XMVectorScale(direction, radius + 1.0F));
   XMVECTOR up = XMVectorSet(0.0F, 1.0F, 0.0F, 0.0F);
   if (std::abs(XMVectorGetX(XMVector3Dot(up, direction))) > 0.98F) {
     up = XMVectorSet(1.0F, 0.0F, 0.0F, 0.0F);
   }
   const float diameter = radius * 2.0F;
+  const XMVECTOR right = XMVector3Normalize(XMVector3Cross(up, direction));
+  up = XMVector3Normalize(XMVector3Cross(direction, right));
+  const float texelSize = diameter / static_cast<float>((std::max)(shadowMapResolution, 1U));
+  const float centerRight = XMVectorGetX(XMVector3Dot(target, right));
+  const float centerUp = XMVectorGetX(XMVector3Dot(target, up));
+  const float snapRight = std::round(centerRight / texelSize) * texelSize - centerRight;
+  const float snapUp = std::round(centerUp / texelSize) * texelSize - centerUp;
+  target = XMVectorAdd(target, XMVectorAdd(XMVectorScale(right, snapRight), XMVectorScale(up, snapUp)));
+  const XMVECTOR eye = XMVectorSubtract(target, XMVectorScale(direction, radius + 1.0F));
   return XMMatrixLookAtLH(eye, target, up) * XMMatrixOrthographicLH(diameter, diameter, 0.1F, diameter + 2.0F);
 }
 
@@ -354,7 +408,8 @@ void Engine::SceneRenderer::Init(nvrhi::IDevice* device, ::Engine::Renderer::Mat
 }
 
 void Engine::SceneRenderer::SetAssetTextureResolver(
-    std::function<std::shared_ptr<::Engine::Renderer::TextureResource>(const std::string&, bool)> resolver) {
+    std::function<std::shared_ptr<::Engine::Renderer::TextureResource>(const std::string&, bool, bool, bool)>
+        resolver) {
   m_AssetTextureResolver = std::move(resolver);
 }
 
@@ -875,12 +930,13 @@ auto Engine::SceneRenderer::MaterialForSubmesh(const ::Engine::Renderer::RenderV
   auto normalTexture = submesh.material->GetNormalTexture();
   if (m_AssetTextureResolver != nullptr) {
     if (source->baseColorTextureGuid) {
-      if (auto texture = m_AssetTextureResolver(*source->baseColorTextureGuid, true)) {
+      if (auto texture =
+              m_AssetTextureResolver(*source->baseColorTextureGuid, true, false, source->alphaMode == "mask")) {
         baseColorTexture = std::move(texture);
       }
     }
     if (source->normalTextureGuid) {
-      if (auto texture = m_AssetTextureResolver(*source->normalTextureGuid, false)) {
+      if (auto texture = m_AssetTextureResolver(*source->normalTextureGuid, false, true, false)) {
         normalTexture = std::move(texture);
       }
     }
@@ -1064,7 +1120,9 @@ void Engine::SceneRenderer::BuildDebugGeometry(::Engine::Renderer::RenderView* v
 void Engine::SceneRenderer::BuildShadowData(Engine::Scene* scene,
                                             const std::vector<::Engine::Renderer::RenderView*>& shadowViews,
                                             uint32_t firstShadowSlot, uint32_t maxShadowedLights,
-                                            const ::Engine::Renderer::ModelResourceLibrary* modelResources) {
+                                            const ::Engine::Renderer::ModelResourceLibrary* modelResources,
+                                            const std::vector<::Engine::Renderer::RenderView*>& sceneViews,
+                                            uint32_t shadowMapResolution) {
   if (scene == nullptr) {
     return;
   }
@@ -1072,10 +1130,11 @@ void Engine::SceneRenderer::BuildShadowData(Engine::Scene* scene,
   uint32_t casterCount = 0;
   scene->World()
       .ForEachChunkReadOnly<::Engine::Ecs::SpotLight, ::Engine::Ecs::WorldTransform, ::Engine::Ecs::GlobalVisibility>(
-          [scene, &shadowViews, firstShadowSlot, maxShadowedLights, modelResources, &casterCount, &viewIndex](
-              std::span<const Engine::EntityHandle> entities, std::span<const ::Engine::Ecs::SpotLight> lightComponents,
-              std::span<const ::Engine::Ecs::WorldTransform> transforms,
-              std::span<const ::Engine::Ecs::GlobalVisibility> visibility) -> void {
+          [scene, &shadowViews, firstShadowSlot, maxShadowedLights, modelResources, &sceneViews, shadowMapResolution,
+           &casterCount, &viewIndex](std::span<const Engine::EntityHandle> entities,
+                                     std::span<const ::Engine::Ecs::SpotLight> lightComponents,
+                                     std::span<const ::Engine::Ecs::WorldTransform> transforms,
+                                     std::span<const ::Engine::Ecs::GlobalVisibility> visibility) -> void {
             for (size_t row = 0; row < lightComponents.size(); ++row) {
               if (casterCount >= maxShadowedLights || viewIndex >= shadowViews.size()) {
                 return;
@@ -1097,7 +1156,8 @@ void Engine::SceneRenderer::BuildShadowData(Engine::Scene* scene,
                 shadowView->TargetScene = scene;
                 shadowView->ShadowLight = entities[row];
                 if (lightComponents[row].Type == ::Engine::Ecs::LightType::Directional) {
-                  shadowView->ViewProjection = ComputeDirectionalLightViewProj(lightData, *scene, modelResources);
+                  shadowView->ViewProjection = ComputeDirectionalLightViewProj(lightData, *scene, modelResources,
+                                                                               sceneViews, shadowMapResolution);
                 } else if (faceCount == 6U) {
                   shadowView->ViewProjection = ComputePointLightFaceViewProj(lightData, face);
                 } else {

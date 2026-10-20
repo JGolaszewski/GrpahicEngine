@@ -194,7 +194,6 @@ PS_OUTPUT main_ps(VS_OUTPUT input)
     const float3 bitangent = cross(N, tangent) * (input.tangentWS.w < 0.0f ? -1.0f : 1.0f);
     float  metallic = saturate(g_EmissiveMetallic.w);
     const bool isSpecularGlossiness = (g_ModelFlags.z & 0x100u) != 0u;
-    const bool isLegacy = g_ModelFlags.y == 0u;
     const float roughness = isSpecularGlossiness ? 1.0f - g_SurfaceParams.x : g_SurfaceParams.x;
     const float alpha = max(roughness * roughness, BRDF_MIN_ALPHA);
     const float ior = max(g_SurfaceParams.w, 1.0f);
@@ -206,11 +205,6 @@ PS_OUTPUT main_ps(VS_OUTPUT input)
     const float3 diffuseColor = isSpecularGlossiness
         ? baseColor.rgb * (1.0f - max(specularF0.r, max(specularF0.g, specularF0.b)))
         : baseColor.rgb * (1.0f - metallic);
-    const float3 legacyDiffuseColor = diffuseColor;
-    const float3 legacySpecularColor = isSpecularGlossiness
-        ? specularF0
-        : lerp(float3(0.04f, 0.04f, 0.04f), baseColor.rgb, metallic);
-    const float legacySpecularPower = lerp(8.0f, 128.0f, 1.0f - saturate(g_SurfaceParams.x));
     const float3 V = g_CameraPosition.xyz - input.worldPos;
 
     float3 diffuseAccum = 0.0f;
@@ -267,70 +261,62 @@ PS_OUTPUT main_ps(VS_OUTPUT input)
 
         float shadow   = SampleShadowPCF(i, input.worldPos, N, L);
 
-        if (isLegacy)
+
+        const BrdfQuery query = BuildBrdfQuery(N, V, L);
+        const float3 brdfBaseColor = isSpecularGlossiness ? diffuseColor : baseColor.rgb;
+        const float brdfMetallic = isSpecularGlossiness ? 0.0f : metallic;
+        const float3 brdfF0 = isSpecularGlossiness ? specularF0 : dielectricF0;
+        float3 diffuseBrdf;
+        float3 specularBrdf;
+        if (g_ModelFlags.y == 6u)
         {
-            const float lambert = max(dot(N, L), 0.0f);
-            const float specular = pow(lambert, legacySpecularPower);
-            diffuseAccum += legacyDiffuseColor * lightColor * (lambert * intensity * attenuation * shadow);
-            specAccum += legacySpecularColor * lightColor * (specular * intensity * attenuation * shadow);
+            EvaluateAshikhminShirleyBrdfComponents(query, tangent, bitangent, brdfBaseColor, brdfMetallic,
+                brdfF0, g_SpecularParams.w, g_AlphaParams.y, diffuseBrdf, specularBrdf);
+        }
+        else if (g_ModelFlags.y == 2u)
+        {
+            EvaluateGtrBrdfComponents(query, brdfBaseColor, brdfMetallic, brdfF0, alpha,
+                g_SurfaceParams.z, diffuseBrdf, specularBrdf);
+        }
+        else if (g_ModelFlags.y == 3u)
+        {
+            EvaluateBeckmannBrdfComponents(query, brdfBaseColor, brdfMetallic, brdfF0, alpha,
+                diffuseBrdf, specularBrdf);
+        }
+        else if (g_ModelFlags.y == 4u)
+        {
+            EvaluateGaussBrdfComponents(query, brdfBaseColor, brdfMetallic, brdfF0, alpha,
+                diffuseBrdf, specularBrdf);
+        }
+        else if (g_ModelFlags.y == 5u)
+        {
+            EvaluateBlinnPhongBrdfComponents(query, brdfBaseColor, brdfMetallic, brdfF0, alpha,
+                diffuseBrdf, specularBrdf);
+        }
+        else if (g_ModelFlags.y == 7u)
+        {
+            EvaluateSchlickBrdfComponents(query, brdfBaseColor, brdfMetallic, brdfF0, alpha,
+                diffuseBrdf, specularBrdf);
+        }
+        else if (g_ModelFlags.y == 8u)
+        {
+            EvaluateSawickiBrdfComponents(query, brdfBaseColor, brdfMetallic, brdfF0, alpha,
+                diffuseBrdf, specularBrdf);
         }
         else
         {
-            const BrdfQuery query = BuildBrdfQuery(N, V, L);
-            const float3 brdfBaseColor = isSpecularGlossiness ? diffuseColor : baseColor.rgb;
-            const float brdfMetallic = isSpecularGlossiness ? 0.0f : metallic;
-            const float3 brdfF0 = isSpecularGlossiness ? specularF0 : dielectricF0;
-            float3 diffuseBrdf;
-            float3 specularBrdf;
-            if (g_ModelFlags.y == 6u)
-            {
-                EvaluateAshikhminShirleyBrdfComponents(query, tangent, bitangent, brdfBaseColor, brdfMetallic,
-                    brdfF0, g_SpecularParams.w, g_AlphaParams.y, diffuseBrdf, specularBrdf);
-            }
-            else if (g_ModelFlags.y == 2u)
-            {
-                EvaluateGtrBrdfComponents(query, brdfBaseColor, brdfMetallic, brdfF0, alpha,
-                    g_SurfaceParams.z, diffuseBrdf, specularBrdf);
-            }
-            else if (g_ModelFlags.y == 3u)
-            {
-                EvaluateBeckmannBrdfComponents(query, brdfBaseColor, brdfMetallic, brdfF0, alpha,
-                    diffuseBrdf, specularBrdf);
-            }
-            else if (g_ModelFlags.y == 4u)
-            {
-                EvaluateGaussBrdfComponents(query, brdfBaseColor, brdfMetallic, brdfF0, alpha,
-                    diffuseBrdf, specularBrdf);
-            }
-            else if (g_ModelFlags.y == 5u)
-            {
-                EvaluateBlinnPhongBrdfComponents(query, brdfBaseColor, brdfMetallic, brdfF0, alpha,
-                    diffuseBrdf, specularBrdf);
-            }
-            else if (g_ModelFlags.y == 7u)
-            {
-                EvaluateSchlickBrdfComponents(query, brdfBaseColor, brdfMetallic, brdfF0, alpha,
-                    diffuseBrdf, specularBrdf);
-            }
-            else if (g_ModelFlags.y == 8u)
-            {
-                EvaluateSawickiBrdfComponents(query, brdfBaseColor, brdfMetallic, brdfF0, alpha,
-                    diffuseBrdf, specularBrdf);
-            }
-            else
-            {
-                EvaluateGgxBrdfComponents(query, brdfBaseColor, brdfMetallic, brdfF0, alpha,
-                    diffuseBrdf, specularBrdf);
-            }
-            const float3 lightScale = lightColor * (query.NoL * intensity * attenuation * shadow);
-            diffuseAccum += diffuseBrdf * lightScale;
-            specAccum += specularBrdf * lightScale;
+            EvaluateGgxBrdfComponents(query, brdfBaseColor, brdfMetallic, brdfF0, alpha,
+                diffuseBrdf, specularBrdf);
         }
+        const float3 lightScale = lightColor * (query.NoL * intensity * attenuation * shadow);
+        diffuseAccum += diffuseBrdf * lightScale;
+        specAccum += specularBrdf * lightScale;
+
     }
 
-    float3 ambientDiffuse = isLegacy ? 0.04f * legacyDiffuseColor : 0.0f;
+    float3 ambientDiffuse = 0.0f;
     float3 ambientSpecular = 0.0f;
-    if (!isLegacy && g_LightPadding.x > 0.5f)
+    if (g_LightPadding.x > 0.5f)
     {
         const float3 viewDirection = BrdfNormalizeOr(V, N);
         const float3 reflectionDirection = reflect(-viewDirection, N);
