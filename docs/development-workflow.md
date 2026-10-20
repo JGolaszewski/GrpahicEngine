@@ -1,6 +1,8 @@
 # Development workflow
 
 This page is the detailed procedure for tracking, dividing, and integrating repository work. The root `AGENTS.md` contains the always-on agent contract.
+For role selection, subagents, optional hooks, and worked examples, see
+[Agentic development](agentic-development.md).
 
 ## Track work on GitHub Projects
 

@@ -5,6 +5,7 @@ GraphicEngine is a Windows-first C++23 graphics engine with a D3D11 rendering ba
 Use this site to find project conventions and development workflows:
 
 - [Getting started](getting-started.md)
+- [Agentic development](agentic-development.md)
 - [Architecture](architecture.md)
 - [Rendering pipeline](rendering/pipeline.md)
 - [Editor guide](editor-guide.md)
