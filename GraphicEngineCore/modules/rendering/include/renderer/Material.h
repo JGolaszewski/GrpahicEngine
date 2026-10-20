@@ -3,6 +3,7 @@
 #include "runtime/include/CoreExport.h"
 #include <DirectXMath.h>
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -95,6 +96,25 @@ struct MaterialTextureTransform {
   float Rotation = 0.0f;                   ///< UV rotation in radians.
 };
 
+/// Anisotropy request for one material texture slot. GlobalCap follows the active RenderSystem maximum.
+enum class TextureAnisotropy : uint32_t { GlobalCap = 0, X1 = 1, X2 = 2, X4 = 4, X8 = 8, X16 = 16 };
+
+/// Maximum anisotropy accepted by the renderer-wide texture filtering setting.
+inline constexpr uint32_t DefaultMaxTextureAnisotropy = 8;
+/// Returns true when a value is one of the supported hardware levels.
+inline constexpr bool IsSupportedTextureAnisotropy(uint32_t value) noexcept {
+  return value == 1 || value == 2 || value == 4 || value == 8 || value == 16;
+}
+/// Resolves a slot request to the active renderer maximum.
+inline constexpr uint32_t ResolveTextureAnisotropy(TextureAnisotropy request, uint32_t engineMaximum) noexcept {
+  const uint32_t requested = static_cast<uint32_t>(request);
+  const uint32_t validMaximum =
+      IsSupportedTextureAnisotropy(engineMaximum) ? engineMaximum : DefaultMaxTextureAnisotropy;
+  const uint32_t validRequest =
+      request == TextureAnisotropy::GlobalCap || !IsSupportedTextureAnisotropy(requested) ? validMaximum : requested;
+  return (std::min)(validRequest, validMaximum);
+}
+
 /// Editable material factors and UV set selections before GPU packing.
 struct MaterialProperties {
   DirectX::XMFLOAT4 BaseColor = {1.0f, 1.0f, 1.0f, 1.0f}; ///< Linear RGBA base color multiplier.
@@ -121,6 +141,7 @@ struct MaterialProperties {
   float OcclusionStrength = 1.0f;                ///< Blend weight for the occlusion map.
   MaterialTextureTransform TextureTransforms[5]; ///< Transforms for base color, metallic-roughness, normal,
                                                  ///< occlusion, and emissive maps.
+  std::array<TextureAnisotropy, 5> TextureAnisotropyLevels{}; ///< Per-slot sampler requests; defaults to GlobalCap.
 };
 
 inline float ClampFinite(float value, float fallback, float minimum, float maximum) noexcept {
@@ -289,6 +310,7 @@ private:
   bool m_HasTextureOverrides = false;
   std::optional<std::string> m_BaseColorTextureGuid;
   std::optional<std::string> m_NormalTextureGuid;
+  std::array<TextureAnisotropy, 5> m_TextureAnisotropyLevels{};
 
   MaterialGpu m_Constants;
 };

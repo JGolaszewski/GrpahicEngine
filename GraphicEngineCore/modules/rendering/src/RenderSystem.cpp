@@ -1,5 +1,6 @@
 #include "rendering/include/RenderSystem.h"
 #include "assets/include/AssetManager.h"
+#include "rendering/include/renderer/Material.h"
 #include "rendering/include/renderer/ModelResourceLibrary.h"
 #include "rendering/src/MaterialSystem.h"
 #include "rendering/src/ResourceManager.h"
@@ -231,6 +232,11 @@ void RenderSystem::BeginFrame() {
   }
   m_LastUploadFailure.clear();
 
+  if (m_TextureAnisotropyUpdatePending && m_MaterialSystem != nullptr) {
+    m_MaterialSystem->SetMaxTextureAnisotropy(m_MaxTextureAnisotropy);
+    m_TextureAnisotropyUpdatePending = false;
+  }
+
   m_CommandList->Handle->open();
   m_FrameActive = true;
   m_RenderBackend->BeginGpuEvent(L"RenderFrame");
@@ -354,6 +360,18 @@ auto RenderSystem::SetShadowSettings(const ShadowSettings& settings) noexcept ->
   }
 
   m_ShadowSettings = settings;
+  return true;
+}
+
+auto RenderSystem::SetMaxTextureAnisotropy(uint32_t maxAnisotropy) noexcept -> bool {
+  if (!::Engine::Renderer::IsSupportedTextureAnisotropy(maxAnisotropy)) {
+    ENGINE_LOG_ERROR("Render", "Texture anisotropy setting rejected | max_anisotropy: {}", maxAnisotropy);
+    return false;
+  }
+  if (maxAnisotropy != m_MaxTextureAnisotropy) {
+    m_MaxTextureAnisotropy = maxAnisotropy;
+    m_TextureAnisotropyUpdatePending = true;
+  }
   return true;
 }
 

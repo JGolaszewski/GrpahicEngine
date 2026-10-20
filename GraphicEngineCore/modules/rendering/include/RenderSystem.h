@@ -106,6 +106,13 @@ public:
   GetDirectionalShadowDiagnostics() const noexcept {
     return m_DirectionalShadowDiagnostics;
   }
+  /// Sets the renderer-wide maximum anisotropy used to cap material texture sampler requests.
+  /// @param maxAnisotropy Supported maximum: 1, 2, 4, 8, or 16.
+  /// @return True when the value is supported and accepted for the next frame boundary.
+  bool SetMaxTextureAnisotropy(uint32_t maxAnisotropy) noexcept;
+  /// Gets the requested renderer-wide maximum anisotropy.
+  /// @return Current maximum anisotropy, defaulting to 8.
+  uint32_t GetMaxTextureAnisotropy() const noexcept { return m_MaxTextureAnisotropy; }
   /// Picks the light nearest to a viewport location.
   /// @param viewportX Horizontal viewport coordinate.
   /// @param viewportY Vertical viewport coordinate.
@@ -309,6 +316,8 @@ private:
   std::string m_LastRenderGraphFailure;
   ShadowSettings m_ShadowSettings;
   std::vector<::Engine::Renderer::DirectionalShadowDiagnostics> m_DirectionalShadowDiagnostics;
+  uint32_t m_MaxTextureAnisotropy = 8;
+  bool m_TextureAnisotropyUpdatePending = false;
   AssetManager* m_AssetManager = nullptr;
   std::map<std::tuple<std::string, bool, bool, bool, float>, std::shared_ptr<::Engine::Renderer::TextureResource>>
       m_AuthoredTextures;

@@ -36,6 +36,7 @@ public:
   void SetTexturedPixelShader(nvrhi::ShaderHandle shader) { m_TexturedPS = std::move(shader); }
 
   void UpdateDirtyMaterials(nvrhi::ICommandList* commandList);
+  void SetMaxTextureAnisotropy(uint32_t maxAnisotropy) noexcept;
   nvrhi::BindingLayoutHandle GetStandardMaterialLayout() const;
 
   inline nvrhi::ShaderHandle GetStandardVS() const { return m_StandardVS; }
@@ -54,6 +55,7 @@ private:
 
   std::vector<std::weak_ptr<Material>> m_ActiveMaterials;
   uint32_t m_NextMaterialID = 0;
+  uint32_t m_MaxTextureAnisotropy = DefaultMaxTextureAnisotropy;
 };
 
 } // namespace Engine::Renderer

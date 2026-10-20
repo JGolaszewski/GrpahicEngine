@@ -61,6 +61,10 @@ Material::Material(uint32_t materialID)
 
 void Material::SetProperties(const MaterialProperties& properties) {
   const MaterialGpu constants = BuildMaterialGpu(properties);
+  if (properties.TextureAnisotropyLevels != m_TextureAnisotropyLevels) {
+    m_TextureAnisotropyLevels = properties.TextureAnisotropyLevels;
+    m_IsDirty = true;
+  }
   if (!Equal(constants, m_Constants)) {
     m_Constants = constants;
     m_IsDirty = true;
@@ -126,6 +130,7 @@ MaterialProperties Material::GetProperties() const {
     transform.Scale.y = transform.Scale.x > 0.0f ? (rows.x * rows.w - rows.y * rows.z) / transform.Scale.x : 0.0f;
     transform.Rotation = std::atan2(rows.z, rows.x);
   }
+  properties.TextureAnisotropyLevels = m_TextureAnisotropyLevels;
   return properties;
 }
 } // namespace Engine::Renderer
