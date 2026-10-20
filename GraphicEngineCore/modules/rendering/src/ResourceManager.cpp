@@ -1,7 +1,7 @@
 #include "rendering/src/ResourceManager.h"
 #include "MeshBackend.h"
 #include "TextureBackend.h"
-#include "rendering/src/TextureMipBuilder.h"
+#include "rendering/src/TextureMipGenerator.h"
 #include "runtime/include/LogMacros.h"
 
 #include <algorithm>
@@ -313,8 +313,8 @@ void ResourceManager::QueueTextureUpload(const std::shared_ptr<TextureResource>&
   if (!texture || (TextureBackendAccess::GetTexture(*texture) == nullptr)) {
     return;
   }
-  std::vector<Detail::TextureMipLevel> mips =
-      Detail::BuildTextureMips(image, srgb, normalMap, preserveAlphaCoverage, alphaCutoff);
+  std::vector<TextureMipGenerator::Mip> mips = TextureMipGenerator::Build(
+      image, {.Srgb = srgb, .NormalMap = normalMap, .AlphaCutoff = preserveAlphaCoverage ? alphaCutoff : -1.0F});
   uint64_t bytes = 0;
   for (const auto& mip : mips) {
     bytes += mip.Pixels.size();
