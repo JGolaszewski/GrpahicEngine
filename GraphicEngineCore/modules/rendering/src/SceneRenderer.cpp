@@ -155,86 +155,88 @@ auto ComputeDirectionalLightViewProj(const ::Engine::Renderer::DirectionalLightD
              return view != nullptr && view->IsSphereVisible(center, radius);
            });
   };
-  scene.World().ForEachChunkReadOnly<::Engine::Ecs::MeshRenderer, ::Engine::Ecs::WorldTransform,
-                                     ::Engine::Ecs::GlobalVisibility>(
-      [&candidates, &receiverBounds, &isCameraVisible, modelResources, right, up,
-       direction](std::span<const ::Engine::EntityHandle>, std::span<const ::Engine::Ecs::MeshRenderer> meshes,
-                  std::span<const ::Engine::Ecs::WorldTransform> transforms,
-                  std::span<const ::Engine::Ecs::GlobalVisibility> visibility) -> void {
-        const auto addCandidate = [&candidates, &receiverBounds, &isCameraVisible, right, up,
-                                   direction](std::array<XMFLOAT3, 8> corners) -> void {
-          XMFLOAT3 minimum{std::numeric_limits<float>::max(), std::numeric_limits<float>::max(),
-                           std::numeric_limits<float>::max()};
-          XMFLOAT3 maximum{std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest(),
-                           std::numeric_limits<float>::lowest()};
-          for (const auto& point : corners) {
-            minimum.x = (std::min)(minimum.x, point.x);
-            minimum.y = (std::min)(minimum.y, point.y);
-            minimum.z = (std::min)(minimum.z, point.z);
-            maximum.x = (std::max)(maximum.x, point.x);
-            maximum.y = (std::max)(maximum.y, point.y);
-            maximum.z = (std::max)(maximum.z, point.z);
-          }
-          const XMFLOAT3 center{(minimum.x + maximum.x) * 0.5F, (minimum.y + maximum.y) * 0.5F,
-                                (minimum.z + maximum.z) * 0.5F};
-          const XMVECTOR extent = XMVectorSet((maximum.x - minimum.x) * 0.5F, (maximum.y - minimum.y) * 0.5F,
-                                              (maximum.z - minimum.z) * 0.5F, 0.0F);
-          const bool cameraVisible = isCameraVisible(center, XMVectorGetX(XMVector3Length(extent)));
-          candidates.push_back({.Corners = corners, .CameraVisible = cameraVisible});
-          if (!cameraVisible) {
-            return;
-          }
-          for (const auto& point : corners) {
-            const XMVECTOR worldPoint = XMLoadFloat3(&point);
-            const float x = XMVectorGetX(XMVector3Dot(worldPoint, right));
-            const float y = XMVectorGetX(XMVector3Dot(worldPoint, up));
-            receiverBounds.MinX = (std::min)(receiverBounds.MinX, x);
-            receiverBounds.MaxX = (std::max)(receiverBounds.MaxX, x);
-            receiverBounds.MinY = (std::min)(receiverBounds.MinY, y);
-            receiverBounds.MaxY = (std::max)(receiverBounds.MaxY, y);
-            receiverBounds.MinZ = (std::min)(receiverBounds.MinZ, XMVectorGetX(XMVector3Dot(worldPoint, direction)));
-            receiverBounds.MaxZ = (std::max)(receiverBounds.MaxZ, XMVectorGetX(XMVector3Dot(worldPoint, direction)));
-          }
-        };
-        for (size_t i = 0; i < meshes.size(); ++i) {
-          if (!visibility[i].IsVisible || !meshes[i].Visible) {
-            continue;
-          }
-          std::string resourceKey = meshes[i].ModelGuid;
-          if (resourceKey.empty() && !meshes[i].PrimitiveType.empty()) {
-            resourceKey = "primitive:" + meshes[i].PrimitiveType;
-          }
-          const auto* submeshes = modelResources == nullptr ? nullptr : modelResources->Find(resourceKey);
-          const XMMATRIX entityWorld = XMLoadFloat4x4(&transforms[i].Matrix);
-          if (submeshes != nullptr && !submeshes->empty()) {
-            for (const auto& submesh : *submeshes) {
-              const XMMATRIX world = XMLoadFloat4x4(&submesh.LocalTransform) * entityWorld;
-              std::array<XMFLOAT3, 8> corners{};
-              for (uint32_t corner = 0; corner < 8; ++corner) {
-                const XMFLOAT3 localPoint{(corner & 1U) != 0U ? submesh.BoundsMax.x : submesh.BoundsMin.x,
-                                          (corner & 2U) != 0U ? submesh.BoundsMax.y : submesh.BoundsMin.y,
-                                          (corner & 4U) != 0U ? submesh.BoundsMax.z : submesh.BoundsMin.z};
-                XMStoreFloat3(&corners[corner], XMVector3TransformCoord(XMLoadFloat3(&localPoint), world));
+  scene.World()
+      .ForEachChunkReadOnly<::Engine::Ecs::MeshRenderer, ::Engine::Ecs::WorldTransform,
+                            ::Engine::Ecs::GlobalVisibility>(
+          [&candidates, &receiverBounds, &isCameraVisible, modelResources, &right, &up,
+           &direction](std::span<const ::Engine::EntityHandle>, std::span<const ::Engine::Ecs::MeshRenderer> meshes,
+                       std::span<const ::Engine::Ecs::WorldTransform> transforms,
+                       std::span<const ::Engine::Ecs::GlobalVisibility> visibility) -> void {
+            const auto addCandidate = [&candidates, &receiverBounds, &isCameraVisible, &right, &up,
+                                       &direction](std::array<XMFLOAT3, 8> corners) -> void {
+              XMFLOAT3 minimum{std::numeric_limits<float>::max(), std::numeric_limits<float>::max(),
+                               std::numeric_limits<float>::max()};
+              XMFLOAT3 maximum{std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest(),
+                               std::numeric_limits<float>::lowest()};
+              for (const auto& point : corners) {
+                minimum.x = (std::min)(minimum.x, point.x);
+                minimum.y = (std::min)(minimum.y, point.y);
+                minimum.z = (std::min)(minimum.z, point.z);
+                maximum.x = (std::max)(maximum.x, point.x);
+                maximum.y = (std::max)(maximum.y, point.y);
+                maximum.z = (std::max)(maximum.z, point.z);
               }
-              addCandidate(corners);
+              const XMFLOAT3 center{(minimum.x + maximum.x) * 0.5F, (minimum.y + maximum.y) * 0.5F,
+                                    (minimum.z + maximum.z) * 0.5F};
+              const XMVECTOR extent = XMVectorSet((maximum.x - minimum.x) * 0.5F, (maximum.y - minimum.y) * 0.5F,
+                                                  (maximum.z - minimum.z) * 0.5F, 0.0F);
+              const bool cameraVisible = isCameraVisible(center, XMVectorGetX(XMVector3Length(extent)));
+              candidates.push_back({.Corners = corners, .CameraVisible = cameraVisible});
+              if (!cameraVisible) {
+                return;
+              }
+              for (const auto& point : corners) {
+                const XMVECTOR worldPoint = XMLoadFloat3(&point);
+                const float x = XMVectorGetX(XMVector3Dot(worldPoint, right));
+                const float y = XMVectorGetX(XMVector3Dot(worldPoint, up));
+                receiverBounds.MinX = (std::min)(receiverBounds.MinX, x);
+                receiverBounds.MaxX = (std::max)(receiverBounds.MaxX, x);
+                receiverBounds.MinY = (std::min)(receiverBounds.MinY, y);
+                receiverBounds.MaxY = (std::max)(receiverBounds.MaxY, y);
+                receiverBounds.MinZ =
+                    (std::min)(receiverBounds.MinZ, XMVectorGetX(XMVector3Dot(worldPoint, direction)));
+                receiverBounds.MaxZ =
+                    (std::max)(receiverBounds.MaxZ, XMVectorGetX(XMVector3Dot(worldPoint, direction)));
+              }
+            };
+            for (size_t i = 0; i < meshes.size(); ++i) {
+              if (!visibility[i].IsVisible || !meshes[i].Visible) {
+                continue;
+              }
+              std::string resourceKey = meshes[i].ModelGuid;
+              if (resourceKey.empty() && !meshes[i].PrimitiveType.empty()) {
+                resourceKey = "primitive:" + meshes[i].PrimitiveType;
+              }
+              const auto* submeshes = modelResources == nullptr ? nullptr : modelResources->Find(resourceKey);
+              const XMMATRIX entityWorld = XMLoadFloat4x4(&transforms[i].Matrix);
+              if (submeshes != nullptr && !submeshes->empty()) {
+                for (const auto& submesh : *submeshes) {
+                  const XMMATRIX world = XMLoadFloat4x4(&submesh.LocalTransform) * entityWorld;
+                  std::array<XMFLOAT3, 8> corners{};
+                  for (uint32_t corner = 0; corner < 8; ++corner) {
+                    const XMFLOAT3 localPoint{(corner & 1U) != 0U ? submesh.BoundsMax.x : submesh.BoundsMin.x,
+                                              (corner & 2U) != 0U ? submesh.BoundsMax.y : submesh.BoundsMin.y,
+                                              (corner & 4U) != 0U ? submesh.BoundsMax.z : submesh.BoundsMin.z};
+                    XMStoreFloat3(&corners[corner], XMVector3TransformCoord(XMLoadFloat3(&localPoint), world));
+                  }
+                  addCandidate(corners);
+                }
+              } else {
+                const auto& matrix = transforms[i].Matrix;
+                std::array<XMFLOAT3, 8> corners{};
+                for (uint32_t corner = 0; corner < 8; ++corner) {
+                  corners[corner] = {matrix._41 + ((corner & 1U) != 0U ? 1.0F : -1.0F),
+                                     matrix._42 + ((corner & 2U) != 0U ? 1.0F : -1.0F),
+                                     matrix._43 + ((corner & 4U) != 0U ? 1.0F : -1.0F)};
+                }
+                addCandidate(corners);
+              }
             }
-          } else {
-            const auto& matrix = transforms[i].Matrix;
-            std::array<XMFLOAT3, 8> corners{};
-            for (uint32_t corner = 0; corner < 8; ++corner) {
-              corners[corner] = {matrix._41 + ((corner & 1U) != 0U ? 1.0F : -1.0F),
-                                 matrix._42 + ((corner & 2U) != 0U ? 1.0F : -1.0F),
-                                 matrix._43 + ((corner & 4U) != 0U ? 1.0F : -1.0F)};
-            }
-            addCandidate(corners);
-          }
-        }
-      });
+          });
 
   Bounds shadowBounds = receiverBounds;
   if (shadowBounds.MinX == std::numeric_limits<float>::max()) {
-    shadowBounds = {.MinX = -100.0F, .MaxX = 100.0F, .MinY = -100.0F, .MaxY = 100.0F,
-                    .MinZ = -100.0F, .MaxZ = 100.0F};
+    shadowBounds = {.MinX = -100.0F, .MaxX = 100.0F, .MinY = -100.0F, .MaxY = 100.0F, .MinZ = -100.0F, .MaxZ = 100.0F};
   } else {
     for (const auto& candidate : candidates) {
       if (candidate.CameraVisible) {
@@ -253,10 +255,9 @@ auto ComputeDirectionalLightViewProj(const ::Engine::Renderer::DirectionalLightD
         candidateBounds.MinZ = (std::min)(candidateBounds.MinZ, z);
         candidateBounds.MaxZ = (std::max)(candidateBounds.MaxZ, z);
       }
-      const bool overlapsReceiver = candidateBounds.MaxX >= receiverBounds.MinX &&
-                                    candidateBounds.MinX <= receiverBounds.MaxX &&
-                                    candidateBounds.MaxY >= receiverBounds.MinY &&
-                                    candidateBounds.MinY <= receiverBounds.MaxY;
+      const bool overlapsReceiver =
+          candidateBounds.MaxX >= receiverBounds.MinX && candidateBounds.MinX <= receiverBounds.MaxX &&
+          candidateBounds.MaxY >= receiverBounds.MinY && candidateBounds.MinY <= receiverBounds.MaxY;
       const bool upstream = candidateBounds.MinZ <= receiverBounds.MaxZ;
       if (overlapsReceiver && upstream) {
         shadowBounds.MinZ = (std::min)(shadowBounds.MinZ, candidateBounds.MinZ);
@@ -276,9 +277,8 @@ auto ComputeDirectionalLightViewProj(const ::Engine::Renderer::DirectionalLightD
   centerX = std::round(centerX / texelX) * texelX;
   centerY = std::round(centerY / texelY) * texelY;
   const float depth = (std::max)(shadowBounds.MaxZ - shadowBounds.MinZ, 1.0F);
-  const XMVECTOR eye =
-      XMVectorAdd(XMVectorAdd(XMVectorScale(right, centerX), XMVectorScale(up, centerY)),
-                  XMVectorScale(direction, shadowBounds.MinZ - 1.0F));
+  const XMVECTOR eye = XMVectorAdd(XMVectorAdd(XMVectorScale(right, centerX), XMVectorScale(up, centerY)),
+                                   XMVectorScale(direction, shadowBounds.MinZ - 1.0F));
   const XMVECTOR target = XMVectorAdd(eye, direction);
   return XMMatrixLookAtLH(eye, target, up) * XMMatrixOrthographicLH(width, height, 0.1F, depth + 1.1F);
 }
@@ -968,9 +968,8 @@ auto Engine::SceneRenderer::MaterialForSubmesh(const ::Engine::Renderer::RenderV
   auto normalTexture = submesh.material->GetNormalTexture();
   if (m_AssetTextureResolver != nullptr) {
     if (source->baseColorTextureGuid) {
-      if (auto texture =
-              m_AssetTextureResolver(*source->baseColorTextureGuid, true, false, source->alphaMode == "mask",
-                                     source->alphaCutoff)) {
+      if (auto texture = m_AssetTextureResolver(*source->baseColorTextureGuid, true, false, source->alphaMode == "mask",
+                                                source->alphaCutoff)) {
         baseColorTexture = std::move(texture);
       }
     }
