@@ -11,8 +11,10 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <cstdint>
 #include <functional>
 #include <imgui.h>
+#include <iterator>
 #include <limits>
 #include <string>
 
@@ -353,10 +355,29 @@ void InspectorPanel::DrawEntityInspector() {
         }
         ImGui::EndDragDropTarget();
       };
+      const auto drawTextureAnisotropy = [&material, &materialChanged](const char* label, size_t slot) -> void {
+        constexpr std::array<uint32_t, 6> levels = {0, 1, 2, 4, 8, 16};
+        constexpr std::array<const char*, 6> labels = {"Global cap", "1x", "2x", "4x", "8x", "16x"};
+        const auto current = material.textureAnisotropyLevels[slot];
+        const auto found = std::ranges::find(levels, current);
+        int selection = found == levels.end() ? 0 : static_cast<int>(std::distance(levels.begin(), found));
+        if (ImGui::Combo(label, &selection, labels.data(), static_cast<int>(labels.size()))) {
+          material.textureAnisotropyLevels[slot] = levels[static_cast<size_t>(selection)];
+          materialChanged = true;
+        }
+      };
       ImGui::SeparatorText("General Material Properties");
       materialChanged |= ImGui::ColorEdit4("Base color factor", material.baseColor.data());
       drawTextureTarget("Color texture", MaterialTextureSlot::BaseColor, material.baseColorTextureGuid);
+      drawTextureAnisotropy("Color texture anisotropy", 0);
       drawTextureTarget("Normal texture", MaterialTextureSlot::Normal, material.normalTextureGuid);
+      drawTextureAnisotropy("Normal texture anisotropy", 1);
+      if (ImGui::TreeNode("Other texture filtering")) {
+        drawTextureAnisotropy("Metallic-roughness texture anisotropy", 2);
+        drawTextureAnisotropy("Occlusion texture anisotropy", 3);
+        drawTextureAnisotropy("Emissive texture anisotropy", 4);
+        ImGui::TreePop();
+      }
       materialChanged |= ImGui::DragFloat("Normal map strength", &material.normalScale, 0.01F, 0.0F, 10.0F);
       if (ImGui::TreeNode("UV Settings")) {
         int baseColorTexCoord = static_cast<int>(material.baseColorTexCoord);

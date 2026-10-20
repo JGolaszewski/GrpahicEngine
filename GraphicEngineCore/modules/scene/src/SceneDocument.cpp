@@ -257,6 +257,7 @@ auto ReadMaterial(const Json& value, SceneMaterialDocument& material, std::vecto
                 "normalTextureOffset",
                 "normalTextureScale",
                 "normalTextureRotation",
+                "textureAnisotropyLevels",
                 "normalScale",
             },
             warnings, context);
@@ -278,6 +279,27 @@ auto ReadMaterial(const Json& value, SceneMaterialDocument& material, std::vecto
   }
   if (value.contains("normalScale") && !ReadNumber(value, "normalScale", material.normalScale, error)) {
     return false;
+  }
+  if (value.contains("textureAnisotropyLevels")) {
+    const Json& levels = value.at("textureAnisotropyLevels");
+    if (!levels.is_array() || levels.size() != material.textureAnisotropyLevels.size()) {
+      error = "textureAnisotropyLevels must contain five integer values";
+      return false;
+    }
+    for (size_t index = 0; index < levels.size(); ++index) {
+      const Json& level = levels.at(index);
+      if ((!level.is_number_unsigned() && !level.is_number_integer()) || level.get<int64_t>() < 0 ||
+          level.get<int64_t>() > 16) {
+        error = "textureAnisotropyLevels values must be non-negative integers";
+        return false;
+      }
+      const auto parsed = static_cast<uint32_t>(level.get<int64_t>());
+      if (parsed != 0 && parsed != 1 && parsed != 2 && parsed != 4 && parsed != 8 && parsed != 16) {
+        error = "textureAnisotropyLevels values must be 0, 1, 2, 4, 8, or 16";
+        return false;
+      }
+      material.textureAnisotropyLevels[index] = parsed;
+    }
   }
   if (!std::isfinite(material.normalScale) || material.normalScale < 0.0F) {
     error = "normalScale must be a finite non-negative number";
@@ -393,6 +415,11 @@ auto IsValidMaterial(const SceneMaterialDocument& material) -> bool {
       material.anisotropicRoughnessV < 0.0F || material.anisotropicRoughnessV > 1.0F) {
     return false;
   }
+  if (!std::ranges::all_of(material.textureAnisotropyLevels, [](uint32_t value) {
+        return value == 0 || value == 1 || value == 2 || value == 4 || value == 8 || value == 16;
+      })) {
+    return false;
+  }
   if ((material.baseColorTextureGuid && !IsGuid(*material.baseColorTextureGuid)) ||
       (material.normalTextureGuid && !IsGuid(*material.normalTextureGuid))) {
     return false;
@@ -458,6 +485,7 @@ auto MaterialJson(const SceneMaterialDocument& material) -> Json {
       {"normalTextureOffset", material.normalTextureTransform.offset},
       {"normalTextureScale", material.normalTextureTransform.scale},
       {"normalTextureRotation", material.normalTextureTransform.rotation},
+      {"textureAnisotropyLevels", material.textureAnisotropyLevels},
       {"normalScale", material.normalScale},
   };
 }

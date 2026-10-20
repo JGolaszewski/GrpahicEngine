@@ -50,6 +50,7 @@ TEST(EditorSettingsTests, MissingFileUsesDocumentedDefaults) {
   EXPECT_EQ(loaded.Preferences.FrameLimiterHz, 0U);
   EXPECT_EQ(loaded.Preferences.ShadowMapResolution, 2048U);
   EXPECT_EQ(loaded.Preferences.MaxShadowCasters, 4U);
+  EXPECT_EQ(loaded.Preferences.MaxTextureAnisotropy, 8U);
   EXPECT_TRUE(loaded.Preferences.VSyncEnabled);
 }
 
@@ -65,6 +66,7 @@ TEST(EditorSettingsTests, SavesCategorizedJsonAndRestoresPreferences) {
   preferences.FrameLimiterHz = 120;
   preferences.ShadowMapResolution = 4096;
   preferences.MaxShadowCasters = 2;
+  preferences.MaxTextureAnisotropy = 16;
   preferences.VSyncEnabled = false;
   std::string error;
 
@@ -87,6 +89,7 @@ TEST(EditorSettingsTests, SavesCategorizedJsonAndRestoresPreferences) {
   EXPECT_EQ(loaded.Preferences.FrameLimiterHz, preferences.FrameLimiterHz);
   EXPECT_EQ(loaded.Preferences.ShadowMapResolution, preferences.ShadowMapResolution);
   EXPECT_EQ(loaded.Preferences.MaxShadowCasters, preferences.MaxShadowCasters);
+  EXPECT_EQ(loaded.Preferences.MaxTextureAnisotropy, preferences.MaxTextureAnisotropy);
   EXPECT_EQ(loaded.Preferences.VSyncEnabled, preferences.VSyncEnabled);
 }
 
@@ -106,6 +109,32 @@ TEST(EditorSettingsTests, InvalidJsonReturnsDefaultsAndDiagnostic) {
   EXPECT_TRUE(loaded.Preferences.ShowWireframePlane);
   EXPECT_FLOAT_EQ(loaded.Preferences.CameraPreviewScale, 0.35F);
   EXPECT_FLOAT_EQ(loaded.Preferences.CameraPreviewQuality, 0.25F);
+}
+
+TEST(EditorSettingsTests, ExistingVersionOneFileDefaultsMissingAnisotropySettingToEight) {
+  TemporarySettingsDirectory directory;
+  const auto path = directory.Root() / "editor-settings.json";
+  {
+    std::ofstream output(path, std::ios::binary);
+    output << R"({"version":1,"runtime":{},"rendering":{},"camera_preview":{}})";
+  }
+
+  const auto loaded = EditorPlatform::LoadEditorSettingsFile(path);
+  EXPECT_TRUE(loaded.Error.empty()) << loaded.Error;
+  EXPECT_EQ(loaded.Preferences.MaxTextureAnisotropy, 8U);
+}
+
+TEST(EditorSettingsTests, RejectsUnsupportedAnisotropySettingAndRestoresDefaults) {
+  TemporarySettingsDirectory directory;
+  const auto path = directory.Root() / "editor-settings.json";
+  {
+    std::ofstream output(path, std::ios::binary);
+    output << R"({"version":1,"runtime":{},"rendering":{"max_texture_anisotropy":3},"camera_preview":{}})";
+  }
+
+  const auto loaded = EditorPlatform::LoadEditorSettingsFile(path);
+  EXPECT_NE(loaded.Error.find("max_texture_anisotropy"), std::string::npos);
+  EXPECT_EQ(loaded.Preferences.MaxTextureAnisotropy, 8U);
 }
 
 TEST(EditorSettingsTests, UnreadableSettingsPathReturnsDefaultsAndDiagnostic) {

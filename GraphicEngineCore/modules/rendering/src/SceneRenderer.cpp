@@ -87,6 +87,10 @@ auto MaterialPropertiesFromDocument(const ::Engine::SceneMaterialDocument& docum
   };
   setTransform(properties.TextureTransforms[0], document.baseColorTextureTransform);
   setTransform(properties.TextureTransforms[1], document.normalTextureTransform);
+  for (size_t index = 0; index < properties.TextureAnisotropyLevels.size(); ++index) {
+    properties.TextureAnisotropyLevels[index] =
+        static_cast<::Engine::Renderer::TextureAnisotropy>(document.textureAnisotropyLevels[index]);
+  }
   return properties;
 }
 

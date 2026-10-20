@@ -111,13 +111,14 @@ Open **Window > Settings** for runtime, rendering, and backend controls.
 | Rendering | Camera PiP render quality | Sets preview render resolution from 5% to 100% of the camera output dimensions. |
 | Rendering | Shadow map resolution | Sets shadow map resolution between 128 and 8192 pixels. Higher values use more GPU memory and bandwidth. |
 | Rendering | Shadow-casting lights | Sets how many shadow maps the renderer produces per scene, up to its supported maximum. |
+| Rendering | Maximum texture anisotropy | Caps material texture anisotropy at 1x, 2x, 4x, 8x, or 16x; defaults to 8x. |
 | Backend | VSync | Enables or disables vertical sync when the active backend supports control; changes apply on the next present. |
 
 The **Graphics Backend** section also reports the active backend, device readiness, and
 adapter vendor/device IDs. Backend and adapter selection require restarting the
 editor; selection controls are not provided in this panel. Settings marked as
 editor preferences persist locally in
-`%LOCALAPPDATA%/GraphicEngine/editor-settings.txt`. Runtime and renderer values
+`%LOCALAPPDATA%/GraphicEngine/editor-settings.json`. Runtime and renderer values
 are applied to the current application session.
 
 ## Current editor limits

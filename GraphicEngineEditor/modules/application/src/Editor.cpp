@@ -61,6 +61,9 @@ void Editor::OnInit() {
   m_EditorPreferences = EditorPlatform::LoadEditorPreferences();
   SetFrameLimiterHz(m_EditorPreferences.FrameLimiterHz);
   if (Engine::RenderSystem* renderSystem = GetRenderSystem()) {
+    if (!renderSystem->SetMaxTextureAnisotropy(m_EditorPreferences.MaxTextureAnisotropy)) {
+      ENGINE_LOG_WARN("Render", "Saved texture anisotropy setting was rejected; using renderer defaults");
+    }
     Engine::ShadowSettings shadowSettings;
     shadowSettings.Resolution = m_EditorPreferences.ShadowMapResolution;
     shadowSettings.MaxShadowCastersPerScene = m_EditorPreferences.MaxShadowCasters;
@@ -715,7 +718,8 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
     }
     if (GetRenderSystem() != nullptr) {
       for (const auto& [textureGuid, srgb, normalMap, preserveAlphaCoverage, alphaCutoff] :
-           {std::tuple{material->baseColorTextureGuid, true, false, material->alphaMode == "mask", material->alphaCutoff},
+           {std::tuple{material->baseColorTextureGuid, true, false, material->alphaMode == "mask",
+                       material->alphaCutoff},
             std::tuple{material->normalTextureGuid, false, true, false, 0.5F}}) {
         if (!textureGuid) {
           continue;
@@ -938,8 +942,8 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
             }
             return true;
           };
-          return prepare(material.baseColorTextureGuid, true, false, material.alphaMode == "mask",
-                         material.alphaCutoff, "base-color") &&
+          return prepare(material.baseColorTextureGuid, true, false, material.alphaMode == "mask", material.alphaCutoff,
+                         "base-color") &&
                  prepare(material.normalTextureGuid, false, true, false, 0.5F, "normal");
         };
         bool texturesReady = !value->Material || prepareMaterial(*value->Material);
