@@ -684,6 +684,7 @@ void Editor::SetSnapshotAnalysisFocused(bool focused) {
       m_AnalyticalFrameWorkspaceActive = false;
       m_MainBar->SetAnalyticalFrameWorkspaceActive(false);
       m_AnalyticalFramePanel->SetFocusWorkspace(false);
+      m_PreviousFocusedWindow.clear();
     }
     if (!m_SnapshotAnalysisFocusState.Enter(m_ActiveScene, m_SelectedEntity, m_ActiveSceneDocument.GetPath(),
                                             m_PreviousFocusedWindow)) {

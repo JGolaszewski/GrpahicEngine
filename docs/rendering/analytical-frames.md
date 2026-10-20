@@ -4,6 +4,8 @@ The editor's **Analytical Frame** panel captures one authored scene camera and o
 
 Choose **Window → Analytical Frame Workspace** to enter the analysis focus view. The captured image fills the main canvas, with capture and analysis tools in a resizable right sidebar. Other editor panels are hidden while this view is active; choose **Window → Exit Analytical Frame Workspace** to restore them and the existing dock layout. The viewer displays a frozen capture. It does not continuously rerender as the scene changes.
 
+The **Window → Snapshot Analysis** action is also available from this workspace. Opening it exits Analytical Frame focus mode; exiting Snapshot Analysis returns to the regular editor layout.
+
 Capture defaults to the selected camera's authored output resolution. Enable **Resolution override** to choose a different frame size. The panel reports progress and lets you cancel between variants. If a render or measurement fails, or capture is cancelled, the panel discards all partial results.
 
 Each model stores all five linear float AOVs: final color, depth, world normal, specular lighting, and diffuse lighting. It also stores the BRDF response curve and its peak, mean, and angular integral, plus scene mean and peak luminance. Captured frames are immutable snapshots; changing the active scene does not update them.

@@ -35,7 +35,11 @@ metadata, and ROI histogram stay in a scrollable side panel. The side panel has
 a **Back to editor** action, and the Main Bar remains available with an **Exit
 Snapshot Analysis** control. Exiting returns to the previous editor view, layout, and
 focus; open frame tabs and their view state remain in memory for the next entry.
-The active scene and authored state are preserved. Choose an authored camera
+The active scene and authored state are preserved. Entering from Analytical
+Frame focus mode exits that mode first. Returning from Snapshot Analysis
+restores the regular editor layout.
+
+Choose an authored camera
 from the scrollable capture controls above the frame tabs. The controls use a
 bounded part of the window height so the canvas and analysis tools remain
 visible when the editor window is resized. The focused workspace does not
