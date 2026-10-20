@@ -76,59 +76,33 @@ TEST(SceneRendererShadowTests, BuildsDirectionalSpotAndSixPointFaceViewsWithStab
   EXPECT_FLOAT_EQ(lights[0].ConeParams.z, 0.0F);
 }
 
-TEST(SceneRendererShadowTests, DirectionalProjectionTracksVisibleSceneGeometryBounds) {
+TEST(SceneRendererShadowTests, DirectionalProjectionUsesCameraFrustumAndReportsFitDiagnostics) {
   Engine::Scene scene;
-  (void)AddLight(scene, Engine::Ecs::LightType::Directional);
-  Engine::Renderer::ModelResourceLibrary resources;
-  Engine::Renderer::Submesh submesh;
-  submesh.BoundsMin = {-12.0F, -8.0F, -5.0F};
-  submesh.BoundsMax = {12.0F, 8.0F, 5.0F};
-  resources.Register("bounds-test", {submesh});
+  const Engine::EntityHandle light = AddLight(scene, Engine::Ecs::LightType::Directional);
+  Engine::Renderer::RenderView cameraView;
+  cameraView.CameraPosition = {0.0F, 0.0F, -10.0F};
+  cameraView.CameraForward = {0.0F, 0.0F, 1.0F};
+  cameraView.CameraRight = {1.0F, 0.0F, 0.0F};
+  cameraView.CameraUp = {0.0F, 1.0F, 0.0F};
+  cameraView.CameraVerticalFovRadians = DirectX::XMConvertToRadians(60.0F);
+  cameraView.CameraAspectRatio = 16.0F / 9.0F;
+  cameraView.CameraNearPlane = 0.1F;
+  cameraView.CameraFarPlane = 500.0F;
+  std::vector<Engine::Renderer::RenderView*> sceneViews{&cameraView};
 
-  std::vector<std::unique_ptr<Engine::Renderer::RenderView>> ownedViews;
-  ownedViews.push_back(std::make_unique<Engine::Renderer::RenderView>());
-  std::vector<Engine::Renderer::RenderView*> views{ownedViews.front().get()};
-  Engine::SceneRenderer::BuildShadowData(&scene, views, 0, 1, &resources);
-  const DirectX::XMMATRIX emptySceneProjection = views[0]->ViewProjection;
+  Engine::Renderer::RenderView shadowView;
+  shadowView.ViewType = Engine::Renderer::RenderView::Type::Shadow;
+  std::vector<Engine::Renderer::RenderView*> shadowViews{&shadowView};
+  std::vector<Engine::Renderer::DirectionalShadowDiagnostics> diagnostics;
+  Engine::SceneRenderer::BuildShadowData(&scene, shadowViews, 0, 1, nullptr, sceneViews, 1024, &diagnostics);
 
-  (void)scene.QueueCreate("Mesh", Engine::InvalidEntityHandle, Engine::Scene::EntityPreset::Mesh);
-  const auto created = scene.sync();
-  ASSERT_EQ(created.size(), 1U);
-  ASSERT_TRUE(created.front().Outcome);
-
-  Engine::Ecs::MeshRenderer mesh;
-  mesh.ModelGuid = "bounds-test";
-  (void)scene.QueueSet(created.front().Entity, mesh);
-
-  Engine::Ecs::LocalTransform transform;
-  transform.Position = {500.0F, 0.0F, 0.0F};
-  (void)scene.QueueSet(created.front().Entity, transform);
-  (void)scene.sync();
-
-  Engine::SceneRenderer::BuildShadowData(&scene, views, 0, 1, &resources);
-
-  EXPECT_FALSE(DirectX::XMVector4EqualInt(emptySceneProjection.r[0], views[0]->ViewProjection.r[0]) &&
-               DirectX::XMVector4EqualInt(emptySceneProjection.r[1], views[0]->ViewProjection.r[1]) &&
-               DirectX::XMVector4EqualInt(emptySceneProjection.r[2], views[0]->ViewProjection.r[2]) &&
-               DirectX::XMVector4EqualInt(emptySceneProjection.r[3], views[0]->ViewProjection.r[3]));
-  EXPECT_NE(views[0]->ShadowLight, Engine::InvalidEntityHandle);
-
-  const DirectX::XMMATRIX meshWorld =
-      DirectX::XMLoadFloat4x4(&submesh.LocalTransform) *
-      DirectX::XMLoadFloat4x4(&scene.World().Get<Engine::Ecs::WorldTransform>(created.front().Entity)->Matrix);
-  for (uint32_t corner = 0; corner < 8; ++corner) {
-    const DirectX::XMFLOAT3 localPoint{(corner & 1U) != 0U ? submesh.BoundsMax.x : submesh.BoundsMin.x,
-                                       (corner & 2U) != 0U ? submesh.BoundsMax.y : submesh.BoundsMin.y,
-                                       (corner & 4U) != 0U ? submesh.BoundsMax.z : submesh.BoundsMin.z};
-    const DirectX::XMVECTOR clip = DirectX::XMVector3TransformCoord(
-        DirectX::XMVector3TransformCoord(DirectX::XMLoadFloat3(&localPoint), meshWorld), views[0]->ViewProjection);
-    EXPECT_GE(DirectX::XMVectorGetX(clip), -1.0F);
-    EXPECT_LE(DirectX::XMVectorGetX(clip), 1.0F);
-    EXPECT_GE(DirectX::XMVectorGetY(clip), -1.0F);
-    EXPECT_LE(DirectX::XMVectorGetY(clip), 1.0F);
-    EXPECT_GE(DirectX::XMVectorGetZ(clip), 0.0F);
-    EXPECT_LE(DirectX::XMVectorGetZ(clip), 1.0F);
-  }
+  ASSERT_EQ(diagnostics.size(), 1U);
+  EXPECT_EQ(diagnostics[0].Light, light);
+  EXPECT_EQ(diagnostics[0].MapResolution, 1024U);
+  EXPECT_GT(diagnostics[0].CoverageWidth, 0.0F);
+  EXPECT_GT(diagnostics[0].CoverageDepth, 100.0F);
+  EXPECT_GT(diagnostics[0].TexelWorldSize, 0.0F);
+  EXPECT_FLOAT_EQ(diagnostics[0].Bias, 0.0015F);
 }
 
 TEST(SceneRendererShadowTests, DirectionalProjectionIgnoresGeometryOutsideSceneCameras) {

@@ -317,6 +317,8 @@ auto ForwardPass::Execute(nvrhi::ICommandList* cmd, const ::Engine::Renderer::Re
       lightData.Lights[i] = view->Lights.at(i);
     }
     lightData.LightCount = lightCount;
+    lightData.EnvironmentEnabled = view->Environment.Preset == Engine::EnvironmentPreset::Studio ? 1U : 0U;
+    lightData.EnvironmentIntensity = view->Environment.Intensity;
     cmd->writeBuffer(view->LightBuffer, &lightData, sizeof(lightData));
     ctx.GetFrameContext().GetDiagnostics().UploadBytes += sizeof(lightData);
     nvrhi::BindingSetHandle sceneBindings =

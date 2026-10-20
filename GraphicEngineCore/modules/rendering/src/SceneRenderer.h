@@ -18,7 +18,9 @@
 #include "rendering/include/renderer/Light.h"
 #include "rendering/include/renderer/ModelResourceLibrary.h"
 #include "rendering/include/renderer/RenderResources.h"
+#include "rendering/include/renderer/ShadowDiagnostics.h"
 #include "rendering/src/MaterialSystem.h"
+#include "rendering/src/EnvironmentLighting.h"
 #include "rendering/src/PipelineCache.h"
 #include "rendering/src/RenderPacket.h"
 #include "rendering/src/ShaderFactory.h"
@@ -76,7 +78,8 @@ public:
                               uint32_t firstShadowSlot, uint32_t maxShadowedLights,
                               const ::Engine::Renderer::ModelResourceLibrary* modelResources = nullptr,
                               const std::vector<::Engine::Renderer::RenderView*>& sceneViews = {},
-                              uint32_t shadowMapResolution = 2048);
+                              uint32_t shadowMapResolution = 2048,
+                              std::vector<::Engine::Renderer::DirectionalShadowDiagnostics>* diagnostics = nullptr);
   static uint32_t CountShadowCasters(const Engine::Scene* scene, uint32_t limit);
   /// Counts depth views needed by the selected shadow-casting lights (point lights use six faces).
   /// @param scene Scene whose light components are counted.
@@ -138,6 +141,8 @@ private:
     nvrhi::BindingSetHandle Bindings;
   };
   std::vector<SceneBindingCache> m_SceneBindingCaches;
+  ::Engine::Renderer::EnvironmentLightingResources m_EnvironmentLighting;
+  bool m_EnvironmentLightingReady = false;
   nvrhi::BindingLayoutHandle m_PerObjectBindingLayout;
   nvrhi::BufferHandle m_PerObjectBuffer;
   nvrhi::BindingSetHandle m_PerObjectBindingSet;
@@ -155,7 +160,7 @@ private:
   uint64_t m_DebugTriangleBufferCapacity = 0;
 
   ::Engine::Renderer::MaterialSystem* m_MaterialSystem = nullptr;
-  std::function<std::shared_ptr<::Engine::Renderer::TextureResource>(const std::string&, bool, bool, bool)>
+  std::function<std::shared_ptr<::Engine::Renderer::TextureResource>(const std::string&, bool, bool, bool, float)>
       m_AssetTextureResolver;
   const ::Engine::Renderer::ModelResourceLibrary* m_ModelResources = nullptr;
   using MaterialOverrideKey = std::tuple<uintptr_t, uint32_t, uint32_t, std::string, int32_t, uintptr_t>;

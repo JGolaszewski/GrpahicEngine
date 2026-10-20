@@ -3,6 +3,7 @@
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp>
 
+#include <array>
 #include <chrono>
 #include <cstdio>
 #include <filesystem>
@@ -64,6 +65,7 @@ TEST(ScenePersistenceTests, RoundTripsFieldsAndRejectsTraversalWithoutOverwritin
   material.normalTextureTransform.offset = {-0.25F, 0.5F};
   material.normalTextureTransform.scale = {0.5F, 2.0F};
   material.normalTextureTransform.rotation = -0.5F;
+  material.textureAnisotropyLevels = {0, 1, 2, 8, 16};
   entity.material = material;
   document.entities.push_back(entity);
 
@@ -106,7 +108,34 @@ TEST(ScenePersistenceTests, RoundTripsFieldsAndRejectsTraversalWithoutOverwritin
   EXPECT_EQ(loaded.document.entities.front().material->normalTextureTransform.scale,
             (std::array<float, 2>{0.5F, 2.0F}));
   EXPECT_FLOAT_EQ(loaded.document.entities.front().material->normalTextureTransform.rotation, -0.5F);
+  EXPECT_EQ(loaded.document.entities.front().material->textureAnisotropyLevels,
+            (std::array<uint32_t, 5>{0, 1, 2, 8, 16}));
   EXPECT_TRUE(loaded.document.entities.front().hasMeshRenderer);
+}
+
+TEST(ScenePersistenceTests, MissingTextureAnisotropyValuesDefaultToGlobalCapAndInvalidValuesAreRejected) {
+  TemporaryProject project;
+  const auto path = project.Root() / "anisotropy.scene.json";
+  {
+    std::ofstream scene(path, std::ios::binary | std::ios::trunc);
+    scene
+        << R"({"schemaVersion":3,"unitsPerMeter":1.0,"entities":[{"id":1,"name":"M","primitiveType":"cube","material":{}}]})";
+    ASSERT_TRUE(scene.good());
+  }
+  auto loaded = Engine::SceneSerializer::Load(path);
+  ASSERT_TRUE(loaded) << loaded.error;
+  ASSERT_TRUE(loaded.document.entities.front().material.has_value());
+  EXPECT_EQ(loaded.document.entities.front().material->textureAnisotropyLevels, (std::array<uint32_t, 5>{}));
+
+  {
+    std::ofstream scene(path, std::ios::binary | std::ios::trunc);
+    scene
+        << R"({"schemaVersion":3,"unitsPerMeter":1.0,"entities":[{"id":1,"name":"M","primitiveType":"cube","material":{"textureAnisotropyLevels":[0,1,3,8,16]}}]})";
+    ASSERT_TRUE(scene.good());
+  }
+  loaded = Engine::SceneSerializer::Load(path);
+  EXPECT_FALSE(loaded);
+  EXPECT_NE(loaded.error.find("textureAnisotropyLevels"), std::string::npos);
 }
 
 TEST(ScenePersistenceTests, LegacyAuthoredMeshSettingsRestoreMeshRendererPresence) {

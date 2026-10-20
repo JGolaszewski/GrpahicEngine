@@ -15,6 +15,7 @@ struct EditorPreferences {
   float CameraPreviewQuality = 0.25F;
   std::uint32_t ShadowMapResolution = 2048;
   std::uint32_t MaxShadowCasters = 4;
+  std::uint32_t MaxTextureAnisotropy = 8;
   bool VSyncEnabled = true;
 };
 

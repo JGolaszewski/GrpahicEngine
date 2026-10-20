@@ -23,17 +23,25 @@ void RenderView::Initialize(const Engine::Scene* scene, const Engine::Renderer::
   const DirectX::XMVECTOR rotation = DirectX::XMQuaternionNormalize(DirectX::XMLoadFloat4(&rotationValue));
   const DirectX::XMVECTOR position = DirectX::XMLoadFloat3(&positionValue);
   const DirectX::XMVECTOR forward = DirectX::XMVector3Rotate(DirectX::XMVectorSet(0.0F, 0.0F, 1.0F, 0.0F), rotation);
+  const DirectX::XMVECTOR right = DirectX::XMVector3Rotate(DirectX::XMVectorSet(1.0F, 0.0F, 0.0F, 0.0F), rotation);
   const DirectX::XMVECTOR up = DirectX::XMVector3Rotate(DirectX::XMVectorSet(0.0F, 1.0F, 0.0F, 0.0F), rotation);
   DirectX::XMStoreFloat3(&CameraPosition, position);
+  DirectX::XMStoreFloat3(&CameraForward, forward);
+  DirectX::XMStoreFloat3(&CameraRight, right);
+  DirectX::XMStoreFloat3(&CameraUp, up);
 
   float aspect = 1.0F;
   if (ViewportHeight > 0) {
     aspect = static_cast<float>(ViewportWidth) / static_cast<float>(ViewportHeight);
   }
+  CameraVerticalFovRadians = DirectX::XMConvertToRadians(camera.FieldOfViewDegrees);
+  CameraAspectRatio = aspect;
+  CameraNearPlane = camera.NearPlane;
+  CameraFarPlane = camera.FarPlane;
 
   ViewMatrix = DirectX::XMMatrixLookToLH(position, forward, up);
-  ProjectionMatrix = DirectX::XMMatrixPerspectiveFovLH(DirectX::XMConvertToRadians(camera.FieldOfViewDegrees), aspect,
-                                                       camera.NearPlane, camera.FarPlane);
+  ProjectionMatrix =
+      DirectX::XMMatrixPerspectiveFovLH(CameraVerticalFovRadians, aspect, camera.NearPlane, camera.FarPlane);
   ViewProjection = ViewMatrix * ProjectionMatrix;
   ExtractFrustumPlanes();
 }

@@ -43,11 +43,30 @@ void EngineSettingsPanel::Draw() {
   ImGui::SetItemTooltip("0 disables the engine frame limiter. VSync may still limit presentation.");
 
   ImGui::SeparatorText("Editor Rendering");
+  Engine::RenderSystem* renderSystem = m_Application->GetRenderSystem();
   if (m_GetPreferences && m_SetPreferences) {
     auto preferences = m_GetPreferences();
     bool changed = ImGui::Checkbox("Show light gizmos", &preferences.ShowLightGizmos);
     changed |= ImGui::Checkbox("Show camera frustums", &preferences.ShowCameraFrustums);
     changed |= ImGui::Checkbox("Show wireframe plane", &preferences.ShowWireframePlane);
+    constexpr int anisotropyValues[] = {1, 2, 4, 8, 16};
+    constexpr const char* anisotropyLabels[] = {"1x", "2x", "4x", "8x", "16x"};
+    int anisotropyIndex = 3;
+    for (int index = 0; index < 5; ++index) {
+      if (preferences.MaxTextureAnisotropy == static_cast<std::uint32_t>(anisotropyValues[index])) {
+        anisotropyIndex = index;
+        break;
+      }
+    }
+    if (renderSystem != nullptr && ImGui::Combo("Maximum texture anisotropy", &anisotropyIndex, anisotropyLabels, 5)) {
+      const auto maximum = static_cast<std::uint32_t>(anisotropyValues[anisotropyIndex]);
+      if (renderSystem->SetMaxTextureAnisotropy(maximum)) {
+        preferences.MaxTextureAnisotropy = maximum;
+        changed = true;
+      }
+    }
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) // Dear ImGui formats text through its documented variadic API.
+    ImGui::SetItemTooltip("Caps anisotropic filtering requests made by material texture slots.");
     ImGui::SeparatorText("Preview");
     float displayScale = preferences.CameraPreviewScale * 100.0F;
     float renderQuality = preferences.CameraPreviewQuality * 100.0F;
@@ -63,7 +82,6 @@ void EngineSettingsPanel::Draw() {
       m_SetPreferences(preferences);
     }
   }
-  Engine::RenderSystem* renderSystem = m_Application->GetRenderSystem();
   if (renderSystem != nullptr) {
     ImGui::SeparatorText("Shadows");
     Engine::ShadowSettings shadowSettings = renderSystem->GetShadowSettings();
@@ -91,6 +109,26 @@ void EngineSettingsPanel::Draw() {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) // Dear ImGui formats text through its documented variadic API.
     ImGui::SetItemTooltip("Maximum shadow maps rendered per scene. The current renderer supports up to %u.",
                           Engine::MaxShadowedLights);
+
+    if (ImGui::TreeNode("Directional shadow fit diagnostics")) {
+      const auto& diagnostics = renderSystem->GetDirectionalShadowDiagnostics();
+      if (diagnostics.empty()) {
+        ImGui::TextDisabled("No directional shadow fit is active in the latest frame.");
+      }
+      for (const auto& fit : diagnostics) {
+        ImGui::PushID(static_cast<int>(fit.Light.Index));
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) // ImGui formats diagnostic numbers through its documented
+        // variadic API.
+        ImGui::Text("Light %u", fit.Light.Index);
+        ImGui::Text("Coverage: %.2f x %.2f x %.2f world units", fit.CoverageWidth, fit.CoverageWidth,
+                    fit.CoverageDepth);
+        ImGui::Text("Map: %u x %u px (%.4f world units / texel)", fit.MapResolution, fit.MapResolution,
+                    fit.TexelWorldSize);
+        ImGui::Text("Depth bias: %.5f", fit.Bias);
+        ImGui::PopID();
+      }
+      ImGui::TreePop();
+    }
   } else {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) // Dear ImGui formats text through its documented variadic API.
     ImGui::TextDisabled("Renderer settings are unavailable.");

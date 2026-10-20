@@ -1,5 +1,6 @@
 #include "rendering/include/RenderSystem.h"
 #include "assets/include/AssetManager.h"
+#include "rendering/include/renderer/Material.h"
 #include "rendering/include/renderer/ModelResourceLibrary.h"
 #include "rendering/src/MaterialSystem.h"
 #include "rendering/src/ResourceManager.h"
@@ -174,8 +175,8 @@ bool RenderSystem::PrepareAssetTexture(const std::string& guid, bool srgb, std::
     error = "texture GUID is registered without a decoded image or generation: " + guid;
     return false;
   }
-  auto texture = GetOrCreateTexture(guid, *generation, *image, srgb, error, nullptr, normalMap,
-                                    preserveAlphaCoverage, alphaCutoff);
+  auto texture = GetOrCreateTexture(guid, *generation, *image, srgb, error, nullptr, normalMap, preserveAlphaCoverage,
+                                    alphaCutoff);
   if (texture == nullptr) {
     return false;
   }
@@ -231,6 +232,11 @@ void RenderSystem::BeginFrame() {
   }
   m_LastUploadFailure.clear();
 
+  if (m_TextureAnisotropyUpdatePending && m_MaterialSystem != nullptr) {
+    m_MaterialSystem->SetMaxTextureAnisotropy(m_MaxTextureAnisotropy);
+    m_TextureAnisotropyUpdatePending = false;
+  }
+
   m_CommandList->Handle->open();
   m_FrameActive = true;
   m_RenderBackend->BeginGpuEvent(L"RenderFrame");
@@ -261,6 +267,11 @@ void RenderSystem::SubmitViews(const std::vector<Engine::ViewportBinding>& views
     view->Initialize(binding.TargetScene, binding.Camera, binding.TargetViewport);
     view->TargetScene = binding.TargetScene;
     view->RenderMode = binding.RenderMode;
+    view->Environment = binding.Environment;
+    if (!std::isfinite(view->Environment.Intensity)) {
+      view->Environment.Intensity = 0.0F;
+    }
+    view->Environment.Intensity = (std::max)(view->Environment.Intensity, 0.0F);
     if (view->RenderMode == Engine::ViewportBinding::Mode::Editor) {
       view->DebugSettings = binding.DebugSettings;
     }
@@ -275,6 +286,7 @@ void RenderSystem::SubmitViews(const std::vector<Engine::ViewportBinding>& views
   bb.SetSceneViews(std::move(sceneViews));
 
   std::vector<::Engine::Renderer::RenderView*> shadowViews;
+  m_DirectionalShadowDiagnostics.clear();
   shadowViews.reserve(scenes.size() * m_ShadowSettings.MaxShadowCastersPerScene);
   for (auto& scene : scenes) {
     const uint32_t firstShadowSlot = static_cast<uint32_t>(shadowViews.size());
@@ -295,7 +307,8 @@ void RenderSystem::SubmitViews(const std::vector<Engine::ViewportBinding>& views
       }
     }
     ::Engine::SceneRenderer::BuildShadowData(scene, shadowViews, firstShadowSlot, shadowCasterCount,
-                                             m_ModelResources.get(), sceneCameraViews, m_ShadowSettings.Resolution);
+                                             m_ModelResources.get(), sceneCameraViews, m_ShadowSettings.Resolution,
+                                             &m_DirectionalShadowDiagnostics);
   }
   bb.SetShadowViews(std::move(shadowViews));
   bb.Set<uint32_t>("ShadowMapSize", m_ShadowSettings.Resolution);
@@ -347,6 +360,18 @@ auto RenderSystem::SetShadowSettings(const ShadowSettings& settings) noexcept ->
   }
 
   m_ShadowSettings = settings;
+  return true;
+}
+
+auto RenderSystem::SetMaxTextureAnisotropy(uint32_t maxAnisotropy) noexcept -> bool {
+  if (!::Engine::Renderer::IsSupportedTextureAnisotropy(maxAnisotropy)) {
+    ENGINE_LOG_ERROR("Render", "Texture anisotropy setting rejected | max_anisotropy: {}", maxAnisotropy);
+    return false;
+  }
+  if (maxAnisotropy != m_MaxTextureAnisotropy) {
+    m_MaxTextureAnisotropy = maxAnisotropy;
+    m_TextureAnisotropyUpdatePending = true;
+  }
   return true;
 }
 
@@ -535,9 +560,9 @@ auto RenderSystem::ResolveImportedTexture(const std::string& guid, uint64_t gene
     return false;
   }
   const auto& image = model.images.at(static_cast<size_t>(imageIndex));
-  destination = m_ResourceManager->GetOrCreateTexture(guid + "/texture/" + std::to_string(textureIndex), generation,
-                                                      image, srgb, error, &texture, normalMap, preserveAlphaCoverage,
-                                                      alphaCutoff);
+  destination =
+      m_ResourceManager->GetOrCreateTexture(guid + "/texture/" + std::to_string(textureIndex), generation, image, srgb,
+                                            error, &texture, normalMap, preserveAlphaCoverage, alphaCutoff);
   return destination != nullptr;
 }
 
@@ -796,7 +821,8 @@ void RenderSystem::EndFrame() {
 }
 
 auto RenderSystem::BeginFinalRender(Engine::Scene& scene, const ::Engine::Renderer::CameraView& camera, uint32_t width,
-                                    uint32_t height, const Engine::FinalColorPostProcess& postProcess)
+                                    uint32_t height, const Engine::FinalColorPostProcess& postProcess,
+                                    const Engine::EnvironmentLightingSettings& environment)
     -> Engine::Result<FinalRenderTicket> {
   if (m_FrameActive || (m_FinalReadbackCapture != nullptr)) {
     return std::unexpected(Engine::MakeError("final rendering requires an idle render system"));
@@ -868,6 +894,7 @@ auto RenderSystem::BeginFinalRender(Engine::Scene& scene, const ::Engine::Render
   binding.TargetScene = &scene;
   binding.OutputWidth = width;
   binding.OutputHeight = height;
+  binding.Environment = environment;
   m_FinalReadbackCapture = std::move(capture);
   BeginFrame();
   if (!m_FrameActive) {
@@ -964,9 +991,10 @@ auto RenderSystem::CancelFinalRender(FinalRenderTicket ticket) -> Engine::Status
 }
 
 auto RenderSystem::RenderFinal(Engine::Scene& scene, const ::Engine::Renderer::CameraView& camera, uint32_t width,
-                               uint32_t height, const Engine::FinalColorPostProcess& postProcess)
+                               uint32_t height, const Engine::FinalColorPostProcess& postProcess,
+                               const Engine::EnvironmentLightingSettings& environment)
     -> Engine::Result<Engine::RenderOutput> {
-  auto ticket = BeginFinalRender(scene, camera, width, height, postProcess);
+  auto ticket = BeginFinalRender(scene, camera, width, height, postProcess, environment);
   if (!ticket) {
     return std::unexpected(ticket.error());
   }

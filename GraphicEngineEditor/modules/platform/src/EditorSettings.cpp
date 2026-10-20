@@ -52,6 +52,18 @@ auto ReadUnsigned(const Json& object, const char* key, std::uint32_t fallback, s
   const auto bounded = std::clamp(parsed, static_cast<std::int64_t>(minimum), static_cast<std::int64_t>(maximum));
   return static_cast<std::uint32_t>(bounded);
 }
+
+auto ReadAnisotropy(const Json& object, const char* key, std::uint32_t fallback) -> std::uint32_t {
+  const auto value = ReadUnsigned(object, key, fallback, 1, 16);
+  if (value != 1 && value != 2 && value != 4 && value != 8 && value != 16) {
+    throw std::runtime_error(std::string("expected one of 1, 2, 4, 8, or 16 for '") + key + "'");
+  }
+  return value;
+}
+
+auto NormalizeAnisotropy(std::uint32_t value) -> std::uint32_t {
+  return value == 1 || value == 2 || value == 4 || value == 8 || value == 16 ? value : 8;
+}
 } // namespace
 
 auto LoadEditorSettingsFile(const std::filesystem::path& path) -> EditorSettingsLoadResult {
@@ -94,6 +106,7 @@ auto LoadEditorSettingsFile(const std::filesystem::path& path) -> EditorSettings
     result.Preferences.ShowWireframePlane = ReadBoolean(rendering, "show_wireframe_plane", true);
     result.Preferences.ShadowMapResolution = ReadUnsigned(rendering, "shadow_map_resolution", 2048, 128, 8192);
     result.Preferences.MaxShadowCasters = ReadUnsigned(rendering, "max_shadow_casters", 4, 0, 4);
+    result.Preferences.MaxTextureAnisotropy = ReadAnisotropy(rendering, "max_texture_anisotropy", 8);
     result.Preferences.VSyncEnabled = ReadBoolean(rendering, "vsync_enabled", true);
     result.Preferences.CameraPreviewScale = ReadPercentage(preview, "display_scale", 0.35F, 0.1F, 0.8F);
     result.Preferences.CameraPreviewQuality = ReadPercentage(preview, "render_quality", 0.25F, 0.05F, 1.0F);
@@ -128,6 +141,7 @@ auto SaveEditorSettingsFile(const std::filesystem::path& path, const EditorPrefe
                            {"show_wireframe_plane", preferences.ShowWireframePlane},
                            {"shadow_map_resolution", std::clamp(preferences.ShadowMapResolution, 128U, 8192U)},
                            {"max_shadow_casters", std::min(preferences.MaxShadowCasters, 4U)},
+                           {"max_texture_anisotropy", NormalizeAnisotropy(preferences.MaxTextureAnisotropy)},
                            {"vsync_enabled", preferences.VSyncEnabled}}},
                          {"camera_preview",
                           {{"display_scale", std::clamp(preferences.CameraPreviewScale, 0.1F, 0.8F)},

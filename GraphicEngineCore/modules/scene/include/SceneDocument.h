@@ -53,6 +53,7 @@ struct SceneMaterialDocument {
   uint32_t normalTexCoord = 0;
   SceneMaterialTextureTransform baseColorTextureTransform;
   SceneMaterialTextureTransform normalTextureTransform;
+  std::array<uint32_t, 5> textureAnisotropyLevels{}; ///< Per-slot requests: 0 means Global cap, otherwise 1/2/4/8/16.
   /// Compares every serialized material property.
   /// @param other Material document to compare with.
   /// @return True when all properties match.

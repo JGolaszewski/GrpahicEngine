@@ -86,6 +86,7 @@ auto RenderDevice::CreateTexture(const Engine::ImportedImage& image, bool srgb, 
       .setMinFilter(minLinear)
       .setMagFilter(magLinear)
       .setMipFilter(mipLinear);
+  TextureBackendAccess::SetSamplerDesc(*resource, samplerDesc);
   auto createdSampler = m_Device->createSampler(samplerDesc);
   TextureBackendAccess::SetSampler(*resource, createdSampler);
   if (createdSampler == nullptr) {

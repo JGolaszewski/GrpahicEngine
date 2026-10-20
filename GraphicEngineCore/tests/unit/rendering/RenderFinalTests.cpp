@@ -21,6 +21,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
@@ -728,5 +729,85 @@ TEST(RenderFinalTests, WARPAllLightTypesChangeReceivingGeometryWhenShadowsAreEna
     EXPECT_GT(darkenedPixels, 4U) << lightNames[lightIndex] << " shadows should darken receiver pixels";
     EXPECT_GT(largestDarkening, 0.1F) << lightNames[lightIndex] << " shadow darkening should be visible";
   }
+}
+
+TEST(RenderFinalTests, WARPSplitSumEnvironmentAffectsDielectricAndMetalOnlyWhenEnabledAndIsDeterministic) {
+  EngineTests::WarpDevice device;
+  if (!device.Initialize()) {
+    GTEST_SKIP() << "D3D11 WARP device could not be created on this host";
+  }
+  EngineTests::WarpRenderBackend backend(device.GetDevice());
+  Engine::RenderSystem renderer(&backend);
+  ASSERT_TRUE(renderer.IsValid());
+
+  Engine::Renderer::MaterialProperties dielectricProperties;
+  dielectricProperties.BaseColor = {0.75F, 0.4F, 0.2F, 1.0F};
+  dielectricProperties.Roughness = 0.35F;
+  auto dielectricMaterial = renderer.CreateMaterial(dielectricProperties);
+  ASSERT_NE(dielectricMaterial, nullptr);
+  ASSERT_TRUE(renderer.CreatePrimitive(Engine::PrimitiveShape::Sphere, dielectricMaterial));
+
+  Engine::Renderer::MaterialProperties metalProperties;
+  metalProperties.BaseColor = {0.8F, 0.7F, 0.5F, 1.0F};
+  metalProperties.Metallic = 1.0F;
+  metalProperties.Roughness = 0.25F;
+  auto metalMaterial = renderer.CreateMaterial(metalProperties);
+  ASSERT_NE(metalMaterial, nullptr);
+  ASSERT_TRUE(renderer.CreatePrimitive(Engine::PrimitiveShape::Cube, metalMaterial));
+
+  Engine::Scene scene;
+  (void)scene.QueueCreate("Dielectric sphere");
+  (void)scene.QueueCreate("Metal cube");
+  const auto created = scene.sync();
+  ASSERT_EQ(created.size(), 2U);
+  ASSERT_TRUE(created.at(0).Outcome);
+  ASSERT_TRUE(created.at(1).Outcome);
+  (void)scene.QueueAdd(created.at(0).Entity, Engine::Ecs::MeshRenderer{.PrimitiveType = "sphere"});
+  (void)scene.QueueAdd(created.at(1).Entity, Engine::Ecs::MeshRenderer{.PrimitiveType = "cube"});
+  Engine::Ecs::LocalTransform dielectricTransform;
+  dielectricTransform.Position = {-1.1F, 0.0F, 0.0F};
+  dielectricTransform.Scale = {1.3F, 1.3F, 1.3F};
+  (void)scene.QueueSet(created.at(0).Entity, dielectricTransform);
+  Engine::Ecs::LocalTransform metalTransform;
+  metalTransform.Position = {1.1F, 0.0F, 0.0F};
+  metalTransform.Scale = {1.3F, 1.3F, 1.3F};
+  (void)scene.QueueSet(created.at(1).Entity, metalTransform);
+  ASSERT_TRUE(scene.Update(0.0F));
+
+  Engine::Renderer::CameraView camera;
+  camera.Position = {0.0F, 0.0F, -6.0F};
+  constexpr uint32_t imageSize = 64;
+  const Engine::EnvironmentLightingSettings disabled;
+  const Engine::EnvironmentLightingSettings studio{Engine::EnvironmentPreset::Studio, 1.0F};
+  const auto disabledFirst = renderer.RenderFinal(scene, camera, imageSize, imageSize);
+  ASSERT_TRUE(disabledFirst.has_value()) << (disabledFirst.has_value() ? "" : disabledFirst.error().Message);
+  const auto disabledSecond = renderer.RenderFinal(scene, camera, imageSize, imageSize);
+  ASSERT_TRUE(disabledSecond.has_value()) << (disabledSecond.has_value() ? "" : disabledSecond.error().Message);
+  const auto enabledFirst = renderer.RenderFinal(scene, camera, imageSize, imageSize, {}, studio);
+  ASSERT_TRUE(enabledFirst.has_value()) << (enabledFirst.has_value() ? "" : enabledFirst.error().Message);
+  const auto enabledSecond = renderer.RenderFinal(scene, camera, imageSize, imageSize, {}, studio);
+  ASSERT_TRUE(enabledSecond.has_value()) << (enabledSecond.has_value() ? "" : enabledSecond.error().Message);
+
+  const auto disabledDiffuse = disabledFirst->GetPixels(Engine::RenderAov::DiffuseLighting);
+  const auto disabledSpecular = disabledFirst->GetPixels(Engine::RenderAov::SpecularLighting);
+  const auto enabledDiffuse = enabledFirst->GetPixels(Engine::RenderAov::DiffuseLighting);
+  const auto enabledSpecular = enabledFirst->GetPixels(Engine::RenderAov::SpecularLighting);
+  ASSERT_EQ(disabledDiffuse.size(), enabledDiffuse.size());
+  ASSERT_EQ(disabledSpecular.size(), enabledSpecular.size());
+  EXPECT_TRUE(std::ranges::equal(disabledFirst->GetPixels(Engine::RenderAov::FinalColor),
+                                 disabledSecond->GetPixels(Engine::RenderAov::FinalColor)));
+  EXPECT_TRUE(std::ranges::equal(enabledFirst->GetPixels(Engine::RenderAov::FinalColor),
+                                 enabledSecond->GetPixels(Engine::RenderAov::FinalColor)));
+  const auto totalDifference = [](std::span<const float> withEnvironment,
+                                  std::span<const float> withoutEnvironment) -> float {
+    float difference = 0.0F;
+    for (size_t channel = 0; channel < withEnvironment.size(); ++channel) {
+      difference += std::abs(withEnvironment[channel] - withoutEnvironment[channel]);
+    }
+    return difference;
+  };
+  EXPECT_GT(totalDifference(enabledDiffuse, disabledDiffuse), 1.0F);
+  EXPECT_GT(totalDifference(enabledSpecular, disabledSpecular), 1.0F);
+  EXPECT_EQ(disabled.Preset, Engine::EnvironmentPreset::Disabled);
 }
 } // namespace
