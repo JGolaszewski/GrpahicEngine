@@ -150,6 +150,8 @@ public:
   /// @param srgb Whether the texture uses sRGB sampling.
   /// @param error Receives a failure description when creation fails.
   /// @param sampler Optional sampler settings from the imported texture.
+  /// @param normalMap Whether generated mip levels should preserve normal direction.
+  /// @param preserveAlphaCoverage Whether generated mip levels should preserve masked alpha coverage.
   /// @return GPU texture resource, or an empty pointer on failure.
   std::shared_ptr<::Engine::Renderer::TextureResource>
   GetOrCreateTexture(const std::string& identity, uint64_t generation, const ImportedImage& image, bool srgb,
