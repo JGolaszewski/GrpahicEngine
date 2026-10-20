@@ -1,4 +1,5 @@
 #include "../../support/WarpRenderBackend.h"
+#include "rendering/include/RenderSystem.h"
 #include "rendering/include/renderer/Material.h"
 #include "rendering/src/MaterialBackend.h"
 #include "rendering/src/MaterialSystem.h"
@@ -118,11 +119,15 @@ TEST(TextureAnisotropyTests, WarpSamplerCacheAndGlobalChangesRefreshExistingAndF
 
   Engine::Renderer::MaterialProperties properties;
   properties.TextureAnisotropyLevels[0] = TextureAnisotropy::X16;
+  properties.TextureAnisotropyLevels[2] = TextureAnisotropy::X4;
   Engine::Renderer::MaterialSystem materialSystem(device, {}, {}, fallbackColor, fallbackNormal);
   auto existing = materialSystem.CreateMaterial(properties);
   ASSERT_NE(existing, nullptr);
   ASSERT_NE(GetSamplerAtSlot(*existing, 0), nullptr);
   EXPECT_FLOAT_EQ(GetSamplerAtSlot(*existing, 0)->getDesc().maxAnisotropy, 8.0F);
+  ASSERT_NE(GetSamplerAtSlot(*existing, 2), nullptr);
+  EXPECT_FLOAT_EQ(GetSamplerAtSlot(*existing, 2)->getDesc().maxAnisotropy, 4.0F);
+  EXPECT_NE(GetSamplerAtSlot(*existing, 0), GetSamplerAtSlot(*existing, 2));
 
   materialSystem.SetMaxTextureAnisotropy(4);
   EXPECT_TRUE(existing->IsDirty());
@@ -138,4 +143,33 @@ TEST(TextureAnisotropyTests, WarpSamplerCacheAndGlobalChangesRefreshExistingAndF
   auto* const futureSampler = GetSamplerAtSlot(*future, 0);
   ASSERT_NE(futureSampler, nullptr);
   EXPECT_FLOAT_EQ(futureSampler->getDesc().maxAnisotropy, 4.0F);
+}
+
+TEST(TextureAnisotropyTests, WarpRendererAppliesGlobalChangesAtBeginFrameBoundary) {
+  EngineTests::WarpDevice warp;
+  if (!warp.Initialize()) {
+    GTEST_SKIP() << "D3D11 WARP device could not be created on this host";
+  }
+  EngineTests::WarpRenderBackend backend(warp.GetDevice());
+  Engine::RenderSystem renderer(&backend);
+  ASSERT_TRUE(renderer.IsValid());
+
+  Engine::Renderer::MaterialProperties properties;
+  properties.TextureAnisotropyLevels[0] = TextureAnisotropy::X16;
+  auto material = renderer.CreateMaterial(properties);
+  ASSERT_NE(material, nullptr);
+  auto* const initialSampler = GetSamplerAtSlot(*material, 0);
+  ASSERT_NE(initialSampler, nullptr);
+  EXPECT_FLOAT_EQ(initialSampler->getDesc().maxAnisotropy, 8.0F);
+
+  EXPECT_FALSE(renderer.SetMaxTextureAnisotropy(3));
+  EXPECT_EQ(renderer.GetMaxTextureAnisotropy(), 8U);
+  ASSERT_TRUE(renderer.SetMaxTextureAnisotropy(4));
+  EXPECT_EQ(renderer.GetMaxTextureAnisotropy(), 4U);
+  renderer.BeginFrame();
+  ASSERT_TRUE(renderer.IsFrameActive());
+  auto* const frameSampler = GetSamplerAtSlot(*material, 0);
+  ASSERT_NE(frameSampler, nullptr);
+  EXPECT_FLOAT_EQ(frameSampler->getDesc().maxAnisotropy, 4.0F);
+  renderer.EndFrame();
 }
