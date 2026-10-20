@@ -127,6 +127,10 @@ public:
   /// the GPU. PollFinalRender must be called on the render thread until it
   /// returns an output or an error. Only one final-render ticket may be active.
   /// @param scene Scene to render.
+  /// @param camera Resolved camera parameters for the scene render.
+  /// @param width Output width in pixels.
+  /// @param height Output height in pixels.
+  /// @param postProcess Final color post-processing configuration.
   /// @param environment Per-view environment source and intensity.
   Engine::Result<FinalRenderTicket> BeginFinalRender(Engine::Scene& scene, const ::Engine::Renderer::CameraView& camera,
                                                      uint32_t width, uint32_t height,
