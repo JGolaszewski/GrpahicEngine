@@ -103,6 +103,140 @@ TEST(ScenePersistenceTests, LegacyAuthoredMeshSettingsRestoreMeshRendererPresenc
   EXPECT_TRUE(loaded.document.entities.front().hasMeshRenderer);
 }
 
+TEST(ScenePersistenceTests, BeckmannMaterialModelRoundTripsAndUnsupportedModelsAreRejected) {
+  TemporaryProject project;
+  Engine::AssetManager assets(project.Root());
+  Engine::SceneDocument document;
+  Engine::SceneEntityDocument entity;
+  entity.id = 7;
+  entity.name = "Beckmann";
+  entity.primitiveType = "sphere";
+  Engine::SceneMaterialDocument material;
+  material.brdfModel = "beckmann";
+  entity.material = material;
+  document.entities.push_back(entity);
+
+  std::string error;
+  ASSERT_TRUE(assets.SaveScene("beckmann.scene.json", document, error)) << error;
+  const auto loaded = assets.LoadScene("beckmann.scene.json");
+  ASSERT_TRUE(loaded) << loaded.error;
+  ASSERT_TRUE(loaded.document.entities.front().material.has_value());
+  EXPECT_EQ(loaded.document.entities.front().material->brdfModel, "beckmann");
+
+  material.brdfModel = "unknown";
+  document.entities.front().material = material;
+  EXPECT_FALSE(assets.SaveScene("unsupported.scene.json", document, error));
+}
+
+TEST(ScenePersistenceTests, GaussMaterialModelRoundTrips) {
+  TemporaryProject project;
+  Engine::AssetManager assets(project.Root());
+  Engine::SceneDocument document;
+  Engine::SceneEntityDocument entity;
+  entity.id = 8;
+  entity.name = "Gauss";
+  entity.primitiveType = "sphere";
+  Engine::SceneMaterialDocument material;
+  material.brdfModel = "gauss";
+  entity.material = material;
+  document.entities.push_back(entity);
+
+  std::string error;
+  ASSERT_TRUE(assets.SaveScene("gauss.scene.json", document, error)) << error;
+  const auto loaded = assets.LoadScene("gauss.scene.json");
+  ASSERT_TRUE(loaded) << loaded.error;
+  ASSERT_TRUE(loaded.document.entities.front().material.has_value());
+  EXPECT_EQ(loaded.document.entities.front().material->brdfModel, "gauss");
+}
+
+TEST(ScenePersistenceTests, BlinnPhongMaterialModelRoundTrips) {
+  TemporaryProject project;
+  Engine::AssetManager assets(project.Root());
+  Engine::SceneDocument document;
+  Engine::SceneEntityDocument entity;
+  entity.id = 9;
+  entity.name = "Blinn-Phong";
+  entity.primitiveType = "sphere";
+  Engine::SceneMaterialDocument material;
+  material.brdfModel = "blinnPhong";
+  entity.material = material;
+  document.entities.push_back(entity);
+
+  std::string error;
+  ASSERT_TRUE(assets.SaveScene("blinn-phong.scene.json", document, error)) << error;
+  const auto loaded = assets.LoadScene("blinn-phong.scene.json");
+  ASSERT_TRUE(loaded) << loaded.error;
+  ASSERT_TRUE(loaded.document.entities.front().material.has_value());
+  EXPECT_EQ(loaded.document.entities.front().material->brdfModel, "blinnPhong");
+}
+
+TEST(ScenePersistenceTests, AshikhminShirleyModelAndAnisotropicRoughnessRoundTrip) {
+  TemporaryProject project;
+  Engine::AssetManager assets(project.Root());
+  Engine::SceneDocument document;
+  Engine::SceneEntityDocument entity;
+  entity.id = 10;
+  entity.name = "Ashikhmin-Shirley";
+  entity.primitiveType = "sphere";
+  Engine::SceneMaterialDocument material;
+  material.brdfModel = "ashikhminShirley";
+  material.anisotropicRoughnessU = 0.2F;
+  material.anisotropicRoughnessV = 0.8F;
+  entity.material = material;
+  document.entities.push_back(entity);
+
+  std::string error;
+  ASSERT_TRUE(assets.SaveScene("ashikhmin-shirley.scene.json", document, error)) << error;
+  const auto loaded = assets.LoadScene("ashikhmin-shirley.scene.json");
+  ASSERT_TRUE(loaded) << loaded.error;
+  ASSERT_TRUE(loaded.document.entities.front().material.has_value());
+  EXPECT_EQ(loaded.document.entities.front().material->brdfModel, "ashikhminShirley");
+  EXPECT_FLOAT_EQ(loaded.document.entities.front().material->anisotropicRoughnessU, 0.2F);
+  EXPECT_FLOAT_EQ(loaded.document.entities.front().material->anisotropicRoughnessV, 0.8F);
+}
+
+TEST(ScenePersistenceTests, SchlickMaterialModelRoundTrips) {
+  TemporaryProject project;
+  Engine::AssetManager assets(project.Root());
+  Engine::SceneDocument document;
+  Engine::SceneEntityDocument entity;
+  entity.id = 11;
+  entity.name = "Schlick";
+  entity.primitiveType = "sphere";
+  Engine::SceneMaterialDocument material;
+  material.brdfModel = "schlick";
+  entity.material = material;
+  document.entities.push_back(entity);
+
+  std::string error;
+  ASSERT_TRUE(assets.SaveScene("schlick.scene.json", document, error)) << error;
+  const auto loaded = assets.LoadScene("schlick.scene.json");
+  ASSERT_TRUE(loaded) << loaded.error;
+  ASSERT_TRUE(loaded.document.entities.front().material.has_value());
+  EXPECT_EQ(loaded.document.entities.front().material->brdfModel, "schlick");
+}
+
+TEST(ScenePersistenceTests, SawickiMaterialModelRoundTrips) {
+  TemporaryProject project;
+  Engine::AssetManager assets(project.Root());
+  Engine::SceneDocument document;
+  Engine::SceneEntityDocument entity;
+  entity.id = 12;
+  entity.name = "Sawicki";
+  entity.primitiveType = "sphere";
+  Engine::SceneMaterialDocument material;
+  material.brdfModel = "sawicki";
+  entity.material = material;
+  document.entities.push_back(entity);
+
+  std::string error;
+  ASSERT_TRUE(assets.SaveScene("sawicki.scene.json", document, error)) << error;
+  const auto loaded = assets.LoadScene("sawicki.scene.json");
+  ASSERT_TRUE(loaded) << loaded.error;
+  ASSERT_TRUE(loaded.document.entities.front().material.has_value());
+  EXPECT_EQ(loaded.document.entities.front().material->brdfModel, "sawicki");
+}
+
 TEST(ScenePersistenceTests, SchemaThreeRoundTripsSceneRootAndEmptyHierarchyEntities) {
   TemporaryProject project;
   Engine::AssetManager assets(project.Root());

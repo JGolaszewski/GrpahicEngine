@@ -589,6 +589,9 @@ TEST(RenderFinalTests, WARPAllLightTypesChangeReceivingGeometryWhenShadowsAreEna
   Engine::Renderer::MaterialProperties receiverProperties;
   receiverProperties.BaseColor = {0.8F, 0.8F, 0.8F, 1.0F};
   receiverProperties.Roughness = 1.0F;
+  receiverProperties.Model = Engine::Renderer::BrdfModel::AshikhminShirley;
+  receiverProperties.AnisotropicRoughnessU = 0.2F;
+  receiverProperties.AnisotropicRoughnessV = 0.8F;
   const auto receiverMaterial = renderer.CreateMaterial(receiverProperties);
   ASSERT_NE(receiverMaterial, nullptr);
   ASSERT_TRUE(renderer.CreatePrimitive(Engine::PrimitiveShape::Plane, receiverMaterial));
@@ -660,7 +663,31 @@ TEST(RenderFinalTests, WARPAllLightTypesChangeReceivingGeometryWhenShadowsAreEna
     const auto enabledPixels = enabledOutput->GetPixels(Engine::RenderAov::FinalColor);
     const auto enabledNormals = enabledOutput->GetPixels(Engine::RenderAov::WorldNormal);
     ASSERT_FALSE(enabledPixels.empty());
+    for (const float channel : enabledPixels) {
+      EXPECT_TRUE(std::isfinite(channel)) << lightNames[lightIndex] << " produced a non-finite Ashikhmin-Shirley pixel";
+    }
     ASSERT_EQ(enabledNormals.size(), enabledPixels.size() / 4U * 3U);
+
+    receiverProperties.Model = Engine::Renderer::BrdfModel::Schlick;
+    receiverMaterial->SetProperties(receiverProperties);
+    const auto schlickOutput = renderer.RenderFinal(scene, camera, 96, 96);
+    ASSERT_TRUE(schlickOutput.has_value()) << (schlickOutput.has_value() ? "" : schlickOutput.error().Message);
+    const auto schlickPixels = schlickOutput->GetPixels(Engine::RenderAov::FinalColor);
+    ASSERT_FALSE(schlickPixels.empty());
+    for (const float channel : schlickPixels) {
+      EXPECT_TRUE(std::isfinite(channel)) << lightNames[lightIndex] << " produced a non-finite Schlick pixel";
+    }
+    receiverProperties.Model = Engine::Renderer::BrdfModel::Sawicki;
+    receiverMaterial->SetProperties(receiverProperties);
+    const auto sawickiOutput = renderer.RenderFinal(scene, camera, 96, 96);
+    ASSERT_TRUE(sawickiOutput.has_value()) << (sawickiOutput.has_value() ? "" : sawickiOutput.error().Message);
+    const auto sawickiPixels = sawickiOutput->GetPixels(Engine::RenderAov::FinalColor);
+    ASSERT_FALSE(sawickiPixels.empty());
+    for (const float channel : sawickiPixels) {
+      EXPECT_TRUE(std::isfinite(channel)) << lightNames[lightIndex] << " produced a non-finite Sawicki pixel";
+    }
+    receiverProperties.Model = Engine::Renderer::BrdfModel::AshikhminShirley;
+    receiverMaterial->SetProperties(receiverProperties);
 
     light.CastShadows = false;
     (void)scene.QueueSet(lightEntity, light);
