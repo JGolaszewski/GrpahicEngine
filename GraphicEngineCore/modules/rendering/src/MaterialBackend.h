@@ -5,7 +5,7 @@
 #include <nvrhi/nvrhi.h>
 
 namespace Engine::Renderer {
-class MaterialBackendAccess {
+class ENGINE_API MaterialBackendAccess {
 public:
   static nvrhi::BufferHandle GetConstantBuffer(const Material& material);
   static void SetConstantBuffer(Material& material, nvrhi::BufferHandle buffer);

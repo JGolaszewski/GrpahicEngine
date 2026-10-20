@@ -6,7 +6,7 @@
 #include <nvrhi/nvrhi.h>
 
 namespace Engine::Renderer {
-class TextureBackendAccess {
+class ENGINE_API TextureBackendAccess {
 public:
   static nvrhi::TextureHandle GetTexture(const TextureResource& resource);
   static void SetTexture(TextureResource& resource, nvrhi::TextureHandle texture);
