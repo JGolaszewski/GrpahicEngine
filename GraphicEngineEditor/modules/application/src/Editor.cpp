@@ -1,4 +1,4 @@
-﻿#include "application/include/Editor.h"
+#include "application/include/Editor.h"
 
 #include "application/include/EditorProjectWorkflow.h"
 #include "assets/include/AssetManager.h"
@@ -21,6 +21,7 @@
 #include "panels/include/InspectorPanel.h"
 #include "panels/include/MainBar.h"
 #include "panels/include/ScenePanel.h"
+#include "panels/include/SnapshotAnalysisPanel.h"
 #include "panels/include/StatisticsPanel.h"
 #include "platform/include/EditorFileDialogs.h"
 #include "rendering/include/RenderSystem.h"
@@ -36,12 +37,17 @@
 
 #include <DirectXMath.h>
 #include <algorithm>
+#include <chrono>
 #include <cmath>
+#include <ctime>
 #include <filesystem>
 #include <imgui.h>
 #include <imgui_internal.h>
+#include <iomanip>
 #include <span>
+#include <sstream>
 #include <string>
+#include <string_view>
 #include <utility>
 
 namespace {
@@ -81,6 +87,21 @@ auto MaterialPropertiesFromSceneDocument(const Engine::SceneMaterialDocument& do
   return properties;
 }
 
+auto UtcTimestamp() -> std::string {
+  const std::time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+  std::tm utc{};
+  gmtime_s(&utc, &now);
+  std::ostringstream stream;
+  stream << std::put_time(&utc, "%Y-%m-%dT%H:%M:%SZ");
+  return stream.str();
+}
+
+auto GuidString(const Engine::Ecs::SceneGuid& guid) -> std::string {
+  std::ostringstream stream;
+  stream << std::hex << std::setfill('0') << std::setw(16) << guid.High << std::setw(16) << guid.Low;
+  return stream.str();
+}
+
 auto QuaternionToPitchYawRoll(const std::array<float, 4>& quaternion) -> std::array<float, 3> {
   const DirectX::XMVECTOR rotation =
       DirectX::XMQuaternionNormalize(DirectX::XMVectorSet(quaternion[0], quaternion[1], quaternion[2], quaternion[3]));
@@ -98,6 +119,8 @@ auto QuaternionToPitchYawRoll(const std::array<float, 4>& quaternion) -> std::ar
   return {pitch, yaw, roll};
 }
 } // namespace
+
+Editor::~Editor() = default;
 
 void Editor::OnInit() {
   m_EditorPreferences = EditorPlatform::LoadEditorPreferences();
@@ -184,9 +207,123 @@ void Editor::OnInit() {
   }
 
   CreateViewport(1280, 720);
-  auto mainBar = std::make_unique<MainBar>();
-  m_MainBarPanel = mainBar.get();
-  mainBar->SetConsoleOpenHandler([this] -> void { m_EngineConsoleOpen = true; });
+  m_MainBar = std::make_unique<MainBar>();
+  m_MainBar->SetConsoleOpenHandler([this] -> void { m_EngineConsoleOpen = true; });
+  m_MainBar->SetSnapshotAnalysisFocusHandler([this](bool focused) { SetSnapshotAnalysisFocused(focused); });
+  auto snapshotPanel = std::make_unique<SnapshotAnalysisPanel>(
+      [this](Engine::EntityHandle cameraEntity, uint32_t widthOverride, uint32_t heightOverride,
+             Engine::SnapshotPlaneMask selectedPlanes) -> Engine::Result<Engine::RenderSystem::SnapshotRenderTicket> {
+        Engine::RenderSystem* renderer = GetRenderSystem();
+        if (!m_ActiveScene || renderer == nullptr) {
+          return std::unexpected(Engine::MakeError("No active scene or render system is available"));
+        }
+        const auto request = ResolveCameraPreviewRequest(m_ActiveScene->World(), cameraEntity);
+        if (!request) {
+          return std::unexpected(request.error());
+        }
+        if ((widthOverride == 0U) != (heightOverride == 0U)) {
+          return std::unexpected(Engine::MakeError("A frame-local resolution override requires both dimensions"));
+        }
+        const auto* camera = m_ActiveScene->World().Get<Engine::Ecs::Camera>(cameraEntity);
+        const auto* persistent = m_ActiveScene->World().Get<Engine::Ecs::PersistentIdentity>(cameraEntity);
+        Engine::SnapshotFrameMetadata metadata;
+        metadata.CaptureTimeUtc = UtcTimestamp();
+        metadata.SceneIdentity =
+            m_ActiveSceneDocument.GetPath().empty() ? "unsaved-scene" : m_ActiveSceneDocument.GetPath().string();
+        metadata.Camera.Identity = persistent == nullptr ? "entity-" + std::to_string(cameraEntity.Index) + "-" +
+                                                               std::to_string(cameraEntity.Generation)
+                                                         : GuidString(persistent->Guid);
+        metadata.Camera.Position = request->View.Position;
+        metadata.Camera.Rotation = request->View.Rotation;
+        metadata.Camera.FieldOfViewDegrees = request->View.FieldOfViewDegrees;
+        metadata.Camera.NearPlane = request->View.NearPlane;
+        metadata.Camera.FarPlane = request->View.FarPlane;
+        metadata.Camera.AuthoredWidth = camera->OutputWidth;
+        metadata.Camera.AuthoredHeight = camera->OutputHeight;
+        const auto& shadows = renderer->GetShadowSettings();
+        metadata.RenderSettings.ShadowsEnabled = true;
+        metadata.RenderSettings.ShadowMapResolution = shadows.Resolution;
+        metadata.RenderSettings.MaxShadowCasters = shadows.MaxShadowCastersPerScene;
+        const uint32_t width = widthOverride == 0U ? request->Width : widthOverride;
+        const uint32_t height = heightOverride == 0U ? request->Height : heightOverride;
+        metadata.OutputWidth = width;
+        metadata.OutputHeight = height;
+        return renderer->BeginSnapshotRender(*m_ActiveScene, request->View, std::move(metadata), width, height,
+                                             selectedPlanes);
+      },
+      [this]() -> std::vector<SnapshotAnalysisCameraOption> {
+        std::vector<SnapshotAnalysisCameraOption> cameras;
+        if (!m_ActiveScene) {
+          return cameras;
+        }
+        const auto& world = m_ActiveScene->World();
+        world.ForEachChunkReadOnly<Engine::Ecs::Camera>([this, &world, &cameras](
+                                                            std::span<const Engine::EntityHandle> entities,
+                                                            std::span<const Engine::Ecs::Camera> cameraComponents) {
+          for (size_t index = 0; index < entities.size(); ++index) {
+            const Engine::EntityHandle entity = entities[index];
+            const auto* transform = world.Get<Engine::Ecs::WorldTransform>(entity);
+            const Engine::Ecs::Camera& camera = cameraComponents[index];
+            if (transform == nullptr || camera.OutputWidth == 0U || camera.OutputHeight == 0U ||
+                !Engine::Renderer::ResolveSceneCameraView(camera, *transform)) {
+              continue;
+            }
+            const auto* name = world.Get<Engine::Ecs::Name>(entity);
+            std::string label = name == nullptr || name->Value.empty() ? "Camera" : name->Value;
+            if (camera.Active) {
+              label += " (active)";
+            }
+            label += " [" + std::to_string(entity.Index) + "]";
+            cameras.push_back({entity, std::move(label), entity == m_SelectedEntity, camera.Active, camera.Priority});
+          }
+        });
+        std::ranges::sort(cameras, [](const auto& left, const auto& right) {
+          return left.Entity.Index < right.Entity.Index ||
+                 (left.Entity.Index == right.Entity.Index && left.Entity.Generation < right.Entity.Generation);
+        });
+        return cameras;
+      },
+      [this](
+          Engine::RenderSystem::SnapshotRenderTicket ticket) -> Engine::Result<std::optional<Engine::SnapshotFrame>> {
+        Engine::RenderSystem* renderer = GetRenderSystem();
+        if (renderer == nullptr) {
+          return std::unexpected(Engine::MakeError("The render system is unavailable"));
+        }
+        return renderer->PollSnapshotRender(ticket);
+      },
+      [this](Engine::RenderSystem::SnapshotRenderTicket ticket)
+          -> std::optional<Engine::RenderSystem::SnapshotRenderStatus> {
+        Engine::RenderSystem* renderer = GetRenderSystem();
+        return renderer == nullptr ? std::nullopt : renderer->GetSnapshotRenderStatus(ticket);
+      },
+      [this](Engine::RenderSystem::SnapshotRenderTicket ticket) {
+        Engine::RenderSystem* renderer = GetRenderSystem();
+        if (renderer == nullptr) {
+          return Engine::Status(std::unexpected(Engine::MakeError("The render system is unavailable")));
+        }
+        return renderer->CancelFinalRender(ticket);
+      },
+      [this](uint32_t width, uint32_t height, std::span<const uint8_t> pixels) {
+        return m_UiIntegration.SetSnapshotImage(width, height, pixels);
+      },
+      [this]() -> void* { return m_UiIntegration.GetSnapshotImageTextureId(); },
+      [this]() { m_UiIntegration.ClearSnapshotImage(); },
+      SnapshotAnalysisPanel::WorkspaceServices{
+          [](bool exr, bool save, const std::filesystem::path& initialPath) {
+            return EditorPlatform::ChooseSnapshotFile(exr, save, initialPath);
+          },
+          [](const std::filesystem::path& path) { return Engine::SnapshotPersistence::SnapshotExr::Read(path); },
+          [](const Engine::SnapshotFrame& frame, const std::filesystem::path& path) {
+            return Engine::SnapshotPersistence::SnapshotExr::Write(frame, path);
+          },
+          [](const std::filesystem::path& path) {
+            return Engine::SnapshotPersistence::SnapshotWorkspaceFile::Load(path);
+          },
+          [](const std::filesystem::path& path, const Engine::SnapshotPersistence::SnapshotWorkspaceDocument& doc) {
+            return Engine::SnapshotPersistence::SnapshotWorkspaceFile::Save(path, doc);
+          }});
+  m_SnapshotAnalysisPanel = std::move(snapshotPanel);
+  m_SnapshotAnalysisPanel->SetExitFocusedHandler([this]() { SetSnapshotAnalysisFocused(false); });
   auto engineSettings = std::make_unique<EngineSettingsPanel>(
       this, [this] { return m_EditorPreferences; },
       [this](const auto& preferences) {
@@ -194,8 +331,7 @@ void Editor::OnInit() {
         EditorPlatform::SaveEditorPreferences(m_EditorPreferences);
       });
   auto* engineSettingsPanel = engineSettings.get();
-  mainBar->SetSettingsOpenHandler([engineSettingsPanel] -> void { engineSettingsPanel->Open(); });
-  m_Panels.push_back(std::move(mainBar));
+  m_MainBar->SetSettingsOpenHandler([engineSettingsPanel] -> void { engineSettingsPanel->Open(); });
   m_Panels.push_back(std::move(engineSettings));
   m_Panels.push_back(std::make_unique<StatWindow>(this));
   auto brdfAnalysisPanel =
@@ -502,9 +638,9 @@ void Editor::OnInit() {
         return EditorPlatform::ChooseAnalyticalFrameFile(platformOperation, initialPath);
       });
   m_AnalyticalFramePanel = analyticalFramePanel.get();
-  m_MainBarPanel->SetAnalyticalFrameWorkspaceHandler([this](bool active) {
+  m_MainBar->SetAnalyticalFrameWorkspaceHandler([this](bool active) {
     m_AnalyticalFrameWorkspaceActive = active;
-    m_MainBarPanel->SetAnalyticalFrameWorkspaceActive(active);
+    m_MainBar->SetAnalyticalFrameWorkspaceActive(active);
     m_AnalyticalFramePanel->SetFocusWorkspace(active);
     if (active) {
       m_AnalyticalFramePanel->Open();
@@ -517,7 +653,11 @@ void Editor::OnInit() {
   });
   m_Panels.push_back(std::move(analyticalFramePanel));
 
-  m_PanelConnections.reserve(m_Panels.size());
+  m_PanelConnections.reserve(m_Panels.size() + 1U);
+  m_PanelConnections.push_back(
+      m_EventRouter.Subscribe(*m_MainBar, [this](std::unique_ptr<Engine::Events::Event> event) -> void {
+        ProcessPanelEvent(std::move(event));
+      }));
   for (auto& panel : m_Panels) {
     m_PanelConnections.push_back(m_EventRouter.Subscribe(
         *panel, [this](std::unique_ptr<Engine::Events::Event> event) -> void { ProcessPanelEvent(std::move(event)); }));
@@ -538,9 +678,62 @@ void Editor::OnSceneReplaced(const std::shared_ptr<Engine::Scene>& scene) {
   BroadcastSceneChanged();
 }
 
+void Editor::SetSnapshotAnalysisFocused(bool focused) {
+  if (focused) {
+    if (m_AnalyticalFrameWorkspaceActive) {
+      m_AnalyticalFrameWorkspaceActive = false;
+      m_MainBar->SetAnalyticalFrameWorkspaceActive(false);
+      m_AnalyticalFramePanel->SetFocusWorkspace(false);
+    }
+    if (!m_SnapshotAnalysisFocusState.Enter(m_ActiveScene, m_SelectedEntity, m_ActiveSceneDocument.GetPath(),
+                                            m_PreviousFocusedWindow)) {
+      return;
+    }
+    m_CameraKeysDown.fill(false);
+    m_CameraLookActive = false;
+    m_ViewportHovered = false;
+    m_MouseDeltaX = 0.0;
+    m_MouseDeltaY = 0.0;
+    m_MainBar->SetSnapshotAnalysisFocused(true);
+    m_SnapshotAnalysisPanel->Open();
+    return;
+  }
+
+  std::optional<SnapshotAnalysisFocusRestoreState> previous = m_SnapshotAnalysisFocusState.Exit();
+  if (!previous) {
+    return;
+  }
+  if (m_ActiveScene != previous->ActiveScene) {
+    OnSceneReplaced(previous->ActiveScene);
+  }
+  std::filesystem::path sceneDocumentPath = m_ActiveSceneDocument.GetPath();
+  m_SnapshotAnalysisFocusState.ApplyRestoreState(*previous, m_ActiveScene, m_SelectedEntity, sceneDocumentPath,
+                                                 m_WindowToRestoreFocus);
+  if (sceneDocumentPath.empty()) {
+    m_ActiveSceneDocument.Reset();
+  } else {
+    m_ActiveSceneDocument.CommitPath(sceneDocumentPath);
+  }
+  if (m_ActiveScene && m_SelectedEntity != Engine::InvalidEntityHandle &&
+      m_ActiveScene->World().IsAlive(m_SelectedEntity)) {
+    EcsEntitySelectedEvent selected(m_SelectedEntity);
+    BroadcastEvent(selected);
+  } else {
+    m_SelectedEntity = Engine::InvalidEntityHandle;
+    EntityDeselectedEvent deselected;
+    BroadcastEvent(deselected);
+  }
+  m_MainBar->SetSnapshotAnalysisFocused(false);
+  m_RestoreSnapshotFocus = true;
+  m_UiIntegration.ClearSnapshotImage();
+}
+
 void Editor::OnUpdate(float deltaTime) {
   if (m_RenderOutputExportService != nullptr) {
     m_RenderOutputExportService->Update();
+  }
+  if (m_SnapshotAnalysisPanel != nullptr) {
+    m_SnapshotAnalysisPanel->UpdateCaptureProgress();
   }
   if (!m_ActiveScene) {
     return;
@@ -563,7 +756,9 @@ void Editor::OnUpdate(float deltaTime) {
     EntityDeselectedEvent deselected;
     BroadcastEvent(deselected);
   }
-  UpdateEditorCamera(deltaTime);
+  if (!m_SnapshotAnalysisFocusState.IsActive()) {
+    UpdateEditorCamera(deltaTime);
+  }
 }
 
 void Editor::UpdateEditorCamera(float deltaTime) {
@@ -629,7 +824,9 @@ void Editor::UpdateEditorCamera(float deltaTime) {
 }
 
 void Editor::OnSetupViews() {
-  if (!m_ActiveScene || !m_EditorViewport) {
+  // The focused snapshot workspace covers the editor viewport. Avoid rendering
+  // the hidden viewport and camera preview while the user inspects stored data.
+  if (m_SnapshotAnalysisFocusState.IsActive() || !m_ActiveScene || !m_EditorViewport) {
     return;
   }
   Engine::ViewportBinding binding;
@@ -693,10 +890,10 @@ void Editor::OnEvent(Engine::Events::Event& event) {
     m_MouseDeltaY += moved.DeltaY;
     return false;
   });
-  if (m_AnalyticalFrameWorkspaceActive) {
-    if (m_MainBarPanel != nullptr) {
-      m_MainBarPanel->OnEvent(event);
-    }
+  if (m_SnapshotAnalysisFocusState.IsActive()) {
+    m_MainBar->OnEvent(event);
+  } else if (m_AnalyticalFrameWorkspaceActive) {
+    m_MainBar->OnEvent(event);
     if (!event.Handled && m_AnalyticalFramePanel != nullptr) {
       m_AnalyticalFramePanel->OnEvent(event);
     }
@@ -709,12 +906,33 @@ void Editor::OnUIRender() {
   if (!m_UiIntegration.IsInitialized()) {
     return;
   }
+  if (!m_SnapshotAnalysisFocusState.IsActive() && !m_RestoreSnapshotFocus) {
+    ImGuiContext* context = ImGui::GetCurrentContext();
+    if (context != nullptr && context->NavWindow != nullptr &&
+        std::string_view(context->NavWindow->Name) != "##MainMenuBar") {
+      m_PreviousFocusedWindow = context->NavWindow->Name;
+    }
+  }
+  m_MainBar->Draw();
+  const bool snapshotAnalysisFocused = m_SnapshotAnalysisFocusState.IsActive();
   const ImGuiID dockspaceId = ImGui::GetID("MainDockSpace");
-  ImGui::DockSpaceOverViewport(dockspaceId, ImGui::GetMainViewport(), ImGuiDockNodeFlags_PassthruCentralNode);
-  BuildDefaultDockLayoutIfNeeded(dockspaceId);
-  for (auto& panel : m_Panels) {
-    if (!m_AnalyticalFrameWorkspaceActive || panel.get() == m_MainBarPanel || panel.get() == m_AnalyticalFramePanel) {
-      panel->Draw();
+  ImGui::DockSpaceOverViewport(dockspaceId, ImGui::GetMainViewport(),
+                               GetSnapshotAnalysisDockspaceFlags(snapshotAnalysisFocused));
+  if (snapshotAnalysisFocused) {
+    m_SnapshotAnalysisPanel->Draw();
+  } else {
+    BuildDefaultDockLayoutIfNeeded(dockspaceId);
+    for (auto& panel : m_Panels) {
+      if (!m_AnalyticalFrameWorkspaceActive || panel.get() == m_AnalyticalFramePanel) {
+        panel->Draw();
+      }
+    }
+    if (m_RestoreSnapshotFocus) {
+      if (!m_WindowToRestoreFocus.empty()) {
+        ImGui::SetWindowFocus(m_WindowToRestoreFocus.c_str());
+      }
+      m_WindowToRestoreFocus.clear();
+      m_RestoreSnapshotFocus = false;
     }
   }
   if (m_ActiveScene) {
@@ -732,7 +950,7 @@ void Editor::OnUIRender() {
       BroadcastSceneChanged();
     }
   }
-  if (!m_AnalyticalFrameWorkspaceActive) {
+  if (!m_AnalyticalFrameWorkspaceActive && !m_SnapshotAnalysisFocusState.IsActive()) {
     m_EditorConsole.UpdateAndRender(&m_EngineConsoleOpen);
   }
 }
@@ -757,8 +975,6 @@ void Editor::OnShutdownUI() {
   m_EditorConsole.DetachFromLogger();
   m_UiIntegration.Shutdown();
 }
-
-void Editor::OnResize(uint32_t width, uint32_t height) { CreateViewport(width, height); }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
 void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {

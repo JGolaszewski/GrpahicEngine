@@ -12,13 +12,16 @@ struct ViewportTarget::Impl {
 
   nvrhi::TextureHandle ColorTexture;
   nvrhi::TextureHandle SceneColorTexture;
+  nvrhi::TextureHandle OverdrawTexture;
+  nvrhi::BufferHandle SnapshotOverflowBuffer;
+  nvrhi::FramebufferHandle OverdrawFramebuffer;
   std::vector<nvrhi::TextureHandle> OutputTextures;
   nvrhi::TextureHandle DepthTexture;
   nvrhi::FramebufferHandle Framebuffer;
   nvrhi::FramebufferHandle SceneFramebuffer;
 };
 
-ViewportTarget::ViewportTarget(void* device, uint32_t width, uint32_t height, bool finalOutput)
+ViewportTarget::ViewportTarget(void* device, uint32_t width, uint32_t height, bool finalOutput, bool snapshotOutput)
     : m_Impl(std::make_unique<Impl>()) {
   m_Impl->Width = width;
   m_Impl->Height = height;
@@ -30,13 +33,14 @@ ViewportTarget::ViewportTarget(void* device, uint32_t width, uint32_t height, bo
   auto* nvrhiDevice = static_cast<nvrhi::IDevice*>(device);
 
   if (finalOutput) {
-    constexpr std::array<nvrhi::Format, 5> outputFormats = {nvrhi::Format::RGBA32_FLOAT, nvrhi::Format::R32_FLOAT,
+    constexpr std::array<nvrhi::Format, 6> outputFormats = {nvrhi::Format::RGBA32_FLOAT, nvrhi::Format::R32_FLOAT,
                                                             nvrhi::Format::RGBA32_FLOAT, nvrhi::Format::RGBA32_FLOAT,
-                                                            nvrhi::Format::RGBA32_FLOAT};
-    constexpr std::array<const char*, 5> outputNames = {"FinalColor", "Depth", "WorldNormal", "SpecularLighting",
-                                                        "DiffuseLighting"};
-    m_Impl->OutputTextures.reserve(outputFormats.size());
-    for (size_t index = 0; index < outputFormats.size(); ++index) {
+                                                            nvrhi::Format::RGBA32_FLOAT, nvrhi::Format::R32_UINT};
+    constexpr std::array<const char*, 6> outputNames = {"FinalColor",       "Depth",           "WorldNormal",
+                                                        "SpecularLighting", "DiffuseLighting", "MaterialInstanceId"};
+    const size_t outputCount = snapshotOutput ? outputFormats.size() : outputFormats.size() - 1;
+    m_Impl->OutputTextures.reserve(outputCount);
+    for (size_t index = 0; index < outputCount; ++index) {
       nvrhi::TextureDesc outputDesc;
       outputDesc.width = width;
       outputDesc.height = height;
@@ -51,6 +55,37 @@ ViewportTarget::ViewportTarget(void* device, uint32_t width, uint32_t height, bo
         return;
       }
       m_Impl->OutputTextures.push_back(std::move(texture));
+    }
+    if (snapshotOutput) {
+      nvrhi::TextureDesc overdrawDesc;
+      overdrawDesc.width = width;
+      overdrawDesc.height = height;
+      overdrawDesc.format = nvrhi::Format::R32_UINT;
+      overdrawDesc.isUAV = true;
+      overdrawDesc.isShaderResource = true;
+      overdrawDesc.initialState = nvrhi::ResourceStates::UnorderedAccess;
+      overdrawDesc.keepInitialState = true;
+      overdrawDesc.debugName = "SnapshotOverdraw";
+      auto overdraw = nvrhiDevice->createTexture(overdrawDesc);
+      if (overdraw == nullptr) {
+        return;
+      }
+      m_Impl->OverdrawTexture = std::move(overdraw);
+      nvrhi::BufferDesc overflowDesc;
+      overflowDesc.byteSize = sizeof(uint32_t);
+      overflowDesc.canHaveUAVs = true;
+      overflowDesc.canHaveRawViews = true;
+      overflowDesc.initialState = nvrhi::ResourceStates::UnorderedAccess;
+      overflowDesc.keepInitialState = true;
+      overflowDesc.debugName = "SnapshotOverdrawOverflow";
+      m_Impl->SnapshotOverflowBuffer = nvrhiDevice->createBuffer(overflowDesc);
+      if (m_Impl->SnapshotOverflowBuffer == nullptr) {
+        return;
+      }
+      m_Impl->OverdrawFramebuffer = nvrhiDevice->createFramebuffer(nvrhi::FramebufferDesc{});
+      if (m_Impl->OverdrawFramebuffer == nullptr) {
+        return;
+      }
     }
     m_Impl->ColorTexture = m_Impl->OutputTextures.front();
     m_Impl->SceneColorTexture = m_Impl->ColorTexture;
@@ -150,5 +185,19 @@ auto ViewportTarget::GetSceneFramebufferHandle() const noexcept -> void* {
 auto ViewportTarget::GetOutputTextureHandle(uint32_t index) const noexcept -> void* {
   return m_Impl && index < m_Impl->OutputTextures.size() ? static_cast<void*>(m_Impl->OutputTextures.at(index).Get())
                                                          : nullptr;
+}
+
+auto ViewportTarget::GetOverdrawTextureHandle() const noexcept -> void* {
+  return m_Impl && m_Impl->OverdrawTexture != nullptr ? static_cast<void*>(m_Impl->OverdrawTexture.Get()) : nullptr;
+}
+
+auto ViewportTarget::GetSnapshotOverflowBufferHandle() const noexcept -> void* {
+  return m_Impl && m_Impl->SnapshotOverflowBuffer != nullptr ? static_cast<void*>(m_Impl->SnapshotOverflowBuffer.Get())
+                                                             : nullptr;
+}
+
+auto ViewportTarget::GetOverdrawFramebufferHandle() const noexcept -> void* {
+  return m_Impl && m_Impl->OverdrawFramebuffer != nullptr ? static_cast<void*>(m_Impl->OverdrawFramebuffer.Get())
+                                                          : nullptr;
 }
 } // namespace Engine

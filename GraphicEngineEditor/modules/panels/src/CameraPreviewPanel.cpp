@@ -280,6 +280,11 @@ void CameraPreviewPanel::Draw() {
       const ImVec2 childAvailable = ImGui::GetContentRegionAvail();
       const CameraPreviewImageLayout::ImageSize imageSize = CameraPreviewImageLayout::ComputeImageSize(
           m_ImageWidth, m_ImageHeight, childAvailable.x, childAvailable.y, m_Zoom);
+      // The fit scale changes with the viewer size. Clamp the previous pan
+      // offset against the new scroll range so resizing cannot strand the
+      // image off-screen or leave it shifted when it now fits.
+      m_ImageOffset[0] = CameraPreviewImageLayout::ClampPanOffset(m_ImageOffset[0], imageSize.ScrollMaxX);
+      m_ImageOffset[1] = CameraPreviewImageLayout::ClampPanOffset(m_ImageOffset[1], imageSize.ScrollMaxY);
       if (ImGui::IsWindowHovered() && ImGui::GetIO().MouseWheel != 0.0F && m_HasImage) {
         m_Zoom = CameraPreviewImageLayout::ClampZoom(m_Zoom * std::pow(1.12F, ImGui::GetIO().MouseWheel));
       }

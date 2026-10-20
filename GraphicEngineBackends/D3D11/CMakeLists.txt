@@ -4,6 +4,8 @@ set(SHADER_FILES
     "${CMAKE_CURRENT_SOURCE_DIR}/shaders/color_vs.hlsl"
     "${CMAKE_CURRENT_SOURCE_DIR}/shaders/color_ps.hlsl"
     "${CMAKE_CURRENT_SOURCE_DIR}/shaders/color_textured_ps.hlsl"
+    "${CMAKE_CURRENT_SOURCE_DIR}/shaders/overdraw_ps.hlsl"
+    "${CMAKE_CURRENT_SOURCE_DIR}/shaders/overdraw_textured_ps.hlsl"
     "${CMAKE_CURRENT_SOURCE_DIR}/shaders/display_vs.hlsl"
     "${CMAKE_CURRENT_SOURCE_DIR}/shaders/display_ps.hlsl"
     "${CMAKE_CURRENT_SOURCE_DIR}/shaders/debug_vs.hlsl"

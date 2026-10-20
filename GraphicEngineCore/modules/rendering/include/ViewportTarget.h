@@ -16,6 +16,9 @@ namespace Engine {
 class RenderSystem;
 class Viewport;
 class IRenderBackend;
+namespace Renderer {
+class RenderView;
+}
 
 /// High-level render target for an editor or runtime viewport.
 /// Backend graphics resources remain opaque to callers.
@@ -51,17 +54,21 @@ public:
 private:
   struct Impl;
 
-  ViewportTarget(void* device, uint32_t width, uint32_t height, bool finalOutput = false);
+  ViewportTarget(void* device, uint32_t width, uint32_t height, bool finalOutput = false, bool snapshotOutput = false);
   void* GetColorTextureHandle() const noexcept;
   void* GetFramebufferHandle() const noexcept;
   void* GetSceneFramebufferHandle() const noexcept;
   void* GetOutputTextureHandle(uint32_t index) const noexcept;
+  void* GetOverdrawTextureHandle() const noexcept;
+  void* GetSnapshotOverflowBufferHandle() const noexcept;
+  void* GetOverdrawFramebufferHandle() const noexcept;
 
   std::unique_ptr<Impl> m_Impl;
 
   friend class RenderSystem;
   friend class Viewport;
   friend class IRenderBackend;
+  friend class Renderer::RenderView;
 };
 } // namespace Engine
 

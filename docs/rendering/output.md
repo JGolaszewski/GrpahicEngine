@@ -10,6 +10,16 @@
 | `SpecularLighting` | `specular_lighting` | `R`, `G`, `B` | Direct and environment specular lighting. |
 | `DiffuseLighting` | `diffuse_lighting` | `R`, `G`, `B` | Direct diffuse, ambient and image-based diffuse lighting, and emissive contribution. |
 
+`RenderOutput` is the transient renderer result. Snapshot Analysis stores its
+own immutable frame with the same five float planes plus two typed unsigned
+integer planes; it never treats `RenderOutput` or the live scene as the
+long-lived analysis document. See [Snapshot Analysis workspace](snapshot-analysis.md)
+for the stable plane, metadata, comparison, and persistence contract.
+
+The renderer and exporters use row-major, top-to-bottom samples. A source
+pixel `(x, y)` is stored at `y * width + x`; editor zoom and pan do not change
+that source coordinate convention.
+
 Lighting and geometric AOVs are captured before the final-color hook. The final-color plane reflects the hook's changes. Failed renders return an error instead of partial or placeholder output.
 
 Transparent materials are composited source-over in `FinalColor`, `SpecularLighting`, and `DiffuseLighting` using the same material opacity, so the two lighting planes sum to the un-postprocessed final RGB. `Depth` and `WorldNormal` identify the nearest visible contributing surface; these geometric values are not blended.

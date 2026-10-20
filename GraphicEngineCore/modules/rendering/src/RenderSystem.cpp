@@ -64,9 +64,25 @@ struct RenderSystem::FinalReadbackCapture {
   uint32_t Height = 0;
   std::vector<nvrhi::TextureHandle> Sources;
   std::vector<nvrhi::StagingTextureHandle> Staging;
+  nvrhi::BufferHandle SnapshotOverflowBuffer;
+  nvrhi::BufferHandle SnapshotOverflowStaging;
   nvrhi::EventQueryHandle CompletionQuery;
   Engine::FinalColorPostProcess PostProcess;
+  bool SnapshotCapture = false;
+  SnapshotPlaneMask SnapshotSelectedPlanes = AllSnapshotPlanes;
+  SnapshotFrameMetadata SnapshotMetadata;
+  std::vector<SnapshotMaterialManifestEntry> SnapshotManifest;
   bool Submitted = false;
+};
+
+struct RenderSystem::CompletedSnapshotCapture {
+  SnapshotRenderTicket Ticket = 0;
+  SnapshotFrameMetadata Metadata;
+  std::vector<SnapshotMaterialManifestEntry> Manifest;
+  std::vector<uint32_t> MaterialIds;
+  std::vector<uint32_t> Overdraw;
+  SnapshotPlaneMask SelectedPlanes = AllSnapshotPlanes;
+  bool OverdrawOverflow = false;
 };
 
 namespace {
@@ -212,7 +228,9 @@ auto RenderSystem::CreatePrimitive(Engine::PrimitiveShape shape, std::shared_ptr
   return false;
 }
 
-void RenderSystem::BeginFrame() {
+void RenderSystem::BeginFrame() { BeginFrameInternal(true); }
+
+void RenderSystem::BeginFrameInternal(bool clearDefaultFramebuffer) {
   if (!IsValid()) {
     return;
   }
@@ -230,7 +248,9 @@ void RenderSystem::BeginFrame() {
   m_CommandList->Handle->open();
   m_FrameActive = true;
   m_RenderBackend->BeginGpuEvent(L"RenderFrame");
-  ClearFrameBuffer();
+  if (clearDefaultFramebuffer) {
+    ClearFrameBuffer();
+  }
   m_MaterialSystem->UpdateDirtyMaterials(m_CommandList->Handle);
 
   m_FrameContext->BeginGpuTiming(m_CommandList->Handle);
@@ -257,6 +277,7 @@ void RenderSystem::SubmitViews(const std::vector<Engine::ViewportBinding>& views
     view->Initialize(binding.TargetScene, binding.Camera, binding.TargetViewport);
     view->TargetScene = binding.TargetScene;
     view->RenderMode = binding.RenderMode;
+    view->SnapshotCapture = binding.SnapshotCapture;
     if (view->RenderMode == Engine::ViewportBinding::Mode::Editor) {
       view->DebugSettings = binding.DebugSettings;
     }
@@ -313,6 +334,7 @@ void RenderSystem::SubmitViews(const std::vector<Engine::ViewportBinding>& views
 
   m_RenderGraph->AddPass(std::make_unique<::Engine::Renderer::ShadowPass>());
   m_RenderGraph->AddPass(std::make_unique<::Engine::Renderer::ForwardPass>(m_SceneRenderer.get()));
+  m_RenderGraph->AddPass(std::make_unique<::Engine::Renderer::SnapshotOverdrawPass>(m_SceneRenderer.get()));
   const bool hasEditorView = std::ranges::any_of(bb.GetSceneViews(), [](const ::Engine::Renderer::RenderView* view) {
     return view != nullptr && view->RenderMode == Engine::ViewportBinding::Mode::Editor;
   });
@@ -751,6 +773,13 @@ void RenderSystem::EndFrame() {
           m_CommandList->Handle->commitBarriers();
           m_CommandList->Handle->copyTexture(staging, nvrhi::TextureSlice(), source, nvrhi::TextureSlice());
         }
+        if (m_FinalReadbackCapture->SnapshotCapture) {
+          m_CommandList->Handle->setBufferState(m_FinalReadbackCapture->SnapshotOverflowBuffer,
+                                                nvrhi::ResourceStates::CopySource);
+          m_CommandList->Handle->commitBarriers();
+          m_CommandList->Handle->copyBuffer(m_FinalReadbackCapture->SnapshotOverflowStaging, 0,
+                                            m_FinalReadbackCapture->SnapshotOverflowBuffer, 0, sizeof(uint32_t));
+        }
         m_FinalReadbackCapture->CompletionQuery = GetNvrhiDevice(m_RenderBackend)->createEventQuery();
         if (m_FinalReadbackCapture->CompletionQuery == nullptr) {
           m_LastRenderGraphFailure = "failed to allocate final render completion query";
@@ -802,8 +831,9 @@ auto RenderSystem::BeginFinalRender(Engine::Scene& scene, const ::Engine::Render
     return std::unexpected(Engine::MakeError("final rendering requires a valid graphics device"));
   }
 
+  const bool snapshotCapture = m_StartingSnapshotMetadata.has_value();
   auto target = std::shared_ptr<Engine::ViewportTarget>(
-      new Engine::ViewportTarget(m_RenderBackend->GetDevice(), width, height, true));
+      new Engine::ViewportTarget(m_RenderBackend->GetDevice(), width, height, true, snapshotCapture));
   if (!target->IsValid()) {
     return std::unexpected(Engine::MakeError("failed to allocate final render targets"));
   }
@@ -812,13 +842,19 @@ auto RenderSystem::BeginFinalRender(Engine::Scene& scene, const ::Engine::Render
   capture->Ticket = ++m_NextFinalRenderTicket;
   capture->Width = width;
   capture->Height = height;
+  capture->SnapshotCapture = snapshotCapture;
+  if (snapshotCapture) {
+    capture->SnapshotMetadata = std::move(*m_StartingSnapshotMetadata);
+    m_StartingSnapshotMetadata.reset();
+    capture->SnapshotSelectedPlanes = m_StartingSnapshotSelectedPlanes;
+  }
   if (capture->Ticket == 0) {
     capture->Ticket = ++m_NextFinalRenderTicket;
   }
   capture->PostProcess = postProcess;
-  constexpr uint32_t outputCount = 5;
-  capture->Sources.reserve(outputCount);
-  capture->Staging.reserve(outputCount);
+  const uint32_t outputCount = snapshotCapture ? 6U : 5U;
+  capture->Sources.reserve(snapshotCapture ? 7U : 5U);
+  capture->Staging.reserve(snapshotCapture ? 7U : 5U);
   for (uint32_t index = 0; index < outputCount; ++index) {
     auto* texture = static_cast<nvrhi::ITexture*>(target->GetOutputTextureHandle(index));
     if (texture == nullptr) {
@@ -841,6 +877,40 @@ auto RenderSystem::BeginFinalRender(Engine::Scene& scene, const ::Engine::Render
     capture->Sources.emplace_back(texture);
     capture->Staging.push_back(std::move(staging));
   }
+  if (snapshotCapture) {
+    auto* overdrawTexture = static_cast<nvrhi::ITexture*>(target->GetOverdrawTextureHandle());
+    if (overdrawTexture == nullptr) {
+      return std::unexpected(Engine::MakeError("snapshot render target is missing its overdraw UAV"));
+    }
+    nvrhi::TextureDesc stagingDesc = overdrawTexture->getDesc();
+    stagingDesc.isUAV = false;
+    stagingDesc.isShaderResource = false;
+    stagingDesc.isRenderTarget = false;
+    stagingDesc.initialState = nvrhi::ResourceStates::CopyDest;
+    stagingDesc.keepInitialState = true;
+    stagingDesc.debugName = "SnapshotOverdrawReadback";
+    auto staging = GetNvrhiDevice(m_RenderBackend)->createStagingTexture(stagingDesc, nvrhi::CpuAccessMode::Read);
+    if (staging == nullptr) {
+      return std::unexpected(Engine::MakeError("failed to allocate snapshot overdraw readback storage"));
+    }
+    capture->Sources.emplace_back(overdrawTexture);
+    capture->Staging.push_back(std::move(staging));
+    capture->SnapshotOverflowBuffer = static_cast<nvrhi::IBuffer*>(target->GetSnapshotOverflowBufferHandle());
+    if (capture->SnapshotOverflowBuffer == nullptr) {
+      return std::unexpected(Engine::MakeError("snapshot render target is missing its overflow status buffer"));
+    }
+    nvrhi::BufferDesc statusStagingDesc = capture->SnapshotOverflowBuffer->getDesc();
+    statusStagingDesc.canHaveUAVs = false;
+    statusStagingDesc.canHaveRawViews = false;
+    statusStagingDesc.cpuAccess = nvrhi::CpuAccessMode::Read;
+    statusStagingDesc.initialState = nvrhi::ResourceStates::CopyDest;
+    statusStagingDesc.keepInitialState = true;
+    statusStagingDesc.debugName = "SnapshotOverdrawOverflowReadback";
+    capture->SnapshotOverflowStaging = GetNvrhiDevice(m_RenderBackend)->createBuffer(statusStagingDesc);
+    if (capture->SnapshotOverflowStaging == nullptr) {
+      return std::unexpected(Engine::MakeError("failed to allocate snapshot overflow status readback"));
+    }
+  }
 
   Engine::Viewport viewport(target);
   Engine::ViewportBinding binding;
@@ -850,18 +920,136 @@ auto RenderSystem::BeginFinalRender(Engine::Scene& scene, const ::Engine::Render
   binding.TargetScene = &scene;
   binding.OutputWidth = width;
   binding.OutputHeight = height;
+  binding.SnapshotCapture = snapshotCapture;
+  if (snapshotCapture) {
+    m_SceneRenderer->BeginSnapshotCapture();
+  }
   m_FinalReadbackCapture = std::move(capture);
-  BeginFrame();
+  // Final outputs render entirely into their own offscreen targets. Avoid
+  // clearing the editor backbuffer while a capture is started from the UI.
+  BeginFrameInternal(false);
   if (!m_FrameActive) {
     m_FinalReadbackCapture.reset();
+    if (snapshotCapture) {
+      m_SceneRenderer->TakeSnapshotManifest();
+    }
     return std::unexpected(Engine::MakeError("failed to begin final render frame"));
   }
   SubmitViews({binding});
+  if (snapshotCapture) {
+    const std::string captureFailure = m_SceneRenderer->GetSnapshotCaptureFailure();
+    if (!captureFailure.empty()) {
+      m_SceneRenderer->TakeSnapshotManifest();
+      EndFrame();
+      m_FinalReadbackCapture.reset();
+      return std::unexpected(Engine::MakeError(captureFailure));
+    }
+    m_FinalReadbackCapture->SnapshotManifest = m_SceneRenderer->TakeSnapshotManifest();
+  }
   EndFrame();
   return m_FinalReadbackCapture->Ticket;
 }
 
+auto RenderSystem::BeginSnapshotRender(Engine::Scene& scene, const ::Engine::Renderer::CameraView& camera,
+                                       SnapshotFrameMetadata metadata, uint32_t width, uint32_t height,
+                                       SnapshotPlaneMask selectedPlanes) -> Engine::Result<SnapshotRenderTicket> {
+  if (selectedPlanes == 0 || (selectedPlanes & ~AllSnapshotPlanes) != 0) {
+    return std::unexpected(Engine::MakeError("snapshot capture must select one or more supported planes"));
+  }
+  if (metadata.OutputWidth != width || metadata.OutputHeight != height) {
+    return std::unexpected(Engine::MakeError("snapshot metadata dimensions do not match the requested output"));
+  }
+  metadata.Camera.Position = camera.Position;
+  metadata.Camera.Rotation = camera.Rotation;
+  metadata.Camera.FieldOfViewDegrees = camera.FieldOfViewDegrees;
+  metadata.Camera.NearPlane = camera.NearPlane;
+  metadata.Camera.FarPlane = camera.FarPlane;
+  m_StartingSnapshotMetadata = std::move(metadata);
+  m_StartingSnapshotSelectedPlanes = selectedPlanes;
+  auto ticket = BeginFinalRender(scene, camera, width, height);
+  if (!ticket) {
+    m_StartingSnapshotMetadata.reset();
+    return std::unexpected(ticket.error());
+  }
+  m_SnapshotStatuses.insert_or_assign(
+      *ticket, SnapshotRenderStatus{.CurrentPhase = SnapshotRenderStatus::Phase::WaitingForReadback,
+                                    .Progress = 0.5F,
+                                    .Message = "Waiting for GPU readback"});
+  std::erase_if(m_SnapshotStatuses, [ticket = *ticket](const auto& status) { return status.first != ticket; });
+  return *ticket;
+}
+
+auto RenderSystem::PollSnapshotRender(SnapshotRenderTicket ticket) -> Engine::Result<std::optional<SnapshotFrame>> {
+  const auto status = m_SnapshotStatuses.find(ticket);
+  if (status == m_SnapshotStatuses.end()) {
+    return std::unexpected(Engine::MakeError("snapshot render ticket is not active"));
+  }
+  if (status->second.CurrentPhase == SnapshotRenderStatus::Phase::Failed ||
+      status->second.CurrentPhase == SnapshotRenderStatus::Phase::Canceled) {
+    return std::unexpected(Engine::MakeError(status->second.Message));
+  }
+  if (status->second.CurrentPhase == SnapshotRenderStatus::Phase::Completed) {
+    return std::unexpected(Engine::MakeError("snapshot ticket has already been consumed"));
+  }
+  auto renderOutput = PollFinalRenderOutput(ticket);
+  if (!renderOutput) {
+    auto& mutableStatus = m_SnapshotStatuses.at(ticket);
+    mutableStatus.CurrentPhase = SnapshotRenderStatus::Phase::Failed;
+    mutableStatus.Message = renderOutput.error().Message;
+    return std::unexpected(renderOutput.error());
+  }
+  if (!renderOutput->has_value()) {
+    return std::optional<SnapshotFrame>{};
+  }
+  if (m_CompletedSnapshotCapture == nullptr || m_CompletedSnapshotCapture->Ticket != ticket) {
+    auto& mutableStatus = m_SnapshotStatuses.at(ticket);
+    mutableStatus.CurrentPhase = SnapshotRenderStatus::Phase::Failed;
+    mutableStatus.Message = "snapshot typed-plane readback is incomplete";
+    return std::unexpected(Engine::MakeError(mutableStatus.Message));
+  }
+  auto completed = std::move(m_CompletedSnapshotCapture);
+  auto& output = renderOutput->value();
+  auto floatPlanes = std::move(output.m_Planes);
+  std::erase_if(floatPlanes, [selected = completed->SelectedPlanes](const RenderOutputPlane& plane) {
+    const auto snapshotPlane = static_cast<SnapshotPlane>(plane.Aov);
+    return (selected & SnapshotPlaneMaskBit(snapshotPlane)) == 0;
+  });
+  if ((completed->SelectedPlanes & SnapshotPlaneMaskBit(SnapshotPlane::MaterialInstanceId)) == 0) {
+    completed->MaterialIds.clear();
+    completed->Manifest.clear();
+  }
+  if ((completed->SelectedPlanes & SnapshotPlaneMaskBit(SnapshotPlane::Overdraw)) == 0)
+    completed->Overdraw.clear();
+  auto frame =
+      SnapshotFrame::Create(std::move(completed->Metadata), std::move(completed->Manifest), output.Width, output.Height,
+                            std::move(floatPlanes), std::move(completed->MaterialIds), std::move(completed->Overdraw));
+  auto& mutableStatus = m_SnapshotStatuses.at(ticket);
+  if (!frame) {
+    mutableStatus.CurrentPhase = SnapshotRenderStatus::Phase::Failed;
+    mutableStatus.Message = frame.error().Message;
+    return std::unexpected(frame.error());
+  }
+  mutableStatus.CurrentPhase = SnapshotRenderStatus::Phase::Completed;
+  mutableStatus.Progress = 1.0F;
+  mutableStatus.Message = "Snapshot capture completed";
+  return std::optional<SnapshotFrame>(std::move(*frame));
+}
+
+auto RenderSystem::GetSnapshotRenderStatus(SnapshotRenderTicket ticket) const -> std::optional<SnapshotRenderStatus> {
+  const auto found = m_SnapshotStatuses.find(ticket);
+  return found == m_SnapshotStatuses.end() ? std::nullopt : std::optional<SnapshotRenderStatus>(found->second);
+}
+
 auto RenderSystem::PollFinalRender(FinalRenderTicket ticket) -> Engine::Result<std::optional<Engine::RenderOutput>> {
+  if (m_FinalReadbackCapture != nullptr && m_FinalReadbackCapture->Ticket == ticket &&
+      m_FinalReadbackCapture->SnapshotCapture) {
+    return std::unexpected(Engine::MakeError("snapshot tickets must be consumed through PollSnapshotRender"));
+  }
+  return PollFinalRenderOutput(ticket);
+}
+
+auto RenderSystem::PollFinalRenderOutput(FinalRenderTicket ticket)
+    -> Engine::Result<std::optional<Engine::RenderOutput>> {
   if (m_FinalReadbackCapture == nullptr || ticket == 0 || m_FinalReadbackCapture->Ticket != ticket) {
     return std::unexpected(Engine::MakeError("final render ticket is not active"));
   }
@@ -898,6 +1086,9 @@ auto RenderSystem::PollFinalRender(FinalRenderTicket ticket) -> Engine::Result<s
     output.m_Planes.push_back(std::move(plane));
   }
   for (size_t planeIndex = 0; planeIndex < m_FinalReadbackCapture->Staging.size(); ++planeIndex) {
+    if (planeIndex >= outputCount) {
+      break;
+    }
     auto& staging = m_FinalReadbackCapture->Staging.at(planeIndex);
     size_t rowPitch = 0;
     void* mapped = device->mapStagingTexture(staging, nvrhi::TextureSlice(), nvrhi::CpuAccessMode::Read, &rowPitch);
@@ -920,6 +1111,48 @@ auto RenderSystem::PollFinalRender(FinalRenderTicket ticket) -> Engine::Result<s
     }
     device->unmapStagingTexture(staging);
   }
+  if (m_FinalReadbackCapture->SnapshotCapture) {
+    auto completed = std::make_unique<CompletedSnapshotCapture>();
+    completed->Ticket = m_FinalReadbackCapture->Ticket;
+    completed->Metadata = std::move(m_FinalReadbackCapture->SnapshotMetadata);
+    completed->Manifest = std::move(m_FinalReadbackCapture->SnapshotManifest);
+    completed->SelectedPlanes = m_FinalReadbackCapture->SnapshotSelectedPlanes;
+    const size_t pixelCount = static_cast<size_t>(width) * height;
+    completed->MaterialIds.resize(pixelCount);
+    completed->Overdraw.resize(pixelCount);
+    for (size_t planeIndex = 5; planeIndex < 7; ++planeIndex) {
+      auto& staging = m_FinalReadbackCapture->Staging.at(planeIndex);
+      size_t rowPitch = 0;
+      void* mapped = device->mapStagingTexture(staging, nvrhi::TextureSlice(), nvrhi::CpuAccessMode::Read, &rowPitch);
+      if (mapped == nullptr) {
+        m_FinalReadbackCapture.reset();
+        return std::unexpected(Engine::MakeError("failed to map a snapshot integer plane for CPU readback"));
+      }
+      std::vector<uint32_t>& destination = planeIndex == 5 ? completed->MaterialIds : completed->Overdraw;
+      const auto* sourceBytes = static_cast<const std::byte*>(mapped);
+      for (uint32_t row = 0; row < height; ++row) {
+        const auto* sourceRow = reinterpret_cast<const uint32_t*>(sourceBytes + static_cast<size_t>(row) * rowPitch);
+        std::memcpy(destination.data() + static_cast<size_t>(row) * width, sourceRow,
+                    static_cast<size_t>(width) * sizeof(uint32_t));
+      }
+      device->unmapStagingTexture(staging);
+    }
+    void* overflowMapped =
+        device->mapBuffer(m_FinalReadbackCapture->SnapshotOverflowStaging, nvrhi::CpuAccessMode::Read);
+    if (overflowMapped == nullptr) {
+      m_FinalReadbackCapture.reset();
+      return std::unexpected(Engine::MakeError("failed to map snapshot overdraw overflow status"));
+    }
+    uint32_t overflowFlags = 0;
+    std::memcpy(&overflowFlags, overflowMapped, sizeof(overflowFlags));
+    device->unmapBuffer(m_FinalReadbackCapture->SnapshotOverflowStaging);
+    completed->OverdrawOverflow = (overflowFlags & 1U) != 0;
+    if (completed->OverdrawOverflow) {
+      m_FinalReadbackCapture.reset();
+      return std::unexpected(Engine::MakeError("snapshot overdraw count exceeded UInt32 capacity"));
+    }
+    m_CompletedSnapshotCapture = std::move(completed);
+  }
   Engine::FinalColorPostProcess postProcess = std::move(m_FinalReadbackCapture->PostProcess);
   m_FinalReadbackCapture.reset();
 
@@ -941,6 +1174,15 @@ auto RenderSystem::CancelFinalRender(FinalRenderTicket ticket) -> Engine::Status
     return std::unexpected(Engine::MakeError("cannot cancel final render without a valid graphics device"));
   }
   device->waitForIdle();
+  if (m_FinalReadbackCapture->SnapshotCapture) {
+    auto& status = m_SnapshotStatuses[ticket];
+    status.CurrentPhase = SnapshotRenderStatus::Phase::Canceled;
+    status.Progress = 0.0F;
+    status.Message = "Snapshot capture canceled";
+  }
+  if (m_CompletedSnapshotCapture != nullptr && m_CompletedSnapshotCapture->Ticket == ticket) {
+    m_CompletedSnapshotCapture.reset();
+  }
   m_FinalReadbackCapture.reset();
   return {};
 }
@@ -1022,8 +1264,12 @@ void RenderSystem::ClearSubmittedTargets() {
       m_CommandList->Handle->setTextureState(attachment.texture, attachment.subresources,
                                              nvrhi::ResourceStates::RenderTarget);
       m_CommandList->Handle->commitBarriers();
-      m_CommandList->Handle->clearTextureFloat(attachment.texture, attachment.subresources,
-                                               nvrhi::Color(0.15F, 0.0F, 0.15F, 1.0F));
+      if (nvrhi::getFormatInfo(attachment.texture->getDesc().format).kind == nvrhi::FormatKind::Integer) {
+        m_CommandList->Handle->clearTextureUInt(attachment.texture, attachment.subresources, 0U);
+      } else {
+        m_CommandList->Handle->clearTextureFloat(attachment.texture, attachment.subresources,
+                                                 nvrhi::Color(0.15F, 0.0F, 0.15F, 1.0F));
+      }
     }
     if (desc.depthAttachment.valid() && (desc.depthAttachment.texture != nullptr)) {
       m_CommandList->Handle->setTextureState(desc.depthAttachment.texture, desc.depthAttachment.subresources,

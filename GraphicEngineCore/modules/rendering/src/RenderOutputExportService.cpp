@@ -60,7 +60,8 @@ auto RenderOutputExportService::Start(RenderSystem& renderer, Scene& scene,
   if (m_ShuttingDown || m_ActiveReadback.has_value()) {
     const Engine::Status cancellationStatus = renderer.CancelFinalRender(*renderTicket);
     if (!cancellationStatus) {
-      return std::unexpected(cancellationStatus.error());
+      return std::unexpected(Engine::MakeError("export request was rejected and render cancellation failed: " +
+                                               cancellationStatus.error().Message));
     }
     return std::unexpected(Engine::MakeError("export service cannot accept another readback request"));
   }

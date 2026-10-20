@@ -66,6 +66,19 @@ public:
   bool Execute(nvrhi::ICommandList* cmd, const ::Engine::Renderer::RenderContext& ctx) override;
 };
 
+class ENGINE_API SnapshotOverdrawPass : public ::Engine::Renderer::IRenderPass {
+public:
+  explicit SnapshotOverdrawPass(Engine::SceneRenderer* sceneRenderer);
+
+  std::string GetName() const override { return "SnapshotOverdrawPass"; }
+  bool HasSideEffect() const override { return true; }
+  void Setup(::Engine::Renderer::RGBuilder& builder, ::Engine::Renderer::FrameBlackboard& blackboard) override;
+  bool Execute(nvrhi::ICommandList* cmd, const ::Engine::Renderer::RenderContext& ctx) override;
+
+private:
+  Engine::SceneRenderer* m_SceneRenderer = nullptr;
+};
+
 class ENGINE_API DebugPass : public ::Engine::Renderer::IRenderPass {
 public:
   explicit DebugPass(Engine::SceneRenderer* sceneRenderer);

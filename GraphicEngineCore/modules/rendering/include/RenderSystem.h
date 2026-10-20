@@ -4,6 +4,7 @@
 #include "rendering/include/RenderBackend.h"
 #include "rendering/include/RenderLimits.h"
 #include "rendering/include/RenderOutput.h"
+#include "rendering/include/SnapshotFrame.h"
 #include "rendering/include/ViewportTarget.h"
 #include "rendering/include/renderer/CameraView.h"
 #include "rendering/include/renderer/Viewport.h"
@@ -52,6 +53,15 @@ class ENGINE_API RenderSystem {
 public:
   /// Opaque identifier for an asynchronous final-render readback request.
   using FinalRenderTicket = uint64_t;
+  /// Opaque identifier for an asynchronous snapshot-frame capture.
+  using SnapshotRenderTicket = FinalRenderTicket;
+  /// Snapshot capture progress and terminal diagnostic.
+  struct SnapshotRenderStatus {
+    enum class Phase : uint8_t { WaitingForReadback, Completed, Failed, Canceled };
+    Phase CurrentPhase = Phase::WaitingForReadback;
+    float Progress = 0.0F;
+    std::string Message;
+  };
   /// Create a render system using the supplied backend.
   /// @param backend Backend that owns the device and command list.
   RenderSystem(IRenderBackend* backend);
@@ -102,9 +112,25 @@ public:
   /// Submit a scene-camera render and GPU-to-staging copies without waiting for
   /// the GPU. PollFinalRender must be called on the render thread until it
   /// returns an output or an error. Only one final-render ticket may be active.
+  /// The returned RenderOutput is a transient set of five float AOVs; it is
+  /// not by itself an immutable Snapshot Analysis frame or its metadata.
   Engine::Result<FinalRenderTicket> BeginFinalRender(Engine::Scene& scene, const ::Engine::Renderer::CameraView& camera,
                                                      uint32_t width, uint32_t height,
                                                      const Engine::FinalColorPostProcess& postProcess = {});
+  /// Captures one complete immutable analysis frame. Scene packet construction and input/resource capture happen
+  /// synchronously before this function returns; polling only waits for GPU readback and never revisits the scene.
+  /// Selected planes are retained in the immutable frame; an empty or unsupported mask is rejected.
+  Engine::Result<SnapshotRenderTicket> BeginSnapshotRender(Engine::Scene& scene,
+                                                           const ::Engine::Renderer::CameraView& camera,
+                                                           SnapshotFrameMetadata metadata, uint32_t width,
+                                                           uint32_t height,
+                                                           SnapshotPlaneMask selectedPlanes = AllSnapshotPlanes);
+  /// Polls a snapshot request. An empty optional means GPU work is still pending; no partial frame is returned.
+  /// A completed frame is returned once; repeated polls report an error without changing the completed status.
+  Engine::Result<std::optional<SnapshotFrame>> PollSnapshotRender(SnapshotRenderTicket ticket);
+  /// Returns the current progress or terminal result for a snapshot request. Status remains available until the next
+  /// snapshot request begins.
+  std::optional<SnapshotRenderStatus> GetSnapshotRenderStatus(SnapshotRenderTicket ticket) const;
   /// Poll a submitted final render without blocking. An empty optional means
   /// the GPU copy has not completed; the ticket is consumed on output or error.
   Engine::Result<std::optional<Engine::RenderOutput>> PollFinalRender(FinalRenderTicket ticket);
@@ -246,6 +272,7 @@ public:
 private:
   struct CommandListHolder;
   struct FinalReadbackCapture;
+  struct CompletedSnapshotCapture;
   struct PendingModelSubmesh {
     size_t MeshIndex = 0;
     size_t PrimitiveIndex = 0;
@@ -271,13 +298,19 @@ private:
                               int32_t textureIndex, bool srgb,
                               std::shared_ptr<::Engine::Renderer::TextureResource>& destination, std::string& error);
   void UnregisterMaterials(const std::vector<std::shared_ptr<::Engine::Renderer::Material>>& materials);
+  void BeginFrameInternal(bool clearDefaultFramebuffer);
   void ClearFrameBuffer();
   void ClearSubmittedTargets();
+  Engine::Result<std::optional<Engine::RenderOutput>> PollFinalRenderOutput(FinalRenderTicket ticket);
 
   IRenderBackend* const m_RenderBackend;
   std::unique_ptr<CommandListHolder> m_CommandList;
   std::unique_ptr<FinalReadbackCapture> m_FinalReadbackCapture;
   FinalRenderTicket m_NextFinalRenderTicket = 0;
+  std::optional<SnapshotFrameMetadata> m_StartingSnapshotMetadata;
+  SnapshotPlaneMask m_StartingSnapshotSelectedPlanes = AllSnapshotPlanes;
+  std::unique_ptr<CompletedSnapshotCapture> m_CompletedSnapshotCapture;
+  std::map<SnapshotRenderTicket, SnapshotRenderStatus> m_SnapshotStatuses;
   bool m_FrameActive = false;
   std::string m_LastUploadFailure;
   std::string m_LastRenderGraphFailure;

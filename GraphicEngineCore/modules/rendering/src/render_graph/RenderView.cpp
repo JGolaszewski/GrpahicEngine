@@ -1,4 +1,5 @@
 #include "rendering/src/render_graph/RenderView.h"
+#include "rendering/include/ViewportTarget.h"
 #include "rendering/include/renderer/Viewport.h"
 #include "scene/include/Scene.h"
 
@@ -18,6 +19,11 @@ void RenderView::Initialize(const Engine::Scene* scene, const Engine::Renderer::
   TargetFramebuffer = static_cast<nvrhi::IFramebuffer*>(viewport->GetSceneFramebufferHandle());
   DisplayFramebuffer = static_cast<nvrhi::IFramebuffer*>(viewport->GetFramebufferHandle());
   DisplayColorTexture = static_cast<nvrhi::ITexture*>(viewport->GetDisplayColorTextureHandle());
+  if (viewport->m_Target != nullptr) {
+    SnapshotOverdrawTexture = static_cast<nvrhi::ITexture*>(viewport->m_Target->GetOverdrawTextureHandle());
+    SnapshotOverflowBuffer = static_cast<nvrhi::IBuffer*>(viewport->m_Target->GetSnapshotOverflowBufferHandle());
+    SnapshotOverdrawFramebuffer = static_cast<nvrhi::IFramebuffer*>(viewport->m_Target->GetOverdrawFramebufferHandle());
+  }
   const DirectX::XMFLOAT4 rotationValue{camera.Rotation[0], camera.Rotation[1], camera.Rotation[2], camera.Rotation[3]};
   const DirectX::XMFLOAT3 positionValue{camera.Position[0], camera.Position[1], camera.Position[2]};
   const DirectX::XMVECTOR rotation = DirectX::XMQuaternionNormalize(DirectX::XMLoadFloat4(&rotationValue));

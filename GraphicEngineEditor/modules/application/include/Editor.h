@@ -2,8 +2,11 @@
 
 #include "application/include/EditorEventRouter.h"
 #include "application/include/EditorSceneDocument.h"
+#include "application/include/SnapshotAnalysisFocusState.h"
 #include "panels/include/EditorConsole.h"
 #include "panels/include/EditorPanel.h"
+#include "panels/include/MainBar.h"
+#include "panels/include/SnapshotAnalysisPanel.h"
 #include "platform/include/EditorFileDialogs.h"
 #include "platform/include/EditorUiIntegration.h"
 #include "rendering/include/RenderOutputExportService.h"
@@ -13,7 +16,9 @@
 
 #include <array>
 #include <cstdint>
+#include <filesystem>
 #include <memory>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -33,7 +38,7 @@ class MainBar;
 class Editor final : public Engine::Application {
 public:
   Editor() = default;
-  ~Editor() override = default;
+  ~Editor() override;
 
 protected:
   void OnInit() override;
@@ -43,7 +48,6 @@ protected:
   void OnBeginUIFrame() override;
   void OnEndUIFrame() override;
   void OnShutdownUI() override;
-  void OnResize(uint32_t width, uint32_t height) override;
   void OnEvent(Engine::Events::Event& event) override;
   void OnSetupViews() override;
   void OnSceneReplaced(const std::shared_ptr<Engine::Scene>& scene) override;
@@ -59,6 +63,7 @@ private:
   void BuildDefaultDockLayoutIfNeeded(uint32_t dockspaceId);
   static void BuildDefaultDockLayout(uint32_t dockspaceId);
   void UpdateEditorCamera(float deltaTime);
+  void SetSnapshotAnalysisFocused(bool focused);
   [[nodiscard]] auto GetViewportTextureID() const -> void*;
 
   std::shared_ptr<Engine::Scene> m_ActiveScene;
@@ -68,7 +73,8 @@ private:
   std::shared_ptr<Engine::Viewport> m_CameraPreviewViewport;
   std::shared_ptr<Engine::ViewportTarget> m_CameraPreviewTarget;
   std::vector<std::unique_ptr<EditorPanel>> m_Panels;
-  MainBar* m_MainBarPanel = nullptr;
+  std::unique_ptr<MainBar> m_MainBar;
+  std::unique_ptr<SnapshotAnalysisPanel> m_SnapshotAnalysisPanel;
   CameraPreviewPanel* m_CameraPreviewPanel = nullptr;
   BrdfAnalysisPanel* m_BrdfAnalysisPanel = nullptr;
   AnalyticalFramePanel* m_AnalyticalFramePanel = nullptr;
@@ -77,6 +83,9 @@ private:
   EditorUiIntegration m_UiIntegration;
   EditorConsole m_EditorConsole;
   std::unique_ptr<Engine::RenderOutputExportService> m_RenderOutputExportService;
+  SnapshotAnalysisFocusState m_SnapshotAnalysisFocusState;
+  std::string m_PreviousFocusedWindow;
+  std::string m_WindowToRestoreFocus;
   Engine::EntityHandle m_SelectedEntity = Engine::InvalidEntityHandle;
   Engine::EntityHandle m_CameraPreviewEntity = Engine::InvalidEntityHandle;
   Engine::Renderer::CameraView m_CameraPreviewCamera;
@@ -86,6 +95,7 @@ private:
   Engine::Ecs::Camera m_EditorCameraSettings;
   std::pair<float, float> m_ViewportSize = {0.0F, 0.0F};
   bool m_DefaultLayoutBuilt = false;
+  bool m_RestoreSnapshotFocus = false;
   bool m_EngineConsoleOpen = true;
   bool m_AnalyticalFrameWorkspaceActive = false;
   EditorPlatform::EditorPreferences m_EditorPreferences;

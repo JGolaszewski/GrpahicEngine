@@ -28,6 +28,20 @@ TEST(CameraPreviewImageLayoutTests, InvalidImageOrViewportHasNoDisplayScale) {
   EXPECT_FLOAT_EQ(CameraPreviewImageLayout::ClampZoom(100.0F), 32.0F);
 }
 
+TEST(CameraPreviewImageLayoutTests, ResizingClampsPanAndRecentersWhenImageFits) {
+  const auto narrow = CameraPreviewImageLayout::ComputeImageSize(800, 400, 300.0F, 200.0F, 2.0F);
+  ASSERT_FLOAT_EQ(narrow.ScrollMaxX, 300.0F);
+  ASSERT_FLOAT_EQ(narrow.ScrollMaxY, 100.0F);
+  EXPECT_FLOAT_EQ(CameraPreviewImageLayout::ClampPanOffset(-700.0F, narrow.ScrollMaxX), -300.0F);
+  EXPECT_FLOAT_EQ(CameraPreviewImageLayout::ClampPanOffset(40.0F, narrow.ScrollMaxX), 0.0F);
+
+  const auto resized = CameraPreviewImageLayout::ComputeImageSize(800, 400, 1000.0F, 700.0F, 1.0F);
+  EXPECT_FLOAT_EQ(resized.ScrollMaxX, 0.0F);
+  EXPECT_FLOAT_EQ(resized.ScrollMaxY, 0.0F);
+  EXPECT_FLOAT_EQ(CameraPreviewImageLayout::ClampPanOffset(-120.0F, resized.ScrollMaxX), 0.0F);
+  EXPECT_FLOAT_EQ(CameraPreviewImageLayout::ClampPanOffset(40.0F, resized.ScrollMaxY), 0.0F);
+}
+
 TEST(CameraPreviewImageLayoutTests, PanStartsOnlyOnTheImageAndContinuesUntilReleaseOutsideIt) {
   CameraPreviewImageLayout::PanState state;
 

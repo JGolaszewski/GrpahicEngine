@@ -19,7 +19,7 @@ public:
   EditorUiIntegration();
   ~EditorUiIntegration();
   bool Initialize(Engine::IWindow* window, Engine::IRenderBackend* backend);
-  void BeginFrame() const;
+  void BeginFrame();
   void EndFrame();
   void Shutdown();
   void* GetTextureId(const Engine::ViewportTarget* target) const noexcept;
@@ -35,10 +35,18 @@ public:
   void* GetAnalyticalFrameTextureId() const noexcept;
   /// Releases the Analytical Frame display texture after the current UI draw.
   void ClearAnalyticalFrameImage() noexcept;
+  /// Uploads the currently selected immutable snapshot's display pixels.
+  bool SetSnapshotImage(uint32_t width, uint32_t height, std::span<const uint8_t> rgbaPixels);
+  /// Returns the current snapshot workspace shader resource view for ImGui.
+  void* GetSnapshotImageTextureId() const noexcept;
+  /// Releases the workspace texture when its viewer window closes.
+  void ClearSnapshotImage() noexcept;
   bool IsInitialized() const noexcept { return m_Initialized; }
 
 private:
   Engine::D3D11Backend* m_Backend = nullptr;
+  void* m_Window = nullptr;
+  float m_UiScale = 1.0F;
   struct PreviewTexture;
   bool SetPreviewTexture(std::unique_ptr<PreviewTexture>& target, uint32_t width, uint32_t height,
                          std::span<const uint8_t> rgbaPixels);
@@ -46,5 +54,7 @@ private:
   std::unique_ptr<PreviewTexture> m_AnalyticalFrameTexture;
   bool m_ClearCameraPreviewAfterDraw = false;
   bool m_ClearAnalyticalFrameAfterDraw = false;
+  std::unique_ptr<PreviewTexture> m_SnapshotImageTexture;
+  bool m_ClearSnapshotImageAfterDraw = false;
   bool m_Initialized = false;
 };

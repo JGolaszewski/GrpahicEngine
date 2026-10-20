@@ -68,6 +68,7 @@ nav:
           - BRDF analysis: rendering/brdf-analysis.md
           - Analytical Frames: rendering/analytical-frames.md
           - Render output and image export: rendering/output.md
+          - Snapshot Analysis workspace: rendering/snapshot-analysis.md
           - Shadows: rendering/shadows.md
           - Final rendering: rendering/final-render.md
   - Workflows:
