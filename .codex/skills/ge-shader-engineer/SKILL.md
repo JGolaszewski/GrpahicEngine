@@ -9,7 +9,7 @@ Own first-party D3D11 shader changes and their consuming backend interface. Shar
 
 ## Shader workflow
 
-1. Inspect the shader, CMake compile entry, consuming C++ code, and CPU-side structures before editing.
+1. Inspect the shader, CMake compile entry, consuming C++ code, CPU-side structures, and downstream Core or Editor behavior before editing. Check the issue's impact map; update it with the coordinator before editing newly affected areas.
 2. Keep HLSL under `GraphicEngineBackends/D3D11/shaders/`; do not create empty directories or assume unconfigured shader compilers are available.
 3. Preserve constant-buffer alignment, packing, semantics, and bindings. Validate CPU/GPU layout agreement whenever an interface changes.
 4. Compile with the configured Windows SDK `fxc` path and shader-model 5.0 profiles:
@@ -19,8 +19,8 @@ Own first-party D3D11 shader changes and their consuming backend interface. Shar
    cmake --build out/build/x64-debug --target CompileShaders
    ```
 
-5. For associated backend C++ or runtime behavior changes, use `docs/cpp-guidelines.md` and `docs/testing.md` for applicable checks.
+5. For associated backend C++ or runtime behavior changes, use `docs/cpp-guidelines.md` and `docs/testing.md` for applicable checks. Update affected guides and public-header comments in the same change; record a manual rendering check when GPU output changes.
 
 ## Handoff
 
-Report changed shader interfaces and files, CPU/GPU layout validation, shader compile results, related tests, and remaining risks.
+Report changed shader interfaces and consuming paths, CPU/GPU layout validation, shader compile and rendering results, related tests, documentation impact, and remaining risks. Mark unavailable checks explicitly.

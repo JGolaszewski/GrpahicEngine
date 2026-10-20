@@ -14,6 +14,7 @@ vendor/
 *.md
 !AGENTS.md
 !README.md
+!.github/pull_request_template.md
 !docs/*.md
 !docs/**/*.md
 !.codex/skills/**/SKILL.md
@@ -67,6 +68,7 @@ compile_commands.json
 .codex/worktrees/ # Local Codex background worktrees
 # Generated Python bytecode for hook imports.
 .codex/hooks/__pycache__/
+.github/scripts/__pycache__/
 .venv-docs/
 site/
 
