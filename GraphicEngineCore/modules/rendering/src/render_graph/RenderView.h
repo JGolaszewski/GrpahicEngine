@@ -78,6 +78,13 @@ public:
   Engine::EnvironmentLightingSettings Environment;
   std::vector<RGViewportAttachment> OutputAttachments;
   DirectX::XMFLOAT3 CameraPosition = {0.0f, 0.0f, 0.0f};
+  DirectX::XMFLOAT3 CameraForward = {0.0f, 0.0f, 1.0f};
+  DirectX::XMFLOAT3 CameraRight = {1.0f, 0.0f, 0.0f};
+  DirectX::XMFLOAT3 CameraUp = {0.0f, 1.0f, 0.0f};
+  float CameraVerticalFovRadians = DirectX::XM_PIDIV4;
+  float CameraAspectRatio = 1.0f;
+  float CameraNearPlane = 0.1f;
+  float CameraFarPlane = 1000.0f;
   nvrhi::BufferHandle CameraBuffer;
   nvrhi::BufferHandle LightBuffer;
 

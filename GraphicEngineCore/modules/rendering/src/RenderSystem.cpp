@@ -174,8 +174,8 @@ bool RenderSystem::PrepareAssetTexture(const std::string& guid, bool srgb, std::
     error = "texture GUID is registered without a decoded image or generation: " + guid;
     return false;
   }
-  auto texture = GetOrCreateTexture(guid, *generation, *image, srgb, error, nullptr, normalMap,
-                                    preserveAlphaCoverage, alphaCutoff);
+  auto texture = GetOrCreateTexture(guid, *generation, *image, srgb, error, nullptr, normalMap, preserveAlphaCoverage,
+                                    alphaCutoff);
   if (texture == nullptr) {
     return false;
   }
@@ -280,6 +280,7 @@ void RenderSystem::SubmitViews(const std::vector<Engine::ViewportBinding>& views
   bb.SetSceneViews(std::move(sceneViews));
 
   std::vector<::Engine::Renderer::RenderView*> shadowViews;
+  m_DirectionalShadowDiagnostics.clear();
   shadowViews.reserve(scenes.size() * m_ShadowSettings.MaxShadowCastersPerScene);
   for (auto& scene : scenes) {
     const uint32_t firstShadowSlot = static_cast<uint32_t>(shadowViews.size());
@@ -300,7 +301,8 @@ void RenderSystem::SubmitViews(const std::vector<Engine::ViewportBinding>& views
       }
     }
     ::Engine::SceneRenderer::BuildShadowData(scene, shadowViews, firstShadowSlot, shadowCasterCount,
-                                             m_ModelResources.get(), sceneCameraViews, m_ShadowSettings.Resolution);
+                                             m_ModelResources.get(), sceneCameraViews, m_ShadowSettings.Resolution,
+                                             &m_DirectionalShadowDiagnostics);
   }
   bb.SetShadowViews(std::move(shadowViews));
   bb.Set<uint32_t>("ShadowMapSize", m_ShadowSettings.Resolution);
@@ -540,9 +542,9 @@ auto RenderSystem::ResolveImportedTexture(const std::string& guid, uint64_t gene
     return false;
   }
   const auto& image = model.images.at(static_cast<size_t>(imageIndex));
-  destination = m_ResourceManager->GetOrCreateTexture(guid + "/texture/" + std::to_string(textureIndex), generation,
-                                                      image, srgb, error, &texture, normalMap, preserveAlphaCoverage,
-                                                      alphaCutoff);
+  destination =
+      m_ResourceManager->GetOrCreateTexture(guid + "/texture/" + std::to_string(textureIndex), generation, image, srgb,
+                                            error, &texture, normalMap, preserveAlphaCoverage, alphaCutoff);
   return destination != nullptr;
 }
 

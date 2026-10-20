@@ -1,4 +1,5 @@
 #include "rendering/src/SceneRenderer.h"
+#include "rendering/src/DirectionalShadowFit.h"
 #include "runtime/include/LogMacros.h"
 
 #include <algorithm>
@@ -123,164 +124,41 @@ auto ComputeSpotLightViewProj(const ::Engine::Renderer::DirectionalLightData& li
 }
 
 auto ComputeDirectionalLightViewProj(const ::Engine::Renderer::DirectionalLightData& lightData,
-                                     const ::Engine::Scene& scene,
-                                     const ::Engine::Renderer::ModelResourceLibrary* modelResources,
                                      const std::vector<::Engine::Renderer::RenderView*>& sceneViews,
-                                     uint32_t shadowMapResolution) -> DirectX::XMMATRIX {
-  using namespace DirectX;
-  const XMVECTOR direction = NormalizeOrDefault(
-      XMFLOAT3(lightData.DirectionIntensity.x, lightData.DirectionIntensity.y, lightData.DirectionIntensity.z));
-  XMVECTOR up = XMVectorSet(0.0F, 1.0F, 0.0F, 0.0F);
-  if (std::abs(XMVectorGetX(XMVector3Dot(up, direction))) > 0.98F) {
-    up = XMVectorSet(1.0F, 0.0F, 0.0F, 0.0F);
-  }
-  const XMVECTOR right = XMVector3Normalize(XMVector3Cross(up, direction));
-  up = XMVector3Normalize(XMVector3Cross(direction, right));
-  struct Bounds {
-    float MinX = std::numeric_limits<float>::max();
-    float MaxX = std::numeric_limits<float>::lowest();
-    float MinY = std::numeric_limits<float>::max();
-    float MaxY = std::numeric_limits<float>::lowest();
-    float MinZ = std::numeric_limits<float>::max();
-    float MaxZ = std::numeric_limits<float>::lowest();
-  };
-  struct Candidate {
-    std::array<XMFLOAT3, 8> Corners{};
-    bool CameraVisible = false;
-  };
-  std::vector<Candidate> candidates;
-  Bounds receiverBounds;
-  const auto isCameraVisible = [&sceneViews](const XMFLOAT3& center, float radius) -> bool {
-    return sceneViews.empty() || std::ranges::any_of(sceneViews, [&center, radius](const auto* view) {
-             return view != nullptr && view->IsSphereVisible(center, radius);
-           });
-  };
-  scene.World()
-      .ForEachChunkReadOnly<::Engine::Ecs::MeshRenderer, ::Engine::Ecs::WorldTransform,
-                            ::Engine::Ecs::GlobalVisibility>(
-          [&candidates, &receiverBounds, &isCameraVisible, modelResources, &right, &up,
-           &direction](std::span<const ::Engine::EntityHandle>, std::span<const ::Engine::Ecs::MeshRenderer> meshes,
-                       std::span<const ::Engine::Ecs::WorldTransform> transforms,
-                       std::span<const ::Engine::Ecs::GlobalVisibility> visibility) -> void {
-            const auto addCandidate = [&candidates, &receiverBounds, &isCameraVisible, &right, &up,
-                                       &direction](std::array<XMFLOAT3, 8> corners) -> void {
-              XMFLOAT3 minimum{std::numeric_limits<float>::max(), std::numeric_limits<float>::max(),
-                               std::numeric_limits<float>::max()};
-              XMFLOAT3 maximum{std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest(),
-                               std::numeric_limits<float>::lowest()};
-              for (const auto& point : corners) {
-                minimum.x = (std::min)(minimum.x, point.x);
-                minimum.y = (std::min)(minimum.y, point.y);
-                minimum.z = (std::min)(minimum.z, point.z);
-                maximum.x = (std::max)(maximum.x, point.x);
-                maximum.y = (std::max)(maximum.y, point.y);
-                maximum.z = (std::max)(maximum.z, point.z);
-              }
-              const XMFLOAT3 center{(minimum.x + maximum.x) * 0.5F, (minimum.y + maximum.y) * 0.5F,
-                                    (minimum.z + maximum.z) * 0.5F};
-              const XMVECTOR extent = XMVectorSet((maximum.x - minimum.x) * 0.5F, (maximum.y - minimum.y) * 0.5F,
-                                                  (maximum.z - minimum.z) * 0.5F, 0.0F);
-              const bool cameraVisible = isCameraVisible(center, XMVectorGetX(XMVector3Length(extent)));
-              candidates.push_back({.Corners = corners, .CameraVisible = cameraVisible});
-              if (!cameraVisible) {
-                return;
-              }
-              for (const auto& point : corners) {
-                const XMVECTOR worldPoint = XMLoadFloat3(&point);
-                const float x = XMVectorGetX(XMVector3Dot(worldPoint, right));
-                const float y = XMVectorGetX(XMVector3Dot(worldPoint, up));
-                receiverBounds.MinX = (std::min)(receiverBounds.MinX, x);
-                receiverBounds.MaxX = (std::max)(receiverBounds.MaxX, x);
-                receiverBounds.MinY = (std::min)(receiverBounds.MinY, y);
-                receiverBounds.MaxY = (std::max)(receiverBounds.MaxY, y);
-                receiverBounds.MinZ =
-                    (std::min)(receiverBounds.MinZ, XMVectorGetX(XMVector3Dot(worldPoint, direction)));
-                receiverBounds.MaxZ =
-                    (std::max)(receiverBounds.MaxZ, XMVectorGetX(XMVector3Dot(worldPoint, direction)));
-              }
-            };
-            for (size_t i = 0; i < meshes.size(); ++i) {
-              if (!visibility[i].IsVisible || !meshes[i].Visible) {
-                continue;
-              }
-              std::string resourceKey = meshes[i].ModelGuid;
-              if (resourceKey.empty() && !meshes[i].PrimitiveType.empty()) {
-                resourceKey = "primitive:" + meshes[i].PrimitiveType;
-              }
-              const auto* submeshes = modelResources == nullptr ? nullptr : modelResources->Find(resourceKey);
-              const XMMATRIX entityWorld = XMLoadFloat4x4(&transforms[i].Matrix);
-              if (submeshes != nullptr && !submeshes->empty()) {
-                for (const auto& submesh : *submeshes) {
-                  const XMMATRIX world = XMLoadFloat4x4(&submesh.LocalTransform) * entityWorld;
-                  std::array<XMFLOAT3, 8> corners{};
-                  for (uint32_t corner = 0; corner < 8; ++corner) {
-                    const XMFLOAT3 localPoint{(corner & 1U) != 0U ? submesh.BoundsMax.x : submesh.BoundsMin.x,
-                                              (corner & 2U) != 0U ? submesh.BoundsMax.y : submesh.BoundsMin.y,
-                                              (corner & 4U) != 0U ? submesh.BoundsMax.z : submesh.BoundsMin.z};
-                    XMStoreFloat3(&corners[corner], XMVector3TransformCoord(XMLoadFloat3(&localPoint), world));
-                  }
-                  addCandidate(corners);
-                }
-              } else {
-                const auto& matrix = transforms[i].Matrix;
-                std::array<XMFLOAT3, 8> corners{};
-                for (uint32_t corner = 0; corner < 8; ++corner) {
-                  corners[corner] = {matrix._41 + ((corner & 1U) != 0U ? 1.0F : -1.0F),
-                                     matrix._42 + ((corner & 2U) != 0U ? 1.0F : -1.0F),
-                                     matrix._43 + ((corner & 4U) != 0U ? 1.0F : -1.0F)};
-                }
-                addCandidate(corners);
-              }
-            }
-          });
-
-  Bounds shadowBounds = receiverBounds;
-  if (shadowBounds.MinX == std::numeric_limits<float>::max()) {
-    shadowBounds = {.MinX = -100.0F, .MaxX = 100.0F, .MinY = -100.0F, .MaxY = 100.0F, .MinZ = -100.0F, .MaxZ = 100.0F};
-  } else {
-    for (const auto& candidate : candidates) {
-      if (candidate.CameraVisible) {
-        continue;
-      }
-      Bounds candidateBounds;
-      for (const auto& point : candidate.Corners) {
-        const XMVECTOR worldPoint = XMLoadFloat3(&point);
-        const float x = XMVectorGetX(XMVector3Dot(worldPoint, right));
-        const float y = XMVectorGetX(XMVector3Dot(worldPoint, up));
-        const float z = XMVectorGetX(XMVector3Dot(worldPoint, direction));
-        candidateBounds.MinX = (std::min)(candidateBounds.MinX, x);
-        candidateBounds.MaxX = (std::max)(candidateBounds.MaxX, x);
-        candidateBounds.MinY = (std::min)(candidateBounds.MinY, y);
-        candidateBounds.MaxY = (std::max)(candidateBounds.MaxY, y);
-        candidateBounds.MinZ = (std::min)(candidateBounds.MinZ, z);
-        candidateBounds.MaxZ = (std::max)(candidateBounds.MaxZ, z);
-      }
-      const bool overlapsReceiver =
-          candidateBounds.MaxX >= receiverBounds.MinX && candidateBounds.MinX <= receiverBounds.MaxX &&
-          candidateBounds.MaxY >= receiverBounds.MinY && candidateBounds.MinY <= receiverBounds.MaxY;
-      const bool upstream = candidateBounds.MinZ <= receiverBounds.MaxZ;
-      if (overlapsReceiver && upstream) {
-        shadowBounds.MinZ = (std::min)(shadowBounds.MinZ, candidateBounds.MinZ);
-      }
+                                     uint32_t shadowMapResolution,
+                                     ::Engine::Renderer::DirectionalShadowDiagnostics& diagnostics,
+                                     ::Engine::EntityHandle lightEntity) -> std::optional<DirectX::XMMATRIX> {
+  std::vector<::Engine::Renderer::DirectionalShadowCamera> cameras;
+  cameras.reserve(sceneViews.size());
+  for (const auto* view : sceneViews) {
+    if (view == nullptr || view->ViewType != ::Engine::Renderer::RenderView::Type::Main) {
+      continue;
     }
+    cameras.push_back({.Position = view->CameraPosition,
+                       .Forward = view->CameraForward,
+                       .Right = view->CameraRight,
+                       .Up = view->CameraUp,
+                       .VerticalFovRadians = view->CameraVerticalFovRadians,
+                       .AspectRatio = view->CameraAspectRatio,
+                       .NearPlane = view->CameraNearPlane,
+                       .FarPlane = view->CameraFarPlane});
   }
-
-  const float padding = 0.01F;
-  float width = (std::max)(shadowBounds.MaxX - shadowBounds.MinX, 1.0F);
-  float height = (std::max)(shadowBounds.MaxY - shadowBounds.MinY, 1.0F);
-  width *= 1.0F + padding;
-  height *= 1.0F + padding;
-  const float texelX = width / static_cast<float>((std::max)(shadowMapResolution, 1U));
-  const float texelY = height / static_cast<float>((std::max)(shadowMapResolution, 1U));
-  float centerX = (shadowBounds.MinX + shadowBounds.MaxX) * 0.5F;
-  float centerY = (shadowBounds.MinY + shadowBounds.MaxY) * 0.5F;
-  centerX = std::round(centerX / texelX) * texelX;
-  centerY = std::round(centerY / texelY) * texelY;
-  const float depth = (std::max)(shadowBounds.MaxZ - shadowBounds.MinZ, 1.0F);
-  const XMVECTOR eye = XMVectorAdd(XMVectorAdd(XMVectorScale(right, centerX), XMVectorScale(up, centerY)),
-                                   XMVectorScale(direction, shadowBounds.MinZ - 1.0F));
-  const XMVECTOR target = XMVectorAdd(eye, direction);
-  return XMMatrixLookAtLH(eye, target, up) * XMMatrixOrthographicLH(width, height, 0.1F, depth + 1.1F);
+  const DirectX::XMFLOAT3 lightDirection{lightData.DirectionIntensity.x, lightData.DirectionIntensity.y,
+                                         lightData.DirectionIntensity.z};
+  constexpr float maximumDistance = 120.0F;
+  constexpr float upstreamCasterPadding = 100.0F;
+  const auto fit = ::Engine::Renderer::FitDirectionalShadow(cameras, lightDirection, shadowMapResolution,
+                                                            maximumDistance, upstreamCasterPadding);
+  if (!fit.has_value()) {
+    return std::nullopt;
+  }
+  diagnostics = {.Light = lightEntity,
+                 .MapResolution = shadowMapResolution,
+                 .CoverageWidth = fit->CoverageWidth,
+                 .CoverageDepth = fit->CoverageDepth,
+                 .TexelWorldSize = fit->TexelWorldSize,
+                 .Bias = lightData.ShadowParams.y};
+  return DirectX::XMLoadFloat4x4(&fit->ViewProjection);
 }
 
 auto ComputePointLightFaceViewProj(const ::Engine::Renderer::DirectionalLightData& lightData, uint32_t face)
@@ -1170,20 +1048,20 @@ void Engine::SceneRenderer::BuildDebugGeometry(::Engine::Renderer::RenderView* v
                                                        view->DebugGeometryData);
 }
 
-void Engine::SceneRenderer::BuildShadowData(Engine::Scene* scene,
-                                            const std::vector<::Engine::Renderer::RenderView*>& shadowViews,
-                                            uint32_t firstShadowSlot, uint32_t maxShadowedLights,
-                                            const ::Engine::Renderer::ModelResourceLibrary* modelResources,
-                                            const std::vector<::Engine::Renderer::RenderView*>& sceneViews,
-                                            uint32_t shadowMapResolution) {
+void Engine::SceneRenderer::BuildShadowData(
+    Engine::Scene* scene, const std::vector<::Engine::Renderer::RenderView*>& shadowViews, uint32_t firstShadowSlot,
+    uint32_t maxShadowedLights, const ::Engine::Renderer::ModelResourceLibrary* modelResources,
+    const std::vector<::Engine::Renderer::RenderView*>& sceneViews, uint32_t shadowMapResolution,
+    std::vector<::Engine::Renderer::DirectionalShadowDiagnostics>* diagnostics) {
   if (scene == nullptr) {
     return;
   }
+  (void)modelResources;
   uint32_t viewIndex = firstShadowSlot;
   uint32_t casterCount = 0;
   scene->World()
       .ForEachChunkReadOnly<::Engine::Ecs::SpotLight, ::Engine::Ecs::WorldTransform, ::Engine::Ecs::GlobalVisibility>(
-          [scene, &shadowViews, firstShadowSlot, maxShadowedLights, modelResources, &sceneViews, shadowMapResolution,
+          [scene, &shadowViews, firstShadowSlot, maxShadowedLights, &sceneViews, shadowMapResolution, diagnostics,
            &casterCount, &viewIndex](std::span<const Engine::EntityHandle> entities,
                                      std::span<const ::Engine::Ecs::SpotLight> lightComponents,
                                      std::span<const ::Engine::Ecs::WorldTransform> transforms,
@@ -1209,8 +1087,17 @@ void Engine::SceneRenderer::BuildShadowData(Engine::Scene* scene,
                 shadowView->TargetScene = scene;
                 shadowView->ShadowLight = entities[row];
                 if (lightComponents[row].Type == ::Engine::Ecs::LightType::Directional) {
-                  shadowView->ViewProjection = ComputeDirectionalLightViewProj(lightData, *scene, modelResources,
-                                                                               sceneViews, shadowMapResolution);
+                  ::Engine::Renderer::DirectionalShadowDiagnostics fitDiagnostics;
+                  const auto viewProjection = ComputeDirectionalLightViewProj(
+                      lightData, sceneViews, shadowMapResolution, fitDiagnostics, entities[row]);
+                  if (viewProjection.has_value()) {
+                    shadowView->ViewProjection = *viewProjection;
+                    if (diagnostics != nullptr) {
+                      diagnostics->push_back(fitDiagnostics);
+                    }
+                  } else {
+                    shadowView->ViewProjection = DirectX::XMMatrixIdentity();
+                  }
                 } else if (faceCount == 6U) {
                   shadowView->ViewProjection = ComputePointLightFaceViewProj(lightData, face);
                 } else {

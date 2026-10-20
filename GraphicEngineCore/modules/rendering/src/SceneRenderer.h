@@ -18,6 +18,7 @@
 #include "rendering/include/renderer/Light.h"
 #include "rendering/include/renderer/ModelResourceLibrary.h"
 #include "rendering/include/renderer/RenderResources.h"
+#include "rendering/include/renderer/ShadowDiagnostics.h"
 #include "rendering/src/MaterialSystem.h"
 #include "rendering/src/EnvironmentLighting.h"
 #include "rendering/src/PipelineCache.h"
@@ -77,7 +78,8 @@ public:
                               uint32_t firstShadowSlot, uint32_t maxShadowedLights,
                               const ::Engine::Renderer::ModelResourceLibrary* modelResources = nullptr,
                               const std::vector<::Engine::Renderer::RenderView*>& sceneViews = {},
-                              uint32_t shadowMapResolution = 2048);
+                              uint32_t shadowMapResolution = 2048,
+                              std::vector<::Engine::Renderer::DirectionalShadowDiagnostics>* diagnostics = nullptr);
   static uint32_t CountShadowCasters(const Engine::Scene* scene, uint32_t limit);
   /// Counts depth views needed by the selected shadow-casting lights (point lights use six faces).
   /// @param scene Scene whose light components are counted.

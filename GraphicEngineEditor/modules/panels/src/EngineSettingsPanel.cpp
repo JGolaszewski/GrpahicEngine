@@ -91,6 +91,26 @@ void EngineSettingsPanel::Draw() {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) // Dear ImGui formats text through its documented variadic API.
     ImGui::SetItemTooltip("Maximum shadow maps rendered per scene. The current renderer supports up to %u.",
                           Engine::MaxShadowedLights);
+
+    if (ImGui::TreeNode("Directional shadow fit diagnostics")) {
+      const auto& diagnostics = renderSystem->GetDirectionalShadowDiagnostics();
+      if (diagnostics.empty()) {
+        ImGui::TextDisabled("No directional shadow fit is active in the latest frame.");
+      }
+      for (const auto& fit : diagnostics) {
+        ImGui::PushID(static_cast<int>(fit.Light.Index));
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) // ImGui formats diagnostic numbers through its documented
+        // variadic API.
+        ImGui::Text("Light %u", fit.Light.Index);
+        ImGui::Text("Coverage: %.2f x %.2f x %.2f world units", fit.CoverageWidth, fit.CoverageWidth,
+                    fit.CoverageDepth);
+        ImGui::Text("Map: %u x %u px (%.4f world units / texel)", fit.MapResolution, fit.MapResolution,
+                    fit.TexelWorldSize);
+        ImGui::Text("Depth bias: %.5f", fit.Bias);
+        ImGui::PopID();
+      }
+      ImGui::TreePop();
+    }
   } else {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) // Dear ImGui formats text through its documented variadic API.
     ImGui::TextDisabled("Renderer settings are unavailable.");

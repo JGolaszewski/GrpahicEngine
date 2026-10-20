@@ -6,6 +6,7 @@
 #include "rendering/include/RenderOutput.h"
 #include "rendering/include/ViewportTarget.h"
 #include "rendering/include/renderer/CameraView.h"
+#include "rendering/include/renderer/ShadowDiagnostics.h"
 #include "rendering/include/renderer/Viewport.h"
 #include "rendering/include/renderer/ViewportBinding.h"
 #include "runtime/include/CoreExport.h"
@@ -80,9 +81,10 @@ public:
   /// @param preserveAlphaCoverage Whether masked alpha coverage is preserved in its mip levels.
   /// @param alphaCutoff Alpha threshold used when preserving coverage for masked materials.
   /// @return Prepared GPU resource, or empty when it has not been prepared.
-  std::shared_ptr<::Engine::Renderer::TextureResource>
-  GetPreparedAssetTexture(const std::string& guid, bool srgb, bool normalMap = false,
-                          bool preserveAlphaCoverage = false, float alphaCutoff = 0.5F) const;
+  std::shared_ptr<::Engine::Renderer::TextureResource> GetPreparedAssetTexture(const std::string& guid, bool srgb,
+                                                                               bool normalMap = false,
+                                                                               bool preserveAlphaCoverage = false,
+                                                                               float alphaCutoff = 0.5F) const;
 
   /// Begin frame recording before submitting view work.
   void BeginFrame();
@@ -98,6 +100,12 @@ public:
   /// Gets the active shadow settings.
   /// @return Read-only reference to the current settings.
   const ShadowSettings& GetShadowSettings() const noexcept { return m_ShadowSettings; }
+  /// Gets directional shadow fit diagnostics from the most recently submitted frame.
+  /// @return Read-only per-light coverage, resolution, texel size, and bias measurements.
+  const std::vector<::Engine::Renderer::DirectionalShadowDiagnostics>&
+  GetDirectionalShadowDiagnostics() const noexcept {
+    return m_DirectionalShadowDiagnostics;
+  }
   /// Picks the light nearest to a viewport location.
   /// @param viewportX Horizontal viewport coordinate.
   /// @param viewportY Vertical viewport coordinate.
@@ -286,8 +294,8 @@ private:
                               std::shared_ptr<::Engine::Renderer::Material>& material, std::string& error);
   bool ResolveImportedTexture(const std::string& guid, uint64_t generation, const ImportedModel& model,
                               int32_t textureIndex, bool srgb, bool normalMap, bool preserveAlphaCoverage,
-                              float alphaCutoff,
-                              std::shared_ptr<::Engine::Renderer::TextureResource>& destination, std::string& error);
+                              float alphaCutoff, std::shared_ptr<::Engine::Renderer::TextureResource>& destination,
+                              std::string& error);
   void UnregisterMaterials(const std::vector<std::shared_ptr<::Engine::Renderer::Material>>& materials);
   void ClearFrameBuffer();
   void ClearSubmittedTargets();
@@ -300,6 +308,7 @@ private:
   std::string m_LastUploadFailure;
   std::string m_LastRenderGraphFailure;
   ShadowSettings m_ShadowSettings;
+  std::vector<::Engine::Renderer::DirectionalShadowDiagnostics> m_DirectionalShadowDiagnostics;
   AssetManager* m_AssetManager = nullptr;
   std::map<std::tuple<std::string, bool, bool, bool, float>, std::shared_ptr<::Engine::Renderer::TextureResource>>
       m_AuthoredTextures;
