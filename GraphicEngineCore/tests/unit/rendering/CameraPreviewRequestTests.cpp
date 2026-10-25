@@ -12,9 +12,11 @@ TEST(CameraPreviewRequestTests, ResolvesSelectedEntityAndConfiguredOutputDimensi
   selectedCamera.OutputWidth = 800;
   selectedCamera.OutputHeight = 600;
   Engine::Ecs::WorldTransform transform;
+  Engine::Ecs::CameraPostProcessing selectedPostProcessing{
+      .Effects = {Engine::Ecs::ColorGradingEffect{.Exposure = 1.0F}}};
 
   const auto firstEntity = world.Create(firstCamera, transform);
-  const auto selectedEntity = world.Create(selectedCamera, transform);
+  const auto selectedEntity = world.Create(selectedCamera, transform, selectedPostProcessing);
   ASSERT_TRUE(firstEntity);
   ASSERT_TRUE(selectedEntity);
 
@@ -24,6 +26,10 @@ TEST(CameraPreviewRequestTests, ResolvesSelectedEntityAndConfiguredOutputDimensi
   EXPECT_EQ(request->Width, 800U);
   EXPECT_EQ(request->Height, 600U);
   EXPECT_FLOAT_EQ(request->View.FieldOfViewDegrees, 72.0F);
+  ASSERT_EQ(request->PostProcessing.Effects.size(), 1U);
+  const auto* grading = std::get_if<Engine::Ecs::ColorGradingEffect>(&request->PostProcessing.Effects.front());
+  ASSERT_NE(grading, nullptr);
+  EXPECT_FLOAT_EQ(grading->Exposure, 1.0F);
 }
 
 TEST(CameraPreviewRequestTests, RefreshResolutionReadsCurrentSceneCameraSettings) {

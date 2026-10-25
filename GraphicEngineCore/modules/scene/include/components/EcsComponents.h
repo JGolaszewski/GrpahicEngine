@@ -2,6 +2,7 @@
 
 #include "scene/include/ArchetypeWorld.h"
 #include "scene/include/SceneDocument.h"
+#include "scene/include/components/CameraPostProcessing.h"
 
 #include <DirectXMath.h>
 

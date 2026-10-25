@@ -569,6 +569,66 @@ auto LightJson(const SceneLightDocument& light) -> Json {
   };
 }
 
+auto CameraPostProcessingJson(const Ecs::CameraPostProcessing& postProcessing) -> Json {
+  Json result = Json::array();
+  for (const auto& effect : postProcessing.Effects) {
+    if (const auto* grading = std::get_if<Ecs::ColorGradingEffect>(&effect)) {
+      result.push_back({{"type", "colorGrading"},
+                        {"exposure", grading->Exposure},
+                        {"contrast", grading->Contrast},
+                        {"saturation", grading->Saturation}});
+    } else if (const auto* bloom = std::get_if<Ecs::BloomEffect>(&effect)) {
+      result.push_back({{"type", "bloom"},
+                        {"threshold", bloom->Threshold},
+                        {"intensity", bloom->Intensity},
+                        {"radius", bloom->Radius}});
+    }
+  }
+  return result;
+}
+
+auto ReadCameraPostProcessing(const Json& value, Ecs::CameraPostProcessing& postProcessing, std::string& error)
+    -> bool {
+  if (!value.is_array()) {
+    error = "postProcessing must be an array";
+    return false;
+  }
+  for (size_t index = 0; index < value.size(); ++index) {
+    const Json& effect = value.at(index);
+    if (!effect.is_object() || !effect.contains("type") || !effect.at("type").is_string()) {
+      error = "postProcessing[" + std::to_string(index) + "] must have a string type";
+      return false;
+    }
+    const std::string type = effect.at("type").get<std::string>();
+    if (type == "colorGrading") {
+      Ecs::ColorGradingEffect grading;
+      if (!ReadNumber(effect, "exposure", grading.Exposure, error) ||
+          !ReadNumber(effect, "contrast", grading.Contrast, error) ||
+          !ReadNumber(effect, "saturation", grading.Saturation, error)) {
+        return false;
+      }
+      postProcessing.Effects.emplace_back(grading);
+    } else if (type == "bloom") {
+      Ecs::BloomEffect bloom;
+      if (!ReadNumber(effect, "threshold", bloom.Threshold, error) ||
+          !ReadNumber(effect, "intensity", bloom.Intensity, error) ||
+          !ReadNumber(effect, "radius", bloom.Radius, error)) {
+        return false;
+      }
+      postProcessing.Effects.emplace_back(bloom);
+    } else {
+      error = "postProcessing[" + std::to_string(index) + "] has an unsupported effect type";
+      return false;
+    }
+  }
+  const Status valid = Ecs::Validate(postProcessing);
+  if (!valid) {
+    error = valid.error().Message;
+    return false;
+  }
+  return true;
+}
+
 auto CameraJson(const SceneCameraDocument& camera) -> Json {
   return {
       {"id", camera.id},
@@ -588,6 +648,7 @@ auto CameraJson(const SceneCameraDocument& camera) -> Json {
       {"outputHeight", camera.outputHeight},
       {"priority", camera.priority},
       {"active", camera.active},
+      {"postProcessing", camera.postProcessing ? CameraPostProcessingJson(*camera.postProcessing) : Json(nullptr)},
   };
 }
 
@@ -733,7 +794,8 @@ auto ValidateCamera(const SceneCameraDocument& camera, std::set<uint64_t>& ids) 
          camera.fovRadians > 0.0F && camera.fovRadians < std::numbers::pi_v<float> && camera.nearPlane > 0.0F &&
          camera.farPlane > camera.nearPlane && camera.outputWidth > 0 && camera.outputHeight > 0 &&
          std::isfinite(rotationLengthSquared) && rotationLengthSquared > 1.0e-12F &&
-         std::ranges::all_of(camera.scale, [](float value) { return std::isfinite(value) && value > 0.0F; });
+         std::ranges::all_of(camera.scale, [](float value) { return std::isfinite(value) && value > 0.0F; }) &&
+         (!camera.postProcessing || Ecs::Validate(*camera.postProcessing).has_value());
 }
 
 auto ValidateCameras(const std::filesystem::path& path, const SceneDocument& document, std::string& error) -> bool {
@@ -1143,6 +1205,7 @@ auto LoadCameraArray(const Json& root, SceneDocumentResult& result, const std::f
                     "outputHeight",
                     "priority",
                     "active",
+                    "postProcessing",
                 },
                 result.warnings, context);
       SceneCameraDocument camera;
@@ -1188,6 +1251,14 @@ auto LoadCameraArray(const Json& root, SceneDocumentResult& result, const std::f
         fieldContext.append(".").append(fieldError);
         result.error = FileContext(path, fieldContext);
         return false;
+      }
+      if (item.contains("postProcessing") && !item.at("postProcessing").is_null()) {
+        Ecs::CameraPostProcessing postProcessing;
+        if (!ReadCameraPostProcessing(item.at("postProcessing"), postProcessing, fieldError)) {
+          result.error = FileContext(path, context + ".postProcessing: " + fieldError);
+          return false;
+        }
+        camera.postProcessing = std::move(postProcessing);
       }
       const float rotationLengthSquared =
           (camera.rotation.at(0) * camera.rotation.at(0)) + (camera.rotation.at(1) * camera.rotation.at(1)) +

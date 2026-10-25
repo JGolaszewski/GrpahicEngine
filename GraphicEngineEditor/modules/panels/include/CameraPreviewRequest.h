@@ -10,6 +10,7 @@ struct CameraPreviewRequest {
   Engine::Renderer::CameraView View;
   uint32_t Width = 0;
   uint32_t Height = 0;
+  Engine::Ecs::CameraPostProcessing PostProcessing;
 };
 
 /// Resolve the requested entity's current camera state for a viewer render.
@@ -24,5 +25,9 @@ inline auto ResolveCameraPreviewRequest(const Engine::ArchetypeWorld& world, Eng
   if (!view) {
     return std::unexpected(Engine::MakeError("The selected camera transform cannot be rendered"));
   }
-  return CameraPreviewRequest{*view, camera->OutputWidth, camera->OutputHeight};
+  CameraPreviewRequest request{.View = *view, .Width = camera->OutputWidth, .Height = camera->OutputHeight};
+  if (const auto* postProcessing = world.Get<Engine::Ecs::CameraPostProcessing>(entity); postProcessing != nullptr) {
+    request.PostProcessing = *postProcessing;
+  }
+  return request;
 }

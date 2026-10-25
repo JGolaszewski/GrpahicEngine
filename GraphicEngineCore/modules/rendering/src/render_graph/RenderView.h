@@ -76,7 +76,9 @@ public:
   RGResourceID DisplayColorResource;
   Engine::ViewportBinding::Mode RenderMode = Engine::ViewportBinding::Mode::Editor;
   Engine::EnvironmentLightingSettings Environment;
+  Engine::Ecs::CameraPostProcessing PostProcessing;
   std::vector<RGViewportAttachment> OutputAttachments;
+  RGResourceID PostProcessColor;
   DirectX::XMFLOAT3 CameraPosition = {0.0f, 0.0f, 0.0f};
   DirectX::XMFLOAT3 CameraForward = {0.0f, 0.0f, 1.0f};
   DirectX::XMFLOAT3 CameraRight = {1.0f, 0.0f, 0.0f};

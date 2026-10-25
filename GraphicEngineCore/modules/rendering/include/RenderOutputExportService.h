@@ -1,6 +1,7 @@
 #pragma once
 
 #include "rendering/include/RenderOutput.h"
+#include "scene/include/components/CameraPostProcessing.h"
 #include "runtime/include/CoreExport.h"
 #include "runtime/include/Result.h"
 
@@ -54,16 +55,20 @@ public:
   /// Start a final-color PNG export. Rendering is submitted immediately; GPU
   /// completion and image writing are advanced by Update on later frames.
   /// An enabled background is composited into final_color by the writer thread.
+  /// @param cameraPostProcessing Ordered GPU effects configured for the authored camera.
   Engine::Result<RequestId> StartPng(RenderSystem& renderer, Scene& scene, const ::Engine::Renderer::CameraView& camera,
                                      uint32_t width, uint32_t height, std::filesystem::path destination,
                                      const FinalColorPostProcess& postProcess = {},
-                                     const RenderOutputBackground& background = {});
+                                     const RenderOutputBackground& background = {},
+                                     const Ecs::CameraPostProcessing& cameraPostProcessing = {});
   /// Start a multipart EXR export containing exactly the selected AOV planes.
   /// An enabled background is composited into final_color only when selected.
+  /// @param cameraPostProcessing Ordered GPU effects configured for the authored camera.
   Engine::Result<RequestId>
   StartMultilayerExr(RenderSystem& renderer, Scene& scene, const ::Engine::Renderer::CameraView& camera, uint32_t width,
                      uint32_t height, std::vector<RenderAov> selectedAovs, std::filesystem::path destination,
-                     const FinalColorPostProcess& postProcess = {}, const RenderOutputBackground& background = {});
+                     const FinalColorPostProcess& postProcess = {}, const RenderOutputBackground& background = {},
+                     const Ecs::CameraPostProcessing& cameraPostProcessing = {});
 
   /// Poll GPU readback and queue ready CPU-owned output for background writing.
   void Update();
@@ -92,7 +97,8 @@ private:
   Engine::Result<RequestId> Start(RenderSystem& renderer, Engine::Scene& scene,
                                   const ::Engine::Renderer::CameraView& camera, uint32_t width, uint32_t height,
                                   bool exr, std::vector<RenderAov> selectedAovs, std::filesystem::path destination,
-                                  const FinalColorPostProcess& postProcess, const RenderOutputBackground& background);
+                                  const FinalColorPostProcess& postProcess, const RenderOutputBackground& background,
+                                  const Ecs::CameraPostProcessing& cameraPostProcessing);
   void WorkerMain();
 
   mutable std::mutex m_Mutex;

@@ -49,8 +49,10 @@ resource lifetimes, and access states for diagnostics.
   it skips preview and final views.
 
 The graph is a scheduling and resource-state layer around these passes. It does
-not currently provide a deferred/G-buffer renderer, post-processing pass chain,
-or general-purpose graph editor.
+not currently provide a deferred/G-buffer renderer or general-purpose graph
+editor. It does include an optional camera-scoped post-processing chain for
+color grading and bloom, scheduled after the forward pass and before the display
+transform.
 
 ## Shader and pipeline architecture
 
@@ -138,15 +140,15 @@ preferences.
 
 Final camera output uses an offscreen target at the requested dimensions. The
 renderer captures final color, depth, world normal, specular-lighting, and
-diffuse-lighting planes. `BeginFinalRender` submits GPU copies to staging
-textures and returns a ticket; callers poll on the render thread until the
-readback is ready. The optional final-color hook can change the linear
-scene-referred final-color plane; the other planes remain pre-hook. PNG export
-applies a display transform, while selected-AOV multilayer EXR keeps float
-samples. See [final rendering and output planes](final-render.md) and
+diffuse-lighting planes. Camera-attached color grading and bloom run on the GPU
+before readback and affect only final color. `BeginFinalRender` submits GPU
+copies to staging textures and returns a ticket; callers poll on the render
+thread until the readback is ready. The optional CPU final-color hook runs after
+readback; the other planes remain unprocessed. PNG export applies a display
+transform, while selected-AOV multilayer EXR keeps float samples. See
+[final rendering and output planes](final-render.md) and
 [render output and image export](output.md) for their detailed contracts.
 
-The final output path is a dedicated offscreen render workflow rather than an
-extra post-processing graph pass. It requires an idle render system and allows
-only one active final-render ticket at a time. The editor camera preview is a
+The final output path is a dedicated offscreen render workflow and allows only
+one active final-render ticket at a time. The editor camera preview is a
 separate interactive viewport and does not include editor debug geometry.

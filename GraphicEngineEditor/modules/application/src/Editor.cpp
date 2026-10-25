@@ -171,7 +171,8 @@ void Editor::OnInit() {
         if (!request) {
           return std::unexpected(request.error());
         }
-        return GetRenderSystem()->RenderFinal(*m_ActiveScene, request->View, request->Width, request->Height);
+        return GetRenderSystem()->RenderFinal(*m_ActiveScene, request->View, request->Width, request->Height, {}, {},
+                                              request->PostProcessing);
       },
       [this](uint32_t width, uint32_t height, std::span<const uint8_t> pixels) -> bool {
         return m_UiIntegration.SetCameraPreview(width, height, pixels);
@@ -195,10 +196,11 @@ void Editor::OnInit() {
         if (exr) {
           return m_RenderOutputExportService->StartMultilayerExr(
               *renderer, *m_ActiveScene, request->View, request->Width, request->Height, std::move(selectedAovs),
-              std::move(destination), {}, background);
+              std::move(destination), {}, background, request->PostProcessing);
         }
         return m_RenderOutputExportService->StartPng(*renderer, *m_ActiveScene, request->View, request->Width,
-                                                     request->Height, std::move(destination), {}, background);
+                                                     request->Height, std::move(destination), {}, background,
+                                                     request->PostProcessing);
       },
       [this](
           Engine::RenderOutputExportService::RequestId requestId) -> std::optional<Engine::RenderOutputExportStatus> {
@@ -343,6 +345,11 @@ void Editor::OnSetupViews() {
     previewBinding.RenderMode = Engine::ViewportBinding::Mode::Preview;
     previewBinding.TargetViewport = m_CameraPreviewViewport.get();
     previewBinding.TargetScene = m_ActiveScene.get();
+    if (const auto* postProcessing =
+            m_ActiveScene->World().Get<Engine::Ecs::CameraPostProcessing>(m_CameraPreviewEntity);
+        postProcessing != nullptr) {
+      previewBinding.PostProcessing = *postProcessing;
+    }
     RegisterView(previewBinding);
   }
 }
@@ -976,6 +983,15 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
         queueMutation(*value);
       } else if (operation == EcsComponentMutationRequestedEvent::Operation::Add) {
         queueMutation(Engine::Ecs::Camera{});
+      }
+      break;
+    case EcsComponentMutationRequestedEvent::Component::CameraPostProcessing:
+      if (operation == EcsComponentMutationRequestedEvent::Operation::Remove) {
+        (void)m_ActiveScene->QueueRemove<Engine::Ecs::CameraPostProcessing>(entity);
+      } else if (const auto* value = std::get_if<Engine::Ecs::CameraPostProcessing>(&payload)) {
+        queueMutation(*value);
+      } else if (operation == EcsComponentMutationRequestedEvent::Operation::Add) {
+        queueMutation(Engine::Ecs::CameraPostProcessing{});
       }
       break;
     }

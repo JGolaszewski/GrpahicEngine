@@ -8,6 +8,13 @@ Output resolution defaults to 1920 x 1080 and can be set to 720p (1280 x 720), 1
 (2560 x 1440), 4K UHD (3840 x 2160), or custom positive dimensions in the Inspector. Resolution is persisted with the
 camera; older scene files without these fields load as 1920 x 1080.
 
+Add the optional **Post Processing** component to a camera in the Inspector to
+configure its ordered effect stack. V1 supports color grading (exposure,
+contrast, and saturation) and bloom (threshold, intensity, and radius). Effects
+run only on that authored camera's preview and final renders. An empty stack
+leaves the camera output unchanged, and older scene files load without the
+component.
+
 The editor navigation camera is editor-owned view state. It does not appear in the scene hierarchy or scene files.
 Camera frustums are editor debug geometry. They use each visible scene camera's transform, field of view, clip planes,
 and output aspect ratio.

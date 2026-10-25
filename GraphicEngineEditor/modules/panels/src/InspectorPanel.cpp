@@ -575,6 +575,64 @@ void InspectorPanel::DrawEntityInspector() {
     }
   }
 
+  if (const auto* storedPostProcessing = world.Get<Engine::Ecs::CameraPostProcessing>(entity);
+      storedPostProcessing != nullptr &&
+      DrawComponentHeader("Post Processing", "Post Processing", "Camera post-processing component header",
+                          Mutation::Component::CameraPostProcessing, emitRemove)) {
+    Engine::Ecs::CameraPostProcessing postProcessing = *storedPostProcessing;
+    bool changed = false;
+    for (size_t index = 0; index < postProcessing.Effects.size(); ++index) {
+      ImGui::PushID(static_cast<int>(index));
+      Engine::Ecs::CameraPostProcessEffect& effect = postProcessing.Effects[index];
+      const char* effectName =
+          std::holds_alternative<Engine::Ecs::ColorGradingEffect>(effect) ? "Color Grading" : "Bloom";
+      ImGui::Text("%zu. %s", index + 1U, effectName);
+      ImGui::SameLine();
+      if (ImGui::SmallButton("Up") && index > 0) {
+        std::swap(postProcessing.Effects[index], postProcessing.Effects[index - 1U]);
+        changed = true;
+      }
+      ImGui::SameLine();
+      if (ImGui::SmallButton("Down") && index + 1U < postProcessing.Effects.size()) {
+        std::swap(postProcessing.Effects[index], postProcessing.Effects[index + 1U]);
+        changed = true;
+      }
+      if (auto* grading = std::get_if<Engine::Ecs::ColorGradingEffect>(&effect)) {
+        changed |= ImGui::SliderFloat("Exposure", &grading->Exposure, -8.0F, 8.0F, "%.2f stops");
+        changed |= ImGui::SliderFloat("Contrast", &grading->Contrast, 0.0F, 4.0F, "%.2f");
+        changed |= ImGui::SliderFloat("Saturation", &grading->Saturation, 0.0F, 4.0F, "%.2f");
+      } else if (auto* bloom = std::get_if<Engine::Ecs::BloomEffect>(&effect)) {
+        changed |= ImGui::DragFloat("Threshold", &bloom->Threshold, 0.05F, 0.0F, 100000.0F, "%.2f");
+        changed |= ImGui::SliderFloat("Intensity", &bloom->Intensity, 0.0F, 10.0F, "%.2f");
+        changed |= ImGui::SliderFloat("Radius", &bloom->Radius, 0.0F, 64.0F, "%.1f px");
+      }
+      if (ImGui::SmallButton("Remove effect")) {
+        postProcessing.Effects.erase(postProcessing.Effects.begin() + static_cast<std::ptrdiff_t>(index));
+        changed = true;
+        ImGui::PopID();
+        break;
+      }
+      ImGui::Separator();
+      ImGui::PopID();
+    }
+    static constexpr const char* effectTypes[] = {"Color Grading", "Bloom"};
+    static int newEffectType = 0;
+    ImGui::SetNextItemWidth(150.0F);
+    ImGui::Combo("New effect", &newEffectType, effectTypes, 2);
+    ImGui::SameLine();
+    if (ImGui::Button("Add effect")) {
+      if (newEffectType == 0) {
+        postProcessing.Effects.emplace_back(Engine::Ecs::ColorGradingEffect{});
+      } else {
+        postProcessing.Effects.emplace_back(Engine::Ecs::BloomEffect{});
+      }
+      changed = true;
+    }
+    if (changed) {
+      emitSet(Mutation::Component::CameraPostProcessing, std::move(postProcessing));
+    }
+  }
+
   if (!isSceneRoot && ImGui::Button("Add Component")) {
     m_AddComponentFilter.fill('\0');
     ImGui::OpenPopup("Add component popup");
@@ -593,6 +651,10 @@ void InspectorPanel::DrawEntityInspector() {
     if (!world.Has<Engine::Ecs::Camera>(entity) && Matches("Camera", m_AddComponentFilter.data()) &&
         ImGui::Selectable("Camera")) {
       emitAdd(Mutation::Component::Camera);
+    }
+    if (world.Has<Engine::Ecs::Camera>(entity) && !world.Has<Engine::Ecs::CameraPostProcessing>(entity) &&
+        Matches("Post Processing", m_AddComponentFilter.data()) && ImGui::Selectable("Post Processing")) {
+      emitAdd(Mutation::Component::CameraPostProcessing);
     }
     ImGui::EndPopup();
   }
@@ -622,6 +684,9 @@ void InspectorPanel::DrawEntityInspector() {
   }
   if (world.Has<Engine::Ecs::Camera>(entity)) {
     append("Camera");
+  }
+  if (world.Has<Engine::Ecs::CameraPostProcessing>(entity)) {
+    append("CameraPostProcessing");
   }
   signature += '}';
   ImGui::Separator();

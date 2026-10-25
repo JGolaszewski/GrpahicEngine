@@ -4,6 +4,7 @@
 #include "rendering/src/RenderPacket.h"
 #include "rendering/src/render_graph/RGBuilder.h"
 #include "rendering/src/render_graph/RenderContext.h"
+#include "scene/include/components/CameraPostProcessing.h"
 #include "runtime/include/CoreExport.h"
 #include <memory>
 #include <string>
@@ -78,6 +79,55 @@ public:
 
 private:
   Engine::SceneRenderer* m_SceneRenderer = nullptr;
+};
+
+struct CameraPostProcessResources {
+  nvrhi::DeviceHandle Device;
+  nvrhi::ShaderHandle VertexShader;
+  nvrhi::ShaderHandle PixelShader;
+  nvrhi::BindingLayoutHandle BindingLayout;
+  nvrhi::BufferHandle ConstantsBuffer;
+  nvrhi::GraphicsPipelineHandle Pipeline;
+};
+
+class ENGINE_API CameraPostProcessPass : public ::Engine::Renderer::IRenderPass {
+public:
+  CameraPostProcessPass(std::shared_ptr<CameraPostProcessResources> resources, size_t effectIndex);
+
+  std::string GetName() const override { return "CameraPostProcessPass"; }
+  bool HasSideEffect() const override { return true; }
+  void Setup(RGBuilder& builder, FrameBlackboard& blackboard) override;
+  bool Execute(nvrhi::ICommandList* cmd, const RenderContext& ctx) override;
+
+private:
+  struct ViewResources {
+    RenderView* View = nullptr;
+    RGResourceID Input;
+    RGResourceID Output;
+    Engine::Ecs::CameraPostProcessEffect Effect;
+  };
+
+  std::shared_ptr<CameraPostProcessResources> m_Resources;
+  size_t m_EffectIndex = 0;
+  std::vector<ViewResources> m_Views;
+};
+
+class ENGINE_API CameraPostProcessCompositePass : public ::Engine::Renderer::IRenderPass {
+public:
+  explicit CameraPostProcessCompositePass(std::shared_ptr<CameraPostProcessResources> resources);
+  std::string GetName() const override { return "CameraPostProcessCompositePass"; }
+  bool HasSideEffect() const override { return true; }
+  void Setup(RGBuilder& builder, FrameBlackboard& blackboard) override;
+  bool Execute(nvrhi::ICommandList* cmd, const RenderContext& ctx) override;
+
+private:
+  struct ViewResources {
+    RenderView* View = nullptr;
+    RGResourceID Input;
+    RGResourceID Output;
+  };
+  std::shared_ptr<CameraPostProcessResources> m_Resources;
+  std::vector<ViewResources> m_Views;
 };
 
 struct DisplayTransformResources {

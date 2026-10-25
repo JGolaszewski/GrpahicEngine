@@ -372,6 +372,9 @@ TEST(ScenePersistenceTests, PersistsCameraResolutionAndUsesFullHdDefaultsForOlde
   camera.outputHeight = 1440;
   camera.priority = -4;
   camera.active = false;
+  camera.postProcessing = Engine::Ecs::CameraPostProcessing{
+      .Effects = {Engine::Ecs::ColorGradingEffect{.Exposure = 1.25F, .Contrast = 0.8F, .Saturation = 1.4F},
+                  Engine::Ecs::BloomEffect{.Threshold = 2.5F, .Intensity = 0.6F, .Radius = 12.0F}}};
   document.cameras.push_back(camera);
   Engine::SceneEntityDocument mesh;
   mesh.id = 9;
@@ -399,6 +402,16 @@ TEST(ScenePersistenceTests, PersistsCameraResolutionAndUsesFullHdDefaultsForOlde
   EXPECT_EQ(loaded.document.cameras.front().scale, camera.scale);
   EXPECT_EQ(loaded.document.cameras.front().priority, -4);
   EXPECT_FALSE(loaded.document.cameras.front().active);
+  ASSERT_TRUE(loaded.document.cameras.front().postProcessing.has_value());
+  ASSERT_EQ(loaded.document.cameras.front().postProcessing->Effects.size(), 2U);
+  const auto* grading =
+      std::get_if<Engine::Ecs::ColorGradingEffect>(&loaded.document.cameras.front().postProcessing->Effects.front());
+  ASSERT_NE(grading, nullptr);
+  EXPECT_FLOAT_EQ(grading->Exposure, 1.25F);
+  const auto* bloom =
+      std::get_if<Engine::Ecs::BloomEffect>(&loaded.document.cameras.front().postProcessing->Effects.back());
+  ASSERT_NE(bloom, nullptr);
+  EXPECT_FLOAT_EQ(bloom->Radius, 12.0F);
   ASSERT_EQ(loaded.document.lights.size(), 1U);
   EXPECT_EQ(loaded.document.lights.front().name, "Fill Light");
   EXPECT_EQ(loaded.document.lights.front().position, light.position);
@@ -499,12 +512,12 @@ TEST(ScenePersistenceTests, RejectsUnsupportedSchemaVersion) {
   Engine::AssetManager assets(project.Root());
   {
     std::ofstream scene(project.Root() / "future-schema.scene.json", std::ios::binary);
-    scene << R"({"schemaVersion":4,"unitsPerMeter":1.0,"entities":[]})";
+    scene << R"({"schemaVersion":5,"unitsPerMeter":1.0,"entities":[]})";
   }
 
   const auto loaded = assets.LoadScene("future-schema.scene.json");
   EXPECT_FALSE(loaded);
-  EXPECT_NE(loaded.error.find("unsupported scene schema version 4"), std::string::npos);
+  EXPECT_NE(loaded.error.find("unsupported scene schema version 5"), std::string::npos);
 }
 
 TEST(ScenePersistenceTests, RejectsMalformedEntityLightAndCameraFields) {

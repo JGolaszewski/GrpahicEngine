@@ -25,6 +25,14 @@ attachments. Invalid bindings, including targets with no framebuffer or zero
 dimensions, are skipped. Preview resolution is controlled by its target size;
 the renderer derives the camera aspect ratio from those target dimensions.
 
+An authored camera may carry an optional `CameraPostProcessing` component with
+an ordered list of color-grading and bloom effects. The list can be empty or
+contain multiple or repeated effects. Its settings must be copied into each
+camera `ViewportBinding` or passed to final-render/export calls. Effects run in
+linear color on the GPU before display encoding and final readback. Bloom adds a
+thresholded blurred highlight and expands alpha with the glow. Depth, normals,
+and lighting AOVs remain unchanged.
+
 ## Output contract
 
 The output contains five Float32 planes in this canonical order. Pixel rows are
@@ -50,12 +58,12 @@ not returned. A plane's sample span remains valid until its owning
 ## Post-processing and color
 
 The optional `FinalColorPostProcess` runs after GPU readback and may modify the
-RGBA final-color plane in place. The lighting, normal, and depth planes remain
-pre-post-process. Final color stays linear and scene-referred; neither the
-renderer nor the hook applies an implicit tone map or display transfer. Hooks
-must preserve linear semantics. Image exporters can apply a display transform
-when writing a display-referred format such as PNG; multilayer EXR can retain
-the float samples.
+RGBA final-color plane in place, after any camera GPU effects. The lighting,
+normal, and depth planes remain unprocessed. Final color stays linear and
+scene-referred; neither the renderer nor the CPU hook applies an implicit tone
+map or display transfer. Hooks must preserve linear semantics. Image exporters
+can apply a display transform when writing a display-referred format such as
+PNG; multilayer EXR can retain the float samples.
 
 The output dimensions determine camera aspect ratio for final rendering. A
 camera's pose and projection parameters are supplied through

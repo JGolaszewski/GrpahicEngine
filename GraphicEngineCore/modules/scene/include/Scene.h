@@ -198,6 +198,14 @@ public:
              std::is_same_v<Component, Ecs::Camera>)) {
           return Status(std::unexpected(MakeError("The scene root cannot have authored components removed")));
         }
+        if constexpr (std::is_same_v<Component, Ecs::Camera>) {
+          if (scene.m_World.Has<Ecs::CameraPostProcessing>(entity)) {
+            const Status postProcessRemoval = scene.m_World.Remove<Ecs::CameraPostProcessing>(entity);
+            if (!postProcessRemoval) {
+              return postProcessRemoval;
+            }
+          }
+        }
         return scene.m_World.Remove<Component>(entity);
       }
     });
@@ -338,6 +346,11 @@ private:
     if (IsSceneRoot(entity) && (std::is_same_v<Component, Ecs::MeshRenderer> ||
                                 std::is_same_v<Component, Ecs::SpotLight> || std::is_same_v<Component, Ecs::Camera>)) {
       return std::unexpected(MakeError("Renderable and authored components are not valid on the scene root"));
+    }
+    if constexpr (std::is_same_v<Component, Ecs::CameraPostProcessing>) {
+      if (!m_World.Has<Ecs::Camera>(entity)) {
+        return std::unexpected(MakeError("Camera post-processing requires a Camera component on the same entity"));
+      }
     }
     if constexpr (requires { Ecs::Validate(component); }) {
       const Status valid = Ecs::Validate(component);

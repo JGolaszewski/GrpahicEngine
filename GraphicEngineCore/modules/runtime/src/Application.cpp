@@ -301,10 +301,17 @@ void Application::RegisterDefaultView() {
       continue;
     }
 
+    Engine::Ecs::CameraPostProcessing postProcessing;
+    if (const auto* storedPostProcessing = scene->World().Get<Engine::Ecs::CameraPostProcessing>(*cameraEntity);
+        storedPostProcessing != nullptr) {
+      postProcessing = *storedPostProcessing;
+    }
+
     RegisterView({.Camera = *cameraView,
                   .CameraEntity = *cameraEntity,
                   .TargetViewport = m_DefaultViewport.get(),
-                  .TargetScene = scene.get()});
+                  .TargetScene = scene.get(),
+                  .PostProcessing = std::move(postProcessing)});
     return;
   }
 }
@@ -717,6 +724,9 @@ auto Application::LoadSceneDocument(const SceneDocument& document, std::string& 
       return false;
     }
     (void)stagedScene->QueueAdd(pending.Handle, camera);
+    if (source.postProcessing) {
+      (void)stagedScene->QueueAdd(pending.Handle, *source.postProcessing);
+    }
   }
   for (const auto& result : stagedScene->sync()) {
     if (!result.Outcome) {
@@ -877,6 +887,10 @@ auto Application::CreateSceneDocument(const Scene& scene) const -> SceneDocument
               camera.outputHeight = components[row].OutputHeight;
               camera.priority = components[row].Priority;
               camera.active = components[row].Active;
+              if (const auto* postProcessing = world.Get<Ecs::CameraPostProcessing>(handles[row]);
+                  postProcessing != nullptr) {
+                camera.postProcessing = *postProcessing;
+              }
               document.cameras.push_back(camera);
             }
           });

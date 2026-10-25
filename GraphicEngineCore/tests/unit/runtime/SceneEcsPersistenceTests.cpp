@@ -88,6 +88,9 @@ TEST(SceneEcsPersistenceTests, RoundTripsEntityIdentityHierarchyAndSupportedComp
                                                     .OutputHeight = 1440,
                                                     .Priority = -7,
                                                     .Active = false});
+  (void)source.QueueAdd(
+      camera, Engine::Ecs::CameraPostProcessing{
+                  .Effects = {Engine::Ecs::BloomEffect{.Threshold = 1.5F, .Intensity = 0.8F, .Radius = 6.0F}}});
   for (const auto& result : source.sync())
     ASSERT_TRUE(result.Outcome);
 
@@ -100,6 +103,8 @@ TEST(SceneEcsPersistenceTests, RoundTripsEntityIdentityHierarchyAndSupportedComp
   EXPECT_EQ(saved.cameras.front().name, "Main Camera");
   EXPECT_EQ(saved.cameras.front().priority, -7);
   EXPECT_FALSE(saved.cameras.front().active);
+  ASSERT_TRUE(saved.cameras.front().postProcessing.has_value());
+  ASSERT_EQ(saved.cameras.front().postProcessing->Effects.size(), 1U);
 
   const auto scenePath = std::filesystem::temp_directory_path() /
                          ("GraphicEngineMaterialRoundTrip-" +
@@ -173,6 +178,11 @@ TEST(SceneEcsPersistenceTests, RoundTripsEntityIdentityHierarchyAndSupportedComp
   EXPECT_EQ(loaded.cameras.front().position, saved.cameras.front().position);
   EXPECT_EQ(loaded.cameras.front().rotation, saved.cameras.front().rotation);
   EXPECT_EQ(loaded.cameras.front().scale, saved.cameras.front().scale);
+  ASSERT_TRUE(loaded.cameras.front().postProcessing.has_value());
+  ASSERT_EQ(loaded.cameras.front().postProcessing->Effects.size(), 1U);
+  const auto* restoredBloom = std::get_if<Engine::Ecs::BloomEffect>(&loaded.cameras.front().postProcessing->Effects[0]);
+  ASSERT_NE(restoredBloom, nullptr);
+  EXPECT_FLOAT_EQ(restoredBloom->Intensity, 0.8F);
   EXPECT_EQ(loaded.cameras.front().flipHorizontal, saved.cameras.front().flipHorizontal);
   EXPECT_EQ(loaded.cameras.front().flipVertical, saved.cameras.front().flipVertical);
   EXPECT_EQ(loaded.cameras.front().priority, saved.cameras.front().priority);

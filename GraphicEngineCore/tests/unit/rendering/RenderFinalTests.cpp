@@ -187,6 +187,25 @@ TEST(RenderFinalTests, WARPSceneViewportAndPipMatchPngDisplayTransformWhileFinal
   EXPECT_NEAR(linearColor[1], 0.25F, 0.02F);
   EXPECT_NEAR(linearColor[2], 0.0F, 0.02F);
 
+  const Engine::Ecs::CameraPostProcessing grading{
+      .Effects = {Engine::Ecs::ColorGradingEffect{.Exposure = 1.0F, .Contrast = 1.0F, .Saturation = 1.0F}}};
+  const auto gradedOutput = renderer.RenderFinal(scene, camera, imageSize, imageSize, {}, {}, grading);
+  ASSERT_TRUE(gradedOutput.has_value()) << (gradedOutput.has_value() ? "" : gradedOutput.error().Message);
+  const auto gradedPixels = gradedOutput->GetPixels(Engine::RenderAov::FinalColor);
+  EXPECT_NEAR(gradedPixels[centerOffset], linearColor[0] * 2.0F, 0.02F);
+  EXPECT_NEAR(gradedPixels[centerOffset + 1U], linearColor[1] * 2.0F, 0.02F);
+  EXPECT_TRUE(std::ranges::equal(finalOutput->GetPixels(Engine::RenderAov::DiffuseLighting),
+                                 gradedOutput->GetPixels(Engine::RenderAov::DiffuseLighting)));
+
+  const Engine::Ecs::CameraPostProcessing bloom{
+      .Effects = {Engine::Ecs::BloomEffect{.Threshold = 0.01F, .Intensity = 1.0F, .Radius = 16.0F}}};
+  const auto bloomedOutput = renderer.RenderFinal(scene, camera, imageSize, imageSize, {}, {}, bloom);
+  ASSERT_TRUE(bloomedOutput.has_value()) << (bloomedOutput.has_value() ? "" : bloomedOutput.error().Message);
+  const auto bloomedPixels = bloomedOutput->GetPixels(Engine::RenderAov::FinalColor);
+  const size_t haloOffset = (static_cast<size_t>(imageSize / 2U) * imageSize) * 4U;
+  EXPECT_GT(bloomedPixels[haloOffset], finalPixels[haloOffset]);
+  EXPECT_GT(bloomedPixels[haloOffset + 3U], finalPixels[haloOffset + 3U]);
+
   auto target = renderer.CreateViewportTarget(imageSize, imageSize);
   ASSERT_NE(target, nullptr);
   Engine::Viewport viewport(target);

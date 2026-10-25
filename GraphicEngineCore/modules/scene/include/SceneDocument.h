@@ -1,6 +1,7 @@
 #pragma once
 
 #include "runtime/include/CoreExport.h"
+#include "scene/include/components/CameraPostProcessing.h"
 
 #include <array>
 #include <cstdint>
@@ -10,7 +11,7 @@
 #include <vector>
 
 namespace Engine {
-inline constexpr uint32_t CurrentSceneSchemaVersion = 3;
+inline constexpr uint32_t CurrentSceneSchemaVersion = 4;
 
 /// Persistent 128-bit scene identity stored as two unsigned words.
 struct SceneGuidDocument {
@@ -128,9 +129,10 @@ struct SceneCameraDocument {
   float farPlane = 1000.0f;                                 ///< Far clipping plane distance.
   /// Render output dimensions; missing values in older files use 1920 x 1080.
   uint32_t outputWidth = 1920;
-  uint32_t outputHeight = 1080; ///< Render output height in pixels.
-  int32_t priority = 0;         ///< Camera selection priority.
-  bool active = true;           ///< Whether this camera participates in camera selection.
+  uint32_t outputHeight = 1080;                            ///< Render output height in pixels.
+  int32_t priority = 0;                                    ///< Camera selection priority.
+  bool active = true;                                      ///< Whether this camera participates in camera selection.
+  std::optional<Ecs::CameraPostProcessing> postProcessing; ///< Optional ordered camera-only effect stack.
 };
 
 /// Complete persistent scene state, including its schema, permanent root, and authored objects.

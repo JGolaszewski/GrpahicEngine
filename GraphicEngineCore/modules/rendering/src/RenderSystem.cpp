@@ -119,6 +119,27 @@ RenderSystem::RenderSystem(IRenderBackend* backend)
   m_DisplayTransformResources->BindingLayout =
       GetNvrhiDevice(m_RenderBackend)->createBindingLayout(displayTransformLayoutDesc);
 
+  m_CameraPostProcessResources = std::make_shared<::Engine::Renderer::CameraPostProcessResources>();
+  m_CameraPostProcessResources->Device = GetNvrhiDevice(m_RenderBackend);
+  m_CameraPostProcessResources->VertexShader =
+      m_ShaderFactory->GetShader("shaders/post_process_vs.dxbc", nvrhi::ShaderType::Vertex);
+  m_CameraPostProcessResources->PixelShader =
+      m_ShaderFactory->GetShader("shaders/post_process_ps.dxbc", nvrhi::ShaderType::Pixel);
+  nvrhi::BindingLayoutDesc postProcessLayoutDesc;
+  postProcessLayoutDesc.visibility = nvrhi::ShaderType::Pixel;
+  postProcessLayoutDesc.bindings = {nvrhi::BindingLayoutItem::Texture_SRV(0),
+                                    nvrhi::BindingLayoutItem::ConstantBuffer(0)};
+  m_CameraPostProcessResources->BindingLayout =
+      GetNvrhiDevice(m_RenderBackend)->createBindingLayout(postProcessLayoutDesc);
+  nvrhi::BufferDesc postProcessConstantsDesc;
+  postProcessConstantsDesc.byteSize = 32;
+  postProcessConstantsDesc.isConstantBuffer = true;
+  postProcessConstantsDesc.isVolatile = true;
+  postProcessConstantsDesc.maxVersions = 64;
+  postProcessConstantsDesc.debugName = "CameraPostProcessConstants";
+  m_CameraPostProcessResources->ConstantsBuffer =
+      GetNvrhiDevice(m_RenderBackend)->createBuffer(postProcessConstantsDesc);
+
   m_ResourceManager = std::make_unique<::Engine::Renderer::ResourceManager>(GetNvrhiDevice(m_RenderBackend));
   m_MaterialSystem = std::make_unique<::Engine::Renderer::MaterialSystem>(
       GetNvrhiDevice(m_RenderBackend), m_DefaultVS, m_DefaultPS, m_ResourceManager->GetFallbackTexture(true),
@@ -268,6 +289,7 @@ void RenderSystem::SubmitViews(const std::vector<Engine::ViewportBinding>& views
     view->TargetScene = binding.TargetScene;
     view->RenderMode = binding.RenderMode;
     view->Environment = binding.Environment;
+    view->PostProcessing = binding.PostProcessing;
     if (!std::isfinite(view->Environment.Intensity)) {
       view->Environment.Intensity = 0.0F;
     }
@@ -336,6 +358,20 @@ void RenderSystem::SubmitViews(const std::vector<Engine::ViewportBinding>& views
 
   m_RenderGraph->AddPass(std::make_unique<::Engine::Renderer::ShadowPass>());
   m_RenderGraph->AddPass(std::make_unique<::Engine::Renderer::ForwardPass>(m_SceneRenderer.get()));
+  size_t maxPostProcessEffects = 0;
+  for (const ::Engine::Renderer::RenderView* view : bb.GetSceneViews()) {
+    if (view != nullptr) {
+      maxPostProcessEffects = (std::max)(maxPostProcessEffects, view->PostProcessing.Effects.size());
+    }
+  }
+  for (size_t effectIndex = 0; effectIndex < maxPostProcessEffects; ++effectIndex) {
+    m_RenderGraph->AddPass(
+        std::make_unique<::Engine::Renderer::CameraPostProcessPass>(m_CameraPostProcessResources, effectIndex));
+  }
+  if (maxPostProcessEffects > 0) {
+    m_RenderGraph->AddPass(
+        std::make_unique<::Engine::Renderer::CameraPostProcessCompositePass>(m_CameraPostProcessResources));
+  }
   const bool hasEditorView = std::ranges::any_of(bb.GetSceneViews(), [](const ::Engine::Renderer::RenderView* view) {
     return view != nullptr && view->RenderMode == Engine::ViewportBinding::Mode::Editor;
   });
@@ -822,7 +858,8 @@ void RenderSystem::EndFrame() {
 
 auto RenderSystem::BeginFinalRender(Engine::Scene& scene, const ::Engine::Renderer::CameraView& camera, uint32_t width,
                                     uint32_t height, const Engine::FinalColorPostProcess& postProcess,
-                                    const Engine::EnvironmentLightingSettings& environment)
+                                    const Engine::EnvironmentLightingSettings& environment,
+                                    const Engine::Ecs::CameraPostProcessing& cameraPostProcessing)
     -> Engine::Result<FinalRenderTicket> {
   if (m_FrameActive || (m_FinalReadbackCapture != nullptr)) {
     return std::unexpected(Engine::MakeError("final rendering requires an idle render system"));
@@ -844,6 +881,11 @@ auto RenderSystem::BeginFinalRender(Engine::Scene& scene, const ::Engine::Render
   }
   if (!IsValid() || m_RenderBackend == nullptr || GetNvrhiDevice(m_RenderBackend) == nullptr) {
     return std::unexpected(Engine::MakeError("final rendering requires a valid graphics device"));
+  }
+  const Engine::Status postProcessingStatus = Engine::Ecs::Validate(cameraPostProcessing);
+  if (!postProcessingStatus) {
+    return std::unexpected(
+        Engine::MakeError("camera post-processing settings are invalid: " + postProcessingStatus.error().Message));
   }
 
   auto target = std::shared_ptr<Engine::ViewportTarget>(
@@ -892,6 +934,7 @@ auto RenderSystem::BeginFinalRender(Engine::Scene& scene, const ::Engine::Render
   binding.RenderMode = Engine::ViewportBinding::Mode::Final;
   binding.TargetViewport = &viewport;
   binding.TargetScene = &scene;
+  binding.PostProcessing = cameraPostProcessing;
   binding.OutputWidth = width;
   binding.OutputHeight = height;
   binding.Environment = environment;
@@ -992,9 +1035,10 @@ auto RenderSystem::CancelFinalRender(FinalRenderTicket ticket) -> Engine::Status
 
 auto RenderSystem::RenderFinal(Engine::Scene& scene, const ::Engine::Renderer::CameraView& camera, uint32_t width,
                                uint32_t height, const Engine::FinalColorPostProcess& postProcess,
-                               const Engine::EnvironmentLightingSettings& environment)
+                               const Engine::EnvironmentLightingSettings& environment,
+                               const Engine::Ecs::CameraPostProcessing& cameraPostProcessing)
     -> Engine::Result<Engine::RenderOutput> {
-  auto ticket = BeginFinalRender(scene, camera, width, height, postProcess, environment);
+  auto ticket = BeginFinalRender(scene, camera, width, height, postProcess, environment, cameraPostProcessing);
   if (!ticket) {
     return std::unexpected(ticket.error());
   }

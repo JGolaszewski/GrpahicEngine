@@ -4,13 +4,13 @@
 
 | AOV | EXR part name | Channels | Meaning |
 | --- | --- | --- | --- |
-| `FinalColor` | `final_color` | `R`, `G`, `B`, `A` | Linear scene-referred final color after the optional final-color hook. Alpha is material opacity. The hook must preserve linear values. |
+| `FinalColor` | `final_color` | `R`, `G`, `B`, `A` | Linear scene-referred final color after camera GPU effects and the optional final-color hook. Alpha includes camera bloom coverage. |
 | `Depth` | `depth` | `Z` | Normalized device depth in `[0, 1]`; background is `1`. |
 | `WorldNormal` | `world_normal` | `X`, `Y`, `Z` | Normalized world-space shading normal. |
 | `SpecularLighting` | `specular_lighting` | `R`, `G`, `B` | Direct and environment specular lighting. |
 | `DiffuseLighting` | `diffuse_lighting` | `R`, `G`, `B` | Direct diffuse, ambient and image-based diffuse lighting, and emissive contribution. |
 
-Lighting and geometric AOVs are captured before the final-color hook. The final-color plane reflects the hook's changes. Failed renders return an error instead of partial or placeholder output.
+Lighting and geometric AOVs are captured before camera post-processing and the final-color hook. The final-color plane reflects both. Failed renders return an error instead of partial or placeholder output.
 
 Transparent materials are composited source-over in `FinalColor`, `SpecularLighting`, and `DiffuseLighting` using the same material opacity, so the two lighting planes sum to the un-postprocessed final RGB. `Depth` and `WorldNormal` identify the nearest visible contributing surface; these geometric values are not blended.
 

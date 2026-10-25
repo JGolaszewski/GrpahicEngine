@@ -3,6 +3,7 @@
 #include "rendering/src/render_graph/FrameBlackboard.h"
 #include "rendering/src/render_graph/RenderView.h"
 #include <algorithm>
+#include <cmath>
 
 namespace {
 constexpr uint32_t ShadowMapSize = 2048;
@@ -384,6 +385,165 @@ auto DebugPass::Execute(nvrhi::ICommandList* cmd, const ::Engine::Renderer::Rend
   for (const ::Engine::Renderer::RenderView* view : ctx.GetBlackboard().GetSceneViews()) {
     if ((view != nullptr) && view->RenderMode == Engine::ViewportBinding::Mode::Editor) {
       m_SceneRenderer->RenderDebugGeometry(cmd, *view);
+    }
+  }
+  return true;
+}
+
+namespace {
+struct CameraPostProcessConstants {
+  uint32_t EffectType = 0;
+  float Exposure = 0.0F;
+  float Contrast = 1.0F;
+  float Saturation = 1.0F;
+  float Threshold = 1.0F;
+  float Intensity = 0.25F;
+  float Radius = 4.0F;
+  float Padding = 0.0F;
+};
+
+auto ToConstants(const Engine::Ecs::CameraPostProcessEffect& effect) -> CameraPostProcessConstants {
+  if (const auto* grading = std::get_if<Engine::Ecs::ColorGradingEffect>(&effect)) {
+    return {.EffectType = 0,
+            .Exposure = grading->Exposure,
+            .Contrast = grading->Contrast,
+            .Saturation = grading->Saturation};
+  }
+  const auto& bloom = std::get<Engine::Ecs::BloomEffect>(effect);
+  return {.EffectType = 1, .Threshold = bloom.Threshold, .Intensity = bloom.Intensity, .Radius = bloom.Radius};
+}
+
+auto DescribeColorTexture(uint32_t width, uint32_t height) -> RGTextureDesc {
+  return {.width = width,
+          .height = height,
+          .arraySize = 1,
+          .mipLevels = 1,
+          .isRenderTarget = true,
+          .isShaderResource = true,
+          .isUnorderedAccess = false,
+          .format = nvrhi::Format::RGBA32_FLOAT,
+          .dimension = nvrhi::TextureDimension::Texture2D};
+}
+
+auto DrawCameraPostProcess(nvrhi::ICommandList* cmd, const RenderContext& ctx,
+                           const std::shared_ptr<CameraPostProcessResources>& resources,
+                           const nvrhi::TextureHandle& input, const nvrhi::TextureHandle& output,
+                           nvrhi::FramebufferHandle& framebuffer, const CameraPostProcessConstants& constants) -> bool {
+  if (cmd == nullptr || resources == nullptr || resources->Device == nullptr || resources->VertexShader == nullptr ||
+      resources->PixelShader == nullptr || resources->BindingLayout == nullptr ||
+      resources->ConstantsBuffer == nullptr || input == nullptr || output == nullptr) {
+    return false;
+  }
+  nvrhi::FramebufferDesc framebufferDesc;
+  framebufferDesc.addColorAttachment(output);
+  framebuffer = resources->Device->createFramebuffer(framebufferDesc);
+  if (framebuffer == nullptr) {
+    return false;
+  }
+  if (resources->Pipeline == nullptr) {
+    nvrhi::GraphicsPipelineDesc pipelineDesc;
+    pipelineDesc.primType = nvrhi::PrimitiveType::TriangleList;
+    pipelineDesc.VS = resources->VertexShader;
+    pipelineDesc.PS = resources->PixelShader;
+    pipelineDesc.bindingLayouts = {resources->BindingLayout};
+    pipelineDesc.renderState.depthStencilState.depthTestEnable = false;
+    pipelineDesc.renderState.depthStencilState.depthWriteEnable = false;
+    pipelineDesc.renderState.rasterState.cullMode = nvrhi::RasterCullMode::None;
+    resources->Pipeline = resources->Device->createGraphicsPipeline(pipelineDesc, framebuffer->getFramebufferInfo());
+    if (resources->Pipeline == nullptr) {
+      return false;
+    }
+  }
+  nvrhi::BindingSetDesc bindingDesc;
+  bindingDesc.addItem(nvrhi::BindingSetItem::Texture_SRV(0, input));
+  bindingDesc.addItem(nvrhi::BindingSetItem::ConstantBuffer(0, resources->ConstantsBuffer));
+  nvrhi::BindingSetHandle bindings = resources->Device->createBindingSet(bindingDesc, resources->BindingLayout);
+  if (bindings == nullptr) {
+    return false;
+  }
+  cmd->writeBuffer(resources->ConstantsBuffer, &constants, sizeof(constants));
+  ctx.GetFrameContext().GetDiagnostics().UploadBytes += sizeof(constants);
+  const nvrhi::FramebufferInfoEx& framebufferInfo = framebuffer->getFramebufferInfo();
+  nvrhi::GraphicsState state;
+  state.pipeline = resources->Pipeline;
+  state.framebuffer = framebuffer;
+  state.viewport.addViewport(
+      nvrhi::Viewport(static_cast<float>(framebufferInfo.width), static_cast<float>(framebufferInfo.height)));
+  state.viewport.addScissorRect(
+      nvrhi::Rect(static_cast<int>(framebufferInfo.width), static_cast<int>(framebufferInfo.height)));
+  state.bindings = {bindings};
+  cmd->setGraphicsState(state);
+  nvrhi::DrawArguments arguments;
+  arguments.vertexCount = 3;
+  arguments.instanceCount = 1;
+  cmd->draw(arguments);
+  ++ctx.GetFrameContext().GetDiagnostics().DrawCalls;
+  return true;
+}
+} // namespace
+
+CameraPostProcessPass::CameraPostProcessPass(std::shared_ptr<CameraPostProcessResources> resources, size_t effectIndex)
+    : m_Resources(std::move(resources)), m_EffectIndex(effectIndex) {}
+
+void CameraPostProcessPass::Setup(RGBuilder& builder, FrameBlackboard& blackboard) {
+  m_Views.clear();
+  for (RenderView* view : blackboard.GetSceneViews()) {
+    if (view == nullptr || view->PostProcessing.Effects.size() <= m_EffectIndex || view->OutputAttachments.empty()) {
+      continue;
+    }
+    const RGResourceID originalColor = view->OutputAttachments.front().Resource;
+    const RGResourceID input = m_EffectIndex == 0 ? originalColor : view->PostProcessColor;
+    const RGResourceID output =
+        builder.CreateAndWriteTexture(DescribeColorTexture(view->ViewportWidth, view->ViewportHeight));
+    builder.Read(input);
+    view->PostProcessColor = output;
+    m_Views.push_back(
+        {.View = view, .Input = input, .Output = output, .Effect = view->PostProcessing.Effects[m_EffectIndex]});
+  }
+}
+
+auto CameraPostProcessPass::Execute(nvrhi::ICommandList* cmd, const RenderContext& ctx) -> bool {
+  if (m_Views.empty()) {
+    return true;
+  }
+  for (const ViewResources& viewResources : m_Views) {
+    nvrhi::TextureHandle input = ctx.GetPhysicalTexture(viewResources.Input);
+    nvrhi::TextureHandle output = ctx.GetPhysicalTexture(viewResources.Output);
+    nvrhi::FramebufferHandle framebuffer;
+    if (viewResources.View == nullptr || input == nullptr || output == nullptr ||
+        !DrawCameraPostProcess(cmd, ctx, m_Resources, input, output, framebuffer, ToConstants(viewResources.Effect))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+CameraPostProcessCompositePass::CameraPostProcessCompositePass(std::shared_ptr<CameraPostProcessResources> resources)
+    : m_Resources(std::move(resources)) {}
+
+void CameraPostProcessCompositePass::Setup(RGBuilder& builder, FrameBlackboard& blackboard) {
+  m_Views.clear();
+  for (RenderView* view : blackboard.GetSceneViews()) {
+    if (view == nullptr || view->PostProcessing.Effects.empty() || view->OutputAttachments.empty() ||
+        !view->PostProcessColor.isValid()) {
+      continue;
+    }
+    const RGResourceID color = view->OutputAttachments.front().Resource;
+    builder.Read(view->PostProcessColor);
+    builder.Write(color, nvrhi::ResourceStates::RenderTarget);
+    m_Views.push_back({.View = view, .Input = view->PostProcessColor, .Output = color});
+  }
+}
+
+auto CameraPostProcessCompositePass::Execute(nvrhi::ICommandList* cmd, const RenderContext& ctx) -> bool {
+  for (const ViewResources& viewResources : m_Views) {
+    nvrhi::TextureHandle input = ctx.GetPhysicalTexture(viewResources.Input);
+    nvrhi::TextureHandle output = ctx.GetPhysicalTexture(viewResources.Output);
+    nvrhi::FramebufferHandle framebuffer;
+    const CameraPostProcessConstants copyConstants{.EffectType = 2};
+    if (viewResources.View == nullptr || input == nullptr || output == nullptr ||
+        !DrawCameraPostProcess(cmd, ctx, m_Resources, input, output, framebuffer, copyConstants)) {
+      return false;
     }
   }
   return true;
