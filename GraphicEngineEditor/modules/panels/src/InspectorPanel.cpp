@@ -575,12 +575,22 @@ void InspectorPanel::DrawEntityInspector() {
     }
   }
 
+  if (world.Has<Engine::Ecs::Camera>(entity) && !world.Has<Engine::Ecs::CameraPostProcessing>(entity)) {
+    ImGui::TextWrapped("This camera has no post-processing effects.");
+    if (ImGui::Button("Add Post Processing")) {
+      emitAdd(Mutation::Component::CameraPostProcessing);
+    }
+  }
+
   if (const auto* storedPostProcessing = world.Get<Engine::Ecs::CameraPostProcessing>(entity);
       storedPostProcessing != nullptr &&
       DrawComponentHeader("Post Processing", "Post Processing", "Camera post-processing component header",
                           Mutation::Component::CameraPostProcessing, emitRemove)) {
     Engine::Ecs::CameraPostProcessing postProcessing = *storedPostProcessing;
     bool changed = false;
+    if (postProcessing.Effects.empty()) {
+      ImGui::TextWrapped("No effects are active. The camera renders without post-processing.");
+    }
     for (size_t index = 0; index < postProcessing.Effects.size(); ++index) {
       ImGui::PushID(static_cast<int>(index));
       Engine::Ecs::CameraPostProcessEffect& effect = postProcessing.Effects[index];
