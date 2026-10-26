@@ -52,6 +52,14 @@ struct ImportedImage {
   std::vector<uint8_t> rgba8; ///< Pixel data with four bytes per pixel.
 };
 
+/// Decoded Radiance HDR environment image as tightly packed linear RGB32F pixels.
+struct ImportedEnvironment {
+  std::string name;          ///< Display name derived from the source file.
+  uint32_t width = 0;        ///< Equirectangular panorama width in pixels.
+  uint32_t height = 0;       ///< Equirectangular panorama height in pixels.
+  std::vector<float> rgb32f; ///< Linear RGB samples, three floats per pixel, preserving HDR values.
+};
+
 /// UV transform applied when sampling a material texture.
 struct ImportedTextureTransform {
   DirectX::XMFLOAT2 offset = {0.0f, 0.0f}; ///< UV offset in texture-coordinate space.
@@ -133,6 +141,15 @@ struct ImageImportResult {
   explicit operator bool() const noexcept { return error.empty(); }
 };
 
+/// Result of importing a Radiance HDR environment; an empty error string indicates success.
+struct EnvironmentImportResult {
+  ImportedEnvironment environment; ///< Decoded panorama and linear floating-point RGB samples.
+  std::string error;               ///< Fatal import error, or empty on success.
+
+  /// Reports whether decoding completed without a fatal error.
+  explicit operator bool() const noexcept { return error.empty(); }
+};
+
 /// Decodes supported model and image formats into engine-owned CPU data.
 class ENGINE_API AssetImporter {
 public:
@@ -145,5 +162,10 @@ public:
   /// @param sourcePath Path to the source image file.
   /// @return Decoded image data, or an error when decoding fails.
   ImageImportResult ImportImage(const std::filesystem::path& sourcePath) const;
+
+  /// Decodes a Radiance .hdr equirectangular image into tightly packed linear RGB32F pixels.
+  /// @param sourcePath Path to the Radiance HDR source image.
+  /// @return Decoded environment data, or an error when decoding fails.
+  EnvironmentImportResult ImportEnvironment(const std::filesystem::path& sourcePath) const;
 };
 } // namespace Engine

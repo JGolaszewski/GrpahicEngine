@@ -37,6 +37,13 @@ public:
     std::filesystem::path sourcePath; ///< Resolved source file path.
   };
 
+  /// Registry information for a Radiance HDR environment asset.
+  struct EnvironmentAssetInfo {
+    std::string guid;                 ///< Stable identifier used by scene skybox components.
+    std::string name;                 ///< Display name derived from the source image.
+    std::filesystem::path sourcePath; ///< Project-relative source file path.
+  };
+
   /// Registry information for a reusable material asset.
   struct MaterialAssetInfo {
     std::string guid;                 ///< Stable identifier used by scene documents.
@@ -71,6 +78,11 @@ public:
   /// @return Asset identifier on success, otherwise an error message.
   Result<std::string> ImportTexture(const std::filesystem::path& sourcePath);
 
+  /// Imports a Radiance HDR environment and returns its stable asset identifier.
+  /// @param sourcePath Equirectangular .hdr file inside the project root.
+  /// @return Asset identifier on success, otherwise an error message.
+  Result<std::string> ImportEnvironment(const std::filesystem::path& sourcePath);
+
   /// Creates a reusable material asset initialized with the supplied properties.
   /// @param name Display name and filename stem for the new material.
   /// @param material Material properties to persist.
@@ -104,7 +116,14 @@ public:
   /// @return True when import and registry update succeed.
   bool ImportTexture(const std::filesystem::path& sourcePath, std::string& guid, std::string& error);
 
-  /// Renames a registered model, texture, or material while retaining its persistent asset identifier.
+  /// Imports a Radiance HDR environment using output parameters for the identifier and diagnostic.
+  /// @param sourcePath Equirectangular .hdr file inside the project root.
+  /// @param guid Receives the registered environment identifier.
+  /// @param error Receives the import or registry diagnostic.
+  /// @return True when import and registry update succeed.
+  bool ImportEnvironment(const std::filesystem::path& sourcePath, std::string& guid, std::string& error);
+
+  /// Renames a registered model, texture, HDR environment, or material while retaining its persistent asset identifier.
   /// @param guid Stable identifier of the registered asset.
   /// @param newName New filename without an extension.
   /// @param error Receives a diagnostic when validation or either file rename fails.
@@ -123,6 +142,12 @@ public:
   /// @return True when the image is available in the cache.
   bool LoadTexture(const std::string& guid, std::string& error);
 
+  /// Loads and caches the decoded environment associated with an identifier.
+  /// @param guid Registered environment identifier.
+  /// @param error Receives a diagnostic when lookup or decoding fails.
+  /// @return True when the environment is available in the cache.
+  bool LoadEnvironment(const std::string& guid, std::string& error);
+
   /// Re-scans and validates the persisted registry.
   /// @param warnings Receives recoverable registry issues.
   /// @param error Receives a fatal registry error.
@@ -138,6 +163,11 @@ public:
   /// @param guid Registered texture identifier.
   /// @return The cached image, or an empty pointer when it is not loaded.
   std::shared_ptr<const ImportedImage> GetTexture(const std::string& guid) const;
+
+  /// Returns the cached HDR environment, or null when it has not been loaded.
+  /// @param guid Registered environment identifier.
+  /// @return The cached environment, or an empty pointer when it is not loaded.
+  std::shared_ptr<const ImportedEnvironment> GetEnvironment(const std::string& guid) const;
 
   /// Returns the cache generation for a loaded asset.
   /// @param guid Registered asset identifier.
@@ -156,6 +186,10 @@ public:
   /// Lists the known texture assets in the registry.
   /// @return A snapshot of the registered texture assets.
   std::vector<TextureAssetInfo> GetKnownTextures() const;
+
+  /// Lists the known HDR environment assets in the registry.
+  /// @return A snapshot of registered environments.
+  std::vector<EnvironmentAssetInfo> GetKnownEnvironments() const;
 
   /// Lists the known reusable material assets.
   /// @return A snapshot of the registered material assets.
@@ -195,6 +229,11 @@ private:
     std::shared_ptr<const ImportedImage> image;
     uint64_t generation = 1;
   };
+  struct EnvironmentRecord {
+    std::filesystem::path sourcePath;
+    std::shared_ptr<const ImportedEnvironment> environment;
+    uint64_t generation = 1;
+  };
   struct MaterialRecord {
     std::filesystem::path sourcePath;
     SceneMaterialDocument material;
@@ -203,6 +242,7 @@ private:
   std::filesystem::path m_ProjectRoot;
   std::unordered_map<std::string, ModelRecord> m_Models;
   std::unordered_map<std::string, TextureRecord> m_Textures;
+  std::unordered_map<std::string, EnvironmentRecord> m_Environments;
   std::unordered_map<std::string, MaterialRecord> m_Materials;
   AssetImporter m_Importer;
   SceneSerializer m_SceneSerializer;

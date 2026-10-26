@@ -973,4 +973,50 @@ ImageImportResult AssetImporter::ImportImage(const std::filesystem::path& source
   stbi_image_free(pixels);
   return result;
 }
+
+EnvironmentImportResult AssetImporter::ImportEnvironment(const std::filesystem::path& sourcePath) const {
+  EnvironmentImportResult result;
+  std::string extension = sourcePath.extension().string();
+  std::transform(extension.begin(), extension.end(), extension.begin(),
+                 [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  if (extension != ".hdr") {
+    result.error = Context(sourcePath, "expected a Radiance HDR .hdr image");
+    return result;
+  }
+  const auto nativePath = sourcePath.string();
+  if (stbi_is_hdr(nativePath.c_str()) == 0) {
+    result.error = Context(sourcePath, "file is not a Radiance HDR image");
+    return result;
+  }
+
+  int width = 0;
+  int height = 0;
+  int channels = 0;
+  float* pixels = stbi_loadf(nativePath.c_str(), &width, &height, &channels, STBI_rgb);
+  if (pixels == nullptr) {
+    result.error = Context(sourcePath, std::string("HDR image decode failed: ") + stbi_failure_reason());
+    return result;
+  }
+  if (width <= 0 || height <= 0 || width % 2 != 0 || width / 2 != height ||
+      static_cast<size_t>(width) > std::numeric_limits<size_t>::max() / static_cast<size_t>(height) / 3) {
+    stbi_image_free(pixels);
+    result.error = Context(sourcePath, "decoded environment dimensions must be valid and equirectangular (2:1)");
+    return result;
+  }
+
+  const size_t sampleCount = static_cast<size_t>(width) * static_cast<size_t>(height) * 3;
+  if (std::ranges::any_of(pixels, pixels + sampleCount,
+                          [](float sample) { return !std::isfinite(sample) || sample < 0.0F; })) {
+    stbi_image_free(pixels);
+    result.error = Context(sourcePath, "decoded environment samples must be finite and non-negative");
+    return result;
+  }
+
+  result.environment.name = sourcePath.stem().string();
+  result.environment.width = static_cast<uint32_t>(width);
+  result.environment.height = static_cast<uint32_t>(height);
+  result.environment.rgb32f.assign(pixels, pixels + sampleCount);
+  stbi_image_free(pixels);
+  return result;
+}
 } // namespace Engine
