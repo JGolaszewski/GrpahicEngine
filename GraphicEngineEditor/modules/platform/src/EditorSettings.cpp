@@ -104,6 +104,7 @@ auto LoadEditorSettingsFile(const std::filesystem::path& path) -> EditorSettings
     result.Preferences.ShowLightGizmos = ReadBoolean(rendering, "show_light_gizmos", true);
     result.Preferences.ShowCameraFrustums = ReadBoolean(rendering, "show_camera_frustums", true);
     result.Preferences.ShowWireframePlane = ReadBoolean(rendering, "show_wireframe_plane", true);
+    result.Preferences.ShowSkyboxInEditorViewport = ReadBoolean(rendering, "show_skybox_in_editor_viewport", true);
     result.Preferences.ShadowMapResolution = ReadUnsigned(rendering, "shadow_map_resolution", 2048, 128, 8192);
     result.Preferences.MaxShadowCasters = ReadUnsigned(rendering, "max_shadow_casters", 4, 0, 4);
     result.Preferences.MaxTextureAnisotropy = ReadAnisotropy(rendering, "max_texture_anisotropy", 8);
@@ -139,6 +140,7 @@ auto SaveEditorSettingsFile(const std::filesystem::path& path, const EditorPrefe
                           {{"show_light_gizmos", preferences.ShowLightGizmos},
                            {"show_camera_frustums", preferences.ShowCameraFrustums},
                            {"show_wireframe_plane", preferences.ShowWireframePlane},
+                           {"show_skybox_in_editor_viewport", preferences.ShowSkyboxInEditorViewport},
                            {"shadow_map_resolution", std::clamp(preferences.ShadowMapResolution, 128U, 8192U)},
                            {"max_shadow_casters", std::min(preferences.MaxShadowCasters, 4U)},
                            {"max_texture_anisotropy", NormalizeAnisotropy(preferences.MaxTextureAnisotropy)},

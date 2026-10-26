@@ -11,6 +11,7 @@ struct EditorPreferences {
   bool ShowLightGizmos = true;
   bool ShowCameraFrustums = true;
   bool ShowWireframePlane = true;
+  bool ShowSkyboxInEditorViewport = true; ///< Whether the scene skybox background is shown in the editor viewport.
   float CameraPreviewScale = 0.35F;
   float CameraPreviewQuality = 0.25F;
   std::uint32_t ShadowMapResolution = 2048;
