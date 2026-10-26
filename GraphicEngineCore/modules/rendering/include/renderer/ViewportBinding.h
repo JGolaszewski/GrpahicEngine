@@ -5,6 +5,7 @@
 #include "rendering/include/renderer/Viewport.h"
 #include "runtime/include/CoreExport.h"
 #include "scene/include/ArchetypeWorld.h"
+#include "scene/include/components/CameraPostProcessing.h"
 
 #include <cstdint>
 
@@ -52,11 +53,12 @@ struct ENGINE_API ViewportBinding {
   EnvironmentLightingSettings Environment;               ///< Environment source and intensity for this view.
   Engine::Ecs::CameraPostProcessing PostProcessing;      ///< Authored camera's optional ordered effect stack.
 
-  /// Checks whether required targets and final-render dimensions are valid.
+  /// Checks required targets, final-render dimensions, and camera effect settings.
   /// @return True when the binding can be submitted to the renderer.
   bool IsValid() const {
-    if (TargetViewport == nullptr || TargetScene == nullptr || TargetViewport->GetFramebufferHandle() == nullptr ||
-        TargetViewport->GetWidth() == 0 || TargetViewport->GetHeight() == 0) {
+    if (!Engine::Ecs::Validate(PostProcessing) || TargetViewport == nullptr || TargetScene == nullptr ||
+        TargetViewport->GetFramebufferHandle() == nullptr || TargetViewport->GetWidth() == 0 ||
+        TargetViewport->GetHeight() == 0) {
       return false;
     }
     return RenderMode != Mode::Final ||

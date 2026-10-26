@@ -41,7 +41,7 @@ stable and are exposed by `RenderAovDescriptor` for image writers.
 
 | Identifier | Name | Channels | Meaning |
 | --- | --- | --- | --- |
-| `FinalColor` | `final_color` | R, G, B, A | Linear scene-referred color; before post-processing, RGB is the sum of diffuse and specular lighting, and A is material opacity. |
+| `FinalColor` | `final_color` | R, G, B, A | Linear scene-referred color after camera GPU effects; its unprocessed RGB is the sum of diffuse and specular lighting, and its unprocessed A is material opacity. Bloom may expand alpha, and the optional CPU final-color hook may modify RGBA. |
 | `Depth` | `depth` | Z | Normalized device depth in [0, 1]; background is 1. |
 | `WorldNormal` | `world_normal` | X, Y, Z | Normalized world-space shading normal, including the material normal map. |
 | `SpecularLighting` | `specular_lighting` | R, G, B | Direct and environment specular contribution. |

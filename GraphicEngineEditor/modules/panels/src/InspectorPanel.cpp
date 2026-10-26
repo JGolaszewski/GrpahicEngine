@@ -608,7 +608,7 @@ void InspectorPanel::DrawEntityInspector() {
         changed = true;
       }
       if (auto* grading = std::get_if<Engine::Ecs::ColorGradingEffect>(&effect)) {
-        changed |= ImGui::SliderFloat("Exposure", &grading->Exposure, -8.0F, 8.0F, "%.2f stops");
+        changed |= ImGui::SliderFloat("Exposure", &grading->Exposure, -16.0F, 16.0F, "%.2f stops");
         changed |= ImGui::SliderFloat("Contrast", &grading->Contrast, 0.0F, 4.0F, "%.2f");
         changed |= ImGui::SliderFloat("Saturation", &grading->Saturation, 0.0F, 4.0F, "%.2f");
       } else if (auto* bloom = std::get_if<Engine::Ecs::BloomEffect>(&effect)) {
