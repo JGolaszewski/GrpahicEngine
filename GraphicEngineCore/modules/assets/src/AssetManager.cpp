@@ -17,6 +17,25 @@ namespace {
 using Json = nlohmann::json;
 constexpr uint32_t ModelImporterVersion = 1;
 constexpr uint32_t TextureImporterVersion = 1;
+constexpr uint32_t EnvironmentImporterVersion = 1;
+
+std::string ImporterForAssetType(const std::string& assetType) {
+  if (assetType == "model")
+    return "tinygltf";
+  if (assetType == "texture")
+    return "stb_image";
+  if (assetType == "environment")
+    return "stb_image_hdr";
+  return "native";
+}
+
+uint32_t ImporterVersionForAssetType(const std::string& assetType) {
+  if (assetType == "model")
+    return ModelImporterVersion;
+  if (assetType == "environment")
+    return EnvironmentImporterVersion;
+  return TextureImporterVersion;
+}
 
 bool IsGuid(const std::string& guid) {
   if (guid.size() != 36)
@@ -109,10 +128,8 @@ bool ReadMetadata(const std::filesystem::path& path, std::string& guid, std::str
       return false;
     }
     const Json metadata = Json::parse(input);
-    const std::string importer = expectedType == "model"     ? "tinygltf"
-                                 : expectedType == "texture" ? "stb_image"
-                                                             : "native";
-    const uint32_t importerVersion = expectedType == "model" ? ModelImporterVersion : TextureImporterVersion;
+    const std::string importer = ImporterForAssetType(expectedType);
+    const uint32_t importerVersion = ImporterVersionForAssetType(expectedType);
     if (!metadata.is_object() || metadata.value("assetType", std::string{}) != expectedType ||
         metadata.value("schemaVersion", 0u) != 1 || metadata.value("importer", std::string{}) != importer ||
         metadata.value("importerVersion", 0u) != importerVersion || !metadata.contains("guid") ||
@@ -142,8 +159,8 @@ bool WriteMetadata(const std::filesystem::path& path, const std::string& guid, s
         error = path.generic_string() + ": could not create metadata temporary file";
         return false;
       }
-      const std::string importer = assetType == "model" ? "tinygltf" : assetType == "texture" ? "stb_image" : "native";
-      const uint32_t importerVersion = assetType == "model" ? ModelImporterVersion : TextureImporterVersion;
+      const std::string importer = ImporterForAssetType(assetType);
+      const uint32_t importerVersion = ImporterVersionForAssetType(assetType);
       output << Json{{"schemaVersion", 1},
                      {"assetType", assetType},
                      {"guid", guid},
@@ -327,9 +344,11 @@ bool AssetManager::SetProjectRoot(const std::filesystem::path& projectRoot, std:
   m_ProjectRoot = std::move(root);
   m_Models.clear();
   m_Textures.clear();
+  m_Environments.clear();
   m_Materials.clear();
   ENGINE_LOG_INFO("Asset",
-                  "Project root updated | canonical_path: {} | model_cache_cleared: true | texture_cache_cleared: true",
+                  "Project root updated | canonical_path: {} | model_cache_cleared: true | "
+                  "texture_cache_cleared: true | environment_cache_cleared: true",
                   m_ProjectRoot.generic_string());
   return true;
 }
@@ -359,6 +378,20 @@ Result<std::string> AssetManager::ImportTexture(const std::filesystem::path& sou
     return std::unexpected(MakeError(std::move(error)));
   }
   ENGINE_LOG_INFO("Asset", "Texture imported | path: {} | guid: {}", sourcePath.generic_string(), guid);
+  return guid;
+}
+
+Result<std::string> AssetManager::ImportEnvironment(const std::filesystem::path& sourcePath) {
+  Log::ScopedOperation operation;
+  ENGINE_LOG_INFO("Asset", "Environment import started | path: {}", sourcePath.generic_string());
+  std::string guid;
+  std::string error;
+  if (!ImportEnvironment(sourcePath, guid, error)) {
+    ENGINE_LOG_ERROR_CODE("Asset", "asset.environment.import_failed",
+                          "Environment import failed | path: {} | error: {}", sourcePath.generic_string(), error);
+    return std::unexpected(MakeError(std::move(error)));
+  }
+  ENGINE_LOG_INFO("Asset", "Environment imported | path: {} | guid: {}", sourcePath.generic_string(), guid);
   return guid;
 }
 
@@ -529,6 +562,63 @@ bool AssetManager::ImportTexture(const std::filesystem::path& sourcePath, std::s
   return true;
 }
 
+bool AssetManager::ImportEnvironment(const std::filesystem::path& sourcePath, std::string& guid, std::string& error) {
+  guid.clear();
+  error.clear();
+  if (m_ProjectRoot.empty()) {
+    error = "project root must be set before importing assets";
+    return false;
+  }
+  std::error_code ec;
+  const auto candidate = sourcePath.is_absolute() ? sourcePath : m_ProjectRoot / sourcePath;
+  const auto canonicalSource = std::filesystem::weakly_canonical(candidate, ec);
+  if (ec || !std::filesystem::is_regular_file(canonicalSource, ec) || ec) {
+    error = sourcePath.generic_string() + ": source file does not exist or is inaccessible";
+    return false;
+  }
+  if (!IsWithin(m_ProjectRoot, canonicalSource)) {
+    error = canonicalSource.generic_string() + ": source file is outside the project root";
+    return false;
+  }
+  auto imported = m_Importer.ImportEnvironment(canonicalSource);
+  if (!imported) {
+    error = imported.error;
+    return false;
+  }
+  const auto metadataPath = std::filesystem::path(canonicalSource.generic_string() + ".meta");
+  const bool hasMetadata = std::filesystem::exists(metadataPath, ec);
+  if (ec) {
+    error = metadataPath.generic_string() + ": could not inspect metadata: " + ec.message();
+    return false;
+  }
+  std::string assetGuid;
+  if (hasMetadata) {
+    if (!ReadMetadata(metadataPath, assetGuid, error, "environment"))
+      return false;
+  } else {
+    assetGuid = NewGuid();
+  }
+  if (HasDuplicateGuid(m_ProjectRoot, metadataPath, assetGuid, error))
+    return false;
+  if (!hasMetadata && !WriteMetadata(metadataPath, assetGuid, error, "environment"))
+    return false;
+
+  uint64_t generation = 1;
+  if (const auto existing = m_Environments.find(assetGuid); existing != m_Environments.end()) {
+    if (existing->second.generation == std::numeric_limits<uint64_t>::max()) {
+      error = "asset import generation is exhausted for GUID " + assetGuid;
+      return false;
+    }
+    generation = existing->second.generation + 1;
+  }
+  guid = assetGuid;
+  m_Environments.insert_or_assign(
+      guid,
+      EnvironmentRecord{canonicalSource, std::make_shared<const ImportedEnvironment>(std::move(imported.environment)),
+                        generation});
+  return true;
+}
+
 bool AssetManager::LoadMaterial(const std::string& guid, std::string& error) {
   error.clear();
   if (m_Materials.contains(guid)) {
@@ -618,6 +708,8 @@ bool AssetManager::RenameAsset(const std::string& guid, const std::string& newNa
     sourcePath = &model->second.sourcePath;
   } else if (const auto texture = m_Textures.find(guid); texture != m_Textures.end()) {
     sourcePath = &texture->second.sourcePath;
+  } else if (const auto environment = m_Environments.find(guid); environment != m_Environments.end()) {
+    sourcePath = &environment->second.sourcePath;
   } else if (const auto material = m_Materials.find(guid); material != m_Materials.end()) {
     sourcePath = &material->second.sourcePath;
   }
@@ -784,6 +876,52 @@ bool AssetManager::LoadTexture(const std::string& guid, std::string& error) {
   return true;
 }
 
+bool AssetManager::LoadEnvironment(const std::string& guid, std::string& error) {
+  Log::ScopedOperation operation;
+  error.clear();
+  if (m_Environments.contains(guid))
+    return true;
+  if (m_ProjectRoot.empty() || !IsGuid(guid)) {
+    error = m_ProjectRoot.empty() ? "project root must be set before loading assets" : "asset GUID is invalid";
+    return false;
+  }
+  std::optional<std::filesystem::path> sourcePath;
+  std::error_code ec;
+  for (std::filesystem::recursive_directory_iterator it(m_ProjectRoot, ec), end; it != end && !ec; it.increment(ec)) {
+    if (!it->is_regular_file(ec) || it->path().extension() != ".meta")
+      continue;
+    std::string metadataGuid;
+    std::string metadataError;
+    if (!ReadMetadata(it->path(), metadataGuid, metadataError, "environment") || metadataGuid != guid)
+      continue;
+    if (sourcePath) {
+      error = "duplicate environment GUID " + guid + " in " + it->path().generic_string();
+      return false;
+    }
+    auto source = it->path();
+    source.replace_extension();
+    sourcePath = std::move(source);
+  }
+  if (ec) {
+    error = m_ProjectRoot.generic_string() + ": could not scan project metadata: " + ec.message();
+    return false;
+  }
+  if (!sourcePath) {
+    error = "environment GUID " + guid + " was not found in project metadata";
+    return false;
+  }
+
+  std::string loadedGuid;
+  if (!ImportEnvironment(*sourcePath, loadedGuid, error))
+    return false;
+  if (loadedGuid != guid) {
+    m_Environments.erase(loadedGuid);
+    error = sourcePath->generic_string() + ": resolved sidecar GUID changed during load";
+    return false;
+  }
+  return true;
+}
+
 bool AssetManager::RefreshRegistry(std::vector<std::string>& warnings, std::string& error) {
   Log::ScopedOperation operation;
   warnings.clear();
@@ -805,7 +943,7 @@ bool AssetManager::RefreshRegistry(std::vector<std::string>& warnings, std::stri
       const std::string assetType = metadata.value("assetType", std::string{});
       std::string guid;
       std::string metadataError;
-      if ((assetType != "model" && assetType != "texture" && assetType != "material") ||
+      if ((assetType != "model" && assetType != "texture" && assetType != "environment" && assetType != "material") ||
           !ReadMetadata(it->path(), guid, metadataError, assetType)) {
         warnings.push_back(it->path().generic_string() + ": " +
                            (metadataError.empty() ? "unsupported asset metadata type" : metadataError));
@@ -817,9 +955,10 @@ bool AssetManager::RefreshRegistry(std::vector<std::string>& warnings, std::stri
         continue;
       }
       seen.emplace(guid, it->path());
-      const bool loaded = assetType == "model"     ? LoadModel(guid, metadataError)
-                          : assetType == "texture" ? LoadTexture(guid, metadataError)
-                                                   : LoadMaterial(guid, metadataError);
+      const bool loaded = assetType == "model"         ? LoadModel(guid, metadataError)
+                          : assetType == "texture"     ? LoadTexture(guid, metadataError)
+                          : assetType == "environment" ? LoadEnvironment(guid, metadataError)
+                                                       : LoadMaterial(guid, metadataError);
       if (!loaded)
         warnings.push_back(metadataError);
     } catch (const std::exception& exception) {
@@ -835,8 +974,9 @@ bool AssetManager::RefreshRegistry(std::vector<std::string>& warnings, std::stri
   }
   ENGINE_LOG_INFO("Asset",
                   "Asset registry refreshed | project_root: {} | model_count: {} | texture_count: {} | "
-                  "warning_count: {}",
-                  m_ProjectRoot.generic_string(), m_Models.size(), m_Textures.size(), warnings.size());
+                  "environment_count: {} | warning_count: {}",
+                  m_ProjectRoot.generic_string(), m_Models.size(), m_Textures.size(), m_Environments.size(),
+                  warnings.size());
   return true;
 }
 
@@ -850,12 +990,20 @@ std::shared_ptr<const ImportedImage> AssetManager::GetTexture(const std::string&
   return it == m_Textures.end() ? nullptr : it->second.image;
 }
 
+std::shared_ptr<const ImportedEnvironment> AssetManager::GetEnvironment(const std::string& guid) const {
+  const auto it = m_Environments.find(guid);
+  return it == m_Environments.end() ? nullptr : it->second.environment;
+}
+
 std::optional<uint64_t> AssetManager::GetGeneration(const std::string& guid) const {
   const auto it = m_Models.find(guid);
   if (it != m_Models.end())
     return it->second.generation;
   const auto texture = m_Textures.find(guid);
-  return texture == m_Textures.end() ? std::nullopt : std::optional(texture->second.generation);
+  if (texture != m_Textures.end())
+    return texture->second.generation;
+  const auto environment = m_Environments.find(guid);
+  return environment == m_Environments.end() ? std::nullopt : std::optional(environment->second.generation);
 }
 
 std::optional<std::filesystem::path> AssetManager::GetSourcePath(const std::string& guid) const {
@@ -863,7 +1011,10 @@ std::optional<std::filesystem::path> AssetManager::GetSourcePath(const std::stri
   if (it != m_Models.end())
     return it->second.sourcePath;
   const auto texture = m_Textures.find(guid);
-  return texture == m_Textures.end() ? std::nullopt : std::optional(texture->second.sourcePath);
+  if (texture != m_Textures.end())
+    return texture->second.sourcePath;
+  const auto environment = m_Environments.find(guid);
+  return environment == m_Environments.end() ? std::nullopt : std::optional(environment->second.sourcePath);
 }
 
 std::vector<AssetManager::ModelAssetInfo> AssetManager::GetKnownModels() const {
@@ -882,6 +1033,18 @@ std::vector<AssetManager::TextureAssetInfo> AssetManager::GetKnownTextures() con
   std::vector<TextureAssetInfo> result;
   result.reserve(m_Textures.size());
   for (const auto& [guid, record] : m_Textures) {
+    result.push_back({guid, record.sourcePath.stem().string(), record.sourcePath.lexically_relative(m_ProjectRoot)});
+  }
+  std::sort(result.begin(), result.end(), [](const auto& left, const auto& right) {
+    return left.name == right.name ? left.guid < right.guid : left.name < right.name;
+  });
+  return result;
+}
+
+std::vector<AssetManager::EnvironmentAssetInfo> AssetManager::GetKnownEnvironments() const {
+  std::vector<EnvironmentAssetInfo> result;
+  result.reserve(m_Environments.size());
+  for (const auto& [guid, record] : m_Environments) {
     result.push_back({guid, record.sourcePath.stem().string(), record.sourcePath.lexically_relative(m_ProjectRoot)});
   }
   std::sort(result.begin(), result.end(), [](const auto& left, const auto& right) {
