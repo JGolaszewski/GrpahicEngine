@@ -231,6 +231,28 @@ TEST(RenderFinalTests, WARPSceneViewportAndPipMatchPngDisplayTransformWhileFinal
       }
     }
   }
+
+  auto gradedTarget = renderer.CreateViewportTarget(imageSize, imageSize);
+  ASSERT_NE(gradedTarget, nullptr);
+  Engine::Viewport gradedViewport(gradedTarget);
+  Engine::ViewportBinding gradedBinding = binding;
+  gradedBinding.TargetViewport = &gradedViewport;
+  gradedBinding.RenderMode = Engine::ViewportBinding::Mode::Preview;
+  gradedBinding.PostProcessing = grading;
+  binding.RenderMode = Engine::ViewportBinding::Mode::Preview;
+  renderer.BeginFrame();
+  renderer.SubmitViews({binding, gradedBinding});
+  renderer.EndFrame();
+
+  const auto baselinePixel = ReadViewportPixel(device.GetDevice(), viewport, imageSize / 2U, imageSize / 2U);
+  const auto gradedPixel = ReadViewportPixel(device.GetDevice(), gradedViewport, imageSize / 2U, imageSize / 2U);
+  for (size_t channel = 0; channel < linearColor.size(); ++channel) {
+    const uint8_t baselineExpected = static_cast<uint8_t>(std::lround(LinearToDisplay(linearColor[channel]) * 255.0F));
+    const uint8_t gradedExpected =
+        static_cast<uint8_t>(std::lround(LinearToDisplay(linearColor[channel] * 2.0F) * 255.0F));
+    EXPECT_NEAR(baselinePixel[channel], baselineExpected, 2U) << "baseline view channel " << channel;
+    EXPECT_NEAR(gradedPixel[channel], gradedExpected, 2U) << "graded view channel " << channel;
+  }
 }
 
 TEST(RenderFinalTests, WARPSubmitsIndependentEditorAndPreviewViewsAndSkipsInvalidTargets) {
