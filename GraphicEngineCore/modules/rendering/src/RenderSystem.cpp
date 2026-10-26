@@ -127,10 +127,18 @@ RenderSystem::RenderSystem(IRenderBackend* backend)
       m_ShaderFactory->GetShader("shaders/post_process_ps.dxbc", nvrhi::ShaderType::Pixel);
   nvrhi::BindingLayoutDesc postProcessLayoutDesc;
   postProcessLayoutDesc.visibility = nvrhi::ShaderType::Pixel;
-  postProcessLayoutDesc.bindings = {nvrhi::BindingLayoutItem::Texture_SRV(0),
+  postProcessLayoutDesc.bindings = {nvrhi::BindingLayoutItem::Texture_SRV(0), nvrhi::BindingLayoutItem::Sampler(0),
                                     nvrhi::BindingLayoutItem::ConstantBuffer(0)};
   m_CameraPostProcessResources->BindingLayout =
       GetNvrhiDevice(m_RenderBackend)->createBindingLayout(postProcessLayoutDesc);
+  nvrhi::SamplerDesc postProcessSamplerDesc;
+  postProcessSamplerDesc.setAddressU(nvrhi::SamplerAddressMode::Clamp)
+      .setAddressV(nvrhi::SamplerAddressMode::Clamp)
+      .setAddressW(nvrhi::SamplerAddressMode::Clamp)
+      .setMinFilter(true)
+      .setMagFilter(true)
+      .setMipFilter(false);
+  m_CameraPostProcessResources->InputSampler = GetNvrhiDevice(m_RenderBackend)->createSampler(postProcessSamplerDesc);
   nvrhi::BufferDesc postProcessConstantsDesc;
   postProcessConstantsDesc.byteSize = 32;
   postProcessConstantsDesc.isConstantBuffer = true;

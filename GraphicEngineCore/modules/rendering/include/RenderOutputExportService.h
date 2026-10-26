@@ -55,7 +55,15 @@ public:
   /// Start a final-color PNG export. Rendering is submitted immediately; GPU
   /// completion and image writing are advanced by Update on later frames.
   /// An enabled background is composited into final_color by the writer thread.
-  /// @param cameraPostProcessing Ordered GPU effects configured for the authored camera.
+  /// @param renderer Renderer used to submit the camera render.
+  /// @param scene Scene rendered by the authored camera.
+  /// @param camera Authored camera view and projection settings.
+  /// @param width Output width in pixels.
+  /// @param height Output height in pixels.
+  /// @param destination PNG output path.
+  /// @param postProcess Optional CPU final-color processing callback.
+  /// @param background Optional background composited into the final-color plane.
+  /// @param cameraPostProcessing Camera lighting settings and ordered GPU color effects.
   Engine::Result<RequestId> StartPng(RenderSystem& renderer, Scene& scene, const ::Engine::Renderer::CameraView& camera,
                                      uint32_t width, uint32_t height, std::filesystem::path destination,
                                      const FinalColorPostProcess& postProcess = {},
@@ -63,7 +71,16 @@ public:
                                      const Ecs::CameraPostProcessing& cameraPostProcessing = {});
   /// Start a multipart EXR export containing exactly the selected AOV planes.
   /// An enabled background is composited into final_color only when selected.
-  /// @param cameraPostProcessing Ordered GPU effects configured for the authored camera.
+  /// @param renderer Renderer used to submit the camera render.
+  /// @param scene Scene rendered by the authored camera.
+  /// @param camera Authored camera view and projection settings.
+  /// @param width Output width in pixels.
+  /// @param height Output height in pixels.
+  /// @param selectedAovs AOV planes included in the EXR file.
+  /// @param destination EXR output path.
+  /// @param postProcess Optional CPU final-color processing callback.
+  /// @param background Optional background composited into final_color when selected.
+  /// @param cameraPostProcessing Camera lighting settings and ordered GPU color effects.
   Engine::Result<RequestId>
   StartMultilayerExr(RenderSystem& renderer, Scene& scene, const ::Engine::Renderer::CameraView& camera, uint32_t width,
                      uint32_t height, std::vector<RenderAov> selectedAovs, std::filesystem::path destination,

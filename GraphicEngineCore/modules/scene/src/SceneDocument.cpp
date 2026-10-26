@@ -582,6 +582,8 @@ auto CameraPostProcessingJson(const Ecs::CameraPostProcessing& postProcessing) -
                         {"threshold", bloom->Threshold},
                         {"intensity", bloom->Intensity},
                         {"radius", bloom->Radius}});
+    } else if (std::holds_alternative<Ecs::FxaaEffect>(effect)) {
+      result.push_back({{"type", "fxaa"}});
     }
   }
   return result;
@@ -616,6 +618,8 @@ auto ReadCameraPostProcessing(const Json& value, Ecs::CameraPostProcessing& post
         return false;
       }
       postProcessing.Effects.emplace_back(bloom);
+    } else if (type == "fxaa") {
+      postProcessing.Effects.emplace_back(Ecs::FxaaEffect{});
     } else {
       error = "postProcessing[" + std::to_string(index) + "] has an unsupported effect type";
       return false;

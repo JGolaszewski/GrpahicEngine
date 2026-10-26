@@ -137,6 +137,7 @@ struct CameraPostProcessResources {
   nvrhi::ShaderHandle VertexShader;
   nvrhi::ShaderHandle PixelShader;
   nvrhi::BindingLayoutHandle BindingLayout;
+  nvrhi::SamplerHandle InputSampler;
   nvrhi::BufferHandle ConstantsBuffer;
   nvrhi::GraphicsPipelineHandle Pipeline;
 };

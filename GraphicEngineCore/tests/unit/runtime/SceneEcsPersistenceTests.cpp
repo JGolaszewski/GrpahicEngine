@@ -91,7 +91,8 @@ TEST(SceneEcsPersistenceTests, RoundTripsEntityIdentityHierarchyAndSupportedComp
   (void)source.QueueAdd(
       camera,
       Engine::Ecs::CameraPostProcessing{
-          .Effects = {Engine::Ecs::BloomEffect{.Threshold = 1.5F, .Intensity = 0.8F, .Radius = 6.0F}},
+          .Effects = {Engine::Ecs::BloomEffect{.Threshold = 1.5F, .Intensity = 0.8F, .Radius = 6.0F},
+                      Engine::Ecs::FxaaEffect{}},
           .AmbientOcclusion = Engine::Ecs::ScreenSpaceAmbientOcclusionSettings{.Radius = 0.75F, .Intensity = 1.5F}});
   for (const auto& result : source.sync())
     ASSERT_TRUE(result.Outcome);
@@ -108,7 +109,7 @@ TEST(SceneEcsPersistenceTests, RoundTripsEntityIdentityHierarchyAndSupportedComp
   ASSERT_TRUE(saved.cameras.front().postProcessing.has_value());
   ASSERT_TRUE(saved.cameras.front().postProcessing->AmbientOcclusion.has_value());
   EXPECT_FLOAT_EQ(saved.cameras.front().postProcessing->AmbientOcclusion->Radius, 0.75F);
-  ASSERT_EQ(saved.cameras.front().postProcessing->Effects.size(), 1U);
+  ASSERT_EQ(saved.cameras.front().postProcessing->Effects.size(), 2U);
 
   const auto scenePath = std::filesystem::temp_directory_path() /
                          ("GraphicEngineMaterialRoundTrip-" +
@@ -185,10 +186,11 @@ TEST(SceneEcsPersistenceTests, RoundTripsEntityIdentityHierarchyAndSupportedComp
   ASSERT_TRUE(loaded.cameras.front().postProcessing.has_value());
   ASSERT_TRUE(loaded.cameras.front().postProcessing->AmbientOcclusion.has_value());
   EXPECT_FLOAT_EQ(loaded.cameras.front().postProcessing->AmbientOcclusion->Intensity, 1.5F);
-  ASSERT_EQ(loaded.cameras.front().postProcessing->Effects.size(), 1U);
+  ASSERT_EQ(loaded.cameras.front().postProcessing->Effects.size(), 2U);
   const auto* restoredBloom = std::get_if<Engine::Ecs::BloomEffect>(&loaded.cameras.front().postProcessing->Effects[0]);
   ASSERT_NE(restoredBloom, nullptr);
   EXPECT_FLOAT_EQ(restoredBloom->Intensity, 0.8F);
+  EXPECT_TRUE(std::holds_alternative<Engine::Ecs::FxaaEffect>(loaded.cameras.front().postProcessing->Effects[1]));
   EXPECT_EQ(loaded.cameras.front().flipHorizontal, saved.cameras.front().flipHorizontal);
   EXPECT_EQ(loaded.cameras.front().flipVertical, saved.cameras.front().flipVertical);
   EXPECT_EQ(loaded.cameras.front().priority, saved.cameras.front().priority);

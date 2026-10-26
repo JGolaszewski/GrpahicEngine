@@ -610,8 +610,9 @@ void InspectorPanel::DrawEntityInspector() {
     for (size_t index = 0; index < postProcessing.Effects.size(); ++index) {
       ImGui::PushID(static_cast<int>(index));
       Engine::Ecs::CameraPostProcessEffect& effect = postProcessing.Effects[index];
-      const char* effectName =
-          std::holds_alternative<Engine::Ecs::ColorGradingEffect>(effect) ? "Color Grading" : "Bloom";
+      const char* effectName = std::holds_alternative<Engine::Ecs::ColorGradingEffect>(effect) ? "Color Grading"
+                               : std::holds_alternative<Engine::Ecs::BloomEffect>(effect)      ? "Bloom"
+                                                                                               : "FXAA";
       ImGui::Text("%zu. %s", index + 1U, effectName);
       ImGui::SameLine();
       if (ImGui::SmallButton("Up") && index > 0) {
@@ -641,16 +642,18 @@ void InspectorPanel::DrawEntityInspector() {
       ImGui::Separator();
       ImGui::PopID();
     }
-    static constexpr const char* effectTypes[] = {"Color Grading", "Bloom"};
+    static constexpr const char* effectTypes[] = {"Color Grading", "Bloom", "FXAA"};
     static int newEffectType = 0;
     ImGui::SetNextItemWidth(150.0F);
-    ImGui::Combo("New effect", &newEffectType, effectTypes, 2);
+    ImGui::Combo("New effect", &newEffectType, effectTypes, 3);
     ImGui::SameLine();
     if (ImGui::Button("Add effect")) {
       if (newEffectType == 0) {
         postProcessing.Effects.emplace_back(Engine::Ecs::ColorGradingEffect{});
-      } else {
+      } else if (newEffectType == 1) {
         postProcessing.Effects.emplace_back(Engine::Ecs::BloomEffect{});
+      } else {
+        postProcessing.Effects.emplace_back(Engine::Ecs::FxaaEffect{});
       }
       changed = true;
     }

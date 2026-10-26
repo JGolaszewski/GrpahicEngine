@@ -23,6 +23,9 @@ struct BloomEffect {
   float Radius = 4.0F;     ///< Approximate screen-space blur radius in pixels.
 };
 
+/// Fast approximate antialiasing for an authored camera's final color.
+struct FxaaEffect {};
+
 /// Camera-scoped screen-space occlusion applied to indirect diffuse lighting before forward shading.
 struct ScreenSpaceAmbientOcclusionSettings {
   float Radius = 0.5F;    ///< World-space sample radius in scene units.
@@ -30,7 +33,7 @@ struct ScreenSpaceAmbientOcclusionSettings {
 };
 
 /// One configured post-processing stage in a camera's ordered stack.
-using CameraPostProcessEffect = std::variant<ColorGradingEffect, BloomEffect>;
+using CameraPostProcessEffect = std::variant<ColorGradingEffect, BloomEffect, FxaaEffect>;
 
 /// Optional GPU post-processing configuration attached to a camera entity.
 struct CameraPostProcessing {

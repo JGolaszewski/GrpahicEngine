@@ -664,6 +664,9 @@ auto ToConstants(const Engine::Ecs::CameraPostProcessEffect& effect) -> CameraPo
             .Contrast = grading->Contrast,
             .Saturation = grading->Saturation};
   }
+  if (std::holds_alternative<Engine::Ecs::FxaaEffect>(effect)) {
+    return {.EffectType = 3};
+  }
   const auto& bloom = std::get<Engine::Ecs::BloomEffect>(effect);
   return {.EffectType = 1, .Threshold = bloom.Threshold, .Intensity = bloom.Intensity, .Radius = bloom.Radius};
 }
@@ -685,7 +688,7 @@ auto DrawCameraPostProcess(nvrhi::ICommandList* cmd, const RenderContext& ctx,
                            const nvrhi::TextureHandle& input, const nvrhi::TextureHandle& output,
                            nvrhi::FramebufferHandle& framebuffer, const CameraPostProcessConstants& constants) -> bool {
   if (cmd == nullptr || resources == nullptr || resources->Device == nullptr || resources->VertexShader == nullptr ||
-      resources->PixelShader == nullptr || resources->BindingLayout == nullptr ||
+      resources->PixelShader == nullptr || resources->BindingLayout == nullptr || resources->InputSampler == nullptr ||
       resources->ConstantsBuffer == nullptr || input == nullptr || output == nullptr) {
     return false;
   }
@@ -711,6 +714,7 @@ auto DrawCameraPostProcess(nvrhi::ICommandList* cmd, const RenderContext& ctx,
   }
   nvrhi::BindingSetDesc bindingDesc;
   bindingDesc.addItem(nvrhi::BindingSetItem::Texture_SRV(0, input));
+  bindingDesc.addItem(nvrhi::BindingSetItem::Sampler(0, resources->InputSampler));
   bindingDesc.addItem(nvrhi::BindingSetItem::ConstantBuffer(0, resources->ConstantsBuffer));
   nvrhi::BindingSetHandle bindings = resources->Device->createBindingSet(bindingDesc, resources->BindingLayout);
   if (bindings == nullptr) {
