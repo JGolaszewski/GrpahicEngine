@@ -44,12 +44,14 @@ cbuffer LightsCB : register(b2)
     uint      g_LightCount;
     uint      g_EnvironmentEnabled;
     float     g_EnvironmentIntensity;
-    float     g_LightPadding;
+    float     g_AmbientLightIntensity;
+    float4    g_AmbientLightColor;
 };
 
 cbuffer CameraCB : register(b4)
 {
     float4 g_CameraPosition;
+    float4 g_AmbientOcclusionParams;
 };
 
 Texture2DArray<float>  g_ShadowMaps    : register(t6);
@@ -60,6 +62,7 @@ Texture2D<float4> g_PrefilteredEnvironment : register(t8);
 SamplerState g_PrefilteredEnvironmentSampler : register(s8);
 Texture2D<float2> g_BrdfIntegrationLut : register(t9);
 SamplerState g_BrdfIntegrationSampler : register(s9);
+Texture2D<float> g_AmbientOcclusionTexture : register(t10);
 
 // Input structure
 struct VS_OUTPUT
@@ -337,9 +340,17 @@ PS_OUTPUT main_ps(VS_OUTPUT input)
         EvaluateSplitSumIblComponents(irradiance, prefiltered, brdfIntegration, N, viewDirection,
             diffuseColor, iblF0, saturate(roughness), 1.0f, ambientDiffuse, ambientSpecular);
     }
+    float3 sceneAmbientDiffuse = diffuseColor * g_AmbientLightColor.rgb * max(g_AmbientLightIntensity, 0.0f);
     float3 emissive = g_EmissiveMetallic.rgb;
 
-    const float3 diffuseLighting = (ambientDiffuse * max(g_EnvironmentIntensity, 0.0f)) + diffuseAccum + emissive;
+    if (g_AmbientOcclusionParams.x > 0.5f)
+    {
+        const float ambientOcclusion = g_AmbientOcclusionTexture.Load(int3(int2(input.pos.xy), 0));
+        ambientDiffuse *= ambientOcclusion;
+        sceneAmbientDiffuse *= ambientOcclusion;
+    }
+    const float3 diffuseLighting = (ambientDiffuse * max(g_EnvironmentIntensity, 0.0f)) + sceneAmbientDiffuse +
+                                   diffuseAccum + emissive;
     const float3 specularLighting = (ambientSpecular * max(g_EnvironmentIntensity, 0.0f)) + specAccum;
     output.FinalColor = float4(diffuseLighting + specularLighting, baseColor.a);
     output.Depth = input.pos.z;

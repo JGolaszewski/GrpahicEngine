@@ -20,7 +20,7 @@ class RenderSystem;
 
 /// Stable render-output plane identifiers used by previews and image exporters.
 enum class RenderAov : uint8_t {
-  FinalColor,       ///< Post-processed color and opacity.
+  FinalColor,       ///< Post-processed straight-alpha color and opacity.
   Depth,            ///< Normalized device depth.
   WorldNormal,      ///< World-space shading normal.
   SpecularLighting, ///< Direct and environment specular contribution.
@@ -51,13 +51,14 @@ struct ENGINE_API RenderOutputPlane {
 /// Owning CPU result of a completed final render.
 ///
 /// Every plane has Width * Height * ChannelCount float32 samples in row-major
-/// top-to-bottom order. `final_color` is linear RGBA; `depth` is normalized
+/// top-to-bottom order. `final_color` is linear straight-alpha RGBA; `depth` is normalized
 /// device depth in [0, 1] (1 for background); `world_normal` is the normalized
 /// world-space shading normal; `specular_lighting` contains direct and
 /// environment specular light; `diffuse_lighting` contains direct diffuse,
 /// ambient/IBL diffuse, and emissive light. Before post-processing, final
 /// color is the sum of diffuse and specular lighting in RGB, with material
-/// opacity in alpha. Plane spans remain valid until this output is
+/// opacity in alpha. GPU-composited RGB is converted to straight alpha before
+/// returning the CPU-owned output. Plane spans remain valid until this output is
 /// destroyed or move-assigned. All five canonical planes are present on
 /// success; failed renders return an error instead of partial or placeholder
 /// data.
@@ -99,7 +100,7 @@ struct ENGINE_API RenderOutputBackground {
 
 /// CPU post-processing hook for final color, called after GPU readback.
 ///
-/// The span contains tightly packed, top-to-bottom RGBA float32 samples. The
+/// The span contains tightly packed, top-to-bottom straight-alpha RGBA float32 samples. The
 /// hook may modify final color in place; geometric and lighting AOVs remain
 /// the renderer's unmodified outputs.
 using FinalColorPostProcess = std::function<Status(uint32_t width, uint32_t height, std::span<float> finalColorRgba)>;

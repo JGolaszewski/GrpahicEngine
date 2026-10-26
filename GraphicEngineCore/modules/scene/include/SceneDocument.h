@@ -1,6 +1,8 @@
 #pragma once
 
 #include "runtime/include/CoreExport.h"
+#include "scene/include/AmbientLightSettings.h"
+#include "scene/include/components/CameraPostProcessing.h"
 
 #include <array>
 #include <cstdint>
@@ -10,7 +12,7 @@
 #include <vector>
 
 namespace Engine {
-inline constexpr uint32_t CurrentSceneSchemaVersion = 3;
+inline constexpr uint32_t CurrentSceneSchemaVersion = 6;
 
 /// Persistent 128-bit scene identity stored as two unsigned words.
 struct SceneGuidDocument {
@@ -128,15 +130,18 @@ struct SceneCameraDocument {
   float farPlane = 1000.0f;                                 ///< Far clipping plane distance.
   /// Render output dimensions; missing values in older files use 1920 x 1080.
   uint32_t outputWidth = 1920;
-  uint32_t outputHeight = 1080; ///< Render output height in pixels.
-  int32_t priority = 0;         ///< Camera selection priority.
-  bool active = true;           ///< Whether this camera participates in camera selection.
+  uint32_t outputHeight = 1080;                            ///< Render output height in pixels.
+  int32_t priority = 0;                                    ///< Camera selection priority.
+  bool active = true;                                      ///< Whether this camera participates in camera selection.
+  std::optional<AmbientLightSettings> ambientLightOverride; ///< Optional camera-specific ambient-light override.
+  std::optional<Ecs::CameraPostProcessing> postProcessing; ///< Camera lighting settings and ordered color effects.
 };
 
 /// Complete persistent scene state, including its schema, permanent root, and authored objects.
 struct SceneDocument {
   uint32_t schemaVersion = CurrentSceneSchemaVersion; ///< Serialized schema version.
   float unitsPerMeter = 1.0f;                         ///< Number of scene units representing one meter.
+  AmbientLightSettings ambientLight;                  ///< Scene-wide diffuse ambient fill.
   std::vector<SceneEntityDocument> entities;          ///< Authored renderable entities.
   std::vector<SceneLightDocument> lights;             ///< Authored lights.
   std::vector<SceneCameraDocument> cameras;           ///< Authored cameras.

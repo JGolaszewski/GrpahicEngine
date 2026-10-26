@@ -9,10 +9,18 @@
 class EcsComponentMutationRequestedEvent final : public Engine::Events::Event {
 public:
   enum class Operation : unsigned char { Add, Remove, Set };
-  enum class Component : unsigned char { Name, Transform, LocalVisibility, MeshRenderer, SpotLight, Camera };
-  using Payload =
-      std::variant<std::monostate, Engine::Ecs::Name, Engine::Ecs::LocalTransform, Engine::Ecs::LocalVisibility,
-                   Engine::Ecs::MeshRenderer, Engine::Ecs::SpotLight, Engine::Ecs::Camera>;
+  enum class Component : unsigned char {
+    Name,
+    Transform,
+    LocalVisibility,
+    MeshRenderer,
+    SpotLight,
+    Camera,
+    CameraPostProcessing
+  };
+  using Payload = std::variant<std::monostate, Engine::Ecs::Name, Engine::Ecs::LocalTransform,
+                               Engine::Ecs::LocalVisibility, Engine::Ecs::MeshRenderer, Engine::Ecs::SpotLight,
+                               Engine::Ecs::Camera, Engine::Ecs::CameraPostProcessing>;
 
   EcsComponentMutationRequestedEvent(Engine::EntityHandle entity, Operation operation, Component component,
                                      Payload payload = {})

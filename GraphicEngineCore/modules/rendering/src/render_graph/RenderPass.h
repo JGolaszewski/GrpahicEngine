@@ -4,6 +4,7 @@
 #include "rendering/src/RenderPacket.h"
 #include "rendering/src/render_graph/RGBuilder.h"
 #include "rendering/src/render_graph/RenderContext.h"
+#include "scene/include/components/CameraPostProcessing.h"
 #include "runtime/include/CoreExport.h"
 #include <memory>
 #include <string>
@@ -78,6 +79,114 @@ public:
 
 private:
   Engine::SceneRenderer* m_SceneRenderer = nullptr;
+};
+
+struct AmbientOcclusionResources {
+  nvrhi::DeviceHandle Device;
+  nvrhi::ShaderHandle VertexShader;
+  nvrhi::ShaderHandle PixelShader;
+  nvrhi::BindingLayoutHandle BindingLayout;
+  nvrhi::BufferHandle ConstantsBuffer;
+  nvrhi::GraphicsPipelineHandle Pipeline;
+};
+
+class ENGINE_API CameraAmbientOcclusionGeometryPass : public ::Engine::Renderer::IRenderPass {
+public:
+  CameraAmbientOcclusionGeometryPass(std::shared_ptr<AmbientOcclusionResources> resources,
+                                     Engine::SceneRenderer* sceneRenderer);
+
+  std::string GetName() const override { return "CameraAmbientOcclusionGeometryPass"; }
+  bool HasSideEffect() const override { return true; }
+  void Setup(RGBuilder& builder, FrameBlackboard& blackboard) override;
+  bool Execute(nvrhi::ICommandList* cmd, const RenderContext& ctx) override;
+
+private:
+  struct ViewResources {
+    RenderView* View = nullptr;
+    RGResourceID Depth;
+    RGResourceID Normal;
+    RGResourceID DepthStencil;
+  };
+  std::shared_ptr<AmbientOcclusionResources> m_Resources;
+  Engine::SceneRenderer* m_SceneRenderer = nullptr;
+  std::vector<ViewResources> m_Views;
+};
+
+class ENGINE_API CameraAmbientOcclusionPass : public ::Engine::Renderer::IRenderPass {
+public:
+  explicit CameraAmbientOcclusionPass(std::shared_ptr<AmbientOcclusionResources> resources);
+
+  std::string GetName() const override { return "CameraAmbientOcclusionPass"; }
+  bool HasSideEffect() const override { return true; }
+  void Setup(RGBuilder& builder, FrameBlackboard& blackboard) override;
+  bool Execute(nvrhi::ICommandList* cmd, const RenderContext& ctx) override;
+
+private:
+  struct ViewResources {
+    RenderView* View = nullptr;
+    RGResourceID Depth;
+    RGResourceID Normal;
+    RGResourceID Output;
+  };
+  std::shared_ptr<AmbientOcclusionResources> m_Resources;
+  std::vector<ViewResources> m_Views;
+};
+
+struct CameraPostProcessResources {
+  nvrhi::DeviceHandle Device;
+  nvrhi::ShaderHandle VertexShader;
+  nvrhi::ShaderHandle PixelShader;
+  nvrhi::BindingLayoutHandle BindingLayout;
+  nvrhi::SamplerHandle InputSampler;
+  nvrhi::BufferHandle ConstantsBuffer;
+  nvrhi::GraphicsPipelineHandle Pipeline;
+};
+
+class ENGINE_API CameraPostProcessPass : public ::Engine::Renderer::IRenderPass {
+public:
+  enum class Stage { Effect, BloomDownsample, BloomUpsample, BloomComposite };
+  CameraPostProcessPass(std::shared_ptr<CameraPostProcessResources> resources, size_t effectIndex,
+                        Stage stage = Stage::Effect, uint32_t pyramidLevel = 0);
+
+  std::string GetName() const override { return "CameraPostProcessPass"; }
+  bool HasSideEffect() const override { return true; }
+  void Setup(RGBuilder& builder, FrameBlackboard& blackboard) override;
+  bool Execute(nvrhi::ICommandList* cmd, const RenderContext& ctx) override;
+
+private:
+  struct ViewResources {
+    RenderView* View = nullptr;
+    RGResourceID Input;
+    RGResourceID BloomInput;
+    RGResourceID Output;
+    Engine::Ecs::CameraPostProcessEffect Effect;
+    bool ExtractBright = false;
+    bool BloomEnabled = false;
+  };
+
+  std::shared_ptr<CameraPostProcessResources> m_Resources;
+  size_t m_EffectIndex = 0;
+  Stage m_Stage = Stage::Effect;
+  uint32_t m_PyramidLevel = 0;
+  std::vector<ViewResources> m_Views;
+};
+
+class ENGINE_API CameraPostProcessCompositePass : public ::Engine::Renderer::IRenderPass {
+public:
+  explicit CameraPostProcessCompositePass(std::shared_ptr<CameraPostProcessResources> resources);
+  std::string GetName() const override { return "CameraPostProcessCompositePass"; }
+  bool HasSideEffect() const override { return true; }
+  void Setup(RGBuilder& builder, FrameBlackboard& blackboard) override;
+  bool Execute(nvrhi::ICommandList* cmd, const RenderContext& ctx) override;
+
+private:
+  struct ViewResources {
+    RenderView* View = nullptr;
+    RGResourceID Input;
+    RGResourceID Output;
+  };
+  std::shared_ptr<CameraPostProcessResources> m_Resources;
+  std::vector<ViewResources> m_Views;
 };
 
 struct DisplayTransformResources {

@@ -97,6 +97,19 @@ public:
   /// Sets the scale from meters to scene units.
   /// @param unitsPerMeter Positive finite number of scene units per meter.
   void SetUnitsPerMeter(float unitsPerMeter) noexcept { m_UnitsPerMeter = unitsPerMeter; }
+  /// Gets scene-wide diffuse ambient-light settings.
+  /// @return Current ambient-light settings.
+  [[nodiscard]] auto AmbientLight() const noexcept -> const AmbientLightSettings& { return m_AmbientLight; }
+  /// Sets scene-wide diffuse ambient-light settings.
+  /// @param settings New ambient-light settings.
+  /// @return Success, or an error describing an invalid setting.
+  [[nodiscard]] auto SetAmbientLight(AmbientLightSettings settings) -> Status {
+    if (const Status valid = Engine::Validate(settings); !valid) {
+      return valid;
+    }
+    m_AmbientLight = std::move(settings);
+    return {};
+  }
 
   // Queue methods only append owning commands. They never mutate world storage.
   /// Queue entity creation; the returned sequence identifies its sync result.
@@ -197,6 +210,14 @@ public:
             (std::is_same_v<Component, Ecs::MeshRenderer> || std::is_same_v<Component, Ecs::SpotLight> ||
              std::is_same_v<Component, Ecs::Camera>)) {
           return Status(std::unexpected(MakeError("The scene root cannot have authored components removed")));
+        }
+        if constexpr (std::is_same_v<Component, Ecs::Camera>) {
+          if (scene.m_World.Has<Ecs::CameraPostProcessing>(entity)) {
+            const Status postProcessRemoval = scene.m_World.Remove<Ecs::CameraPostProcessing>(entity);
+            if (!postProcessRemoval) {
+              return postProcessRemoval;
+            }
+          }
         }
         return scene.m_World.Remove<Component>(entity);
       }
@@ -339,6 +360,11 @@ private:
                                 std::is_same_v<Component, Ecs::SpotLight> || std::is_same_v<Component, Ecs::Camera>)) {
       return std::unexpected(MakeError("Renderable and authored components are not valid on the scene root"));
     }
+    if constexpr (std::is_same_v<Component, Ecs::CameraPostProcessing>) {
+      if (!m_World.Has<Ecs::Camera>(entity)) {
+        return std::unexpected(MakeError("Camera post-processing requires a Camera component on the same entity"));
+      }
+    }
     if constexpr (requires { Ecs::Validate(component); }) {
       const Status valid = Ecs::Validate(component);
       if (!valid) {
@@ -363,6 +389,7 @@ private:
   uint64_t m_CachedTopologyRevision = 0;
   bool m_Syncing = false;
   float m_UnitsPerMeter = 1.0F;
+  AmbientLightSettings m_AmbientLight;
   EntityHandle m_SceneRoot = InvalidEntityHandle;
 };
 #ifdef _MSC_VER

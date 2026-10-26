@@ -4,15 +4,17 @@
 
 | AOV | EXR part name | Channels | Meaning |
 | --- | --- | --- | --- |
-| `FinalColor` | `final_color` | `R`, `G`, `B`, `A` | Linear scene-referred final color after the optional final-color hook. Alpha is material opacity. The hook must preserve linear values. |
+| `FinalColor` | `final_color` | `R`, `G`, `B`, `A` | Linear scene-referred final color after SSAO, camera GPU color effects, and the optional final-color hook. Alpha includes camera bloom coverage. |
 | `Depth` | `depth` | `Z` | Normalized device depth in `[0, 1]`; background is `1`. |
 | `WorldNormal` | `world_normal` | `X`, `Y`, `Z` | Normalized world-space shading normal. |
 | `SpecularLighting` | `specular_lighting` | `R`, `G`, `B` | Direct and environment specular lighting. |
 | `DiffuseLighting` | `diffuse_lighting` | `R`, `G`, `B` | Direct diffuse, ambient and image-based diffuse lighting, and emissive contribution. |
 
-Lighting and geometric AOVs are captured before the final-color hook. The final-color plane reflects the hook's changes. Failed renders return an error instead of partial or placeholder output.
+SSAO runs before forward lighting and attenuates indirect diffuse, so `FinalColor` and `DiffuseLighting` include its effect. The other lighting and geometric AOVs are unchanged. The ordered camera color effects and optional final-color hook affect only `FinalColor`. Failed renders return an error instead of partial or placeholder output.
 
-Transparent materials are composited source-over in `FinalColor`, `SpecularLighting`, and `DiffuseLighting` using the same material opacity, so the two lighting planes sum to the un-postprocessed final RGB. `Depth` and `WorldNormal` identify the nearest visible contributing surface; these geometric values are not blended.
+Transparent materials are composited source-over in `FinalColor`, `SpecularLighting`, and `DiffuseLighting` using the same material opacity. Before color effects, the premultiplied `FinalColor` RGB equals the sum of the two lighting planes. `Depth` and `WorldNormal` identify the nearest visible contributing surface; these geometric values are not blended.
+
+The CPU `FinalColor` plane is returned as straight-alpha RGBA. GPU-composited RGB is unpremultiplied during readback, allowing image exporters and CPU final-color hooks to apply opacity once when compositing over a background. Before color effects, multiplying the returned `FinalColor` RGB by its alpha recovers the sum of the two lighting planes.
 
 ## PNG
 

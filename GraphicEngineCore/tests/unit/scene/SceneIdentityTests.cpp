@@ -59,8 +59,9 @@ TEST(SceneIdentityTests, RootRejectsRenderableAndAuthoredComponents) {
   (void)scene.QueueAdd(root, Engine::Ecs::MeshRenderer{});
   (void)scene.QueueAdd(root, Engine::Ecs::SpotLight{});
   (void)scene.QueueAdd(root, Engine::Ecs::Camera{});
+  (void)scene.QueueAdd(root, Engine::Ecs::CameraPostProcessing{});
   const auto results = scene.sync();
-  ASSERT_EQ(results.size(), 3U);
+  ASSERT_EQ(results.size(), 4U);
   for (const auto& result : results) {
     EXPECT_FALSE(result.Outcome);
   }
