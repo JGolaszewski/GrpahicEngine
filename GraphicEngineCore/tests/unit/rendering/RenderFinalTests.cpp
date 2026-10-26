@@ -239,6 +239,7 @@ TEST(RenderFinalTests, WARPSceneViewportAndPipMatchPngDisplayTransformWhileFinal
   gradedBinding.TargetViewport = &gradedViewport;
   gradedBinding.RenderMode = Engine::ViewportBinding::Mode::Preview;
   gradedBinding.PostProcessing = grading;
+  gradedBinding.PostProcessing.Effects.emplace_back(Engine::Ecs::FxaaEffect{});
   binding.RenderMode = Engine::ViewportBinding::Mode::Preview;
   renderer.BeginFrame();
   renderer.SubmitViews({binding, gradedBinding});
@@ -253,6 +254,74 @@ TEST(RenderFinalTests, WARPSceneViewportAndPipMatchPngDisplayTransformWhileFinal
     EXPECT_NEAR(baselinePixel[channel], baselineExpected, 2U) << "baseline view channel " << channel;
     EXPECT_NEAR(gradedPixel[channel], gradedExpected, 2U) << "graded view channel " << channel;
   }
+}
+
+TEST(RenderFinalTests, WARPCameraFxaaSmoothsFinalColorEdgesAndPreservesOtherAovs) {
+  EngineTests::WarpDevice device;
+  if (!device.Initialize()) {
+    GTEST_SKIP() << "D3D11 WARP device could not be created on this host";
+  }
+  EngineTests::WarpRenderBackend backend(device.GetDevice());
+  Engine::RenderSystem renderer(&backend);
+  ASSERT_TRUE(renderer.IsValid());
+
+  Engine::Renderer::MaterialProperties properties;
+  properties.BaseColor = {0.0F, 0.0F, 0.0F, 1.0F};
+  properties.Emissive = {1.0F, 0.5F, 0.25F};
+  const auto material = renderer.CreateMaterial(properties);
+  ASSERT_NE(material, nullptr);
+  ASSERT_TRUE(renderer.CreatePrimitive(Engine::PrimitiveShape::Cube, material));
+
+  Engine::Scene scene;
+  (void)scene.QueueCreate("FXAA edge target");
+  const auto created = scene.sync();
+  ASSERT_EQ(created.size(), 1U);
+  ASSERT_TRUE(created.front().Outcome);
+  (void)scene.QueueAdd(created.front().Entity, Engine::Ecs::MeshRenderer{.PrimitiveType = "cube"});
+  Engine::Ecs::LocalTransform transform;
+  transform.Scale = {2.0F, 2.0F, 2.0F};
+  (void)scene.QueueSet(created.front().Entity, transform);
+  ASSERT_TRUE(scene.Update(0.0F));
+
+  Engine::Renderer::CameraView camera;
+  camera.Position = {0.0F, 0.0F, -5.0F};
+  constexpr uint32_t imageSize = 64;
+  const auto baseline = renderer.RenderFinal(scene, camera, imageSize, imageSize);
+  ASSERT_TRUE(baseline.has_value()) << (baseline.has_value() ? "" : baseline.error().Message);
+  const Engine::Ecs::CameraPostProcessing fxaa{.Effects = {Engine::Ecs::FxaaEffect{}}};
+  const auto antialiased = renderer.RenderFinal(scene, camera, imageSize, imageSize, {}, {}, fxaa);
+  ASSERT_TRUE(antialiased.has_value()) << (antialiased.has_value() ? "" : antialiased.error().Message);
+
+  const auto baselineColor = baseline->GetPixels(Engine::RenderAov::FinalColor);
+  const auto antialiasedColor = antialiased->GetPixels(Engine::RenderAov::FinalColor);
+  ASSERT_EQ(baselineColor.size(), antialiasedColor.size());
+  float colorDifference = 0.0F;
+  for (size_t index = 0; index < baselineColor.size(); ++index) {
+    colorDifference += std::abs(baselineColor[index] - antialiasedColor[index]);
+    if (index % 4U == 3U) {
+      EXPECT_FLOAT_EQ(baselineColor[index], antialiasedColor[index]);
+    }
+  }
+  EXPECT_GT(colorDifference, 0.01F);
+  EXPECT_TRUE(std::ranges::equal(antialiased->GetPixels(Engine::RenderAov::Depth),
+                                 baseline->GetPixels(Engine::RenderAov::Depth)));
+  EXPECT_TRUE(std::ranges::equal(antialiased->GetPixels(Engine::RenderAov::WorldNormal),
+                                 baseline->GetPixels(Engine::RenderAov::WorldNormal)));
+  EXPECT_TRUE(std::ranges::equal(antialiased->GetPixels(Engine::RenderAov::SpecularLighting),
+                                 baseline->GetPixels(Engine::RenderAov::SpecularLighting)));
+  EXPECT_TRUE(std::ranges::equal(antialiased->GetPixels(Engine::RenderAov::DiffuseLighting),
+                                 baseline->GetPixels(Engine::RenderAov::DiffuseLighting)));
+
+  const Engine::Ecs::BloomEffect bloom{.Threshold = 0.2F, .Intensity = 0.4F, .Radius = 4.0F};
+  const Engine::Ecs::CameraPostProcessing bloomThenFxaa{.Effects = {bloom, Engine::Ecs::FxaaEffect{}}};
+  const Engine::Ecs::CameraPostProcessing fxaaThenBloom{.Effects = {Engine::Ecs::FxaaEffect{}, bloom}};
+  const auto bloomedAfterFxaa = renderer.RenderFinal(scene, camera, imageSize, imageSize, {}, {}, fxaaThenBloom);
+  const auto fxaaAfterBloom = renderer.RenderFinal(scene, camera, imageSize, imageSize, {}, {}, bloomThenFxaa);
+  ASSERT_TRUE(bloomedAfterFxaa.has_value());
+  ASSERT_TRUE(fxaaAfterBloom.has_value());
+  EXPECT_GT(totalDifference(bloomedAfterFxaa->GetPixels(Engine::RenderAov::FinalColor),
+                            fxaaAfterBloom->GetPixels(Engine::RenderAov::FinalColor)),
+            0.01F);
 }
 
 TEST(RenderFinalTests, WARPSubmitsIndependentEditorAndPreviewViewsAndSkipsInvalidTargets) {

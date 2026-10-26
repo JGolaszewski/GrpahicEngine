@@ -12,7 +12,8 @@ Add the optional **Post Processing** component to a camera in the Inspector to
 configure screen-space ambient occlusion and its ordered color-effect stack.
 SSAO uses radius and intensity settings and attenuates indirect diffuse before
 forward lighting. The color stack supports color grading (exposure, contrast,
-and saturation), bloom (threshold, intensity, and radius), and FXAA. These
+and saturation), bloom (threshold, intensity, and radius), and FXAA for
+screen-space edge smoothing. FXAA has no user controls in this version. These
 settings run only on that authored camera's preview and final renders. With
 SSAO disabled and an empty color stack, the camera output is unchanged. Older
 scene files load with post-processing disabled.

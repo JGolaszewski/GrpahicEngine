@@ -15,7 +15,8 @@ TEST(CameraPostProcessingTests, EmptyAndSupportedBoundaryValuesPassValidation) {
 
   const Engine::Ecs::CameraPostProcessing supported{
       .Effects = {Engine::Ecs::ColorGradingEffect{.Exposure = -16.0F, .Contrast = 4.0F, .Saturation = 0.0F},
-                  Engine::Ecs::BloomEffect{.Threshold = 100000.0F, .Intensity = 10.0F, .Radius = 64.0F}},
+                  Engine::Ecs::BloomEffect{.Threshold = 100000.0F, .Intensity = 10.0F, .Radius = 64.0F},
+                  Engine::Ecs::FxaaEffect{}},
       .AmbientOcclusion = Engine::Ecs::ScreenSpaceAmbientOcclusionSettings{.Radius = 5.0F, .Intensity = 4.0F}};
   EXPECT_TRUE(Engine::Ecs::Validate(supported));
 }

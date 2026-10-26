@@ -374,7 +374,8 @@ TEST(ScenePersistenceTests, PersistsCameraResolutionAndUsesFullHdDefaultsForOlde
   camera.active = false;
   camera.postProcessing = Engine::Ecs::CameraPostProcessing{
       .Effects = {Engine::Ecs::ColorGradingEffect{.Exposure = 1.25F, .Contrast = 0.8F, .Saturation = 1.4F},
-                  Engine::Ecs::BloomEffect{.Threshold = 2.5F, .Intensity = 0.6F, .Radius = 12.0F}},
+                  Engine::Ecs::BloomEffect{.Threshold = 2.5F, .Intensity = 0.6F, .Radius = 12.0F},
+                  Engine::Ecs::FxaaEffect{}},
       .AmbientOcclusion = Engine::Ecs::ScreenSpaceAmbientOcclusionSettings{.Radius = 0.75F, .Intensity = 1.5F}};
   document.cameras.push_back(camera);
   Engine::SceneEntityDocument mesh;
@@ -407,15 +408,17 @@ TEST(ScenePersistenceTests, PersistsCameraResolutionAndUsesFullHdDefaultsForOlde
   ASSERT_TRUE(loaded.document.cameras.front().postProcessing->AmbientOcclusion.has_value());
   EXPECT_FLOAT_EQ(loaded.document.cameras.front().postProcessing->AmbientOcclusion->Radius, 0.75F);
   EXPECT_FLOAT_EQ(loaded.document.cameras.front().postProcessing->AmbientOcclusion->Intensity, 1.5F);
-  ASSERT_EQ(loaded.document.cameras.front().postProcessing->Effects.size(), 2U);
+  ASSERT_EQ(loaded.document.cameras.front().postProcessing->Effects.size(), 3U);
   const auto* grading =
       std::get_if<Engine::Ecs::ColorGradingEffect>(&loaded.document.cameras.front().postProcessing->Effects.front());
   ASSERT_NE(grading, nullptr);
   EXPECT_FLOAT_EQ(grading->Exposure, 1.25F);
   const auto* bloom =
-      std::get_if<Engine::Ecs::BloomEffect>(&loaded.document.cameras.front().postProcessing->Effects.back());
+      std::get_if<Engine::Ecs::BloomEffect>(&loaded.document.cameras.front().postProcessing->Effects[1]);
   ASSERT_NE(bloom, nullptr);
   EXPECT_FLOAT_EQ(bloom->Radius, 12.0F);
+  EXPECT_TRUE(
+      std::holds_alternative<Engine::Ecs::FxaaEffect>(loaded.document.cameras.front().postProcessing->Effects.back()));
   ASSERT_EQ(loaded.document.lights.size(), 1U);
   EXPECT_EQ(loaded.document.lights.front().name, "Fill Light");
   EXPECT_EQ(loaded.document.lights.front().position, light.position);

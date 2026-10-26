@@ -134,7 +134,7 @@ public:
   /// @param height Output height in pixels.
   /// @param postProcess Final color post-processing configuration.
   /// @param environment Per-view environment source and intensity.
-  /// @param cameraPostProcessing Ordered GPU effects configured for the authored camera.
+  /// @param cameraPostProcessing Camera lighting settings and ordered GPU color effects for the authored camera.
   Engine::Result<FinalRenderTicket>
   BeginFinalRender(Engine::Scene& scene, const ::Engine::Renderer::CameraView& camera, uint32_t width, uint32_t height,
                    const Engine::FinalColorPostProcess& postProcess = {},
