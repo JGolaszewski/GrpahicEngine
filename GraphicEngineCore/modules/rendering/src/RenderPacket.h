@@ -3,6 +3,7 @@
 #include <DirectXMath.h>
 #include <array>
 #include <cstdint>
+#include <optional>
 #include <nvrhi/nvrhi.h>
 
 #include "rendering/src/PipelineCache.h"
@@ -22,6 +23,7 @@ enum class RenderQueueType { Opaque, Masked, Transparent, ShadowCaster, Skybox, 
 
 struct RenderPacket {
   nvrhi::GraphicsPipelineHandle Pipeline;
+  std::optional<Engine::PipelineKey> AmbientOcclusionPipelineKey;
   nvrhi::BindingSetHandle MaterialBindings;
   PerObjectGpuData PerObjectData{};
   nvrhi::BufferHandle VertexBuffer;

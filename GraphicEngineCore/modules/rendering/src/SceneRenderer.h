@@ -91,11 +91,12 @@ public:
   static nvrhi::BufferHandle GetLightBuffer(size_t viewIndex, ::Engine::Renderer::FrameContext& frameContext);
   nvrhi::BindingSetHandle GetSceneBindingSet(size_t viewIndex, nvrhi::BufferHandle lightBuffer,
                                              nvrhi::TextureHandle shadowMap, nvrhi::SamplerHandle shadowSampler,
-                                             nvrhi::BufferHandle cameraBuffer,
+                                             nvrhi::BufferHandle cameraBuffer, nvrhi::TextureHandle ambientOcclusion,
                                              ::Engine::Renderer::FrameDiagnostics& diagnostics);
   inline nvrhi::BufferHandle GetPerObjectBuffer() const { return m_PerObjectBuffer; }
   inline nvrhi::BindingSetHandle GetPerObjectBindingSet() const { return m_PerObjectBindingSet; }
   inline nvrhi::SamplerHandle GetShadowSampler() const { return m_ShadowSampler; }
+  inline nvrhi::ShaderHandle GetAmbientOcclusionPrepassPS() const { return m_AmbientOcclusionPrepassPS; }
   inline nvrhi::BindingLayoutHandle GetPerObjectBindingLayout() const { return m_PerObjectBindingLayout; }
   inline nvrhi::BindingLayoutHandle GetSceneBindingLayout() const { return m_SceneBindingLayout; }
   inline ::Engine::Renderer::MaterialSystem* GetMaterialSystem() const { return m_MaterialSystem; }
@@ -137,6 +138,7 @@ private:
     nvrhi::TextureHandle ShadowMap;
     nvrhi::SamplerHandle ShadowSampler;
     nvrhi::BufferHandle CameraBuffer;
+    nvrhi::TextureHandle AmbientOcclusion;
     nvrhi::BindingLayoutHandle Layout;
     nvrhi::BindingSetHandle Bindings;
   };
@@ -152,6 +154,7 @@ private:
   nvrhi::ShaderHandle m_DebugVS;
   nvrhi::ShaderHandle m_DebugPS;
   nvrhi::ShaderHandle m_ShadowMaskPS;
+  nvrhi::ShaderHandle m_AmbientOcclusionPrepassPS;
   nvrhi::BindingLayoutHandle m_DebugBindingLayout;
   nvrhi::BufferHandle m_DebugViewBuffer;
   nvrhi::BufferHandle m_DebugLineBuffer;

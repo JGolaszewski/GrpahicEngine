@@ -8,10 +8,15 @@
 
 TEST(CameraPostProcessingTests, EmptyAndSupportedBoundaryValuesPassValidation) {
   EXPECT_TRUE(Engine::Ecs::Validate(Engine::Ecs::CameraPostProcessing{}));
+  const Engine::Ecs::CameraPostProcessing legacyAggregate{
+      std::vector<Engine::Ecs::CameraPostProcessEffect>{Engine::Ecs::ColorGradingEffect{}}};
+  ASSERT_EQ(legacyAggregate.Effects.size(), 1U);
+  EXPECT_FALSE(legacyAggregate.AmbientOcclusion.has_value());
 
   const Engine::Ecs::CameraPostProcessing supported{
       .Effects = {Engine::Ecs::ColorGradingEffect{.Exposure = -16.0F, .Contrast = 4.0F, .Saturation = 0.0F},
-                  Engine::Ecs::BloomEffect{.Threshold = 100000.0F, .Intensity = 10.0F, .Radius = 64.0F}}};
+                  Engine::Ecs::BloomEffect{.Threshold = 100000.0F, .Intensity = 10.0F, .Radius = 64.0F}},
+      .AmbientOcclusion = Engine::Ecs::ScreenSpaceAmbientOcclusionSettings{.Radius = 5.0F, .Intensity = 4.0F}};
   EXPECT_TRUE(Engine::Ecs::Validate(supported));
 }
 
@@ -23,6 +28,10 @@ TEST(CameraPostProcessingTests, NonFiniteOrOutOfRangeValuesFailValidation) {
       Engine::Ecs::CameraPostProcessing{.Effects = {Engine::Ecs::ColorGradingEffect{.Exposure = 16.01F}}}));
   EXPECT_FALSE(Engine::Ecs::Validate(
       Engine::Ecs::CameraPostProcessing{.Effects = {Engine::Ecs::BloomEffect{.Radius = 64.01F}}}));
+  EXPECT_FALSE(Engine::Ecs::Validate(Engine::Ecs::CameraPostProcessing{
+      .AmbientOcclusion = Engine::Ecs::ScreenSpaceAmbientOcclusionSettings{.Radius = nan}}));
+  EXPECT_FALSE(Engine::Ecs::Validate(Engine::Ecs::CameraPostProcessing{
+      .AmbientOcclusion = Engine::Ecs::ScreenSpaceAmbientOcclusionSettings{.Intensity = 4.01F}}));
 }
 
 TEST(CameraPostProcessingTests, ViewportBindingRejectsInvalidEffectSettings) {

@@ -629,6 +629,37 @@ auto ReadCameraPostProcessing(const Json& value, Ecs::CameraPostProcessing& post
   return true;
 }
 
+auto CameraAmbientOcclusionJson(const Ecs::CameraPostProcessing* postProcessing) -> Json {
+  if (postProcessing == nullptr || !postProcessing->AmbientOcclusion) {
+    return nullptr;
+  }
+  return {{"radius", postProcessing->AmbientOcclusion->Radius},
+          {"intensity", postProcessing->AmbientOcclusion->Intensity}};
+}
+
+auto ReadCameraAmbientOcclusion(const Json& value, Ecs::CameraPostProcessing& postProcessing, std::string& error)
+    -> bool {
+  if (value.is_null()) {
+    return true;
+  }
+  if (!value.is_object()) {
+    error = "ambientOcclusion must be an object or null";
+    return false;
+  }
+  Ecs::ScreenSpaceAmbientOcclusionSettings settings;
+  if (!ReadNumber(value, "radius", settings.Radius, error) ||
+      !ReadNumber(value, "intensity", settings.Intensity, error)) {
+    return false;
+  }
+  postProcessing.AmbientOcclusion = settings;
+  const Status valid = Ecs::Validate(postProcessing);
+  if (!valid) {
+    error = valid.error().Message;
+    return false;
+  }
+  return true;
+}
+
 auto CameraJson(const SceneCameraDocument& camera) -> Json {
   return {
       {"id", camera.id},
@@ -649,6 +680,7 @@ auto CameraJson(const SceneCameraDocument& camera) -> Json {
       {"priority", camera.priority},
       {"active", camera.active},
       {"postProcessing", camera.postProcessing ? CameraPostProcessingJson(*camera.postProcessing) : Json(nullptr)},
+      {"ambientOcclusion", CameraAmbientOcclusionJson(camera.postProcessing ? &*camera.postProcessing : nullptr)},
   };
 }
 
@@ -1188,24 +1220,10 @@ auto LoadCameraArray(const Json& root, SceneDocumentResult& result, const std::f
       }
       KnownKeys(item,
                 {
-                    "id",
-                    "name",
-                    "identityGuid",
-                    "parentGuid",
-                    "visible",
-                    "position",
-                    "rotation",
-                    "scale",
-                    "flipHorizontal",
-                    "flipVertical",
-                    "fovRadians",
-                    "nearPlane",
-                    "farPlane",
-                    "outputWidth",
-                    "outputHeight",
-                    "priority",
-                    "active",
-                    "postProcessing",
+                    "id",         "name",      "identityGuid",   "parentGuid",       "visible",
+                    "position",   "rotation",  "scale",          "flipHorizontal",   "flipVertical",
+                    "fovRadians", "nearPlane", "farPlane",       "outputWidth",      "outputHeight",
+                    "priority",   "active",    "postProcessing", "ambientOcclusion",
                 },
                 result.warnings, context);
       SceneCameraDocument camera;
@@ -1259,6 +1277,15 @@ auto LoadCameraArray(const Json& root, SceneDocumentResult& result, const std::f
           return false;
         }
         camera.postProcessing = std::move(postProcessing);
+      }
+      if (item.contains("ambientOcclusion") && !item.at("ambientOcclusion").is_null()) {
+        if (!camera.postProcessing) {
+          camera.postProcessing.emplace();
+        }
+        if (!ReadCameraAmbientOcclusion(item.at("ambientOcclusion"), *camera.postProcessing, fieldError)) {
+          result.error = FileContext(path, context + ".ambientOcclusion: " + fieldError);
+          return false;
+        }
       }
       const float rotationLengthSquared =
           (camera.rotation.at(0) * camera.rotation.at(0)) + (camera.rotation.at(1) * camera.rotation.at(1)) +

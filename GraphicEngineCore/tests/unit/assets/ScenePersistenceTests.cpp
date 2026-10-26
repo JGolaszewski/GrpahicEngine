@@ -374,7 +374,8 @@ TEST(ScenePersistenceTests, PersistsCameraResolutionAndUsesFullHdDefaultsForOlde
   camera.active = false;
   camera.postProcessing = Engine::Ecs::CameraPostProcessing{
       .Effects = {Engine::Ecs::ColorGradingEffect{.Exposure = 1.25F, .Contrast = 0.8F, .Saturation = 1.4F},
-                  Engine::Ecs::BloomEffect{.Threshold = 2.5F, .Intensity = 0.6F, .Radius = 12.0F}}};
+                  Engine::Ecs::BloomEffect{.Threshold = 2.5F, .Intensity = 0.6F, .Radius = 12.0F}},
+      .AmbientOcclusion = Engine::Ecs::ScreenSpaceAmbientOcclusionSettings{.Radius = 0.75F, .Intensity = 1.5F}};
   document.cameras.push_back(camera);
   Engine::SceneEntityDocument mesh;
   mesh.id = 9;
@@ -403,6 +404,9 @@ TEST(ScenePersistenceTests, PersistsCameraResolutionAndUsesFullHdDefaultsForOlde
   EXPECT_EQ(loaded.document.cameras.front().priority, -4);
   EXPECT_FALSE(loaded.document.cameras.front().active);
   ASSERT_TRUE(loaded.document.cameras.front().postProcessing.has_value());
+  ASSERT_TRUE(loaded.document.cameras.front().postProcessing->AmbientOcclusion.has_value());
+  EXPECT_FLOAT_EQ(loaded.document.cameras.front().postProcessing->AmbientOcclusion->Radius, 0.75F);
+  EXPECT_FLOAT_EQ(loaded.document.cameras.front().postProcessing->AmbientOcclusion->Intensity, 1.5F);
   ASSERT_EQ(loaded.document.cameras.front().postProcessing->Effects.size(), 2U);
   const auto* grading =
       std::get_if<Engine::Ecs::ColorGradingEffect>(&loaded.document.cameras.front().postProcessing->Effects.front());
@@ -435,6 +439,21 @@ TEST(ScenePersistenceTests, PersistsCameraResolutionAndUsesFullHdDefaultsForOlde
   EXPECT_EQ(legacy.document.cameras.front().scale, (std::array<float, 3>{1.0F, 1.0F, 1.0F}));
   EXPECT_EQ(legacy.document.cameras.front().priority, 0);
   EXPECT_TRUE(legacy.document.cameras.front().active);
+
+  const auto legacyEffectsPath = project.Root() / "legacy-camera-effects.scene.json";
+  {
+    std::ofstream legacyEffects(legacyEffectsPath, std::ios::binary | std::ios::trunc);
+    legacyEffects
+        << R"({"schemaVersion":1,"unitsPerMeter":1,"cameras":[{"id":10,"position":[0,0,0],"rotation":[0,0,0,1],"fovRadians":1,"nearPlane":0.1,"farPlane":100,"postProcessing":[{"type":"bloom","threshold":1,"intensity":0.5,"radius":4}]}]})";
+  }
+  const auto legacyEffects = assets.LoadScene("legacy-camera-effects.scene.json");
+  ASSERT_TRUE(legacyEffects) << legacyEffects.error;
+  ASSERT_EQ(legacyEffects.document.cameras.size(), 1U);
+  ASSERT_TRUE(legacyEffects.document.cameras.front().postProcessing.has_value());
+  EXPECT_FALSE(legacyEffects.document.cameras.front().postProcessing->AmbientOcclusion.has_value());
+  ASSERT_EQ(legacyEffects.document.cameras.front().postProcessing->Effects.size(), 1U);
+  EXPECT_TRUE(std::holds_alternative<Engine::Ecs::BloomEffect>(
+      legacyEffects.document.cameras.front().postProcessing->Effects.front()));
 }
 
 TEST(ScenePersistenceTests, FailedAtomicReplacementPreservesDestinationAndRemovesTemporaryFile) {

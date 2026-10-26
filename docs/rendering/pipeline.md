@@ -50,9 +50,10 @@ resource lifetimes, and access states for diagnostics.
 
 The graph is a scheduling and resource-state layer around these passes. It does
 not currently provide a deferred/G-buffer renderer or general-purpose graph
-editor. It does include an optional camera-scoped post-processing chain for
-color grading and bloom, scheduled after the forward pass and before the display
-transform.
+editor. It includes camera-scoped screen-space ambient occlusion before the
+forward lighting pass, followed by an ordered color-effect chain after forward
+rendering and before display encoding. SSAO attenuates indirect diffuse lighting;
+color grading, bloom, and FXAA operate in the ordered color stage.
 
 ## Shader and pipeline architecture
 
@@ -140,8 +141,12 @@ preferences.
 
 Final camera output uses an offscreen target at the requested dimensions. The
 renderer captures final color, depth, world normal, specular-lighting, and
-diffuse-lighting planes. Camera-attached color grading and bloom run on the GPU
-before readback and affect only final color. `BeginFinalRender` submits GPU
+diffuse-lighting planes. Camera SSAO uses per-view depth and interpolated
+world-space mesh normals
+before forward shading; ambient diffuse is attenuated in `FinalColor` and
+`DiffuseLighting`, while direct diffuse, emissive, specular lighting, depth, and
+normals remain unchanged. The ordered color effects run on the GPU before
+readback and affect only final color. `BeginFinalRender` submits GPU
 copies to staging textures and returns a ticket; callers poll on the render
 thread until the readback is ready. The optional CPU final-color hook runs after
 readback; the other planes remain unprocessed. PNG export applies a display

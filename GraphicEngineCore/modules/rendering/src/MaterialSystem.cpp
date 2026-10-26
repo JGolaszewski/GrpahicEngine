@@ -156,6 +156,10 @@ void MaterialSystem::SetMaxTextureAnisotropy(uint32_t maxAnisotropy) noexcept {
   }
 }
 
+auto MaterialSystem::GetFallbackColorTexture() const -> nvrhi::TextureHandle {
+  return m_FallbackColor ? TextureBackendAccess::GetTexture(*m_FallbackColor) : nullptr;
+}
+
 auto MaterialSystem::CreateMaterial(const MaterialProperties& properties) -> std::shared_ptr<Material> {
   auto material = std::make_shared<Material>(m_NextMaterialID++);
   material->SetProperties(properties);

@@ -8,6 +8,8 @@ set(SHADER_FILES
     "${CMAKE_CURRENT_SOURCE_DIR}/shaders/display_ps.hlsl"
     "${CMAKE_CURRENT_SOURCE_DIR}/shaders/post_process_vs.hlsl"
     "${CMAKE_CURRENT_SOURCE_DIR}/shaders/post_process_ps.hlsl"
+    "${CMAKE_CURRENT_SOURCE_DIR}/shaders/ssao_ps.hlsl"
+    "${CMAKE_CURRENT_SOURCE_DIR}/shaders/ssao_prepass_ps.hlsl"
     "${CMAKE_CURRENT_SOURCE_DIR}/shaders/debug_vs.hlsl"
     "${CMAKE_CURRENT_SOURCE_DIR}/shaders/debug_ps.hlsl"
     "${CMAKE_CURRENT_SOURCE_DIR}/shaders/shadow_mask_ps.hlsl"

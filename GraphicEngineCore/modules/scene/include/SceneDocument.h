@@ -132,7 +132,7 @@ struct SceneCameraDocument {
   uint32_t outputHeight = 1080;                            ///< Render output height in pixels.
   int32_t priority = 0;                                    ///< Camera selection priority.
   bool active = true;                                      ///< Whether this camera participates in camera selection.
-  std::optional<Ecs::CameraPostProcessing> postProcessing; ///< Optional ordered camera-only effect stack.
+  std::optional<Ecs::CameraPostProcessing> postProcessing; ///< Camera lighting settings and ordered color effects.
 };
 
 /// Complete persistent scene state, including its schema, permanent root, and authored objects.
