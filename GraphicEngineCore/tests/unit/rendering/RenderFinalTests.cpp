@@ -19,6 +19,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <span>
@@ -254,6 +255,61 @@ TEST(RenderFinalTests, WARPSceneViewportAndPipMatchPngDisplayTransformWhileFinal
     EXPECT_NEAR(baselinePixel[channel], baselineExpected, 2U) << "baseline view channel " << channel;
     EXPECT_NEAR(gradedPixel[channel], gradedExpected, 2U) << "graded view channel " << channel;
   }
+}
+
+TEST(RenderFinalTests, WARPFinalColorReadbackUsesStraightAlphaAndPreservesBloomHaloEnergy) {
+  EngineTests::WarpDevice device;
+  if (!device.Initialize()) {
+    GTEST_SKIP() << "D3D11 WARP device could not be created on this host";
+  }
+  EngineTests::WarpRenderBackend backend(device.GetDevice());
+  Engine::RenderSystem renderer(&backend);
+  ASSERT_TRUE(renderer.IsValid());
+
+  Engine::Renderer::MaterialProperties properties;
+  properties.BaseColor = {0.0F, 0.0F, 0.0F, 0.5F};
+  properties.Emissive = {0.5F, 0.5F, 0.5F};
+  properties.AlphaMode = Engine::Renderer::MaterialAlphaMode::Blend;
+  const auto material = renderer.CreateMaterial(properties);
+  ASSERT_NE(material, nullptr);
+  ASSERT_TRUE(renderer.CreatePrimitive(Engine::PrimitiveShape::Sphere, material));
+
+  Engine::Scene scene;
+  const uint64_t sequence = scene.QueueCreate("Straight-alpha bloom target");
+  const auto created = scene.sync();
+  ASSERT_EQ(created.size(), 1U);
+  ASSERT_EQ(created.front().Sequence, sequence);
+  ASSERT_TRUE(created.front().Outcome);
+  (void)scene.QueueAdd(created.front().Entity, Engine::Ecs::MeshRenderer{.PrimitiveType = "sphere"});
+  Engine::Ecs::LocalTransform transform;
+  transform.Scale = {1.5F, 1.5F, 1.5F};
+  (void)scene.QueueSet(created.front().Entity, transform);
+  ASSERT_TRUE(scene.Update(0.0F));
+
+  Engine::Renderer::CameraView camera;
+  camera.Position = {0.0F, 0.0F, -5.0F};
+  constexpr uint32_t imageSize = 64;
+  const auto baseline = renderer.RenderFinal(scene, camera, imageSize, imageSize);
+  ASSERT_TRUE(baseline.has_value()) << (baseline.has_value() ? "" : baseline.error().Message);
+  const auto baselinePixels = baseline->GetPixels(Engine::RenderAov::FinalColor);
+  const size_t centerOffset = (static_cast<size_t>(imageSize / 2U) * imageSize + imageSize / 2U) * 4U;
+  EXPECT_NEAR(baselinePixels[centerOffset], 0.5F, 0.02F);
+  EXPECT_NEAR(baselinePixels[centerOffset + 1U], 0.5F, 0.02F);
+  EXPECT_NEAR(baselinePixels[centerOffset + 2U], 0.5F, 0.02F);
+  EXPECT_NEAR(baselinePixels[centerOffset + 3U], 0.5F, 0.02F);
+
+  const Engine::Ecs::CameraPostProcessing bloom{
+      .Effects = {Engine::Ecs::BloomEffect{.Threshold = 0.01F, .Intensity = 1.0F, .Radius = 16.0F}}};
+  const auto bloomed = renderer.RenderFinal(scene, camera, imageSize, imageSize, {}, {}, bloom);
+  ASSERT_TRUE(bloomed.has_value()) << (bloomed.has_value() ? "" : bloomed.error().Message);
+  const auto bloomedPixels = bloomed->GetPixels(Engine::RenderAov::FinalColor);
+  const size_t haloOffset = (static_cast<size_t>(12U) * imageSize + imageSize / 2U) * 4U;
+  EXPECT_NEAR(baselinePixels[haloOffset + 3U], 0.0F, 1.0e-5F);
+  EXPECT_GT(bloomedPixels[haloOffset + 3U], 1.0e-5F);
+  EXPECT_LT(bloomedPixels[haloOffset + 3U], 1.0F);
+  EXPECT_NEAR(bloomedPixels[haloOffset], 1.0F, 0.05F);
+  EXPECT_NEAR(bloomedPixels[haloOffset + 1U], 1.0F, 0.05F);
+  EXPECT_NEAR(bloomedPixels[haloOffset + 2U], 1.0F, 0.05F);
 }
 
 TEST(RenderFinalTests, WARPCameraFxaaSmoothsFinalColorEdgesAndPreservesOtherAovs) {
@@ -960,6 +1016,33 @@ TEST(RenderFinalTests, WARPSplitSumEnvironmentAffectsDielectricAndMetalOnlyWhenE
   EXPECT_GT(totalDifference(enabledDiffuse, disabledDiffuse), 1.0F);
   EXPECT_GT(totalDifference(enabledSpecular, disabledSpecular), 1.0F);
   EXPECT_EQ(disabled.Preset, Engine::EnvironmentPreset::Disabled);
+}
+
+TEST(RenderFinalTests, WARPFinalRenderRejectsInvalidAmbientOverrideBeforeStartingTheFrame) {
+  EngineTests::WarpDevice device;
+  if (!device.Initialize()) {
+    GTEST_SKIP() << "D3D11 WARP device could not be created on this host";
+  }
+  EngineTests::WarpRenderBackend backend(device.GetDevice());
+  Engine::RenderSystem renderer(&backend);
+  ASSERT_TRUE(renderer.IsValid());
+
+  Engine::Scene scene;
+  Engine::Renderer::CameraView camera;
+  constexpr uint32_t imageSize = 16;
+  const std::array invalidOverrides = {
+      Engine::AmbientLightSettings{.Intensity = -0.1F},
+      Engine::AmbientLightSettings{.Color = {std::numeric_limits<float>::quiet_NaN(), 1.0F, 1.0F}},
+  };
+  for (const Engine::AmbientLightSettings& ambientLight : invalidOverrides) {
+    const auto result = renderer.BeginFinalRender(scene, camera, imageSize, imageSize, {}, {}, {}, ambientLight);
+    ASSERT_FALSE(result.has_value());
+    EXPECT_NE(result.error().Message.find("ambient light override"), std::string::npos);
+    EXPECT_FALSE(renderer.IsFrameActive());
+  }
+
+  const auto valid = renderer.RenderFinal(scene, camera, imageSize, imageSize);
+  ASSERT_TRUE(valid.has_value()) << (valid.has_value() ? "" : valid.error().Message);
 }
 
 TEST(RenderFinalTests, WARPScreenSpaceAmbientOcclusionOnlyChangesIndirectDiffuseLighting) {

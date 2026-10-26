@@ -12,7 +12,9 @@
 
 SSAO runs before forward lighting and attenuates indirect diffuse, so `FinalColor` and `DiffuseLighting` include its effect. The other lighting and geometric AOVs are unchanged. The ordered camera color effects and optional final-color hook affect only `FinalColor`. Failed renders return an error instead of partial or placeholder output.
 
-Transparent materials are composited source-over in `FinalColor`, `SpecularLighting`, and `DiffuseLighting` using the same material opacity, so after SSAO and before color effects the two lighting planes sum to the final RGB. `Depth` and `WorldNormal` identify the nearest visible contributing surface; these geometric values are not blended.
+Transparent materials are composited source-over in `FinalColor`, `SpecularLighting`, and `DiffuseLighting` using the same material opacity. Before color effects, the premultiplied `FinalColor` RGB equals the sum of the two lighting planes. `Depth` and `WorldNormal` identify the nearest visible contributing surface; these geometric values are not blended.
+
+The CPU `FinalColor` plane is returned as straight-alpha RGBA. GPU-composited RGB is unpremultiplied during readback, allowing image exporters and CPU final-color hooks to apply opacity once when compositing over a background. Before color effects, multiplying the returned `FinalColor` RGB by its alpha recovers the sum of the two lighting planes.
 
 ## PNG
 

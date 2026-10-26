@@ -57,6 +57,11 @@ The output contains five Float32 planes in this canonical order. Pixel rows are
 tightly packed, row-major, and top-to-bottom. The listed channel names are
 stable and are exposed by `RenderAovDescriptor` for image writers.
 
+`FinalColor` is returned as linear straight-alpha RGBA. Transparent fragments
+are composited on the GPU, then RGB is unpremultiplied during CPU readback so
+background compositing and PNG/EXR consumers apply opacity exactly once. The
+optional CPU final-color hook receives this same straight-alpha representation.
+
 | Identifier | Name | Channels | Meaning |
 | --- | --- | --- | --- |
 | `FinalColor` | `final_color` | R, G, B, A | Linear scene-referred color after SSAO and camera GPU color effects; before color effects its RGB is the sum of AO-adjusted diffuse and specular lighting. Alpha starts as material opacity; bloom may expand it, and the optional CPU final-color hook may modify RGBA. |

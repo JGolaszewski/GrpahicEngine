@@ -954,6 +954,13 @@ auto RenderSystem::BeginFinalRender(Engine::Scene& scene, const ::Engine::Render
     return std::unexpected(
         Engine::MakeError("camera post-processing settings are invalid: " + postProcessingStatus.error().Message));
   }
+  if (ambientLightOverride) {
+    const Engine::Status ambientLightStatus = Engine::Validate(*ambientLightOverride);
+    if (!ambientLightStatus) {
+      return std::unexpected(
+          Engine::MakeError("final render ambient light override is invalid: " + ambientLightStatus.error().Message));
+    }
+  }
 
   auto target = std::shared_ptr<Engine::ViewportTarget>(
       new Engine::ViewportTarget(m_RenderBackend->GetDevice(), width, height, true));
@@ -1078,6 +1085,19 @@ auto RenderSystem::PollFinalRender(FinalRenderTicket ticket) -> Engine::Result<s
       }
     }
     device->unmapStagingTexture(staging);
+  }
+  Engine::RenderOutputPlane& finalColor = output.m_Planes.front();
+  for (size_t offset = 0; offset < finalColor.Pixels.size(); offset += 4U) {
+    const float alpha = std::clamp(finalColor.Pixels[offset + 3U], 0.0F, 1.0F);
+    if (alpha > 1.0e-6F) {
+      finalColor.Pixels[offset] /= alpha;
+      finalColor.Pixels[offset + 1U] /= alpha;
+      finalColor.Pixels[offset + 2U] /= alpha;
+    } else {
+      finalColor.Pixels[offset] = 0.0F;
+      finalColor.Pixels[offset + 1U] = 0.0F;
+      finalColor.Pixels[offset + 2U] = 0.0F;
+    }
   }
   Engine::FinalColorPostProcess postProcess = std::move(m_FinalReadbackCapture->PostProcess);
   m_FinalReadbackCapture.reset();
