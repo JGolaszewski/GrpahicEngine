@@ -45,6 +45,7 @@ TEST(EditorSettingsTests, MissingFileUsesDocumentedDefaults) {
   EXPECT_TRUE(loaded.Preferences.ShowLightGizmos);
   EXPECT_TRUE(loaded.Preferences.ShowCameraFrustums);
   EXPECT_TRUE(loaded.Preferences.ShowWireframePlane);
+  EXPECT_TRUE(loaded.Preferences.ShowSkyboxInEditorViewport);
   EXPECT_FLOAT_EQ(loaded.Preferences.CameraPreviewScale, 0.35F);
   EXPECT_FLOAT_EQ(loaded.Preferences.CameraPreviewQuality, 0.25F);
   EXPECT_EQ(loaded.Preferences.FrameLimiterHz, 0U);
@@ -61,6 +62,7 @@ TEST(EditorSettingsTests, SavesCategorizedJsonAndRestoresPreferences) {
   preferences.ShowLightGizmos = false;
   preferences.ShowCameraFrustums = false;
   preferences.ShowWireframePlane = true;
+  preferences.ShowSkyboxInEditorViewport = false;
   preferences.CameraPreviewScale = 0.7F;
   preferences.CameraPreviewQuality = 0.8F;
   preferences.FrameLimiterHz = 120;
@@ -84,6 +86,7 @@ TEST(EditorSettingsTests, SavesCategorizedJsonAndRestoresPreferences) {
   EXPECT_EQ(loaded.Preferences.ShowLightGizmos, preferences.ShowLightGizmos);
   EXPECT_EQ(loaded.Preferences.ShowCameraFrustums, preferences.ShowCameraFrustums);
   EXPECT_EQ(loaded.Preferences.ShowWireframePlane, preferences.ShowWireframePlane);
+  EXPECT_EQ(loaded.Preferences.ShowSkyboxInEditorViewport, preferences.ShowSkyboxInEditorViewport);
   EXPECT_FLOAT_EQ(loaded.Preferences.CameraPreviewScale, preferences.CameraPreviewScale);
   EXPECT_FLOAT_EQ(loaded.Preferences.CameraPreviewQuality, preferences.CameraPreviewQuality);
   EXPECT_EQ(loaded.Preferences.FrameLimiterHz, preferences.FrameLimiterHz);
@@ -122,6 +125,19 @@ TEST(EditorSettingsTests, ExistingVersionOneFileDefaultsMissingAnisotropySetting
   const auto loaded = EditorPlatform::LoadEditorSettingsFile(path);
   EXPECT_TRUE(loaded.Error.empty()) << loaded.Error;
   EXPECT_EQ(loaded.Preferences.MaxTextureAnisotropy, 8U);
+}
+
+TEST(EditorSettingsTests, ExistingVersionOneFileDefaultsSkyboxVisibilityToEnabled) {
+  TemporarySettingsDirectory directory;
+  const auto path = directory.Root() / "editor-settings.json";
+  {
+    std::ofstream output(path, std::ios::binary);
+    output << R"({"version":1,"runtime":{},"rendering":{},"camera_preview":{}})";
+  }
+
+  const auto loaded = EditorPlatform::LoadEditorSettingsFile(path);
+  EXPECT_TRUE(loaded.Error.empty()) << loaded.Error;
+  EXPECT_TRUE(loaded.Preferences.ShowSkyboxInEditorViewport);
 }
 
 TEST(EditorSettingsTests, RejectsUnsupportedAnisotropySettingAndRestoresDefaults) {

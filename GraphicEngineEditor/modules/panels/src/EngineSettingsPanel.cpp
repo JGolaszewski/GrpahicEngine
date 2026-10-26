@@ -49,6 +49,9 @@ void EngineSettingsPanel::Draw() {
     bool changed = ImGui::Checkbox("Show light gizmos", &preferences.ShowLightGizmos);
     changed |= ImGui::Checkbox("Show camera frustums", &preferences.ShowCameraFrustums);
     changed |= ImGui::Checkbox("Show wireframe plane", &preferences.ShowWireframePlane);
+    changed |= ImGui::Checkbox("Show skybox in editor viewport", &preferences.ShowSkyboxInEditorViewport);
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) // Dear ImGui formats text through its documented variadic API.
+    ImGui::SetItemTooltip("Hides the skybox background in the editor viewport without disabling environment lighting.");
     constexpr int anisotropyValues[] = {1, 2, 4, 8, 16};
     constexpr const char* anisotropyLabels[] = {"1x", "2x", "4x", "8x", "16x"};
     int anisotropyIndex = 3;
