@@ -11,12 +11,22 @@ camera; older scene files without these fields load as 1920 x 1080.
 Add the optional **Post Processing** component to a camera in the Inspector to
 configure screen-space ambient occlusion and its ordered color-effect stack.
 SSAO uses radius and intensity settings and attenuates indirect diffuse before
-forward lighting. The color stack supports color grading (exposure, contrast,
-and saturation), bloom (threshold, intensity, and radius), and FXAA for
-screen-space edge smoothing. FXAA has no user controls in this version. These
-settings run only on that authored camera's preview and final renders. With
-SSAO disabled and an empty color stack, the camera output is unchanged. Older
-scene files load with post-processing disabled.
+forward lighting. Scene ambient light is edited on the scene root and provides
+a diffuse fill independent of environment lighting. SSAO attenuates this
+ambient diffuse contribution along with diffuse environment lighting. Each
+camera can optionally override the scene ambient setting for its own preview
+and final renders; cameras without an override inherit the scene setting. The
+override includes enabled state, linear RGB color, and intensity. The color
+stack supports color grading (exposure, contrast,
+and saturation), pyramid bloom (threshold, intensity, radius, and smooth
+upsampling), and FXAA (quality and edge threshold) for screen-space edge
+smoothing. SSAO exposes sample count and depth bias in scene units. Each color
+effect appears as a collapsible entry with its supported parameters. Drag effect headers or
+use the Up and Down controls to reorder the stack. The displayed order is the
+render order, and repeated effects are allowed. These settings run only on
+that authored camera's preview and final renders. With SSAO disabled and an
+empty color stack, the camera output is unchanged. Older scene files load
+with post-processing disabled.
 
 The editor navigation camera is editor-owned view state. It does not appear in the scene hierarchy or scene files.
 Camera frustums are editor debug geometry. They use each visible scene camera's transform, field of view, clip planes,

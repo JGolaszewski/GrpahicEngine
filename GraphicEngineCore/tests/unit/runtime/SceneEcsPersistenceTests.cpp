@@ -15,6 +15,8 @@ namespace {
 
 TEST(SceneEcsPersistenceTests, RoundTripsEntityIdentityHierarchyAndSupportedComponents) {
   Engine::Scene source;
+  ASSERT_TRUE(source.SetAmbientLight(
+      Engine::AmbientLightSettings{.Enabled = true, .Color = {0.7F, 0.6F, 0.5F}, .Intensity = 0.4F}));
   const uint64_t meshSequence =
       source.QueueCreate("Mesh Entity", Engine::InvalidEntityHandle, Engine::Scene::EntityPreset::Mesh);
   const uint64_t lightSequence =
@@ -81,19 +83,26 @@ TEST(SceneEcsPersistenceTests, RoundTripsEntityIdentityHierarchyAndSupportedComp
                                                             .Scale = {0.8F, 0.9F, 1.1F},
                                                             .FlipHorizontal = true,
                                                             .FlipVertical = true});
-  (void)source.QueueSet(camera, Engine::Ecs::Camera{.FieldOfViewDegrees = 72.0F,
-                                                    .NearPlane = 0.25F,
-                                                    .FarPlane = 300.0F,
-                                                    .OutputWidth = 2560,
-                                                    .OutputHeight = 1440,
-                                                    .Priority = -7,
-                                                    .Active = false});
+  (void)source.QueueSet(
+      camera, Engine::Ecs::Camera{
+                  .FieldOfViewDegrees = 72.0F,
+                  .NearPlane = 0.25F,
+                  .FarPlane = 300.0F,
+                  .OutputWidth = 2560,
+                  .OutputHeight = 1440,
+                  .Priority = -7,
+                  .Active = false,
+                  .AmbientLightOverride =
+                      Engine::AmbientLightSettings{.Enabled = false, .Color = {0.3F, 0.4F, 0.9F}, .Intensity = 0.8F}});
   (void)source.QueueAdd(
       camera,
       Engine::Ecs::CameraPostProcessing{
-          .Effects = {Engine::Ecs::BloomEffect{.Threshold = 1.5F, .Intensity = 0.8F, .Radius = 6.0F},
-                      Engine::Ecs::FxaaEffect{}},
-          .AmbientOcclusion = Engine::Ecs::ScreenSpaceAmbientOcclusionSettings{.Radius = 0.75F, .Intensity = 1.5F}});
+          .Effects = {Engine::Ecs::BloomEffect{.Threshold = 1.5F, .Intensity = 0.8F, .Radius = 6.0F, .Smooth = false},
+                      Engine::Ecs::FxaaEffect{.Quality = Engine::Ecs::FxaaQuality::Low, .EdgeThreshold = 0.08F}},
+          .AmbientOcclusion = Engine::Ecs::ScreenSpaceAmbientOcclusionSettings{.Radius = 0.75F,
+                                                                               .Intensity = 1.5F,
+                                                                               .SampleCount = 8,
+                                                                               .DepthBias = 0.02F}});
   for (const auto& result : source.sync())
     ASSERT_TRUE(result.Outcome);
 
@@ -102,10 +111,15 @@ TEST(SceneEcsPersistenceTests, RoundTripsEntityIdentityHierarchyAndSupportedComp
   ASSERT_EQ(saved.entities.size(), 4U);
   ASSERT_EQ(saved.lights.size(), 1U);
   ASSERT_EQ(saved.cameras.size(), 1U);
+  EXPECT_EQ(saved.ambientLight.Color, (std::array<float, 3>{0.7F, 0.6F, 0.5F}));
+  EXPECT_FLOAT_EQ(saved.ambientLight.Intensity, 0.4F);
   EXPECT_EQ(saved.lights.front().name, "Key Light");
   EXPECT_EQ(saved.cameras.front().name, "Main Camera");
   EXPECT_EQ(saved.cameras.front().priority, -7);
   EXPECT_FALSE(saved.cameras.front().active);
+  ASSERT_TRUE(saved.cameras.front().ambientLightOverride.has_value());
+  EXPECT_FALSE(saved.cameras.front().ambientLightOverride->Enabled);
+  EXPECT_FLOAT_EQ(saved.cameras.front().ambientLightOverride->Intensity, 0.8F);
   ASSERT_TRUE(saved.cameras.front().postProcessing.has_value());
   ASSERT_TRUE(saved.cameras.front().postProcessing->AmbientOcclusion.has_value());
   EXPECT_FLOAT_EQ(saved.cameras.front().postProcessing->AmbientOcclusion->Radius, 0.75F);
@@ -135,6 +149,8 @@ TEST(SceneEcsPersistenceTests, RoundTripsEntityIdentityHierarchyAndSupportedComp
   ASSERT_EQ(loaded.entities.size(), saved.entities.size());
   ASSERT_EQ(loaded.lights.size(), 1U);
   ASSERT_EQ(loaded.cameras.size(), 1U);
+  EXPECT_EQ(loaded.ambientLight.Color, saved.ambientLight.Color);
+  EXPECT_FLOAT_EQ(loaded.ambientLight.Intensity, saved.ambientLight.Intensity);
   for (const auto& expected : saved.entities) {
     const auto actual =
         std::ranges::find(loaded.entities, expected.identityGuid, &Engine::SceneEntityDocument::identityGuid);
@@ -186,15 +202,23 @@ TEST(SceneEcsPersistenceTests, RoundTripsEntityIdentityHierarchyAndSupportedComp
   ASSERT_TRUE(loaded.cameras.front().postProcessing.has_value());
   ASSERT_TRUE(loaded.cameras.front().postProcessing->AmbientOcclusion.has_value());
   EXPECT_FLOAT_EQ(loaded.cameras.front().postProcessing->AmbientOcclusion->Intensity, 1.5F);
+  EXPECT_EQ(loaded.cameras.front().postProcessing->AmbientOcclusion->SampleCount, 8U);
+  EXPECT_FLOAT_EQ(loaded.cameras.front().postProcessing->AmbientOcclusion->DepthBias, 0.02F);
   ASSERT_EQ(loaded.cameras.front().postProcessing->Effects.size(), 2U);
   const auto* restoredBloom = std::get_if<Engine::Ecs::BloomEffect>(&loaded.cameras.front().postProcessing->Effects[0]);
   ASSERT_NE(restoredBloom, nullptr);
   EXPECT_FLOAT_EQ(restoredBloom->Intensity, 0.8F);
-  EXPECT_TRUE(std::holds_alternative<Engine::Ecs::FxaaEffect>(loaded.cameras.front().postProcessing->Effects[1]));
+  EXPECT_FALSE(restoredBloom->Smooth);
+  const auto* restoredFxaa = std::get_if<Engine::Ecs::FxaaEffect>(&loaded.cameras.front().postProcessing->Effects[1]);
+  ASSERT_NE(restoredFxaa, nullptr);
+  EXPECT_EQ(restoredFxaa->Quality, Engine::Ecs::FxaaQuality::Low);
+  EXPECT_FLOAT_EQ(restoredFxaa->EdgeThreshold, 0.08F);
   EXPECT_EQ(loaded.cameras.front().flipHorizontal, saved.cameras.front().flipHorizontal);
   EXPECT_EQ(loaded.cameras.front().flipVertical, saved.cameras.front().flipVertical);
   EXPECT_EQ(loaded.cameras.front().priority, saved.cameras.front().priority);
   EXPECT_EQ(loaded.cameras.front().active, saved.cameras.front().active);
+  ASSERT_TRUE(loaded.cameras.front().ambientLightOverride.has_value());
+  EXPECT_EQ(loaded.cameras.front().ambientLightOverride, saved.cameras.front().ambientLightOverride);
   EXPECT_FLOAT_EQ(loaded.cameras.front().fovRadians, saved.cameras.front().fovRadians);
   EXPECT_FLOAT_EQ(loaded.cameras.front().nearPlane, saved.cameras.front().nearPlane);
   EXPECT_FLOAT_EQ(loaded.cameras.front().farPlane, saved.cameras.front().farPlane);

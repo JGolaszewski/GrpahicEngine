@@ -581,9 +581,13 @@ auto CameraPostProcessingJson(const Ecs::CameraPostProcessing& postProcessing) -
       result.push_back({{"type", "bloom"},
                         {"threshold", bloom->Threshold},
                         {"intensity", bloom->Intensity},
-                        {"radius", bloom->Radius}});
-    } else if (std::holds_alternative<Ecs::FxaaEffect>(effect)) {
-      result.push_back({{"type", "fxaa"}});
+                        {"radius", bloom->Radius},
+                        {"smooth", bloom->Smooth}});
+    } else if (const auto* fxaa = std::get_if<Ecs::FxaaEffect>(&effect)) {
+      const char* quality = fxaa->Quality == Ecs::FxaaQuality::Low    ? "low"
+                            : fxaa->Quality == Ecs::FxaaQuality::High ? "high"
+                                                                      : "medium";
+      result.push_back({{"type", "fxaa"}, {"quality", quality}, {"edgeThreshold", fxaa->EdgeThreshold}});
     }
   }
   return result;
@@ -617,9 +621,33 @@ auto ReadCameraPostProcessing(const Json& value, Ecs::CameraPostProcessing& post
           !ReadNumber(effect, "radius", bloom.Radius, error)) {
         return false;
       }
+      if (effect.contains("smooth") && !ReadBool(effect, "smooth", bloom.Smooth, error)) {
+        return false;
+      }
       postProcessing.Effects.emplace_back(bloom);
     } else if (type == "fxaa") {
-      postProcessing.Effects.emplace_back(Ecs::FxaaEffect{});
+      Ecs::FxaaEffect fxaa;
+      if (effect.contains("quality")) {
+        if (!effect.at("quality").is_string()) {
+          error = "FXAA quality must be a string";
+          return false;
+        }
+        const std::string quality = effect.at("quality").get<std::string>();
+        if (quality == "low") {
+          fxaa.Quality = Ecs::FxaaQuality::Low;
+        } else if (quality == "medium") {
+          fxaa.Quality = Ecs::FxaaQuality::Medium;
+        } else if (quality == "high") {
+          fxaa.Quality = Ecs::FxaaQuality::High;
+        } else {
+          error = "FXAA quality must be low, medium, or high";
+          return false;
+        }
+      }
+      if (effect.contains("edgeThreshold") && !ReadNumber(effect, "edgeThreshold", fxaa.EdgeThreshold, error)) {
+        return false;
+      }
+      postProcessing.Effects.emplace_back(fxaa);
     } else {
       error = "postProcessing[" + std::to_string(index) + "] has an unsupported effect type";
       return false;
@@ -638,7 +666,9 @@ auto CameraAmbientOcclusionJson(const Ecs::CameraPostProcessing* postProcessing)
     return nullptr;
   }
   return {{"radius", postProcessing->AmbientOcclusion->Radius},
-          {"intensity", postProcessing->AmbientOcclusion->Intensity}};
+          {"intensity", postProcessing->AmbientOcclusion->Intensity},
+          {"sampleCount", postProcessing->AmbientOcclusion->SampleCount},
+          {"depthBias", postProcessing->AmbientOcclusion->DepthBias}};
 }
 
 auto ReadCameraAmbientOcclusion(const Json& value, Ecs::CameraPostProcessing& postProcessing, std::string& error)
@@ -655,8 +685,40 @@ auto ReadCameraAmbientOcclusion(const Json& value, Ecs::CameraPostProcessing& po
       !ReadNumber(value, "intensity", settings.Intensity, error)) {
     return false;
   }
+  if (value.contains("sampleCount")) {
+    if (!value.at("sampleCount").is_number_unsigned()) {
+      error = "ambientOcclusion.sampleCount must be an unsigned integer";
+      return false;
+    }
+    settings.SampleCount = value.at("sampleCount").get<uint32_t>();
+  }
+  if (value.contains("depthBias") && !ReadNumber(value, "depthBias", settings.DepthBias, error)) {
+    return false;
+  }
   postProcessing.AmbientOcclusion = settings;
   const Status valid = Ecs::Validate(postProcessing);
+  if (!valid) {
+    error = valid.error().Message;
+    return false;
+  }
+  return true;
+}
+
+auto AmbientLightJson(const AmbientLightSettings& settings) -> Json {
+  return {{"enabled", settings.Enabled}, {"color", settings.Color}, {"intensity", settings.Intensity}};
+}
+
+auto ReadAmbientLight(const Json& value, AmbientLightSettings& settings, std::string& error) -> bool {
+  if (!value.is_object() || !value.contains("enabled") || !value.contains("color") || !value.contains("intensity")) {
+    error = "ambientLight must contain enabled, color, and intensity fields";
+    return false;
+  }
+  if (!ReadBool(value, "enabled", settings.Enabled, error) ||
+      !ReadFloatArray(value.at("color"), settings.Color, "color", error) ||
+      !ReadNumber(value, "intensity", settings.Intensity, error)) {
+    return false;
+  }
+  const Status valid = Engine::Validate(settings);
   if (!valid) {
     error = valid.error().Message;
     return false;
@@ -683,6 +745,8 @@ auto CameraJson(const SceneCameraDocument& camera) -> Json {
       {"outputHeight", camera.outputHeight},
       {"priority", camera.priority},
       {"active", camera.active},
+      {"ambientLightOverride",
+       camera.ambientLightOverride ? AmbientLightJson(*camera.ambientLightOverride) : Json(nullptr)},
       {"postProcessing", camera.postProcessing ? CameraPostProcessingJson(*camera.postProcessing) : Json(nullptr)},
       {"ambientOcclusion", CameraAmbientOcclusionJson(camera.postProcessing ? &*camera.postProcessing : nullptr)},
   };
@@ -692,6 +756,7 @@ auto ToJson(const SceneDocument& document) -> Json {
   Json result = {
       {"schemaVersion", document.schemaVersion},
       {"unitsPerMeter", document.unitsPerMeter},
+      {"ambientLight", AmbientLightJson(document.ambientLight)},
       {"coordinateSystem", "right-handed-y-up"},
       {"entities", Json::array()},
       {"lights", Json::array()},
@@ -712,7 +777,12 @@ auto ToJson(const SceneDocument& document) -> Json {
 auto ValidateSceneHeader(const std::filesystem::path& path, const SceneDocument& document, std::string& error) -> bool {
   if ((document.schemaVersion >= 1 && document.schemaVersion <= CurrentSceneSchemaVersion) &&
       std::isfinite(document.unitsPerMeter) && document.unitsPerMeter > 0.0F) {
-    return true;
+    if (const Status ambientLightValidation = Engine::Validate(document.ambientLight); ambientLightValidation) {
+      return true;
+    } else {
+      error = FileContext(path, ambientLightValidation.error().Message);
+      return false;
+    }
   }
   error = FileContext(path, "document has an unsupported version or invalid unitsPerMeter");
   return false;
@@ -831,6 +901,7 @@ auto ValidateCamera(const SceneCameraDocument& camera, std::set<uint64_t>& ids) 
          camera.farPlane > camera.nearPlane && camera.outputWidth > 0 && camera.outputHeight > 0 &&
          std::isfinite(rotationLengthSquared) && rotationLengthSquared > 1.0e-12F &&
          std::ranges::all_of(camera.scale, [](float value) { return std::isfinite(value) && value > 0.0F; }) &&
+         (!camera.ambientLightOverride || Engine::Validate(*camera.ambientLightOverride).has_value()) &&
          (!camera.postProcessing || Ecs::Validate(*camera.postProcessing).has_value());
 }
 
@@ -1224,10 +1295,26 @@ auto LoadCameraArray(const Json& root, SceneDocumentResult& result, const std::f
       }
       KnownKeys(item,
                 {
-                    "id",         "name",      "identityGuid",   "parentGuid",       "visible",
-                    "position",   "rotation",  "scale",          "flipHorizontal",   "flipVertical",
-                    "fovRadians", "nearPlane", "farPlane",       "outputWidth",      "outputHeight",
-                    "priority",   "active",    "postProcessing", "ambientOcclusion",
+                    "id",
+                    "name",
+                    "identityGuid",
+                    "parentGuid",
+                    "visible",
+                    "position",
+                    "rotation",
+                    "scale",
+                    "flipHorizontal",
+                    "flipVertical",
+                    "fovRadians",
+                    "nearPlane",
+                    "farPlane",
+                    "outputWidth",
+                    "outputHeight",
+                    "priority",
+                    "active",
+                    "ambientLightOverride",
+                    "postProcessing",
+                    "ambientOcclusion",
                 },
                 result.warnings, context);
       SceneCameraDocument camera;
@@ -1273,6 +1360,14 @@ auto LoadCameraArray(const Json& root, SceneDocumentResult& result, const std::f
         fieldContext.append(".").append(fieldError);
         result.error = FileContext(path, fieldContext);
         return false;
+      }
+      if (item.contains("ambientLightOverride") && !item.at("ambientLightOverride").is_null()) {
+        AmbientLightSettings overrideSettings;
+        if (!ReadAmbientLight(item.at("ambientLightOverride"), overrideSettings, fieldError)) {
+          result.error = FileContext(path, context + ".ambientLightOverride: " + fieldError);
+          return false;
+        }
+        camera.ambientLightOverride = overrideSettings;
       }
       if (item.contains("postProcessing") && !item.at("postProcessing").is_null()) {
         Ecs::CameraPostProcessing postProcessing;
@@ -1330,8 +1425,10 @@ auto SceneSerializer::Load(const std::filesystem::path& path) -> SceneDocumentRe
     result.error = FileContext(path, "scene root must be an object");
     return result;
   }
-  KnownKeys(root, {"schemaVersion", "coordinateSystem", "unitsPerMeter", "entities", "lights", "cameras", "editor"},
-            result.warnings, "scene");
+  KnownKeys(
+      root,
+      {"schemaVersion", "coordinateSystem", "unitsPerMeter", "ambientLight", "entities", "lights", "cameras", "editor"},
+      result.warnings, "scene");
   if (!root.contains("schemaVersion") || !root.at("schemaVersion").is_number_unsigned()) {
     result.error = FileContext(path, "schemaVersion must be an unsigned integer");
     return result;
@@ -1351,6 +1448,11 @@ auto SceneSerializer::Load(const std::filesystem::path& path) -> SceneDocumentRe
   if (!ReadNumber(root, "unitsPerMeter", result.document.unitsPerMeter, fieldError) ||
       result.document.unitsPerMeter <= 0.0F) {
     result.error = FileContext(path, fieldError.empty() ? "unitsPerMeter must be positive" : fieldError);
+    return result;
+  }
+  if (root.contains("ambientLight") &&
+      !ReadAmbientLight(root.at("ambientLight"), result.document.ambientLight, fieldError)) {
+    result.error = FileContext(path, "ambientLight: " + fieldError);
     return result;
   }
   if (!LoadEntityArray(root, result, path, fieldError) || !LoadLightArray(root, result, path, fieldError) ||

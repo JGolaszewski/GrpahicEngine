@@ -44,7 +44,8 @@ cbuffer LightsCB : register(b2)
     uint      g_LightCount;
     uint      g_EnvironmentEnabled;
     float     g_EnvironmentIntensity;
-    float     g_LightPadding;
+    float     g_AmbientLightIntensity;
+    float4    g_AmbientLightColor;
 };
 
 cbuffer CameraCB : register(b4)
@@ -400,13 +401,17 @@ PS_OUTPUT main_ps(VS_OUTPUT input)
         EvaluateSplitSumIblComponents(irradiance, prefiltered, brdfIntegration, N, viewDirection,
             diffuseColor, iblF0, saturate(roughness), occlusion, ambientDiffuse, ambientSpecular);
     }
+    float3 sceneAmbientDiffuse = diffuseColor * g_AmbientLightColor.rgb * max(g_AmbientLightIntensity, 0.0f);
     float3 emissive = g_EmissiveMetallic.rgb * emissiveSample;
 
     if (g_AmbientOcclusionParams.x > 0.5f)
     {
-        ambientDiffuse *= g_AmbientOcclusionTexture.Load(int3(int2(input.pos.xy), 0));
+        const float ambientOcclusion = g_AmbientOcclusionTexture.Load(int3(int2(input.pos.xy), 0));
+        ambientDiffuse *= ambientOcclusion;
+        sceneAmbientDiffuse *= ambientOcclusion;
     }
-    const float3 diffuseLighting = (ambientDiffuse * max(g_EnvironmentIntensity, 0.0f)) + diffuseAccum + emissive;
+    const float3 diffuseLighting = (ambientDiffuse * max(g_EnvironmentIntensity, 0.0f)) + sceneAmbientDiffuse +
+                                   diffuseAccum + emissive;
     const float3 specularLighting = (ambientSpecular * max(g_EnvironmentIntensity, 0.0f)) + specAccum;
     output.FinalColor = float4(diffuseLighting + specularLighting, baseAlpha);
     output.Depth = input.pos.z;

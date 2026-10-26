@@ -17,19 +17,20 @@ auto RenderOutputExportService::StartPng(RenderSystem& renderer, Scene& scene,
                                          const ::Engine::Renderer::CameraView& camera, uint32_t width, uint32_t height,
                                          std::filesystem::path destination, const FinalColorPostProcess& postProcess,
                                          const RenderOutputBackground& background,
-                                         const Ecs::CameraPostProcessing& cameraPostProcessing)
+                                         const Ecs::CameraPostProcessing& cameraPostProcessing,
+                                         std::optional<AmbientLightSettings> ambientLightOverride)
     -> Engine::Result<RequestId> {
   return Start(renderer, scene, camera, width, height, false, {}, std::move(destination), postProcess, background,
-               cameraPostProcessing);
+               cameraPostProcessing, std::move(ambientLightOverride));
 }
 
 auto RenderOutputExportService::StartMultilayerExr(
     RenderSystem& renderer, Scene& scene, const ::Engine::Renderer::CameraView& camera, uint32_t width, uint32_t height,
     std::vector<RenderAov> selectedAovs, std::filesystem::path destination, const FinalColorPostProcess& postProcess,
-    const RenderOutputBackground& background, const Ecs::CameraPostProcessing& cameraPostProcessing)
-    -> Engine::Result<RequestId> {
+    const RenderOutputBackground& background, const Ecs::CameraPostProcessing& cameraPostProcessing,
+    std::optional<AmbientLightSettings> ambientLightOverride) -> Engine::Result<RequestId> {
   return Start(renderer, scene, camera, width, height, true, std::move(selectedAovs), std::move(destination),
-               postProcess, background, cameraPostProcessing);
+               postProcess, background, cameraPostProcessing, std::move(ambientLightOverride));
 }
 
 auto RenderOutputExportService::Start(RenderSystem& renderer, Scene& scene,
@@ -37,7 +38,8 @@ auto RenderOutputExportService::Start(RenderSystem& renderer, Scene& scene,
                                       bool exr, std::vector<RenderAov> selectedAovs, std::filesystem::path destination,
                                       const FinalColorPostProcess& postProcess,
                                       const RenderOutputBackground& background,
-                                      const Ecs::CameraPostProcessing& cameraPostProcessing)
+                                      const Ecs::CameraPostProcessing& cameraPostProcessing,
+                                      std::optional<AmbientLightSettings> ambientLightOverride)
     -> Engine::Result<RequestId> {
   {
     std::lock_guard lock(m_Mutex);
@@ -49,7 +51,8 @@ auto RenderOutputExportService::Start(RenderSystem& renderer, Scene& scene,
     }
   }
 
-  auto renderTicket = renderer.BeginFinalRender(scene, camera, width, height, postProcess, {}, cameraPostProcessing);
+  auto renderTicket = renderer.BeginFinalRender(scene, camera, width, height, postProcess, {}, cameraPostProcessing,
+                                                std::move(ambientLightOverride));
   if (!renderTicket) {
     return std::unexpected(renderTicket.error());
   }

@@ -3,6 +3,7 @@
 #include "runtime/include/Result.h"
 
 #include <cmath>
+#include <cstdint>
 #include <optional>
 #include <variant>
 #include <vector>
@@ -21,15 +22,23 @@ struct BloomEffect {
   float Threshold = 1.0F;  ///< Linear luminance threshold for bright pixels.
   float Intensity = 0.25F; ///< Additive glow strength.
   float Radius = 4.0F;     ///< Approximate screen-space blur radius in pixels.
+  bool Smooth = true;      ///< Use tent-filtered pyramid upsampling for a smoother glow.
 };
 
+enum class FxaaQuality : uint32_t { Low = 0, Medium = 1, High = 2 };
+
 /// Fast approximate antialiasing for an authored camera's final color.
-struct FxaaEffect {};
+struct FxaaEffect {
+  FxaaQuality Quality = FxaaQuality::Medium; ///< Edge-search quality preset.
+  float EdgeThreshold = 0.125F;              ///< Relative contrast threshold for detecting an edge.
+};
 
 /// Camera-scoped screen-space occlusion applied to indirect diffuse lighting before forward shading.
 struct ScreenSpaceAmbientOcclusionSettings {
-  float Radius = 0.5F;    ///< World-space sample radius in scene units.
-  float Intensity = 1.0F; ///< Occlusion strength from zero to four.
+  float Radius = 0.5F;       ///< World-space sample radius in scene units.
+  float Intensity = 1.0F;    ///< Occlusion strength from zero to four.
+  uint32_t SampleCount = 16; ///< Samples per pixel; supported choices are 8, 16, and 32.
+  float DepthBias = 0.0F;    ///< Minimum view-depth separation in scene units before occlusion contributes.
 };
 
 /// One configured post-processing stage in a camera's ordered stack.
@@ -56,7 +65,11 @@ inline auto Validate(const CameraPostProcessing& component) -> Status {
   if (component.AmbientOcclusion &&
       (!std::isfinite(component.AmbientOcclusion->Radius) || component.AmbientOcclusion->Radius < 0.0F ||
        component.AmbientOcclusion->Radius > 5.0F || !std::isfinite(component.AmbientOcclusion->Intensity) ||
-       component.AmbientOcclusion->Intensity < 0.0F || component.AmbientOcclusion->Intensity > 4.0F)) {
+       component.AmbientOcclusion->Intensity < 0.0F || component.AmbientOcclusion->Intensity > 4.0F ||
+       (component.AmbientOcclusion->SampleCount != 8 && component.AmbientOcclusion->SampleCount != 16 &&
+        component.AmbientOcclusion->SampleCount != 32) ||
+       !std::isfinite(component.AmbientOcclusion->DepthBias) || component.AmbientOcclusion->DepthBias < 0.0F ||
+       component.AmbientOcclusion->DepthBias > 0.1F)) {
     return std::unexpected(MakeError("Screen-space ambient occlusion values are outside supported ranges"));
   }
   for (const CameraPostProcessEffect& effect : component.Effects) {
@@ -71,6 +84,12 @@ inline auto Validate(const CameraPostProcessing& component) -> Status {
           !std::isfinite(bloom->Intensity) || bloom->Intensity < 0.0F || bloom->Intensity > 10.0F ||
           !std::isfinite(bloom->Radius) || bloom->Radius < 0.0F || bloom->Radius > 64.0F) {
         return std::unexpected(MakeError("Bloom values are outside supported ranges"));
+      }
+    } else if (const auto* fxaa = std::get_if<FxaaEffect>(&effect)) {
+      if ((fxaa->Quality != FxaaQuality::Low && fxaa->Quality != FxaaQuality::Medium &&
+           fxaa->Quality != FxaaQuality::High) ||
+          !std::isfinite(fxaa->EdgeThreshold) || fxaa->EdgeThreshold < 0.01F || fxaa->EdgeThreshold > 0.5F) {
+        return std::unexpected(MakeError("FXAA values are outside supported ranges"));
       }
     }
   }

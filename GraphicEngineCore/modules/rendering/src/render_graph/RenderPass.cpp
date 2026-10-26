@@ -120,10 +120,13 @@ auto ClearForwardAttachments(nvrhi::ICommandList* commandList,
   });
 }
 
-auto DescribeColorTexture(uint32_t width, uint32_t height) -> ::Engine::Renderer::RGTextureDesc;
 } // namespace
 
 namespace Engine::Renderer {
+
+namespace {
+auto DescribeColorTexture(uint32_t width, uint32_t height) -> RGTextureDesc;
+} // namespace
 
 // ==============================================================================
 // SHADOW PASS
@@ -327,6 +330,9 @@ auto ForwardPass::Execute(nvrhi::ICommandList* cmd, const ::Engine::Renderer::Re
     lightData.LightCount = lightCount;
     lightData.EnvironmentEnabled = view->Environment.Preset == Engine::EnvironmentPreset::Studio ? 1U : 0U;
     lightData.EnvironmentIntensity = view->Environment.Intensity;
+    lightData.AmbientLightIntensity = view->AmbientLight.Enabled ? view->AmbientLight.Intensity : 0.0F;
+    lightData.AmbientLightColor = {view->AmbientLight.Color[0], view->AmbientLight.Color[1],
+                                   view->AmbientLight.Color[2], 0.0F};
     cmd->writeBuffer(view->LightBuffer, &lightData, sizeof(lightData));
     ctx.GetFrameContext().GetDiagnostics().UploadBytes += sizeof(lightData);
     nvrhi::TextureHandle ambientOcclusion;
@@ -525,6 +531,9 @@ struct AmbientOcclusionConstants {
   float FarPlane = 1000.0F;
   float Radius = 0.5F;
   float Intensity = 1.0F;
+  uint32_t SampleCount = 16;
+  float DepthBias = 0.0F;
+  float Padding[2] = {};
   float TanHalfFov = 0.41421356F;
   float Aspect = 1.0F;
   float Width = 1.0F;
@@ -533,7 +542,7 @@ struct AmbientOcclusionConstants {
   DirectX::XMFLOAT4 CameraUp{};
   DirectX::XMFLOAT4 CameraForward{};
 };
-static_assert(sizeof(AmbientOcclusionConstants) == 80);
+static_assert(sizeof(AmbientOcclusionConstants) == 96);
 } // namespace
 
 CameraAmbientOcclusionPass::CameraAmbientOcclusionPass(std::shared_ptr<AmbientOcclusionResources> resources)
@@ -618,6 +627,8 @@ auto CameraAmbientOcclusionPass::Execute(nvrhi::ICommandList* cmd, const RenderC
         .FarPlane = view->CameraFarPlane,
         .Radius = settings.Radius,
         .Intensity = settings.Intensity,
+        .SampleCount = settings.SampleCount,
+        .DepthBias = settings.DepthBias,
         .TanHalfFov = std::tan(view->CameraVerticalFovRadians * 0.5F),
         .Aspect = view->CameraAspectRatio,
         .Width = static_cast<float>(view->ViewportWidth),
@@ -648,14 +659,19 @@ auto CameraAmbientOcclusionPass::Execute(nvrhi::ICommandList* cmd, const RenderC
 namespace {
 struct CameraPostProcessConstants {
   uint32_t EffectType = 0;
+  uint32_t FxaaQuality = static_cast<uint32_t>(Engine::Ecs::FxaaQuality::Medium);
+  uint32_t BloomExtractBright = 0;
+  uint32_t SmoothBloom = 1;
   float Exposure = 0.0F;
   float Contrast = 1.0F;
   float Saturation = 1.0F;
   float Threshold = 1.0F;
   float Intensity = 0.25F;
   float Radius = 4.0F;
+  float EdgeThreshold = 0.125F;
   float Padding = 0.0F;
 };
+static_assert(sizeof(CameraPostProcessConstants) == 48);
 
 auto ToConstants(const Engine::Ecs::CameraPostProcessEffect& effect) -> CameraPostProcessConstants {
   if (const auto* grading = std::get_if<Engine::Ecs::ColorGradingEffect>(&effect)) {
@@ -664,11 +680,15 @@ auto ToConstants(const Engine::Ecs::CameraPostProcessEffect& effect) -> CameraPo
             .Contrast = grading->Contrast,
             .Saturation = grading->Saturation};
   }
-  if (std::holds_alternative<Engine::Ecs::FxaaEffect>(effect)) {
-    return {.EffectType = 3};
+  if (const auto* fxaa = std::get_if<Engine::Ecs::FxaaEffect>(&effect)) {
+    return {.EffectType = 3, .FxaaQuality = static_cast<uint32_t>(fxaa->Quality), .EdgeThreshold = fxaa->EdgeThreshold};
   }
   const auto& bloom = std::get<Engine::Ecs::BloomEffect>(effect);
-  return {.EffectType = 1, .Threshold = bloom.Threshold, .Intensity = bloom.Intensity, .Radius = bloom.Radius};
+  return {.EffectType = 6,
+          .SmoothBloom = bloom.Smooth ? 1U : 0U,
+          .Threshold = bloom.Threshold,
+          .Intensity = bloom.Intensity,
+          .Radius = bloom.Radius};
 }
 
 auto DescribeColorTexture(uint32_t width, uint32_t height) -> RGTextureDesc {
@@ -685,8 +705,9 @@ auto DescribeColorTexture(uint32_t width, uint32_t height) -> RGTextureDesc {
 
 auto DrawCameraPostProcess(nvrhi::ICommandList* cmd, const RenderContext& ctx,
                            const std::shared_ptr<CameraPostProcessResources>& resources,
-                           const nvrhi::TextureHandle& input, const nvrhi::TextureHandle& output,
-                           nvrhi::FramebufferHandle& framebuffer, const CameraPostProcessConstants& constants) -> bool {
+                           const nvrhi::TextureHandle& input, const nvrhi::TextureHandle& bloomInput,
+                           const nvrhi::TextureHandle& output, nvrhi::FramebufferHandle& framebuffer,
+                           const CameraPostProcessConstants& constants) -> bool {
   if (cmd == nullptr || resources == nullptr || resources->Device == nullptr || resources->VertexShader == nullptr ||
       resources->PixelShader == nullptr || resources->BindingLayout == nullptr || resources->InputSampler == nullptr ||
       resources->ConstantsBuffer == nullptr || input == nullptr || output == nullptr) {
@@ -714,6 +735,7 @@ auto DrawCameraPostProcess(nvrhi::ICommandList* cmd, const RenderContext& ctx,
   }
   nvrhi::BindingSetDesc bindingDesc;
   bindingDesc.addItem(nvrhi::BindingSetItem::Texture_SRV(0, input));
+  bindingDesc.addItem(nvrhi::BindingSetItem::Texture_SRV(1, bloomInput));
   bindingDesc.addItem(nvrhi::BindingSetItem::Sampler(0, resources->InputSampler));
   bindingDesc.addItem(nvrhi::BindingSetItem::ConstantBuffer(0, resources->ConstantsBuffer));
   nvrhi::BindingSetHandle bindings = resources->Device->createBindingSet(bindingDesc, resources->BindingLayout);
@@ -741,8 +763,9 @@ auto DrawCameraPostProcess(nvrhi::ICommandList* cmd, const RenderContext& ctx,
 }
 } // namespace
 
-CameraPostProcessPass::CameraPostProcessPass(std::shared_ptr<CameraPostProcessResources> resources, size_t effectIndex)
-    : m_Resources(std::move(resources)), m_EffectIndex(effectIndex) {}
+CameraPostProcessPass::CameraPostProcessPass(std::shared_ptr<CameraPostProcessResources> resources, size_t effectIndex,
+                                             Stage stage, uint32_t pyramidLevel)
+    : m_Resources(std::move(resources)), m_EffectIndex(effectIndex), m_Stage(stage), m_PyramidLevel(pyramidLevel) {}
 
 void CameraPostProcessPass::Setup(RGBuilder& builder, FrameBlackboard& blackboard) {
   m_Views.clear();
@@ -752,12 +775,110 @@ void CameraPostProcessPass::Setup(RGBuilder& builder, FrameBlackboard& blackboar
     }
     const RGResourceID originalColor = view->OutputAttachments.front().Resource;
     const RGResourceID input = m_EffectIndex == 0 ? originalColor : view->PostProcessColor;
-    const RGResourceID output =
-        builder.CreateAndWriteTexture(DescribeColorTexture(view->ViewportWidth, view->ViewportHeight));
-    builder.Read(input);
-    view->PostProcessColor = output;
-    m_Views.push_back(
-        {.View = view, .Input = input, .Output = output, .Effect = view->PostProcessing.Effects[m_EffectIndex]});
+    const auto* bloom = std::get_if<Engine::Ecs::BloomEffect>(&view->PostProcessing.Effects[m_EffectIndex]);
+    if (m_Stage == Stage::Effect) {
+      if (bloom != nullptr) {
+        continue;
+      }
+      const RGResourceID output =
+          builder.CreateAndWriteTexture(DescribeColorTexture(view->ViewportWidth, view->ViewportHeight));
+      builder.Read(input);
+      view->PostProcessColor = output;
+      m_Views.push_back({.View = view,
+                         .Input = input,
+                         .BloomInput = input,
+                         .Output = output,
+                         .Effect = view->PostProcessing.Effects[m_EffectIndex]});
+      continue;
+    }
+    if (bloom == nullptr) {
+      continue;
+    }
+
+    if (m_Stage == Stage::BloomDownsample) {
+      const bool active = bloom->Radius > 0.0F && bloom->Intensity > 0.0F;
+      const uint32_t levelCount =
+          active ? static_cast<uint32_t>(std::clamp(std::ceil(std::log2((std::max)(bloom->Radius, 1.0F))), 1.0F, 6.0F))
+                 : 0U;
+      uint32_t width = view->ViewportWidth;
+      uint32_t height = view->ViewportHeight;
+      for (uint32_t level = 0; level <= m_PyramidLevel; ++level) {
+        width = (std::max)(width / 2U, 1U);
+        height = (std::max)(height / 2U, 1U);
+      }
+      const uint32_t previousWidth = (std::max)(view->ViewportWidth >> m_PyramidLevel, 1U);
+      const uint32_t previousHeight = (std::max)(view->ViewportHeight >> m_PyramidLevel, 1U);
+      if (!active || m_PyramidLevel >= levelCount || (width == previousWidth && height == previousHeight)) {
+        continue;
+      }
+      if (m_PyramidLevel > 0U && view->BloomPyramid.size() < m_PyramidLevel) {
+        continue;
+      }
+      const RGResourceID previous = m_PyramidLevel == 0U ? input : view->BloomPyramid[m_PyramidLevel - 1U];
+      if (m_PyramidLevel == 0U) {
+        view->BloomSource = input;
+        view->BloomCurrent = {};
+        view->BloomPyramid.clear();
+      }
+      const RGResourceID output = builder.CreateAndWriteTexture(DescribeColorTexture(width, height));
+      builder.Read(previous);
+      if (view->BloomPyramid.size() <= m_PyramidLevel) {
+        view->BloomPyramid.resize(m_PyramidLevel + 1U);
+      }
+      view->BloomPyramid[m_PyramidLevel] = output;
+      m_Views.push_back({.View = view,
+                         .Input = previous,
+                         .Output = output,
+                         .Effect = view->PostProcessing.Effects[m_EffectIndex],
+                         .ExtractBright = m_PyramidLevel == 0U});
+      continue;
+    }
+
+    if (m_Stage == Stage::BloomUpsample) {
+      if (view->BloomPyramid.size() <= m_PyramidLevel + 1U) {
+        continue;
+      }
+      const RGResourceID base = view->BloomPyramid[m_PyramidLevel];
+      const RGResourceID glow =
+          view->BloomCurrent.isValid() ? view->BloomCurrent : view->BloomPyramid[m_PyramidLevel + 1U];
+      const RGTextureDesc baseDesc =
+          DescribeColorTexture((std::max)(view->ViewportWidth >> (m_PyramidLevel + 1U), 1U),
+                               (std::max)(view->ViewportHeight >> (m_PyramidLevel + 1U), 1U));
+      const RGResourceID output = builder.CreateAndWriteTexture(baseDesc);
+      builder.Read(base);
+      builder.Read(glow);
+      view->BloomCurrent = output;
+      m_Views.push_back({.View = view,
+                         .Input = base,
+                         .BloomInput = glow,
+                         .Output = output,
+                         .Effect = view->PostProcessing.Effects[m_EffectIndex]});
+      continue;
+    }
+
+    if (m_Stage == Stage::BloomComposite) {
+      const bool bloomEnabled = !view->BloomPyramid.empty();
+      const RGResourceID compositeInput = view->BloomSource.isValid() ? view->BloomSource : input;
+      const RGResourceID bloomInput = view->BloomCurrent.isValid()
+                                          ? view->BloomCurrent
+                                          : (view->BloomPyramid.empty() ? compositeInput : view->BloomPyramid.front());
+      const RGResourceID output =
+          builder.CreateAndWriteTexture(DescribeColorTexture(view->ViewportWidth, view->ViewportHeight));
+      builder.Read(compositeInput);
+      if (bloomInput != compositeInput) {
+        builder.Read(bloomInput);
+      }
+      view->PostProcessColor = output;
+      view->BloomPyramid.clear();
+      view->BloomCurrent = {};
+      view->BloomSource = {};
+      m_Views.push_back({.View = view,
+                         .Input = compositeInput,
+                         .BloomInput = bloomInput,
+                         .Output = output,
+                         .Effect = view->PostProcessing.Effects[m_EffectIndex],
+                         .BloomEnabled = bloomEnabled});
+    }
   }
 }
 
@@ -767,10 +888,26 @@ auto CameraPostProcessPass::Execute(nvrhi::ICommandList* cmd, const RenderContex
   }
   for (const ViewResources& viewResources : m_Views) {
     nvrhi::TextureHandle input = ctx.GetPhysicalTexture(viewResources.Input);
+    nvrhi::TextureHandle bloomInput =
+        viewResources.BloomInput.isValid() ? ctx.GetPhysicalTexture(viewResources.BloomInput) : input;
     nvrhi::TextureHandle output = ctx.GetPhysicalTexture(viewResources.Output);
+    if (viewResources.View == nullptr || input == nullptr || output == nullptr) {
+      return false;
+    }
+    CameraPostProcessConstants constants = ToConstants(viewResources.Effect);
+    if (m_Stage == Stage::BloomDownsample) {
+      constants.EffectType = 4;
+      constants.BloomExtractBright = viewResources.ExtractBright ? 1U : 0U;
+    } else if (m_Stage == Stage::BloomUpsample) {
+      constants.EffectType = 5;
+    } else if (m_Stage == Stage::BloomComposite) {
+      constants.EffectType = 6;
+      if (!viewResources.BloomEnabled) {
+        constants.Intensity = 0.0F;
+      }
+    }
     nvrhi::FramebufferHandle framebuffer;
-    if (viewResources.View == nullptr || input == nullptr || output == nullptr ||
-        !DrawCameraPostProcess(cmd, ctx, m_Resources, input, output, framebuffer, ToConstants(viewResources.Effect))) {
+    if (!DrawCameraPostProcess(cmd, ctx, m_Resources, input, bloomInput, output, framebuffer, constants)) {
       return false;
     }
   }
@@ -801,7 +938,7 @@ auto CameraPostProcessCompositePass::Execute(nvrhi::ICommandList* cmd, const Ren
     nvrhi::FramebufferHandle framebuffer;
     const CameraPostProcessConstants copyConstants{.EffectType = 2};
     if (viewResources.View == nullptr || input == nullptr || output == nullptr ||
-        !DrawCameraPostProcess(cmd, ctx, m_Resources, input, output, framebuffer, copyConstants)) {
+        !DrawCameraPostProcess(cmd, ctx, m_Resources, input, input, output, framebuffer, copyConstants)) {
       return false;
     }
   }

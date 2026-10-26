@@ -279,10 +279,12 @@ void Application::RegisterDefaultView() {
 
     std::optional<EntityHandle> cameraEntity;
     std::optional<Renderer::CameraView> cameraView;
+    std::optional<AmbientLightSettings> cameraAmbientLightOverride;
     scene->World().ForEachChunkReadOnly<Ecs::Camera, Ecs::WorldTransform, Ecs::GlobalVisibility>(
-        [&cameraEntity, &cameraView](std::span<const EntityHandle> entities, std::span<const Ecs::Camera> cameras,
-                                     std::span<const Ecs::WorldTransform> transforms,
-                                     std::span<const Ecs::GlobalVisibility> visibility) -> void {
+        [&cameraEntity, &cameraView,
+         &cameraAmbientLightOverride](std::span<const EntityHandle> entities, std::span<const Ecs::Camera> cameras,
+                                      std::span<const Ecs::WorldTransform> transforms,
+                                      std::span<const Ecs::GlobalVisibility> visibility) -> void {
           if (cameraView) {
             return;
           }
@@ -293,6 +295,7 @@ void Application::RegisterDefaultView() {
                 continue;
               }
               cameraEntity = entities[row];
+              cameraAmbientLightOverride = cameras[row].AmbientLightOverride;
               return;
             }
           }
@@ -311,6 +314,8 @@ void Application::RegisterDefaultView() {
                   .CameraEntity = *cameraEntity,
                   .TargetViewport = m_DefaultViewport.get(),
                   .TargetScene = scene.get(),
+                  .HasAmbientLightOverride = cameraAmbientLightOverride.has_value(),
+                  .AmbientLightOverride = cameraAmbientLightOverride.value_or(AmbientLightSettings{}),
                   .PostProcessing = std::move(postProcessing)});
     return;
   }
@@ -401,8 +406,16 @@ auto Application::LoadSceneDocument(const SceneDocument& document, std::string& 
       return false;
     }
   }
+  if (const Status ambientLightValidation = Engine::Validate(document.ambientLight); !ambientLightValidation) {
+    error = ambientLightValidation.error().Message;
+    return false;
+  }
   auto stagedScene = std::make_shared<Scene>();
   stagedScene->SetUnitsPerMeter(document.unitsPerMeter);
+  if (const Status ambientLightStatus = stagedScene->SetAmbientLight(document.ambientLight); !ambientLightStatus) {
+    error = ambientLightStatus.error().Message;
+    return false;
+  }
 
   struct PendingEntity {
     EntityHandle Handle;
@@ -714,6 +727,7 @@ auto Application::LoadSceneDocument(const SceneDocument& document, std::string& 
         .OutputHeight = source.outputHeight,
         .Priority = source.priority,
         .Active = source.active,
+        .AmbientLightOverride = source.ambientLightOverride,
     };
     (void)stagedScene->QueueSet(pending.Handle, transform);
     const SceneGuidDocument cameraGuid = source.identityGuid.value_or(SceneGuidDocument{.high = 2, .low = source.id});
@@ -766,6 +780,7 @@ auto Application::SaveScene(const std::filesystem::path& path, const Scene& scen
 auto Application::CreateSceneDocument(const Scene& scene) const -> SceneDocument {
   SceneDocument document;
   document.unitsPerMeter = scene.GetUnitsPerMeter();
+  document.ambientLight = scene.AmbientLight();
   const auto& world = scene.World();
   world.ForEachChunkReadOnly<Ecs::Name, Ecs::PersistentIdentity, Ecs::LocalTransform, Ecs::LocalVisibility>(
       [&document, &world](std::span<const EntityHandle> handles, std::span<const Ecs::Name> names,
@@ -887,6 +902,7 @@ auto Application::CreateSceneDocument(const Scene& scene) const -> SceneDocument
               camera.outputHeight = components[row].OutputHeight;
               camera.priority = components[row].Priority;
               camera.active = components[row].Active;
+              camera.ambientLightOverride = components[row].AmbientLightOverride;
               if (const auto* postProcessing = world.Get<Ecs::CameraPostProcessing>(handles[row]);
                   postProcessing != nullptr) {
                 camera.postProcessing = *postProcessing;

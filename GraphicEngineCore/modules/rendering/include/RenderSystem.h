@@ -135,11 +135,13 @@ public:
   /// @param postProcess Final color post-processing configuration.
   /// @param environment Per-view environment source and intensity.
   /// @param cameraPostProcessing Camera lighting settings and ordered GPU color effects for the authored camera.
+  /// @param ambientLightOverride Optional camera ambient-light override; absent inherits the scene setting.
   Engine::Result<FinalRenderTicket>
   BeginFinalRender(Engine::Scene& scene, const ::Engine::Renderer::CameraView& camera, uint32_t width, uint32_t height,
                    const Engine::FinalColorPostProcess& postProcess = {},
                    const Engine::EnvironmentLightingSettings& environment = {},
-                   const Engine::Ecs::CameraPostProcessing& cameraPostProcessing = {});
+                   const Engine::Ecs::CameraPostProcessing& cameraPostProcessing = {},
+                   std::optional<Engine::AmbientLightSettings> ambientLightOverride = std::nullopt);
   /// Poll a submitted final render without blocking. An empty optional means
   /// the GPU copy has not completed; the ticket is consumed on output or error.
   Engine::Result<std::optional<Engine::RenderOutput>> PollFinalRender(FinalRenderTicket ticket);
@@ -157,12 +159,14 @@ public:
   /// @param postProcess Optional in-place final-color hook.
   /// @param environment Per-view environment source and intensity.
   /// @param cameraPostProcessing Ordered GPU effects configured for the authored camera.
+  /// @param ambientLightOverride Optional camera ambient-light override; absent inherits the scene setting.
   /// @return CPU-owned AOV output, or an error when rendering or readback fails.
-  Engine::Result<Engine::RenderOutput> RenderFinal(Engine::Scene& scene, const ::Engine::Renderer::CameraView& camera,
-                                                   uint32_t width, uint32_t height,
-                                                   const Engine::FinalColorPostProcess& postProcess = {},
-                                                   const Engine::EnvironmentLightingSettings& environment = {},
-                                                   const Engine::Ecs::CameraPostProcessing& cameraPostProcessing = {});
+  Engine::Result<Engine::RenderOutput>
+  RenderFinal(Engine::Scene& scene, const ::Engine::Renderer::CameraView& camera, uint32_t width, uint32_t height,
+              const Engine::FinalColorPostProcess& postProcess = {},
+              const Engine::EnvironmentLightingSettings& environment = {},
+              const Engine::Ecs::CameraPostProcessing& cameraPostProcessing = {},
+              std::optional<Engine::AmbientLightSettings> ambientLightOverride = std::nullopt);
   /// Creates a built-in primitive and registers it for scene rendering.
   /// @param shape Primitive shape to create.
   /// @param material Material applied to the primitive.

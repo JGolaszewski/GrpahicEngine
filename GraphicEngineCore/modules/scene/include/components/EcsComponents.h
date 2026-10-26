@@ -127,6 +127,7 @@ struct Camera {
   uint32_t OutputHeight = 1080;     ///< Configured render output height in pixels; must be positive.
   int32_t Priority = 0;             ///< Selection priority when choosing an active scene camera.
   bool Active = true;               ///< Whether the camera participates in camera selection.
+  std::optional<AmbientLightSettings> AmbientLightOverride; ///< Optional ambient light replacing the scene setting.
 };
 
 /// Validates finite local transform components and positive scale values.
@@ -210,6 +211,12 @@ inline auto Validate(const Camera& component) -> Status {
       !std::isfinite(component.FarPlane) || component.FarPlane <= component.NearPlane || component.OutputWidth == 0 ||
       component.OutputHeight == 0) {
     return std::unexpected(MakeError("Camera projection, clip planes, or output resolution are invalid"));
+  }
+  if (component.AmbientLightOverride) {
+    const Status ambientLightValidation = Engine::Validate(*component.AmbientLightOverride);
+    if (!ambientLightValidation) {
+      return ambientLightValidation;
+    }
   }
   return {};
 }

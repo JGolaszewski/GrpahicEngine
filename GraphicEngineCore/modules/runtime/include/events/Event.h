@@ -21,6 +21,7 @@ enum class EventType {
   // Editor events
   EntityDeselected,
   SceneChanged,
+  SceneAmbientLightChanged,
   ViewportChanged,
   ViewportClicked,
   ViewportHovered,

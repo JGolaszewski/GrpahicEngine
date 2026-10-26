@@ -172,7 +172,7 @@ void Editor::OnInit() {
           return std::unexpected(request.error());
         }
         return GetRenderSystem()->RenderFinal(*m_ActiveScene, request->View, request->Width, request->Height, {}, {},
-                                              request->PostProcessing);
+                                              request->PostProcessing, request->AmbientLightOverride);
       },
       [this](uint32_t width, uint32_t height, std::span<const uint8_t> pixels) -> bool {
         return m_UiIntegration.SetCameraPreview(width, height, pixels);
@@ -196,11 +196,11 @@ void Editor::OnInit() {
         if (exr) {
           return m_RenderOutputExportService->StartMultilayerExr(
               *renderer, *m_ActiveScene, request->View, request->Width, request->Height, std::move(selectedAovs),
-              std::move(destination), {}, background, request->PostProcessing);
+              std::move(destination), {}, background, request->PostProcessing, request->AmbientLightOverride);
         }
         return m_RenderOutputExportService->StartPng(*renderer, *m_ActiveScene, request->View, request->Width,
                                                      request->Height, std::move(destination), {}, background,
-                                                     request->PostProcessing);
+                                                     request->PostProcessing, request->AmbientLightOverride);
       },
       [this](
           Engine::RenderOutputExportService::RequestId requestId) -> std::optional<Engine::RenderOutputExportStatus> {
@@ -350,6 +350,13 @@ void Editor::OnSetupViews() {
         postProcessing != nullptr) {
       previewBinding.PostProcessing = *postProcessing;
     }
+    if (const auto* camera = m_ActiveScene->World().Get<Engine::Ecs::Camera>(m_CameraPreviewEntity);
+        camera != nullptr) {
+      previewBinding.HasAmbientLightOverride = camera->AmbientLightOverride.has_value();
+      if (camera->AmbientLightOverride) {
+        previewBinding.AmbientLightOverride = *camera->AmbientLightOverride;
+      }
+    }
     RegisterView(previewBinding);
   }
 }
@@ -447,6 +454,15 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
     return;
   }
   Engine::Events::EventDispatcher dispatcher(*event);
+  dispatcher.Dispatch<SceneAmbientLightChangedEvent>([this](const auto& changed) -> bool {
+    if (m_ActiveScene != nullptr) {
+      const Engine::Status status = m_ActiveScene->SetAmbientLight(changed.Settings);
+      if (!status) {
+        ENGINE_LOG_ERROR("Render", "Scene ambient light update was rejected | reason: {}", status.error().Message);
+      }
+    }
+    return true;
+  });
   dispatcher.Dispatch<SceneFileActionRequestedEvent>([this](const auto& request) -> bool {
     if (GetAssetManager() == nullptr) {
       ENGINE_LOG_ERROR("Asset", "Cannot process the file action because the asset manager is unavailable");

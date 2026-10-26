@@ -36,6 +36,21 @@ encoding and final readback. Bloom adds a thresholded blurred highlight and
 expands alpha with the glow. SSAO changes `FinalColor` and `DiffuseLighting`;
 the depth, normal, and specular-lighting planes are unchanged.
 
+SSAO quality selects 8, 16, or 32 depth/normal samples per pixel; depth bias
+is measured in scene units. FXAA quality selects its edge-search span and its
+relative edge threshold controls which contrast transitions are filtered.
+Bloom uses a bright-pass downsample pyramid followed by a blended upsample
+pyramid. Pyramid depth adapts to camera output dimensions and bloom radius;
+Smooth Bloom enables tent-filtered upsampling.
+
+The scene also stores ambient diffuse-light settings: enabled state, linear RGB
+color, and intensity. Each authored camera may override these settings for its
+own view; otherwise it inherits the scene value. Ambient light contributes to
+diffuse shading, is attenuated by SSAO, and does not change direct or specular
+lighting. Environment lighting remains a separate setting and is not enabled
+implicitly by SSAO. Final-render and export requests accept the camera override
+so the camera output matches its preview.
+
 ## Output contract
 
 The output contains five Float32 planes in this canonical order. Pixel rows are
@@ -48,7 +63,7 @@ stable and are exposed by `RenderAovDescriptor` for image writers.
 | `Depth` | `depth` | Z | Normalized device depth in [0, 1]; background is 1. |
 | `WorldNormal` | `world_normal` | X, Y, Z | Normalized world-space shading normal, including the material normal map. |
 | `SpecularLighting` | `specular_lighting` | R, G, B | Direct and environment specular contribution. |
-| `DiffuseLighting` | `diffuse_lighting` | R, G, B | Direct diffuse, ambient and diffuse environment contribution, plus emissive. |
+| `DiffuseLighting` | `diffuse_lighting` | R, G, B | Direct diffuse, scene ambient and diffuse environment contribution, plus emissive. |
 
 `RenderOutput::GetPlanes()` enumerates the available owned planes and
 `GetPixels(RenderAov)` selects one. A successful final render always contains

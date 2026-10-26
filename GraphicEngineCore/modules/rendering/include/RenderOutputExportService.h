@@ -1,9 +1,10 @@
 #pragma once
 
 #include "rendering/include/RenderOutput.h"
-#include "scene/include/components/CameraPostProcessing.h"
 #include "runtime/include/CoreExport.h"
 #include "runtime/include/Result.h"
+#include "scene/include/AmbientLightSettings.h"
+#include "scene/include/components/CameraPostProcessing.h"
 
 #include <condition_variable>
 #include <cstdint>
@@ -64,11 +65,13 @@ public:
   /// @param postProcess Optional CPU final-color processing callback.
   /// @param background Optional background composited into the final-color plane.
   /// @param cameraPostProcessing Camera lighting settings and ordered GPU color effects.
+  /// @param ambientLightOverride Optional camera ambient-light override; absent inherits the scene setting.
   Engine::Result<RequestId> StartPng(RenderSystem& renderer, Scene& scene, const ::Engine::Renderer::CameraView& camera,
                                      uint32_t width, uint32_t height, std::filesystem::path destination,
                                      const FinalColorPostProcess& postProcess = {},
                                      const RenderOutputBackground& background = {},
-                                     const Ecs::CameraPostProcessing& cameraPostProcessing = {});
+                                     const Ecs::CameraPostProcessing& cameraPostProcessing = {},
+                                     std::optional<AmbientLightSettings> ambientLightOverride = std::nullopt);
   /// Start a multipart EXR export containing exactly the selected AOV planes.
   /// An enabled background is composited into final_color only when selected.
   /// @param renderer Renderer used to submit the camera render.
@@ -81,11 +84,13 @@ public:
   /// @param postProcess Optional CPU final-color processing callback.
   /// @param background Optional background composited into final_color when selected.
   /// @param cameraPostProcessing Camera lighting settings and ordered GPU color effects.
+  /// @param ambientLightOverride Optional camera ambient-light override; absent inherits the scene setting.
   Engine::Result<RequestId>
   StartMultilayerExr(RenderSystem& renderer, Scene& scene, const ::Engine::Renderer::CameraView& camera, uint32_t width,
                      uint32_t height, std::vector<RenderAov> selectedAovs, std::filesystem::path destination,
                      const FinalColorPostProcess& postProcess = {}, const RenderOutputBackground& background = {},
-                     const Ecs::CameraPostProcessing& cameraPostProcessing = {});
+                     const Ecs::CameraPostProcessing& cameraPostProcessing = {},
+                     std::optional<AmbientLightSettings> ambientLightOverride = std::nullopt);
 
   /// Poll GPU readback and queue ready CPU-owned output for background writing.
   void Update();
@@ -115,7 +120,8 @@ private:
                                   const ::Engine::Renderer::CameraView& camera, uint32_t width, uint32_t height,
                                   bool exr, std::vector<RenderAov> selectedAovs, std::filesystem::path destination,
                                   const FinalColorPostProcess& postProcess, const RenderOutputBackground& background,
-                                  const Ecs::CameraPostProcessing& cameraPostProcessing);
+                                  const Ecs::CameraPostProcessing& cameraPostProcessing,
+                                  std::optional<AmbientLightSettings> ambientLightOverride);
   void WorkerMain();
 
   mutable std::mutex m_Mutex;

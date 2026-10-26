@@ -26,7 +26,8 @@ struct LightsCBData {
   uint32_t LightCount = 0;                          ///< Number of populated light slots.
   uint32_t EnvironmentEnabled = 0;                  ///< Whether this view adds environment lighting.
   float EnvironmentIntensity = 1.0F;                ///< Scale applied to the environment contribution.
-  float Padding[1] = {0.0F};                        ///< Padding that aligns the constant buffer size.
+  float AmbientLightIntensity = 0.0F;               ///< Scene ambient diffuse intensity, or zero when disabled.
+  DirectX::XMFLOAT4 AmbientLightColor = {1.0F, 1.0F, 1.0F, 0.0F}; ///< Linear ambient color and padding.
 };
 
 static_assert(sizeof(DirectionalLightData) == 144);
@@ -39,5 +40,9 @@ static_assert(offsetof(DirectionalLightData, ShadowParams) == 128);
 static_assert(offsetof(LightsCBData, LightCount) == ENGINE_MAX_LIGHTS * sizeof(DirectionalLightData));
 static_assert(offsetof(LightsCBData, EnvironmentEnabled) == offsetof(LightsCBData, LightCount) + sizeof(uint32_t));
 static_assert(offsetof(LightsCBData, EnvironmentIntensity) == offsetof(LightsCBData, EnvironmentEnabled) + sizeof(uint32_t));
-static_assert(sizeof(LightsCBData) == ENGINE_MAX_LIGHTS * sizeof(DirectionalLightData) + 16);
+static_assert(offsetof(LightsCBData, AmbientLightIntensity) ==
+              offsetof(LightsCBData, EnvironmentIntensity) + sizeof(float));
+static_assert(offsetof(LightsCBData, AmbientLightColor) ==
+              offsetof(LightsCBData, AmbientLightIntensity) + sizeof(float));
+static_assert(sizeof(LightsCBData) == ENGINE_MAX_LIGHTS * sizeof(DirectionalLightData) + 32);
 } // namespace Engine::Renderer

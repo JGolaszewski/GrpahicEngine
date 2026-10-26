@@ -144,7 +144,9 @@ struct CameraPostProcessResources {
 
 class ENGINE_API CameraPostProcessPass : public ::Engine::Renderer::IRenderPass {
 public:
-  CameraPostProcessPass(std::shared_ptr<CameraPostProcessResources> resources, size_t effectIndex);
+  enum class Stage { Effect, BloomDownsample, BloomUpsample, BloomComposite };
+  CameraPostProcessPass(std::shared_ptr<CameraPostProcessResources> resources, size_t effectIndex,
+                        Stage stage = Stage::Effect, uint32_t pyramidLevel = 0);
 
   std::string GetName() const override { return "CameraPostProcessPass"; }
   bool HasSideEffect() const override { return true; }
@@ -155,12 +157,17 @@ private:
   struct ViewResources {
     RenderView* View = nullptr;
     RGResourceID Input;
+    RGResourceID BloomInput;
     RGResourceID Output;
     Engine::Ecs::CameraPostProcessEffect Effect;
+    bool ExtractBright = false;
+    bool BloomEnabled = false;
   };
 
   std::shared_ptr<CameraPostProcessResources> m_Resources;
   size_t m_EffectIndex = 0;
+  Stage m_Stage = Stage::Effect;
+  uint32_t m_PyramidLevel = 0;
   std::vector<ViewResources> m_Views;
 };
 

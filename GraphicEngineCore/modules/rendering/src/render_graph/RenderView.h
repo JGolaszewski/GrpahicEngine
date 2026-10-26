@@ -78,9 +78,13 @@ public:
   RGResourceID DisplayColorResource;
   Engine::ViewportBinding::Mode RenderMode = Engine::ViewportBinding::Mode::Editor;
   Engine::EnvironmentLightingSettings Environment;
+  Engine::AmbientLightSettings AmbientLight;
   Engine::Ecs::CameraPostProcessing PostProcessing;
   std::vector<RGViewportAttachment> OutputAttachments;
   RGResourceID PostProcessColor;
+  std::vector<RGResourceID> BloomPyramid;
+  RGResourceID BloomCurrent;
+  RGResourceID BloomSource;
   RGResourceID AmbientOcclusionDepth;
   RGResourceID AmbientOcclusionNormal;
   RGResourceID AmbientOcclusionTexture;

@@ -16,8 +16,11 @@ TEST(CameraPostProcessingTests, EmptyAndSupportedBoundaryValuesPassValidation) {
   const Engine::Ecs::CameraPostProcessing supported{
       .Effects = {Engine::Ecs::ColorGradingEffect{.Exposure = -16.0F, .Contrast = 4.0F, .Saturation = 0.0F},
                   Engine::Ecs::BloomEffect{.Threshold = 100000.0F, .Intensity = 10.0F, .Radius = 64.0F},
-                  Engine::Ecs::FxaaEffect{}},
-      .AmbientOcclusion = Engine::Ecs::ScreenSpaceAmbientOcclusionSettings{.Radius = 5.0F, .Intensity = 4.0F}};
+                  Engine::Ecs::FxaaEffect{.Quality = Engine::Ecs::FxaaQuality::High, .EdgeThreshold = 0.5F}},
+      .AmbientOcclusion = Engine::Ecs::ScreenSpaceAmbientOcclusionSettings{.Radius = 5.0F,
+                                                                           .Intensity = 4.0F,
+                                                                           .SampleCount = 32,
+                                                                           .DepthBias = 0.1F}};
   EXPECT_TRUE(Engine::Ecs::Validate(supported));
 }
 
@@ -33,6 +36,14 @@ TEST(CameraPostProcessingTests, NonFiniteOrOutOfRangeValuesFailValidation) {
       .AmbientOcclusion = Engine::Ecs::ScreenSpaceAmbientOcclusionSettings{.Radius = nan}}));
   EXPECT_FALSE(Engine::Ecs::Validate(Engine::Ecs::CameraPostProcessing{
       .AmbientOcclusion = Engine::Ecs::ScreenSpaceAmbientOcclusionSettings{.Intensity = 4.01F}}));
+  EXPECT_FALSE(Engine::Ecs::Validate(Engine::Ecs::CameraPostProcessing{
+      .AmbientOcclusion = Engine::Ecs::ScreenSpaceAmbientOcclusionSettings{.SampleCount = 12}}));
+  EXPECT_FALSE(Engine::Ecs::Validate(Engine::Ecs::CameraPostProcessing{
+      .AmbientOcclusion = Engine::Ecs::ScreenSpaceAmbientOcclusionSettings{.DepthBias = 0.11F}}));
+  EXPECT_FALSE(Engine::Ecs::Validate(
+      Engine::Ecs::CameraPostProcessing{.Effects = {Engine::Ecs::FxaaEffect{.EdgeThreshold = 0.6F}}}));
+  EXPECT_FALSE(Engine::Ecs::Validate(Engine::Ecs::CameraPostProcessing{
+      .Effects = {Engine::Ecs::FxaaEffect{.Quality = static_cast<Engine::Ecs::FxaaQuality>(3)}}}));
 }
 
 TEST(CameraPostProcessingTests, ViewportBindingRejectsInvalidEffectSettings) {

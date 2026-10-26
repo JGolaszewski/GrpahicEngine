@@ -4,6 +4,9 @@ Texture2D<float4> g_NormalTexture : register(t1);
 cbuffer AmbientOcclusionConstants : register(b0)
 {
     float4 g_ClipParams;       // near, far, world radius, intensity
+    uint g_SampleCount;
+    float g_DepthBias;
+    float2 g_ConstantPadding;
     float4 g_ProjectionParams; // tan(half vertical FOV), aspect, width, height
     float4 g_CameraRight;
     float4 g_CameraUp;
@@ -50,14 +53,15 @@ float4 main_ps(float4 position : SV_Position) : SV_Target0
                                      g_ProjectionParams.w / max(2.0f * g_ProjectionParams.x, 1.0e-5f), 1.0f, 64.0f);
     float occlusion = 0.0f;
     uint sampleCount = 0u;
+    const uint ringCount = max(g_SampleCount / 8u, 1u);
 
     [unroll]
     for (uint sampleIndex = 0u; sampleIndex < 8u; ++sampleIndex)
     {
-        [unroll]
-        for (uint ring = 0u; ring < 2u; ++ring)
+        [loop]
+        for (uint ring = 0u; ring < ringCount; ++ring)
         {
-            const float ringScale = ring == 0u ? 0.5f : 1.0f;
+            const float ringScale = float(ring + 1u) / float(ringCount);
             const int2 samplePixel = clamp(pixel + int2(round(kSampleDirections[sampleIndex] * radiusPixels * ringScale)),
                                            int2(0, 0), maximum);
             if (all(samplePixel == pixel))
@@ -72,7 +76,7 @@ float4 main_ps(float4 position : SV_Position) : SV_Target0
             }
 
             const float sampleViewDepth = LinearizeDepth(sampleDepth);
-            if (sampleViewDepth >= centerViewDepth)
+            if (sampleViewDepth + g_DepthBias >= centerViewDepth)
             {
                 continue;
             }

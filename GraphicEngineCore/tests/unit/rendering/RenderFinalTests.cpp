@@ -312,6 +312,31 @@ TEST(RenderFinalTests, WARPCameraFxaaSmoothsFinalColorEdgesAndPreservesOtherAovs
   EXPECT_TRUE(std::ranges::equal(antialiased->GetPixels(Engine::RenderAov::DiffuseLighting),
                                  baseline->GetPixels(Engine::RenderAov::DiffuseLighting)));
 
+  const auto totalDifference = [](std::span<const float> left, std::span<const float> right) -> float {
+    float difference = 0.0F;
+    for (size_t index = 0; index < left.size(); ++index) {
+      difference += std::abs(left[index] - right[index]);
+    }
+    return difference;
+  };
+  const Engine::Ecs::CameraPostProcessing fxaaLow{
+      .Effects = {Engine::Ecs::FxaaEffect{.Quality = Engine::Ecs::FxaaQuality::Low}}};
+  const Engine::Ecs::CameraPostProcessing fxaaHigh{
+      .Effects = {Engine::Ecs::FxaaEffect{.Quality = Engine::Ecs::FxaaQuality::High}}};
+  const Engine::Ecs::CameraPostProcessing fxaaRaisedThreshold{
+      .Effects = {Engine::Ecs::FxaaEffect{.Quality = Engine::Ecs::FxaaQuality::Medium, .EdgeThreshold = 0.5F}}};
+  const auto lowQuality = renderer.RenderFinal(scene, camera, imageSize, imageSize, {}, {}, fxaaLow);
+  const auto highQuality = renderer.RenderFinal(scene, camera, imageSize, imageSize, {}, {}, fxaaHigh);
+  const auto raisedThreshold = renderer.RenderFinal(scene, camera, imageSize, imageSize, {}, {}, fxaaRaisedThreshold);
+  ASSERT_TRUE(lowQuality.has_value());
+  ASSERT_TRUE(highQuality.has_value());
+  ASSERT_TRUE(raisedThreshold.has_value());
+  EXPECT_GT(totalDifference(lowQuality->GetPixels(Engine::RenderAov::FinalColor),
+                            highQuality->GetPixels(Engine::RenderAov::FinalColor)),
+            0.001F);
+  EXPECT_TRUE(std::ranges::all_of(raisedThreshold->GetPixels(Engine::RenderAov::FinalColor),
+                                  [](float value) { return std::isfinite(value); }));
+
   const Engine::Ecs::BloomEffect bloom{.Threshold = 0.2F, .Intensity = 0.4F, .Radius = 4.0F};
   const Engine::Ecs::CameraPostProcessing bloomThenFxaa{.Effects = {bloom, Engine::Ecs::FxaaEffect{}}};
   const Engine::Ecs::CameraPostProcessing fxaaThenBloom{.Effects = {Engine::Ecs::FxaaEffect{}, bloom}};
@@ -322,6 +347,17 @@ TEST(RenderFinalTests, WARPCameraFxaaSmoothsFinalColorEdgesAndPreservesOtherAovs
   EXPECT_GT(totalDifference(bloomedAfterFxaa->GetPixels(Engine::RenderAov::FinalColor),
                             fxaaAfterBloom->GetPixels(Engine::RenderAov::FinalColor)),
             0.01F);
+  const Engine::Ecs::BloomEffect smoothBloom{.Threshold = 0.2F, .Intensity = 0.4F, .Radius = 4.0F, .Smooth = true};
+  const Engine::Ecs::BloomEffect sharpBloom{.Threshold = 0.2F, .Intensity = 0.4F, .Radius = 4.0F, .Smooth = false};
+  const auto smoothBloomOutput = renderer.RenderFinal(scene, camera, imageSize, imageSize, {}, {},
+                                                      Engine::Ecs::CameraPostProcessing{.Effects = {smoothBloom}});
+  const auto sharpBloomOutput = renderer.RenderFinal(scene, camera, imageSize, imageSize, {}, {},
+                                                     Engine::Ecs::CameraPostProcessing{.Effects = {sharpBloom}});
+  ASSERT_TRUE(smoothBloomOutput.has_value());
+  ASSERT_TRUE(sharpBloomOutput.has_value());
+  EXPECT_GT(totalDifference(smoothBloomOutput->GetPixels(Engine::RenderAov::FinalColor),
+                            sharpBloomOutput->GetPixels(Engine::RenderAov::FinalColor)),
+            0.001F);
 }
 
 TEST(RenderFinalTests, WARPSubmitsIndependentEditorAndPreviewViewsAndSkipsInvalidTargets) {
@@ -961,20 +997,19 @@ TEST(RenderFinalTests, WARPScreenSpaceAmbientOcclusionOnlyChangesIndirectDiffuse
   receiverTransform.Scale = {4.0F, 4.0F, 0.5F};
   (void)scene.QueueSet(created.at(0).Entity, receiverTransform);
   Engine::Ecs::LocalTransform occluderTransform;
-  occluderTransform.Position = {0.0F, 0.0F, -0.65F};
-  occluderTransform.Scale = {1.0F, 1.0F, 1.0F};
+  occluderTransform.Position = {0.0F, 0.0F, 0.2F};
+  occluderTransform.Scale = {0.5F, 0.5F, 0.5F};
   (void)scene.QueueSet(created.at(1).Entity, occluderTransform);
   ASSERT_TRUE(scene.Update(0.0F));
 
   Engine::Renderer::CameraView camera;
   camera.Position = {0.0F, 0.0F, -6.0F};
   constexpr uint32_t imageSize = 64;
-  const Engine::EnvironmentLightingSettings studio{Engine::EnvironmentPreset::Studio, 1.0F};
-  const auto baseline = renderer.RenderFinal(scene, camera, imageSize, imageSize, {}, studio);
+  const auto baseline = renderer.RenderFinal(scene, camera, imageSize, imageSize, {}, {});
   ASSERT_TRUE(baseline.has_value()) << (baseline.has_value() ? "" : baseline.error().Message);
   const Engine::Ecs::CameraPostProcessing ambientOcclusion{
       .AmbientOcclusion = Engine::Ecs::ScreenSpaceAmbientOcclusionSettings{.Radius = 2.0F, .Intensity = 4.0F}};
-  const auto occluded = renderer.RenderFinal(scene, camera, imageSize, imageSize, {}, studio, ambientOcclusion);
+  const auto occluded = renderer.RenderFinal(scene, camera, imageSize, imageSize, {}, {}, ambientOcclusion);
   ASSERT_TRUE(occluded.has_value()) << (occluded.has_value() ? "" : occluded.error().Message);
 
   const auto totalDifference = [](std::span<const float> left, std::span<const float> right) -> float {
@@ -996,5 +1031,51 @@ TEST(RenderFinalTests, WARPScreenSpaceAmbientOcclusionOnlyChangesIndirectDiffuse
   EXPECT_GT(totalDifference(occluded->GetPixels(Engine::RenderAov::FinalColor),
                             baseline->GetPixels(Engine::RenderAov::FinalColor)),
             0.01F);
+
+  const Engine::Ecs::CameraPostProcessing lowSampleCount{
+      .AmbientOcclusion =
+          Engine::Ecs::ScreenSpaceAmbientOcclusionSettings{.Radius = 2.0F, .Intensity = 4.0F, .SampleCount = 8}};
+  const Engine::Ecs::CameraPostProcessing highSampleCount{
+      .AmbientOcclusion =
+          Engine::Ecs::ScreenSpaceAmbientOcclusionSettings{.Radius = 2.0F, .Intensity = 4.0F, .SampleCount = 32}};
+  const Engine::Ecs::CameraPostProcessing highBias{
+      .AmbientOcclusion = Engine::Ecs::ScreenSpaceAmbientOcclusionSettings{.Radius = 2.0F,
+                                                                           .Intensity = 4.0F,
+                                                                           .SampleCount = 32,
+                                                                           .DepthBias = 0.1F}};
+  const auto lowSampleOutput = renderer.RenderFinal(scene, camera, imageSize, imageSize, {}, {}, lowSampleCount);
+  const auto highSampleOutput = renderer.RenderFinal(scene, camera, imageSize, imageSize, {}, {}, highSampleCount);
+  const auto highBiasOutput = renderer.RenderFinal(scene, camera, imageSize, imageSize, {}, {}, highBias);
+  ASSERT_TRUE(lowSampleOutput.has_value());
+  ASSERT_TRUE(highSampleOutput.has_value());
+  ASSERT_TRUE(highBiasOutput.has_value());
+  EXPECT_GT(totalDifference(lowSampleOutput->GetPixels(Engine::RenderAov::DiffuseLighting),
+                            highSampleOutput->GetPixels(Engine::RenderAov::DiffuseLighting)),
+            0.001F);
+  EXPECT_GT(totalDifference(highSampleOutput->GetPixels(Engine::RenderAov::DiffuseLighting),
+                            highBiasOutput->GetPixels(Engine::RenderAov::DiffuseLighting)),
+            0.001F);
+
+  const Engine::AmbientLightSettings ambientDisabled{.Enabled = false};
+  const auto noAmbient = renderer.RenderFinal(scene, camera, imageSize, imageSize, {}, {}, {}, ambientDisabled);
+  ASSERT_TRUE(noAmbient.has_value()) << (noAmbient.has_value() ? "" : noAmbient.error().Message);
+  const auto occludedWithoutAmbient =
+      renderer.RenderFinal(scene, camera, imageSize, imageSize, {}, {}, ambientOcclusion, ambientDisabled);
+  ASSERT_TRUE(occludedWithoutAmbient.has_value())
+      << (occludedWithoutAmbient.has_value() ? "" : occludedWithoutAmbient.error().Message);
+  EXPECT_TRUE(std::ranges::equal(occludedWithoutAmbient->GetPixels(Engine::RenderAov::DiffuseLighting),
+                                 noAmbient->GetPixels(Engine::RenderAov::DiffuseLighting)));
+
+  const Engine::AmbientLightSettings redAmbient{.Color = {1.0F, 0.0F, 0.0F}, .Intensity = 0.4F};
+  const Engine::AmbientLightSettings blueAmbient{.Color = {0.0F, 0.0F, 1.0F}, .Intensity = 0.4F};
+  const auto redCamera = renderer.RenderFinal(scene, camera, imageSize, imageSize, {}, {}, {}, redAmbient);
+  const auto blueCamera = renderer.RenderFinal(scene, camera, imageSize, imageSize, {}, {}, {}, blueAmbient);
+  ASSERT_TRUE(redCamera.has_value()) << (redCamera.has_value() ? "" : redCamera.error().Message);
+  ASSERT_TRUE(blueCamera.has_value()) << (blueCamera.has_value() ? "" : blueCamera.error().Message);
+  EXPECT_GT(totalDifference(redCamera->GetPixels(Engine::RenderAov::DiffuseLighting),
+                            blueCamera->GetPixels(Engine::RenderAov::DiffuseLighting)),
+            0.01F);
+  EXPECT_TRUE(std::ranges::equal(redCamera->GetPixels(Engine::RenderAov::SpecularLighting),
+                                 blueCamera->GetPixels(Engine::RenderAov::SpecularLighting)));
 }
 } // namespace

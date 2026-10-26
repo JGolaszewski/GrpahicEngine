@@ -3,6 +3,7 @@
 #include "events/include/AssetImportRequestedEvent.h"
 #include "events/include/MaterialAssetEditRequestedEvent.h"
 #include "events/include/MaterialAssetSelectionRequestedEvent.h"
+#include "events/include/SceneAmbientLightChangedEvent.h"
 #include "panels/include/AssetDragDropPayload.h"
 #include "panels/include/AssetDropAssignment.h"
 #include "panels/include/TransformRotation.h"
@@ -16,10 +17,13 @@
 #include <imgui.h>
 #include <iterator>
 #include <limits>
+#include <optional>
 #include <string>
+#include <utility>
 
 namespace {
 using Mutation = EcsComponentMutationRequestedEvent;
+constexpr char kCameraPostProcessEffectPayload[] = "GE_CAMERA_POST_PROCESS_EFFECT";
 
 auto Matches(const char* name, const char* filter) -> bool {
   if (filter[0] == '\0') {
@@ -155,6 +159,20 @@ void InspectorPanel::DrawEntityInspector() {
     }
   }
   ImGui::PopID();
+
+  if (isSceneRoot && ImGui::CollapsingHeader("Scene Ambient Light", ImGuiTreeNodeFlags_DefaultOpen)) {
+    Engine::AmbientLightSettings ambientLight = m_Scene->AmbientLight();
+    bool changed = ImGui::Checkbox("Enabled", &ambientLight.Enabled);
+    if (ambientLight.Enabled) {
+      ImGui::Indent();
+      changed |= ImGui::ColorEdit3("Color (linear RGB)", ambientLight.Color.data());
+      changed |= ImGui::SliderFloat("Intensity", &ambientLight.Intensity, 0.0F, 10.0F, "%.2f");
+      ImGui::Unindent();
+    }
+    if (changed) {
+      EmitEvent(std::make_unique<SceneAmbientLightChangedEvent>(ambientLight));
+    }
+  }
 
   if (!isSceneRoot) {
     if (const auto* storedTransform = world.Get<Engine::Ecs::LocalTransform>(entity);
@@ -570,15 +588,29 @@ void InspectorPanel::DrawEntityInspector() {
     }
     changed |= ImGui::InputInt("Priority", &camera.Priority);
     changed |= ImGui::Checkbox("Active camera", &camera.Active);
+    bool overrideAmbientLight = camera.AmbientLightOverride.has_value();
+    if (ImGui::Checkbox("Override scene ambient light", &overrideAmbientLight)) {
+      if (overrideAmbientLight) {
+        camera.AmbientLightOverride = m_Scene->AmbientLight();
+      } else {
+        camera.AmbientLightOverride.reset();
+      }
+      changed = true;
+    }
+    if (camera.AmbientLightOverride) {
+      ImGui::Indent();
+      changed |= ImGui::Checkbox("Ambient light enabled", &camera.AmbientLightOverride->Enabled);
+      if (camera.AmbientLightOverride->Enabled) {
+        changed |= ImGui::ColorEdit3("Ambient color (linear RGB)", camera.AmbientLightOverride->Color.data());
+        changed |=
+            ImGui::SliderFloat("Ambient intensity", &camera.AmbientLightOverride->Intensity, 0.0F, 10.0F, "%.2f");
+      }
+      ImGui::Unindent();
+    } else {
+      ImGui::TextDisabled("Ambient light follows the scene setting.");
+    }
     if (changed) {
       emitSet(Mutation::Component::Camera, camera);
-    }
-  }
-
-  if (world.Has<Engine::Ecs::Camera>(entity) && !world.Has<Engine::Ecs::CameraPostProcessing>(entity)) {
-    ImGui::TextWrapped("This camera has no post-processing effects.");
-    if (ImGui::Button("Add Post Processing")) {
-      emitAdd(Mutation::Component::CameraPostProcessing);
     }
   }
 
@@ -605,7 +637,22 @@ void InspectorPanel::DrawEntityInspector() {
       changed |=
           ImGui::SliderFloat("AO Radius", &postProcessing.AmbientOcclusion->Radius, 0.0F, 5.0F, "%.2f world units");
       changed |= ImGui::SliderFloat("AO Intensity", &postProcessing.AmbientOcclusion->Intensity, 0.0F, 4.0F, "%.2f");
+      static constexpr const char* sampleCounts[] = {"8", "16", "32"};
+      int sampleCountIndex = postProcessing.AmbientOcclusion->SampleCount == 8U    ? 0
+                             : postProcessing.AmbientOcclusion->SampleCount == 32U ? 2
+                                                                                   : 1;
+      if (ImGui::Combo("Quality (samples)", &sampleCountIndex, sampleCounts, 3)) {
+        postProcessing.AmbientOcclusion->SampleCount = static_cast<uint32_t>(8 << sampleCountIndex);
+        changed = true;
+      }
+      changed |=
+          ImGui::SliderFloat("Depth bias", &postProcessing.AmbientOcclusion->DepthBias, 0.0F, 0.1F, "%.3f scene units");
       ImGui::Unindent();
+    }
+    std::optional<std::pair<size_t, size_t>> reorderEffect;
+    std::optional<size_t> removeEffect;
+    if (!postProcessing.Effects.empty()) {
+      ImGui::TextDisabled("Drag an effect header to change its position in the render order.");
     }
     for (size_t index = 0; index < postProcessing.Effects.size(); ++index) {
       ImGui::PushID(static_cast<int>(index));
@@ -613,34 +660,89 @@ void InspectorPanel::DrawEntityInspector() {
       const char* effectName = std::holds_alternative<Engine::Ecs::ColorGradingEffect>(effect) ? "Color Grading"
                                : std::holds_alternative<Engine::Ecs::BloomEffect>(effect)      ? "Bloom"
                                                                                                : "FXAA";
-      ImGui::Text("%zu. %s", index + 1U, effectName);
-      ImGui::SameLine();
-      if (ImGui::SmallButton("Up") && index > 0) {
-        std::swap(postProcessing.Effects[index], postProcessing.Effects[index - 1U]);
-        changed = true;
+      const bool effectOpen =
+          ImGui::TreeNodeEx("Effect", ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_SpanAvailWidth, "%zu. %s",
+                            index + 1U, effectName);
+      if (ImGui::BeginDragDropSource()) {
+        const int sourceIndex = static_cast<int>(index);
+        ImGui::SetDragDropPayload(kCameraPostProcessEffectPayload, &sourceIndex, sizeof(sourceIndex));
+        ImGui::Text("Move %s", effectName);
+        ImGui::EndDragDropSource();
       }
-      ImGui::SameLine();
-      if (ImGui::SmallButton("Down") && index + 1U < postProcessing.Effects.size()) {
-        std::swap(postProcessing.Effects[index], postProcessing.Effects[index + 1U]);
-        changed = true;
+      if (ImGui::BeginDragDropTarget()) {
+        if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload(kCameraPostProcessEffectPayload);
+            payload != nullptr && payload->DataSize == static_cast<int>(sizeof(int))) {
+          const int sourceIndex = *static_cast<const int*>(payload->Data);
+          if (sourceIndex >= 0 && sourceIndex < static_cast<int>(postProcessing.Effects.size()) &&
+              sourceIndex != static_cast<int>(index)) {
+            reorderEffect = std::pair{static_cast<size_t>(sourceIndex), index};
+          }
+        }
+        ImGui::EndDragDropTarget();
       }
-      if (auto* grading = std::get_if<Engine::Ecs::ColorGradingEffect>(&effect)) {
-        changed |= ImGui::SliderFloat("Exposure", &grading->Exposure, -16.0F, 16.0F, "%.2f stops");
-        changed |= ImGui::SliderFloat("Contrast", &grading->Contrast, 0.0F, 4.0F, "%.2f");
-        changed |= ImGui::SliderFloat("Saturation", &grading->Saturation, 0.0F, 4.0F, "%.2f");
-      } else if (auto* bloom = std::get_if<Engine::Ecs::BloomEffect>(&effect)) {
-        changed |= ImGui::DragFloat("Threshold", &bloom->Threshold, 0.05F, 0.0F, 100000.0F, "%.2f");
-        changed |= ImGui::SliderFloat("Intensity", &bloom->Intensity, 0.0F, 10.0F, "%.2f");
-        changed |= ImGui::SliderFloat("Radius", &bloom->Radius, 0.0F, 64.0F, "%.1f px");
+      if (effectOpen) {
+        if (auto* grading = std::get_if<Engine::Ecs::ColorGradingEffect>(&effect)) {
+          const float exposureMin = std::min(-5.0F, grading->Exposure);
+          const float exposureMax = std::max(5.0F, grading->Exposure);
+          const float contrastMax = std::max(2.0F, grading->Contrast);
+          const float saturationMax = std::max(2.0F, grading->Saturation);
+          changed |= ImGui::SliderFloat("Exposure", &grading->Exposure, exposureMin, exposureMax, "%.2f stops");
+          if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Exposure multiplier is 2^stops. Typical adjustments fit within -5 to +5 stops.");
+          }
+          changed |= ImGui::SliderFloat("Contrast", &grading->Contrast, 0.0F, contrastMax, "%.2f");
+          if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Contrast around 18%% linear gray. 1 is neutral; 0 to 2 is the practical range.");
+          }
+          changed |= ImGui::SliderFloat("Saturation", &grading->Saturation, 0.0F, saturationMax, "%.3f");
+          if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Saturation multiplier. 1 is neutral; 0 to 2 is the practical range.");
+          }
+        } else if (auto* bloom = std::get_if<Engine::Ecs::BloomEffect>(&effect)) {
+          changed |= ImGui::DragFloat("Threshold", &bloom->Threshold, 0.05F, 0.0F, 100000.0F, "%.2f");
+          changed |= ImGui::SliderFloat("Intensity", &bloom->Intensity, 0.0F, 10.0F, "%.2f");
+          changed |= ImGui::SliderFloat("Radius", &bloom->Radius, 0.0F, 64.0F, "%.1f px");
+          changed |= ImGui::Checkbox("Smooth bloom", &bloom->Smooth);
+        } else if (auto* fxaa = std::get_if<Engine::Ecs::FxaaEffect>(&effect)) {
+          static constexpr const char* qualityNames[] = {"Low", "Medium", "High"};
+          int qualityIndex = static_cast<int>(fxaa->Quality);
+          if (ImGui::Combo("Quality", &qualityIndex, qualityNames, 3)) {
+            fxaa->Quality = static_cast<Engine::Ecs::FxaaQuality>(qualityIndex);
+            changed = true;
+          }
+          changed |= ImGui::SliderFloat("Edge threshold", &fxaa->EdgeThreshold, 0.01F, 0.5F, "%.3f");
+        } else {
+          ImGui::TextDisabled("No parameters.");
+        }
+
+        ImGui::BeginDisabled(index == 0U);
+        if (ImGui::SmallButton("Up")) {
+          reorderEffect = std::pair{index, index - 1U};
+        }
+        ImGui::EndDisabled();
+        ImGui::SameLine();
+        ImGui::BeginDisabled(index + 1U == postProcessing.Effects.size());
+        if (ImGui::SmallButton("Down")) {
+          reorderEffect = std::pair{index, index + 1U};
+        }
+        ImGui::EndDisabled();
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Remove effect")) {
+          removeEffect = index;
+        }
+        ImGui::TreePop();
       }
-      if (ImGui::SmallButton("Remove effect")) {
-        postProcessing.Effects.erase(postProcessing.Effects.begin() + static_cast<std::ptrdiff_t>(index));
-        changed = true;
-        ImGui::PopID();
-        break;
-      }
-      ImGui::Separator();
       ImGui::PopID();
+    }
+    if (removeEffect) {
+      postProcessing.Effects.erase(postProcessing.Effects.begin() + static_cast<std::ptrdiff_t>(*removeEffect));
+      changed = true;
+    } else if (reorderEffect) {
+      auto effect = std::move(postProcessing.Effects[reorderEffect->first]);
+      postProcessing.Effects.erase(postProcessing.Effects.begin() + static_cast<std::ptrdiff_t>(reorderEffect->first));
+      postProcessing.Effects.insert(postProcessing.Effects.begin() + static_cast<std::ptrdiff_t>(reorderEffect->second),
+                                    std::move(effect));
+      changed = true;
     }
     static constexpr const char* effectTypes[] = {"Color Grading", "Bloom", "FXAA"};
     static int newEffectType = 0;

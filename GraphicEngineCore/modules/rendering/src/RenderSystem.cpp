@@ -127,8 +127,8 @@ RenderSystem::RenderSystem(IRenderBackend* backend)
       m_ShaderFactory->GetShader("shaders/post_process_ps.dxbc", nvrhi::ShaderType::Pixel);
   nvrhi::BindingLayoutDesc postProcessLayoutDesc;
   postProcessLayoutDesc.visibility = nvrhi::ShaderType::Pixel;
-  postProcessLayoutDesc.bindings = {nvrhi::BindingLayoutItem::Texture_SRV(0), nvrhi::BindingLayoutItem::Sampler(0),
-                                    nvrhi::BindingLayoutItem::ConstantBuffer(0)};
+  postProcessLayoutDesc.bindings = {nvrhi::BindingLayoutItem::Texture_SRV(0), nvrhi::BindingLayoutItem::Texture_SRV(1),
+                                    nvrhi::BindingLayoutItem::Sampler(0), nvrhi::BindingLayoutItem::ConstantBuffer(0)};
   m_CameraPostProcessResources->BindingLayout =
       GetNvrhiDevice(m_RenderBackend)->createBindingLayout(postProcessLayoutDesc);
   nvrhi::SamplerDesc postProcessSamplerDesc;
@@ -140,7 +140,7 @@ RenderSystem::RenderSystem(IRenderBackend* backend)
       .setMipFilter(false);
   m_CameraPostProcessResources->InputSampler = GetNvrhiDevice(m_RenderBackend)->createSampler(postProcessSamplerDesc);
   nvrhi::BufferDesc postProcessConstantsDesc;
-  postProcessConstantsDesc.byteSize = 32;
+  postProcessConstantsDesc.byteSize = 48;
   postProcessConstantsDesc.isConstantBuffer = true;
   postProcessConstantsDesc.isVolatile = true;
   postProcessConstantsDesc.maxVersions = 64;
@@ -162,7 +162,7 @@ RenderSystem::RenderSystem(IRenderBackend* backend)
   m_AmbientOcclusionResources->BindingLayout =
       GetNvrhiDevice(m_RenderBackend)->createBindingLayout(ambientOcclusionLayoutDesc);
   nvrhi::BufferDesc ambientOcclusionConstantsDesc;
-  ambientOcclusionConstantsDesc.byteSize = 80;
+  ambientOcclusionConstantsDesc.byteSize = 96;
   ambientOcclusionConstantsDesc.isConstantBuffer = true;
   ambientOcclusionConstantsDesc.isVolatile = true;
   ambientOcclusionConstantsDesc.maxVersions = 64;
@@ -320,6 +320,8 @@ void RenderSystem::SubmitViews(const std::vector<Engine::ViewportBinding>& views
     view->RenderMode = binding.RenderMode;
     view->Environment = binding.Environment;
     view->PostProcessing = binding.PostProcessing;
+    view->AmbientLight =
+        binding.HasAmbientLightOverride ? binding.AmbientLightOverride : binding.TargetScene->AmbientLight();
     if (!std::isfinite(view->Environment.Intensity)) {
       view->Environment.Intensity = 0.0F;
     }
@@ -407,6 +409,30 @@ void RenderSystem::SubmitViews(const std::vector<Engine::ViewportBinding>& views
   for (size_t effectIndex = 0; effectIndex < maxPostProcessEffects; ++effectIndex) {
     m_RenderGraph->AddPass(
         std::make_unique<::Engine::Renderer::CameraPostProcessPass>(m_CameraPostProcessResources, effectIndex));
+    uint32_t maxBloomLevels = 0;
+    for (const ::Engine::Renderer::RenderView* view : bb.GetSceneViews()) {
+      if (view == nullptr || view->PostProcessing.Effects.size() <= effectIndex) {
+        continue;
+      }
+      const auto* bloom = std::get_if<Engine::Ecs::BloomEffect>(&view->PostProcessing.Effects[effectIndex]);
+      if (bloom != nullptr && bloom->Radius > 0.0F && bloom->Intensity > 0.0F) {
+        maxBloomLevels = (std::max)(maxBloomLevels,
+                                    static_cast<uint32_t>(
+                                        std::clamp(std::ceil(std::log2((std::max)(bloom->Radius, 1.0F))), 1.0F, 6.0F)));
+      }
+    }
+    for (uint32_t level = 0; level < maxBloomLevels; ++level) {
+      m_RenderGraph->AddPass(std::make_unique<::Engine::Renderer::CameraPostProcessPass>(
+          m_CameraPostProcessResources, effectIndex, ::Engine::Renderer::CameraPostProcessPass::Stage::BloomDownsample,
+          level));
+    }
+    for (uint32_t level = maxBloomLevels; level > 1U; --level) {
+      m_RenderGraph->AddPass(std::make_unique<::Engine::Renderer::CameraPostProcessPass>(
+          m_CameraPostProcessResources, effectIndex, ::Engine::Renderer::CameraPostProcessPass::Stage::BloomUpsample,
+          level - 2U));
+    }
+    m_RenderGraph->AddPass(std::make_unique<::Engine::Renderer::CameraPostProcessPass>(
+        m_CameraPostProcessResources, effectIndex, ::Engine::Renderer::CameraPostProcessPass::Stage::BloomComposite));
   }
   if (maxPostProcessEffects > 0) {
     m_RenderGraph->AddPass(
@@ -899,7 +925,8 @@ void RenderSystem::EndFrame() {
 auto RenderSystem::BeginFinalRender(Engine::Scene& scene, const ::Engine::Renderer::CameraView& camera, uint32_t width,
                                     uint32_t height, const Engine::FinalColorPostProcess& postProcess,
                                     const Engine::EnvironmentLightingSettings& environment,
-                                    const Engine::Ecs::CameraPostProcessing& cameraPostProcessing)
+                                    const Engine::Ecs::CameraPostProcessing& cameraPostProcessing,
+                                    std::optional<Engine::AmbientLightSettings> ambientLightOverride)
     -> Engine::Result<FinalRenderTicket> {
   if (m_FrameActive || (m_FinalReadbackCapture != nullptr)) {
     return std::unexpected(Engine::MakeError("final rendering requires an idle render system"));
@@ -975,6 +1002,10 @@ auto RenderSystem::BeginFinalRender(Engine::Scene& scene, const ::Engine::Render
   binding.TargetViewport = &viewport;
   binding.TargetScene = &scene;
   binding.PostProcessing = cameraPostProcessing;
+  binding.HasAmbientLightOverride = ambientLightOverride.has_value();
+  if (ambientLightOverride) {
+    binding.AmbientLightOverride = std::move(*ambientLightOverride);
+  }
   binding.OutputWidth = width;
   binding.OutputHeight = height;
   binding.Environment = environment;
@@ -1076,9 +1107,11 @@ auto RenderSystem::CancelFinalRender(FinalRenderTicket ticket) -> Engine::Status
 auto RenderSystem::RenderFinal(Engine::Scene& scene, const ::Engine::Renderer::CameraView& camera, uint32_t width,
                                uint32_t height, const Engine::FinalColorPostProcess& postProcess,
                                const Engine::EnvironmentLightingSettings& environment,
-                               const Engine::Ecs::CameraPostProcessing& cameraPostProcessing)
+                               const Engine::Ecs::CameraPostProcessing& cameraPostProcessing,
+                               std::optional<Engine::AmbientLightSettings> ambientLightOverride)
     -> Engine::Result<Engine::RenderOutput> {
-  auto ticket = BeginFinalRender(scene, camera, width, height, postProcess, environment, cameraPostProcessing);
+  auto ticket = BeginFinalRender(scene, camera, width, height, postProcess, environment, cameraPostProcessing,
+                                 std::move(ambientLightOverride));
   if (!ticket) {
     return std::unexpected(ticket.error());
   }

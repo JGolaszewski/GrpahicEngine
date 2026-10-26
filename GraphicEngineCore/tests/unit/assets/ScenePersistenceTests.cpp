@@ -47,6 +47,7 @@ TEST(ScenePersistenceTests, RoundTripsFieldsAndRejectsTraversalWithoutOverwritin
   Engine::AssetManager assets(project.Root());
   Engine::SceneDocument document;
   document.unitsPerMeter = 0.25F;
+  document.ambientLight = {.Enabled = false, .Color = {0.8F, 0.6F, 0.4F}, .Intensity = 0.35F};
   Engine::SceneEntityDocument entity;
   entity.id = 23;
   entity.name = "persisted entity";
@@ -86,6 +87,9 @@ TEST(ScenePersistenceTests, RoundTripsFieldsAndRejectsTraversalWithoutOverwritin
   ASSERT_TRUE(loaded) << loaded.error;
   ASSERT_EQ(loaded.document.entities.size(), 1U);
   EXPECT_FLOAT_EQ(loaded.document.unitsPerMeter, 0.25F);
+  EXPECT_FALSE(loaded.document.ambientLight.Enabled);
+  EXPECT_EQ(loaded.document.ambientLight.Color, (std::array<float, 3>{0.8F, 0.6F, 0.4F}));
+  EXPECT_FLOAT_EQ(loaded.document.ambientLight.Intensity, 0.35F);
   EXPECT_EQ(loaded.document.entities.front().id, 23U);
   EXPECT_EQ(loaded.document.entities.front().name, "persisted entity");
   ASSERT_TRUE(loaded.document.entities.front().primitiveType.has_value());
@@ -372,11 +376,16 @@ TEST(ScenePersistenceTests, PersistsCameraResolutionAndUsesFullHdDefaultsForOlde
   camera.outputHeight = 1440;
   camera.priority = -4;
   camera.active = false;
+  camera.ambientLightOverride =
+      Engine::AmbientLightSettings{.Enabled = true, .Color = {0.2F, 0.4F, 0.6F}, .Intensity = 0.75F};
   camera.postProcessing = Engine::Ecs::CameraPostProcessing{
       .Effects = {Engine::Ecs::ColorGradingEffect{.Exposure = 1.25F, .Contrast = 0.8F, .Saturation = 1.4F},
-                  Engine::Ecs::BloomEffect{.Threshold = 2.5F, .Intensity = 0.6F, .Radius = 12.0F},
-                  Engine::Ecs::FxaaEffect{}},
-      .AmbientOcclusion = Engine::Ecs::ScreenSpaceAmbientOcclusionSettings{.Radius = 0.75F, .Intensity = 1.5F}};
+                  Engine::Ecs::BloomEffect{.Threshold = 2.5F, .Intensity = 0.6F, .Radius = 12.0F, .Smooth = false},
+                  Engine::Ecs::FxaaEffect{.Quality = Engine::Ecs::FxaaQuality::High, .EdgeThreshold = 0.2F}},
+      .AmbientOcclusion = Engine::Ecs::ScreenSpaceAmbientOcclusionSettings{.Radius = 0.75F,
+                                                                           .Intensity = 1.5F,
+                                                                           .SampleCount = 32,
+                                                                           .DepthBias = 0.04F}};
   document.cameras.push_back(camera);
   Engine::SceneEntityDocument mesh;
   mesh.id = 9;
@@ -404,10 +413,15 @@ TEST(ScenePersistenceTests, PersistsCameraResolutionAndUsesFullHdDefaultsForOlde
   EXPECT_EQ(loaded.document.cameras.front().scale, camera.scale);
   EXPECT_EQ(loaded.document.cameras.front().priority, -4);
   EXPECT_FALSE(loaded.document.cameras.front().active);
+  ASSERT_TRUE(loaded.document.cameras.front().ambientLightOverride.has_value());
+  EXPECT_EQ(loaded.document.cameras.front().ambientLightOverride->Color, (std::array<float, 3>{0.2F, 0.4F, 0.6F}));
+  EXPECT_FLOAT_EQ(loaded.document.cameras.front().ambientLightOverride->Intensity, 0.75F);
   ASSERT_TRUE(loaded.document.cameras.front().postProcessing.has_value());
   ASSERT_TRUE(loaded.document.cameras.front().postProcessing->AmbientOcclusion.has_value());
   EXPECT_FLOAT_EQ(loaded.document.cameras.front().postProcessing->AmbientOcclusion->Radius, 0.75F);
   EXPECT_FLOAT_EQ(loaded.document.cameras.front().postProcessing->AmbientOcclusion->Intensity, 1.5F);
+  EXPECT_EQ(loaded.document.cameras.front().postProcessing->AmbientOcclusion->SampleCount, 32U);
+  EXPECT_FLOAT_EQ(loaded.document.cameras.front().postProcessing->AmbientOcclusion->DepthBias, 0.04F);
   ASSERT_EQ(loaded.document.cameras.front().postProcessing->Effects.size(), 3U);
   const auto* grading =
       std::get_if<Engine::Ecs::ColorGradingEffect>(&loaded.document.cameras.front().postProcessing->Effects.front());
@@ -417,8 +431,12 @@ TEST(ScenePersistenceTests, PersistsCameraResolutionAndUsesFullHdDefaultsForOlde
       std::get_if<Engine::Ecs::BloomEffect>(&loaded.document.cameras.front().postProcessing->Effects[1]);
   ASSERT_NE(bloom, nullptr);
   EXPECT_FLOAT_EQ(bloom->Radius, 12.0F);
-  EXPECT_TRUE(
-      std::holds_alternative<Engine::Ecs::FxaaEffect>(loaded.document.cameras.front().postProcessing->Effects.back()));
+  EXPECT_FALSE(bloom->Smooth);
+  const auto* fxaa =
+      std::get_if<Engine::Ecs::FxaaEffect>(&loaded.document.cameras.front().postProcessing->Effects.back());
+  ASSERT_NE(fxaa, nullptr);
+  EXPECT_EQ(fxaa->Quality, Engine::Ecs::FxaaQuality::High);
+  EXPECT_FLOAT_EQ(fxaa->EdgeThreshold, 0.2F);
   ASSERT_EQ(loaded.document.lights.size(), 1U);
   EXPECT_EQ(loaded.document.lights.front().name, "Fill Light");
   EXPECT_EQ(loaded.document.lights.front().position, light.position);
@@ -442,6 +460,9 @@ TEST(ScenePersistenceTests, PersistsCameraResolutionAndUsesFullHdDefaultsForOlde
   EXPECT_EQ(legacy.document.cameras.front().scale, (std::array<float, 3>{1.0F, 1.0F, 1.0F}));
   EXPECT_EQ(legacy.document.cameras.front().priority, 0);
   EXPECT_TRUE(legacy.document.cameras.front().active);
+  EXPECT_FALSE(legacy.document.cameras.front().ambientLightOverride.has_value());
+  EXPECT_TRUE(legacy.document.ambientLight.Enabled);
+  EXPECT_FLOAT_EQ(legacy.document.ambientLight.Intensity, 0.15F);
 
   const auto legacyEffectsPath = project.Root() / "legacy-camera-effects.scene.json";
   {
@@ -457,6 +478,28 @@ TEST(ScenePersistenceTests, PersistsCameraResolutionAndUsesFullHdDefaultsForOlde
   ASSERT_EQ(legacyEffects.document.cameras.front().postProcessing->Effects.size(), 1U);
   EXPECT_TRUE(std::holds_alternative<Engine::Ecs::BloomEffect>(
       legacyEffects.document.cameras.front().postProcessing->Effects.front()));
+  const auto* legacyBloom =
+      std::get_if<Engine::Ecs::BloomEffect>(&legacyEffects.document.cameras.front().postProcessing->Effects.front());
+  ASSERT_NE(legacyBloom, nullptr);
+  EXPECT_TRUE(legacyBloom->Smooth);
+
+  const auto legacyQualityPath = project.Root() / "legacy-camera-quality.scene.json";
+  {
+    std::ofstream legacyQuality(legacyQualityPath, std::ios::binary | std::ios::trunc);
+    legacyQuality
+        << R"({"schemaVersion":1,"unitsPerMeter":1,"cameras":[{"id":11,"position":[0,0,0],"rotation":[0,0,0,1],"fovRadians":1,"nearPlane":0.1,"farPlane":100,"ambientOcclusion":{"radius":0.5,"intensity":1},"postProcessing":[{"type":"fxaa"}]}]})";
+  }
+  const auto legacyQuality = assets.LoadScene("legacy-camera-quality.scene.json");
+  ASSERT_TRUE(legacyQuality) << legacyQuality.error;
+  ASSERT_TRUE(legacyQuality.document.cameras.front().postProcessing.has_value());
+  ASSERT_TRUE(legacyQuality.document.cameras.front().postProcessing->AmbientOcclusion.has_value());
+  EXPECT_EQ(legacyQuality.document.cameras.front().postProcessing->AmbientOcclusion->SampleCount, 16U);
+  EXPECT_FLOAT_EQ(legacyQuality.document.cameras.front().postProcessing->AmbientOcclusion->DepthBias, 0.0F);
+  const auto* legacyFxaa =
+      std::get_if<Engine::Ecs::FxaaEffect>(&legacyQuality.document.cameras.front().postProcessing->Effects.front());
+  ASSERT_NE(legacyFxaa, nullptr);
+  EXPECT_EQ(legacyFxaa->Quality, Engine::Ecs::FxaaQuality::Medium);
+  EXPECT_FLOAT_EQ(legacyFxaa->EdgeThreshold, 0.125F);
 }
 
 TEST(ScenePersistenceTests, FailedAtomicReplacementPreservesDestinationAndRemovesTemporaryFile) {
@@ -534,12 +577,12 @@ TEST(ScenePersistenceTests, RejectsUnsupportedSchemaVersion) {
   Engine::AssetManager assets(project.Root());
   {
     std::ofstream scene(project.Root() / "future-schema.scene.json", std::ios::binary);
-    scene << R"({"schemaVersion":5,"unitsPerMeter":1.0,"entities":[]})";
+    scene << R"({"schemaVersion":7,"unitsPerMeter":1.0,"entities":[]})";
   }
 
   const auto loaded = assets.LoadScene("future-schema.scene.json");
   EXPECT_FALSE(loaded);
-  EXPECT_NE(loaded.error.find("unsupported scene schema version 5"), std::string::npos);
+  EXPECT_NE(loaded.error.find("unsupported scene schema version 7"), std::string::npos);
 }
 
 TEST(ScenePersistenceTests, RejectsMalformedEntityLightAndCameraFields) {

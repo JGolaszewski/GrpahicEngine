@@ -28,6 +28,7 @@
 #include "events/include/MaterialChangedEvent.h"
 #include "events/include/MaterialTextureAssignmentRequestedEvent.h"
 #include "events/include/ModelReassignmentRequestedEvent.h"
+#include "events/include/SceneAmbientLightChangedEvent.h"
 #include "events/include/SceneChangedEvent.h"
 #include "events/include/SceneFileActionRequestedEvent.h"
 #include "events/include/SceneModifiedEvent.h"
