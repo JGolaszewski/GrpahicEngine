@@ -41,6 +41,7 @@ class ResourceManager;
 class ShaderFactory;
 struct DisplayTransformResources;
 struct CameraPostProcessResources;
+struct AmbientOcclusionResources;
 class FrameContext;
 class RenderGraph;
 } // namespace Renderer
@@ -342,6 +343,7 @@ private:
   std::unique_ptr<::Engine::Renderer::ShaderFactory> m_ShaderFactory;
   std::shared_ptr<::Engine::Renderer::DisplayTransformResources> m_DisplayTransformResources;
   std::shared_ptr<::Engine::Renderer::CameraPostProcessResources> m_CameraPostProcessResources;
+  std::shared_ptr<::Engine::Renderer::AmbientOcclusionResources> m_AmbientOcclusionResources;
   std::unique_ptr<Engine::PrimitiveFactory> m_PrimitiveFactory;
 };
 } // namespace Engine

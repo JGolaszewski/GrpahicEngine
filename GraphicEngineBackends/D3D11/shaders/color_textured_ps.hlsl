@@ -50,6 +50,7 @@ cbuffer LightsCB : register(b2)
 cbuffer CameraCB : register(b4)
 {
     float4 g_CameraPosition;
+    float4 g_AmbientOcclusionParams;
 };
 
 Texture2DArray<float>  g_ShadowMaps    : register(t6);
@@ -60,6 +61,7 @@ Texture2D<float4> g_PrefilteredEnvironment : register(t8);
 SamplerState g_PrefilteredEnvironmentSampler : register(s8);
 Texture2D<float2> g_BrdfIntegrationLut : register(t9);
 SamplerState g_BrdfIntegrationSampler : register(s9);
+Texture2D<float> g_AmbientOcclusionTexture : register(t10);
 
 Texture2D<float4> g_BaseColorMap : register(t0);
 SamplerState g_BaseColorSampler : register(s0);
@@ -400,6 +402,10 @@ PS_OUTPUT main_ps(VS_OUTPUT input)
     }
     float3 emissive = g_EmissiveMetallic.rgb * emissiveSample;
 
+    if (g_AmbientOcclusionParams.x > 0.5f)
+    {
+        ambientDiffuse *= g_AmbientOcclusionTexture.Load(int3(int2(input.pos.xy), 0));
+    }
     const float3 diffuseLighting = (ambientDiffuse * max(g_EnvironmentIntensity, 0.0f)) + diffuseAccum + emissive;
     const float3 specularLighting = (ambientSpecular * max(g_EnvironmentIntensity, 0.0f)) + specAccum;
     output.FinalColor = float4(diffuseLighting + specularLighting, baseAlpha);

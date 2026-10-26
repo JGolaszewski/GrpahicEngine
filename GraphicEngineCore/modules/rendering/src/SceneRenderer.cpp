@@ -291,6 +291,7 @@ void Engine::SceneRenderer::Init(nvrhi::IDevice* device, ::Engine::Renderer::Mat
     m_DebugVS = shaderFactory->GetShader("shaders/debug_vs.dxbc", nvrhi::ShaderType::Vertex);
     m_DebugPS = shaderFactory->GetShader("shaders/debug_ps.dxbc", nvrhi::ShaderType::Pixel);
     m_ShadowMaskPS = shaderFactory->GetShader("shaders/shadow_mask_ps.dxbc", nvrhi::ShaderType::Pixel);
+    m_AmbientOcclusionPrepassPS = shaderFactory->GetShader("shaders/ssao_prepass_ps.dxbc", nvrhi::ShaderType::Pixel);
   }
 
   nvrhi::BindingLayoutDesc perObjectLayoutDesc;
@@ -306,6 +307,7 @@ void Engine::SceneRenderer::Init(nvrhi::IDevice* device, ::Engine::Renderer::Mat
       nvrhi::BindingLayoutItem::Sampler(7),        nvrhi::BindingLayoutItem::Texture_SRV(8),
       nvrhi::BindingLayoutItem::Sampler(8),        nvrhi::BindingLayoutItem::Texture_SRV(9),
       nvrhi::BindingLayoutItem::Sampler(9),        nvrhi::BindingLayoutItem::ConstantBuffer(4),
+      nvrhi::BindingLayoutItem::Texture_SRV(10),
   };
   m_SceneBindingLayout = device->createBindingLayout(sceneLayoutDesc);
 
@@ -571,11 +573,15 @@ auto Engine::SceneRenderer::GetLightBuffer(size_t viewIndex, ::Engine::Renderer:
 
 auto Engine::SceneRenderer::GetSceneBindingSet(size_t viewIndex, nvrhi::BufferHandle lightBuffer,
                                                nvrhi::TextureHandle shadowMap, nvrhi::SamplerHandle shadowSampler,
-                                               nvrhi::BufferHandle cameraBuffer,
+                                               nvrhi::BufferHandle cameraBuffer, nvrhi::TextureHandle ambientOcclusion,
                                                ::Engine::Renderer::FrameDiagnostics& diagnostics)
     -> nvrhi::BindingSetHandle {
+  if (ambientOcclusion == nullptr) {
+    ambientOcclusion = m_MaterialSystem != nullptr ? m_MaterialSystem->GetFallbackColorTexture() : nullptr;
+  }
   if ((m_Device == nullptr) || (lightBuffer == nullptr) || (shadowMap == nullptr) || (shadowSampler == nullptr) ||
-      (cameraBuffer == nullptr) || (m_SceneBindingLayout == nullptr) || !m_EnvironmentLightingReady) {
+      (cameraBuffer == nullptr) || (ambientOcclusion == nullptr) || (m_SceneBindingLayout == nullptr) ||
+      !m_EnvironmentLightingReady) {
     return nullptr;
   }
   if (m_SceneBindingCaches.size() <= viewIndex) {
@@ -584,7 +590,7 @@ auto Engine::SceneRenderer::GetSceneBindingSet(size_t viewIndex, nvrhi::BufferHa
   auto& cache = m_SceneBindingCaches.at(viewIndex);
   if ((cache.Bindings != nullptr) && cache.LightBuffer == lightBuffer && cache.ShadowMap == shadowMap &&
       cache.ShadowSampler == shadowSampler && cache.CameraBuffer == cameraBuffer &&
-      cache.Layout == m_SceneBindingLayout) {
+      cache.AmbientOcclusion == ambientOcclusion && cache.Layout == m_SceneBindingLayout) {
     return cache.Bindings;
   }
 
@@ -599,16 +605,18 @@ auto Engine::SceneRenderer::GetSceneBindingSet(size_t viewIndex, nvrhi::BufferHa
   desc.addItem(nvrhi::BindingSetItem::Texture_SRV(9, m_EnvironmentLighting.BrdfIntegrationLut));
   desc.addItem(nvrhi::BindingSetItem::Sampler(9, m_EnvironmentLighting.BrdfIntegrationSampler));
   desc.addItem(nvrhi::BindingSetItem::ConstantBuffer(4, cameraBuffer));
+  desc.addItem(nvrhi::BindingSetItem::Texture_SRV(10, ambientOcclusion));
   nvrhi::BindingSetHandle bindings = m_Device->createBindingSet(desc, m_SceneBindingLayout);
   if (bindings == nullptr) {
-    ENGINE_LOG_ERROR("Render", "Scene binding-set creation failed | view_index: {} | environment_ready: {}",
-                     viewIndex, m_EnvironmentLightingReady);
+    ENGINE_LOG_ERROR("Render", "Scene binding-set creation failed | view_index: {} | environment_ready: {}", viewIndex,
+                     m_EnvironmentLightingReady);
     return nullptr;
   }
   cache.LightBuffer = std::move(lightBuffer);
   cache.ShadowMap = std::move(shadowMap);
   cache.ShadowSampler = std::move(shadowSampler);
   cache.CameraBuffer = std::move(cameraBuffer);
+  cache.AmbientOcclusion = std::move(ambientOcclusion);
   cache.Layout = m_SceneBindingLayout;
   cache.Bindings = std::move(bindings);
   ++diagnostics.BindingSetAllocations;
@@ -757,6 +765,18 @@ auto Engine::SceneRenderer::ConfigureAndQueuePacket(
   packet.Pipeline = packet.ShadowAlphaTest && (m_ShadowMaskPS == nullptr)
                         ? nullptr
                         : m_PipelineCache.GetOrCreatePipeline(key, framebufferInfo);
+  if (Engine::Ecs::HasScreenSpaceAmbientOcclusion(view->PostProcessing) && m_AmbientOcclusionPrepassPS != nullptr &&
+      (packet.Queue == ::Engine::Renderer::RenderQueueType::Opaque ||
+       packet.Queue == ::Engine::Renderer::RenderQueueType::Masked)) {
+    Engine::PipelineKey ambientOcclusionKey = key;
+    ambientOcclusionKey.PS = m_AmbientOcclusionPrepassPS;
+    ambientOcclusionKey.SceneLayout = nullptr;
+    ambientOcclusionKey.MaterialLayout = m_MaterialSystem->GetStandardMaterialLayout();
+    ambientOcclusionKey.DepthTest = true;
+    ambientOcclusionKey.DepthWrite = true;
+    ambientOcclusionKey.BlendState = {};
+    packet.AmbientOcclusionPipelineKey = std::move(ambientOcclusionKey);
+  }
   switch (packet.Queue) {
   case ::Engine::Renderer::RenderQueueType::Masked:
     view->Queues.Masked.push_back(packet);
@@ -1027,6 +1047,7 @@ void Engine::SceneRenderer::BuildViews(::Engine::Renderer::FrameBlackboard& blac
       if (view->CameraBuffer != nullptr) {
         const ::Engine::Renderer::CameraGpuData cameraData{
             {view->CameraPosition.x, view->CameraPosition.y, view->CameraPosition.z, 1.0F},
+            {Engine::Ecs::HasScreenSpaceAmbientOcclusion(view->PostProcessing) ? 1.0F : 0.0F, 0.0F, 0.0F, 0.0F},
         };
         commandList->writeBuffer(view->CameraBuffer, &cameraData, sizeof(cameraData));
         diagnostics.UploadBytes += sizeof(cameraData);

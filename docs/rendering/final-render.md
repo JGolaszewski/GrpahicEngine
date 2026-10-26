@@ -26,12 +26,15 @@ dimensions, are skipped. Preview resolution is controlled by its target size;
 the renderer derives the camera aspect ratio from those target dimensions.
 
 An authored camera may carry an optional `CameraPostProcessing` component with
-an ordered list of color-grading and bloom effects. The list can be empty or
-contain multiple or repeated effects. Its settings must be copied into each
-camera `ViewportBinding` or passed to final-render/export calls. Effects run in
-linear color on the GPU before display encoding and final readback. Bloom adds a
-thresholded blurred highlight and expands alpha with the glow. Depth, normals,
-and lighting AOVs remain unchanged.
+screen-space ambient occlusion settings and an ordered list of color effects.
+The color list can be empty or contain multiple or repeated effects. Its
+settings must be copied into each camera `ViewportBinding` or passed to
+final-render/export calls. SSAO runs before forward shading and attenuates
+indirect diffuse using per-view depth and interpolated world-space mesh normals. Color grading,
+bloom, and FXAA run in linear color after forward shading and before display
+encoding and final readback. Bloom adds a thresholded blurred highlight and
+expands alpha with the glow. SSAO changes `FinalColor` and `DiffuseLighting`;
+the depth, normal, and specular-lighting planes are unchanged.
 
 ## Output contract
 
@@ -41,7 +44,7 @@ stable and are exposed by `RenderAovDescriptor` for image writers.
 
 | Identifier | Name | Channels | Meaning |
 | --- | --- | --- | --- |
-| `FinalColor` | `final_color` | R, G, B, A | Linear scene-referred color after camera GPU effects; its unprocessed RGB is the sum of diffuse and specular lighting, and its unprocessed A is material opacity. Bloom may expand alpha, and the optional CPU final-color hook may modify RGBA. |
+| `FinalColor` | `final_color` | R, G, B, A | Linear scene-referred color after SSAO and camera GPU color effects; before color effects its RGB is the sum of AO-adjusted diffuse and specular lighting. Alpha starts as material opacity; bloom may expand it, and the optional CPU final-color hook may modify RGBA. |
 | `Depth` | `depth` | Z | Normalized device depth in [0, 1]; background is 1. |
 | `WorldNormal` | `world_normal` | X, Y, Z | Normalized world-space shading normal, including the material normal map. |
 | `SpecularLighting` | `specular_lighting` | R, G, B | Direct and environment specular contribution. |
@@ -58,8 +61,9 @@ not returned. A plane's sample span remains valid until its owning
 ## Post-processing and color
 
 The optional `FinalColorPostProcess` runs after GPU readback and may modify the
-RGBA final-color plane in place, after any camera GPU effects. The lighting,
-normal, and depth planes remain unprocessed. Final color stays linear and
+RGBA final-color plane in place, after any camera GPU effects. The diffuse
+lighting plane includes SSAO but excludes the ordered color effects and CPU
+hook; specular lighting, normal, and depth planes remain unprocessed. Final color stays linear and
 scene-referred; neither the renderer nor the CPU hook applies an implicit tone
 map or display transfer. Hooks must preserve linear semantics. Image exporters
 can apply a display transform when writing a display-referred format such as

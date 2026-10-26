@@ -284,6 +284,7 @@ TEST(RenderFinalTests, WARPSubmitsIndependentEditorAndPreviewViewsAndSkipsInvali
   previewBinding.TargetViewport = &previewViewport;
   previewBinding.Camera.Position = {-4.0F, 5.0F, -6.0F};
   previewBinding.RenderMode = Engine::ViewportBinding::Mode::Preview;
+  previewBinding.PostProcessing.AmbientOcclusion = Engine::Ecs::ScreenSpaceAmbientOcclusionSettings{};
   previewBinding.DebugSettings.ShowWireframePlane = true;
 
   Engine::ViewportBinding releasedBinding = previewBinding;
@@ -317,6 +318,10 @@ TEST(RenderFinalTests, WARPSubmitsIndependentEditorAndPreviewViewsAndSkipsInvali
   EXPECT_NE(editorView->TargetFramebuffer, previewView->TargetFramebuffer);
   EXPECT_NE(editorView->TargetFramebuffer->getDesc().colorAttachments.at(0).texture,
             previewView->TargetFramebuffer->getDesc().colorAttachments.at(0).texture);
+  EXPECT_FALSE(editorView->AmbientOcclusionTexture.isValid());
+  EXPECT_TRUE(previewView->AmbientOcclusionTexture.isValid());
+  EXPECT_TRUE(previewView->AmbientOcclusionDepth.isValid());
+  EXPECT_TRUE(previewView->AmbientOcclusionNormal.isValid());
   EXPECT_FLOAT_EQ(editorView->CameraPosition.x, 1.0F);
   EXPECT_FLOAT_EQ(editorView->CameraPosition.y, 2.0F);
   EXPECT_FLOAT_EQ(editorView->CameraPosition.z, 3.0F);
@@ -850,5 +855,77 @@ TEST(RenderFinalTests, WARPSplitSumEnvironmentAffectsDielectricAndMetalOnlyWhenE
   EXPECT_GT(totalDifference(enabledDiffuse, disabledDiffuse), 1.0F);
   EXPECT_GT(totalDifference(enabledSpecular, disabledSpecular), 1.0F);
   EXPECT_EQ(disabled.Preset, Engine::EnvironmentPreset::Disabled);
+}
+
+TEST(RenderFinalTests, WARPScreenSpaceAmbientOcclusionOnlyChangesIndirectDiffuseLighting) {
+  EngineTests::WarpDevice device;
+  if (!device.Initialize()) {
+    GTEST_SKIP() << "D3D11 WARP device could not be created on this host";
+  }
+  EngineTests::WarpRenderBackend backend(device.GetDevice());
+  Engine::RenderSystem renderer(&backend);
+  ASSERT_TRUE(renderer.IsValid());
+
+  Engine::Renderer::MaterialProperties receiverProperties;
+  receiverProperties.BaseColor = {0.7F, 0.6F, 0.5F, 1.0F};
+  receiverProperties.Emissive = {0.05F, 0.02F, 0.01F};
+  const auto receiverMaterial = renderer.CreateMaterial(receiverProperties);
+  ASSERT_NE(receiverMaterial, nullptr);
+  ASSERT_TRUE(renderer.CreatePrimitive(Engine::PrimitiveShape::Cube, receiverMaterial));
+
+  Engine::Renderer::MaterialProperties occluderProperties;
+  occluderProperties.BaseColor = {0.4F, 0.5F, 0.8F, 1.0F};
+  const auto occluderMaterial = renderer.CreateMaterial(occluderProperties);
+  ASSERT_NE(occluderMaterial, nullptr);
+  ASSERT_TRUE(renderer.CreatePrimitive(Engine::PrimitiveShape::Sphere, occluderMaterial));
+
+  Engine::Scene scene;
+  (void)scene.QueueCreate("Ambient receiver");
+  (void)scene.QueueCreate("Ambient occluder");
+  const auto created = scene.sync();
+  ASSERT_EQ(created.size(), 2U);
+  ASSERT_TRUE(created.at(0).Outcome);
+  ASSERT_TRUE(created.at(1).Outcome);
+  (void)scene.QueueAdd(created.at(0).Entity, Engine::Ecs::MeshRenderer{.PrimitiveType = "cube"});
+  (void)scene.QueueAdd(created.at(1).Entity, Engine::Ecs::MeshRenderer{.PrimitiveType = "sphere"});
+  Engine::Ecs::LocalTransform receiverTransform;
+  receiverTransform.Scale = {4.0F, 4.0F, 0.5F};
+  (void)scene.QueueSet(created.at(0).Entity, receiverTransform);
+  Engine::Ecs::LocalTransform occluderTransform;
+  occluderTransform.Position = {0.0F, 0.0F, -0.65F};
+  occluderTransform.Scale = {1.0F, 1.0F, 1.0F};
+  (void)scene.QueueSet(created.at(1).Entity, occluderTransform);
+  ASSERT_TRUE(scene.Update(0.0F));
+
+  Engine::Renderer::CameraView camera;
+  camera.Position = {0.0F, 0.0F, -6.0F};
+  constexpr uint32_t imageSize = 64;
+  const Engine::EnvironmentLightingSettings studio{Engine::EnvironmentPreset::Studio, 1.0F};
+  const auto baseline = renderer.RenderFinal(scene, camera, imageSize, imageSize, {}, studio);
+  ASSERT_TRUE(baseline.has_value()) << (baseline.has_value() ? "" : baseline.error().Message);
+  const Engine::Ecs::CameraPostProcessing ambientOcclusion{
+      .AmbientOcclusion = Engine::Ecs::ScreenSpaceAmbientOcclusionSettings{.Radius = 2.0F, .Intensity = 4.0F}};
+  const auto occluded = renderer.RenderFinal(scene, camera, imageSize, imageSize, {}, studio, ambientOcclusion);
+  ASSERT_TRUE(occluded.has_value()) << (occluded.has_value() ? "" : occluded.error().Message);
+
+  const auto totalDifference = [](std::span<const float> left, std::span<const float> right) -> float {
+    float difference = 0.0F;
+    for (size_t index = 0; index < left.size(); ++index) {
+      difference += std::abs(left[index] - right[index]);
+    }
+    return difference;
+  };
+  EXPECT_GT(totalDifference(occluded->GetPixels(Engine::RenderAov::DiffuseLighting),
+                            baseline->GetPixels(Engine::RenderAov::DiffuseLighting)),
+            0.01F);
+  EXPECT_TRUE(std::ranges::equal(occluded->GetPixels(Engine::RenderAov::SpecularLighting),
+                                 baseline->GetPixels(Engine::RenderAov::SpecularLighting)));
+  EXPECT_TRUE(
+      std::ranges::equal(occluded->GetPixels(Engine::RenderAov::Depth), baseline->GetPixels(Engine::RenderAov::Depth)));
+  EXPECT_TRUE(std::ranges::equal(occluded->GetPixels(Engine::RenderAov::WorldNormal),
+                                 baseline->GetPixels(Engine::RenderAov::WorldNormal)));
+  EXPECT_GT(totalDifference(occluded->GetPixels(Engine::RenderAov::FinalColor),
+                            baseline->GetPixels(Engine::RenderAov::FinalColor)),
+            0.01F);
 }
 } // namespace

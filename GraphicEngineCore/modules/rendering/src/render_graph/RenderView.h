@@ -34,8 +34,10 @@ struct RGViewportAttachment {
 
 struct CameraGpuData {
   DirectX::XMFLOAT4 Position;
+  DirectX::XMFLOAT4 AmbientOcclusion;
 };
-static_assert(sizeof(CameraGpuData) == 16);
+static_assert(offsetof(CameraGpuData, AmbientOcclusion) == sizeof(DirectX::XMFLOAT4));
+static_assert(sizeof(CameraGpuData) == 32);
 
 struct RenderQueues {
   std::vector<RenderPacket> Opaque;
@@ -79,6 +81,9 @@ public:
   Engine::Ecs::CameraPostProcessing PostProcessing;
   std::vector<RGViewportAttachment> OutputAttachments;
   RGResourceID PostProcessColor;
+  RGResourceID AmbientOcclusionDepth;
+  RGResourceID AmbientOcclusionNormal;
+  RGResourceID AmbientOcclusionTexture;
   DirectX::XMFLOAT3 CameraPosition = {0.0f, 0.0f, 0.0f};
   DirectX::XMFLOAT3 CameraForward = {0.0f, 0.0f, 1.0f};
   DirectX::XMFLOAT3 CameraRight = {1.0f, 0.0f, 0.0f};

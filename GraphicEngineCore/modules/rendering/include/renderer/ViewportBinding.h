@@ -51,7 +51,7 @@ struct ENGINE_API ViewportBinding {
 
   ::Engine::Renderer::DebugRenderSettings DebugSettings; ///< Debug geometry settings for editor views.
   EnvironmentLightingSettings Environment;               ///< Environment source and intensity for this view.
-  Engine::Ecs::CameraPostProcessing PostProcessing;      ///< Authored camera's optional ordered effect stack.
+  Engine::Ecs::CameraPostProcessing PostProcessing; ///< Authored camera's lighting settings and ordered color effects.
 
   /// Checks required targets, final-render dimensions, and camera effect settings.
   /// @return True when the binding can be submitted to the renderer.

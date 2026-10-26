@@ -588,8 +588,24 @@ void InspectorPanel::DrawEntityInspector() {
                           Mutation::Component::CameraPostProcessing, emitRemove)) {
     Engine::Ecs::CameraPostProcessing postProcessing = *storedPostProcessing;
     bool changed = false;
-    if (postProcessing.Effects.empty()) {
+    if (postProcessing.Effects.empty() && !postProcessing.AmbientOcclusion) {
       ImGui::TextWrapped("No effects are active. The camera renders without post-processing.");
+    }
+    bool ambientOcclusionEnabled = postProcessing.AmbientOcclusion.has_value();
+    if (ImGui::Checkbox("Screen-space ambient occlusion", &ambientOcclusionEnabled)) {
+      if (ambientOcclusionEnabled) {
+        postProcessing.AmbientOcclusion.emplace();
+      } else {
+        postProcessing.AmbientOcclusion.reset();
+      }
+      changed = true;
+    }
+    if (postProcessing.AmbientOcclusion) {
+      ImGui::Indent();
+      changed |=
+          ImGui::SliderFloat("AO Radius", &postProcessing.AmbientOcclusion->Radius, 0.0F, 5.0F, "%.2f world units");
+      changed |= ImGui::SliderFloat("AO Intensity", &postProcessing.AmbientOcclusion->Intensity, 0.0F, 4.0F, "%.2f");
+      ImGui::Unindent();
     }
     for (size_t index = 0; index < postProcessing.Effects.size(); ++index) {
       ImGui::PushID(static_cast<int>(index));

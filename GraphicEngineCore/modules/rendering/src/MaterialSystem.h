@@ -38,6 +38,7 @@ public:
   void UpdateDirtyMaterials(nvrhi::ICommandList* commandList);
   void SetMaxTextureAnisotropy(uint32_t maxAnisotropy) noexcept;
   nvrhi::BindingLayoutHandle GetStandardMaterialLayout() const;
+  nvrhi::TextureHandle GetFallbackColorTexture() const;
 
   inline nvrhi::ShaderHandle GetStandardVS() const { return m_StandardVS; }
   inline nvrhi::ShaderHandle GetStandardPS() const { return m_StandardPS; }

@@ -89,8 +89,10 @@ TEST(SceneEcsPersistenceTests, RoundTripsEntityIdentityHierarchyAndSupportedComp
                                                     .Priority = -7,
                                                     .Active = false});
   (void)source.QueueAdd(
-      camera, Engine::Ecs::CameraPostProcessing{
-                  .Effects = {Engine::Ecs::BloomEffect{.Threshold = 1.5F, .Intensity = 0.8F, .Radius = 6.0F}}});
+      camera,
+      Engine::Ecs::CameraPostProcessing{
+          .Effects = {Engine::Ecs::BloomEffect{.Threshold = 1.5F, .Intensity = 0.8F, .Radius = 6.0F}},
+          .AmbientOcclusion = Engine::Ecs::ScreenSpaceAmbientOcclusionSettings{.Radius = 0.75F, .Intensity = 1.5F}});
   for (const auto& result : source.sync())
     ASSERT_TRUE(result.Outcome);
 
@@ -104,6 +106,8 @@ TEST(SceneEcsPersistenceTests, RoundTripsEntityIdentityHierarchyAndSupportedComp
   EXPECT_EQ(saved.cameras.front().priority, -7);
   EXPECT_FALSE(saved.cameras.front().active);
   ASSERT_TRUE(saved.cameras.front().postProcessing.has_value());
+  ASSERT_TRUE(saved.cameras.front().postProcessing->AmbientOcclusion.has_value());
+  EXPECT_FLOAT_EQ(saved.cameras.front().postProcessing->AmbientOcclusion->Radius, 0.75F);
   ASSERT_EQ(saved.cameras.front().postProcessing->Effects.size(), 1U);
 
   const auto scenePath = std::filesystem::temp_directory_path() /
@@ -179,6 +183,8 @@ TEST(SceneEcsPersistenceTests, RoundTripsEntityIdentityHierarchyAndSupportedComp
   EXPECT_EQ(loaded.cameras.front().rotation, saved.cameras.front().rotation);
   EXPECT_EQ(loaded.cameras.front().scale, saved.cameras.front().scale);
   ASSERT_TRUE(loaded.cameras.front().postProcessing.has_value());
+  ASSERT_TRUE(loaded.cameras.front().postProcessing->AmbientOcclusion.has_value());
+  EXPECT_FLOAT_EQ(loaded.cameras.front().postProcessing->AmbientOcclusion->Intensity, 1.5F);
   ASSERT_EQ(loaded.cameras.front().postProcessing->Effects.size(), 1U);
   const auto* restoredBloom = std::get_if<Engine::Ecs::BloomEffect>(&loaded.cameras.front().postProcessing->Effects[0]);
   ASSERT_NE(restoredBloom, nullptr);

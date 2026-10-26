@@ -140,6 +140,28 @@ RenderSystem::RenderSystem(IRenderBackend* backend)
   m_CameraPostProcessResources->ConstantsBuffer =
       GetNvrhiDevice(m_RenderBackend)->createBuffer(postProcessConstantsDesc);
 
+  m_AmbientOcclusionResources = std::make_shared<::Engine::Renderer::AmbientOcclusionResources>();
+  m_AmbientOcclusionResources->Device = GetNvrhiDevice(m_RenderBackend);
+  m_AmbientOcclusionResources->VertexShader =
+      m_ShaderFactory->GetShader("shaders/post_process_vs.dxbc", nvrhi::ShaderType::Vertex);
+  m_AmbientOcclusionResources->PixelShader =
+      m_ShaderFactory->GetShader("shaders/ssao_ps.dxbc", nvrhi::ShaderType::Pixel);
+  nvrhi::BindingLayoutDesc ambientOcclusionLayoutDesc;
+  ambientOcclusionLayoutDesc.visibility = nvrhi::ShaderType::Pixel;
+  ambientOcclusionLayoutDesc.bindings = {nvrhi::BindingLayoutItem::Texture_SRV(0),
+                                         nvrhi::BindingLayoutItem::Texture_SRV(1),
+                                         nvrhi::BindingLayoutItem::ConstantBuffer(0)};
+  m_AmbientOcclusionResources->BindingLayout =
+      GetNvrhiDevice(m_RenderBackend)->createBindingLayout(ambientOcclusionLayoutDesc);
+  nvrhi::BufferDesc ambientOcclusionConstantsDesc;
+  ambientOcclusionConstantsDesc.byteSize = 80;
+  ambientOcclusionConstantsDesc.isConstantBuffer = true;
+  ambientOcclusionConstantsDesc.isVolatile = true;
+  ambientOcclusionConstantsDesc.maxVersions = 64;
+  ambientOcclusionConstantsDesc.debugName = "CameraAmbientOcclusionConstants";
+  m_AmbientOcclusionResources->ConstantsBuffer =
+      GetNvrhiDevice(m_RenderBackend)->createBuffer(ambientOcclusionConstantsDesc);
+
   m_ResourceManager = std::make_unique<::Engine::Renderer::ResourceManager>(GetNvrhiDevice(m_RenderBackend));
   m_MaterialSystem = std::make_unique<::Engine::Renderer::MaterialSystem>(
       GetNvrhiDevice(m_RenderBackend), m_DefaultVS, m_DefaultPS, m_ResourceManager->GetFallbackTexture(true),
@@ -357,6 +379,16 @@ void RenderSystem::SubmitViews(const std::vector<Engine::ViewportBinding>& views
   bb.SetSceneBindingLayout(m_SceneRenderer->GetSceneBindingLayout());
 
   m_RenderGraph->AddPass(std::make_unique<::Engine::Renderer::ShadowPass>());
+  const bool hasAmbientOcclusion =
+      std::ranges::any_of(bb.GetSceneViews(), [](const ::Engine::Renderer::RenderView* view) -> bool {
+        return view != nullptr && Engine::Ecs::HasScreenSpaceAmbientOcclusion(view->PostProcessing);
+      });
+  if (hasAmbientOcclusion) {
+    m_RenderGraph->AddPass(std::make_unique<::Engine::Renderer::CameraAmbientOcclusionGeometryPass>(
+        m_AmbientOcclusionResources, m_SceneRenderer.get()));
+    m_RenderGraph->AddPass(
+        std::make_unique<::Engine::Renderer::CameraAmbientOcclusionPass>(m_AmbientOcclusionResources));
+  }
   m_RenderGraph->AddPass(std::make_unique<::Engine::Renderer::ForwardPass>(m_SceneRenderer.get()));
   size_t maxPostProcessEffects = 0;
   for (const ::Engine::Renderer::RenderView* view : bb.GetSceneViews()) {

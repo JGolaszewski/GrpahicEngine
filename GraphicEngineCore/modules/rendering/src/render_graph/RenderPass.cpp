@@ -119,6 +119,8 @@ auto ClearForwardAttachments(nvrhi::ICommandList* commandList,
     return true;
   });
 }
+
+auto DescribeColorTexture(uint32_t width, uint32_t height) -> ::Engine::Renderer::RGTextureDesc;
 } // namespace
 
 namespace Engine::Renderer {
@@ -239,6 +241,9 @@ void ForwardPass::Setup(::Engine::Renderer::RGBuilder& builder, FrameBlackboard&
     if ((view == nullptr) || (view->TargetFramebuffer == nullptr)) {
       continue;
     }
+    if (Engine::Ecs::HasScreenSpaceAmbientOcclusion(view->PostProcessing) && view->AmbientOcclusionTexture.isValid()) {
+      builder.Read(view->AmbientOcclusionTexture, nvrhi::ResourceStates::ShaderResource);
+    }
     view->OutputAttachments.clear();
     const nvrhi::FramebufferDesc& framebuffer = view->TargetFramebuffer->getDesc();
     auto importAttachment = [&](const nvrhi::FramebufferAttachment& attachment, bool depth) -> void {
@@ -308,7 +313,9 @@ auto ForwardPass::Execute(nvrhi::ICommandList* cmd, const ::Engine::Renderer::Re
   for (size_t viewIndex = 0; viewIndex < sceneViews.size(); ++viewIndex) {
     ::Engine::Renderer::RenderView* view = sceneViews.at(viewIndex);
     if ((view == nullptr) || (view->TargetFramebuffer == nullptr) || (view->CameraBuffer == nullptr) ||
-        (view->LightBuffer == nullptr)) {
+        (view->LightBuffer == nullptr) ||
+        (Engine::Ecs::HasScreenSpaceAmbientOcclusion(view->PostProcessing) &&
+         !view->AmbientOcclusionTexture.isValid())) {
       return false;
     }
     ::Engine::Renderer::LightsCBData lightData{};
@@ -322,10 +329,15 @@ auto ForwardPass::Execute(nvrhi::ICommandList* cmd, const ::Engine::Renderer::Re
     lightData.EnvironmentIntensity = view->Environment.Intensity;
     cmd->writeBuffer(view->LightBuffer, &lightData, sizeof(lightData));
     ctx.GetFrameContext().GetDiagnostics().UploadBytes += sizeof(lightData);
+    nvrhi::TextureHandle ambientOcclusion;
+    if (Engine::Ecs::HasScreenSpaceAmbientOcclusion(view->PostProcessing)) {
+      ambientOcclusion = ctx.GetPhysicalTexture(view->AmbientOcclusionTexture);
+    }
     nvrhi::BindingSetHandle sceneBindings =
         (m_SceneRenderer != nullptr)
             ? m_SceneRenderer->GetSceneBindingSet(viewIndex, view->LightBuffer, physicalShadowMap, shadowSampler,
-                                                  view->CameraBuffer, ctx.GetFrameContext().GetDiagnostics())
+                                                  view->CameraBuffer, ambientOcclusion,
+                                                  ctx.GetFrameContext().GetDiagnostics())
             : nullptr;
     if (sceneBindings == nullptr) {
       return false;
@@ -386,6 +398,249 @@ auto DebugPass::Execute(nvrhi::ICommandList* cmd, const ::Engine::Renderer::Rend
     if ((view != nullptr) && view->RenderMode == Engine::ViewportBinding::Mode::Editor) {
       m_SceneRenderer->RenderDebugGeometry(cmd, *view);
     }
+  }
+  return true;
+}
+
+CameraAmbientOcclusionGeometryPass::CameraAmbientOcclusionGeometryPass(
+    std::shared_ptr<AmbientOcclusionResources> resources, Engine::SceneRenderer* sceneRenderer)
+    : m_Resources(std::move(resources)), m_SceneRenderer(sceneRenderer) {}
+
+void CameraAmbientOcclusionGeometryPass::Setup(RGBuilder& builder, FrameBlackboard& blackboard) {
+  m_Views.clear();
+  for (RenderView* view : blackboard.GetSceneViews()) {
+    if (view == nullptr || !Engine::Ecs::HasScreenSpaceAmbientOcclusion(view->PostProcessing) ||
+        view->TargetFramebuffer == nullptr) {
+      continue;
+    }
+    const RGTextureDesc colorDesc = DescribeColorTexture(view->ViewportWidth, view->ViewportHeight);
+    RGTextureDesc depthDesc = colorDesc;
+    depthDesc.format = nvrhi::Format::R32_FLOAT;
+    RGTextureDesc depthStencilDesc = colorDesc;
+    depthStencilDesc.isShaderResource = false;
+    depthStencilDesc.format = nvrhi::Format::D24S8;
+    view->AmbientOcclusionDepth = builder.CreateTexture(depthDesc);
+    builder.Write(view->AmbientOcclusionDepth, nvrhi::ResourceStates::RenderTarget);
+    RGTextureDesc normalDesc = colorDesc;
+    normalDesc.format = nvrhi::Format::RGBA16_FLOAT;
+    view->AmbientOcclusionNormal = builder.CreateTexture(normalDesc);
+    builder.Write(view->AmbientOcclusionNormal, nvrhi::ResourceStates::RenderTarget);
+    const RGResourceID depthStencil = builder.CreateTexture(depthStencilDesc);
+    builder.Write(depthStencil, nvrhi::ResourceStates::DepthWrite);
+    m_Views.push_back({.View = view,
+                       .Depth = view->AmbientOcclusionDepth,
+                       .Normal = view->AmbientOcclusionNormal,
+                       .DepthStencil = depthStencil});
+  }
+}
+
+auto CameraAmbientOcclusionGeometryPass::Execute(nvrhi::ICommandList* cmd, const RenderContext& ctx) -> bool {
+  if (m_Views.empty()) {
+    return true;
+  }
+  if (cmd == nullptr || m_Resources == nullptr || m_Resources->Device == nullptr || m_SceneRenderer == nullptr ||
+      m_SceneRenderer->GetPipelineCache() == nullptr) {
+    return false;
+  }
+  const nvrhi::BufferHandle perObjectBuffer = ctx.GetBlackboard().GetPerObjectBuffer();
+  const nvrhi::BindingSetHandle perObjectBindings = ctx.GetBlackboard().GetPerObjectBindingSet();
+  if (perObjectBuffer == nullptr || perObjectBindings == nullptr) {
+    return false;
+  }
+
+  for (const ViewResources& viewResources : m_Views) {
+    RenderView* view = viewResources.View;
+    nvrhi::TextureHandle depth = ctx.GetPhysicalTexture(viewResources.Depth);
+    nvrhi::TextureHandle normal = ctx.GetPhysicalTexture(viewResources.Normal);
+    nvrhi::TextureHandle depthStencil = ctx.GetPhysicalTexture(viewResources.DepthStencil);
+    if (view == nullptr || depth == nullptr || normal == nullptr || depthStencil == nullptr) {
+      return false;
+    }
+    nvrhi::FramebufferDesc framebufferDesc;
+    framebufferDesc.addColorAttachment(depth);
+    framebufferDesc.addColorAttachment(normal);
+    framebufferDesc.setDepthAttachment(depthStencil);
+    nvrhi::FramebufferHandle framebuffer = m_Resources->Device->createFramebuffer(framebufferDesc);
+    if (framebuffer == nullptr) {
+      return false;
+    }
+    cmd->clearTextureFloat(depth, nvrhi::AllSubresources, nvrhi::Color(1.0F, 1.0F, 1.0F, 1.0F));
+    cmd->clearTextureFloat(normal, nvrhi::AllSubresources, nvrhi::Color(0.0F, 0.0F, 0.0F, 0.0F));
+    cmd->clearDepthStencilTexture(depthStencil, nvrhi::AllSubresources, true, 1.0F, true, 0);
+    const nvrhi::FramebufferInfoEx& info = framebuffer->getFramebufferInfo();
+    const nvrhi::Viewport viewport(static_cast<float>(info.width), static_cast<float>(info.height));
+    const nvrhi::Rect scissor(static_cast<int>(info.width), static_cast<int>(info.height));
+
+    const auto drawQueue = [&](const std::vector<RenderPacket>& packets) -> bool {
+      for (const RenderPacket& packet : packets) {
+        if (packet.VertexBuffer == nullptr || packet.MaterialBindings == nullptr ||
+            !packet.AmbientOcclusionPipelineKey) {
+          return false;
+        }
+        const nvrhi::GraphicsPipelineHandle pipeline = m_SceneRenderer->GetPipelineCache()->GetOrCreatePipeline(
+            *packet.AmbientOcclusionPipelineKey, framebuffer->getFramebufferInfo());
+        if (pipeline == nullptr) {
+          return false;
+        }
+        cmd->writeBuffer(perObjectBuffer, &packet.PerObjectData, sizeof(packet.PerObjectData));
+        ctx.GetFrameContext().GetDiagnostics().UploadBytes += sizeof(packet.PerObjectData);
+        nvrhi::GraphicsState state;
+        state.pipeline = pipeline;
+        state.framebuffer = framebuffer;
+        state.viewport.addViewport(viewport);
+        state.viewport.addScissorRect(scissor);
+        state.bindings = {perObjectBindings, packet.MaterialBindings};
+        state.vertexBuffers = {nvrhi::VertexBufferBinding{.buffer = packet.VertexBuffer, .slot = 0, .offset = 0}};
+        if (packet.IndexBuffer != nullptr) {
+          state.indexBuffer.buffer = packet.IndexBuffer;
+          state.indexBuffer.format = nvrhi::Format::R32_UINT;
+          state.indexBuffer.offset = 0;
+        }
+        cmd->setGraphicsState(state);
+        nvrhi::DrawArguments arguments;
+        arguments.instanceCount = 1;
+        arguments.startVertexLocation = packet.BaseVertexOffset;
+        if (packet.IndexBuffer != nullptr) {
+          arguments.startIndexLocation = packet.StartIndexLocation;
+          arguments.vertexCount = packet.IndexCount;
+          cmd->drawIndexed(arguments);
+        } else {
+          arguments.vertexCount = packet.VertexCount;
+          cmd->draw(arguments);
+        }
+        ++ctx.GetFrameContext().GetDiagnostics().DrawCalls;
+      }
+      return true;
+    };
+    if (!drawQueue(view->Queues.Opaque) || !drawQueue(view->Queues.Masked)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+namespace {
+struct AmbientOcclusionConstants {
+  float NearPlane = 0.1F;
+  float FarPlane = 1000.0F;
+  float Radius = 0.5F;
+  float Intensity = 1.0F;
+  float TanHalfFov = 0.41421356F;
+  float Aspect = 1.0F;
+  float Width = 1.0F;
+  float Height = 1.0F;
+  DirectX::XMFLOAT4 CameraRight{};
+  DirectX::XMFLOAT4 CameraUp{};
+  DirectX::XMFLOAT4 CameraForward{};
+};
+static_assert(sizeof(AmbientOcclusionConstants) == 80);
+} // namespace
+
+CameraAmbientOcclusionPass::CameraAmbientOcclusionPass(std::shared_ptr<AmbientOcclusionResources> resources)
+    : m_Resources(std::move(resources)) {}
+
+void CameraAmbientOcclusionPass::Setup(RGBuilder& builder, FrameBlackboard& blackboard) {
+  m_Views.clear();
+  for (RenderView* view : blackboard.GetSceneViews()) {
+    if (view == nullptr || !Engine::Ecs::HasScreenSpaceAmbientOcclusion(view->PostProcessing) ||
+        !view->AmbientOcclusionDepth.isValid() || !view->AmbientOcclusionNormal.isValid()) {
+      continue;
+    }
+    builder.Read(view->AmbientOcclusionDepth, nvrhi::ResourceStates::ShaderResource);
+    builder.Read(view->AmbientOcclusionNormal, nvrhi::ResourceStates::ShaderResource);
+    view->AmbientOcclusionTexture = builder.CreateAndWriteTexture({.width = view->ViewportWidth,
+                                                                   .height = view->ViewportHeight,
+                                                                   .arraySize = 1,
+                                                                   .mipLevels = 1,
+                                                                   .isRenderTarget = true,
+                                                                   .isShaderResource = true,
+                                                                   .isUnorderedAccess = false,
+                                                                   .format = nvrhi::Format::R32_FLOAT,
+                                                                   .dimension = nvrhi::TextureDimension::Texture2D});
+    m_Views.push_back({.View = view,
+                       .Depth = view->AmbientOcclusionDepth,
+                       .Normal = view->AmbientOcclusionNormal,
+                       .Output = view->AmbientOcclusionTexture});
+  }
+}
+
+auto CameraAmbientOcclusionPass::Execute(nvrhi::ICommandList* cmd, const RenderContext& ctx) -> bool {
+  if (m_Views.empty()) {
+    return true;
+  }
+  if (cmd == nullptr || m_Resources == nullptr || m_Resources->Device == nullptr ||
+      m_Resources->VertexShader == nullptr || m_Resources->PixelShader == nullptr ||
+      m_Resources->BindingLayout == nullptr || m_Resources->ConstantsBuffer == nullptr) {
+    return false;
+  }
+
+  for (const ViewResources& viewResources : m_Views) {
+    RenderView* view = viewResources.View;
+    nvrhi::TextureHandle depth = ctx.GetPhysicalTexture(viewResources.Depth);
+    nvrhi::TextureHandle normal = ctx.GetPhysicalTexture(viewResources.Normal);
+    nvrhi::TextureHandle output = ctx.GetPhysicalTexture(viewResources.Output);
+    if (view == nullptr || depth == nullptr || normal == nullptr || output == nullptr ||
+        !view->PostProcessing.AmbientOcclusion) {
+      return false;
+    }
+    nvrhi::FramebufferDesc framebufferDesc;
+    framebufferDesc.addColorAttachment(output);
+    nvrhi::FramebufferHandle framebuffer = m_Resources->Device->createFramebuffer(framebufferDesc);
+    if (framebuffer == nullptr) {
+      return false;
+    }
+    if (m_Resources->Pipeline == nullptr) {
+      nvrhi::GraphicsPipelineDesc pipelineDesc;
+      pipelineDesc.primType = nvrhi::PrimitiveType::TriangleList;
+      pipelineDesc.VS = m_Resources->VertexShader;
+      pipelineDesc.PS = m_Resources->PixelShader;
+      pipelineDesc.bindingLayouts = {m_Resources->BindingLayout};
+      pipelineDesc.renderState.depthStencilState.depthTestEnable = false;
+      pipelineDesc.renderState.depthStencilState.depthWriteEnable = false;
+      pipelineDesc.renderState.rasterState.cullMode = nvrhi::RasterCullMode::None;
+      m_Resources->Pipeline =
+          m_Resources->Device->createGraphicsPipeline(pipelineDesc, framebuffer->getFramebufferInfo());
+      if (m_Resources->Pipeline == nullptr) {
+        return false;
+      }
+    }
+    nvrhi::BindingSetDesc bindingDesc;
+    bindingDesc.addItem(nvrhi::BindingSetItem::Texture_SRV(0, depth));
+    bindingDesc.addItem(nvrhi::BindingSetItem::Texture_SRV(1, normal));
+    bindingDesc.addItem(nvrhi::BindingSetItem::ConstantBuffer(0, m_Resources->ConstantsBuffer));
+    nvrhi::BindingSetHandle bindings = m_Resources->Device->createBindingSet(bindingDesc, m_Resources->BindingLayout);
+    if (bindings == nullptr) {
+      return false;
+    }
+    const auto& settings = *view->PostProcessing.AmbientOcclusion;
+    const AmbientOcclusionConstants constants{
+        .NearPlane = view->CameraNearPlane,
+        .FarPlane = view->CameraFarPlane,
+        .Radius = settings.Radius,
+        .Intensity = settings.Intensity,
+        .TanHalfFov = std::tan(view->CameraVerticalFovRadians * 0.5F),
+        .Aspect = view->CameraAspectRatio,
+        .Width = static_cast<float>(view->ViewportWidth),
+        .Height = static_cast<float>(view->ViewportHeight),
+        .CameraRight = {view->CameraRight.x, view->CameraRight.y, view->CameraRight.z, 0.0F},
+        .CameraUp = {view->CameraUp.x, view->CameraUp.y, view->CameraUp.z, 0.0F},
+        .CameraForward = {view->CameraForward.x, view->CameraForward.y, view->CameraForward.z, 0.0F},
+    };
+    cmd->writeBuffer(m_Resources->ConstantsBuffer, &constants, sizeof(constants));
+    ctx.GetFrameContext().GetDiagnostics().UploadBytes += sizeof(constants);
+    const nvrhi::FramebufferInfoEx& info = framebuffer->getFramebufferInfo();
+    nvrhi::GraphicsState state;
+    state.pipeline = m_Resources->Pipeline;
+    state.framebuffer = framebuffer;
+    state.viewport.addViewport(nvrhi::Viewport(static_cast<float>(info.width), static_cast<float>(info.height)));
+    state.viewport.addScissorRect(nvrhi::Rect(static_cast<int>(info.width), static_cast<int>(info.height)));
+    state.bindings = {bindings};
+    cmd->setGraphicsState(state);
+    nvrhi::DrawArguments arguments;
+    arguments.vertexCount = 3;
+    arguments.instanceCount = 1;
+    cmd->draw(arguments);
+    ++ctx.GetFrameContext().GetDiagnostics().DrawCalls;
   }
   return true;
 }
