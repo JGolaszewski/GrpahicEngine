@@ -106,6 +106,38 @@ TEST(PrismNdfMathTests, LeastSquaresCoefficientsAndSignedResidualReconstructEver
   EXPECT_TRUE(hasPositiveResidual);
 }
 
+TEST(PrismNdfMathTests, StreamingQrRecoversIndependentKnownCoefficientOracle) {
+  std::array<double, Engine::PrismNdfCoefficientCount> oracle{};
+  oracle[0] = 1.75;
+  oracle[1] = 0.08;
+  oracle[3] = -0.035;
+  oracle[9] = 0.012;
+  std::array<float, Engine::PrismNdfSampleCount> grid{};
+  for (uint32_t row = 0; row < Engine::PrismNdfGridSize; ++row) {
+    const double y = 2.0 * row / 63.0 - 1.0;
+    for (uint32_t column = 0; column < Engine::PrismNdfGridSize; ++column) {
+      const double x = 2.0 * column / 63.0 - 1.0;
+      if (x * x + y * y > 1.0) {
+        continue;
+      }
+      double expected = 0.0;
+      uint32_t index = 0;
+      for (uint32_t n = 0; n <= Engine::PrismNdfDegree; ++n) {
+        for (int32_t m = -static_cast<int32_t>(n); m <= static_cast<int32_t>(n); m += 2, ++index) {
+          expected += oracle[index] * IndependentBasis(n, m, x, y);
+        }
+      }
+      grid[row * Engine::PrismNdfGridSize + column] = static_cast<float>(expected);
+    }
+  }
+  Engine::PrismNdfData payload;
+  std::string error;
+  ASSERT_TRUE(Engine::Renderer::FitPrismNdfPayload(grid, payload, error)) << error;
+  for (size_t index = 0; index < oracle.size(); ++index) {
+    EXPECT_NEAR(payload.zernikeCoefficients[index], oracle[index], 2.0e-6) << "coefficient=" << index;
+  }
+}
+
 TEST(PrismNdfMathTests, ProjectedEnergyNormalizationIsFiniteAndUnitIntegral) {
   std::array<float, Engine::PrismNdfSampleCount> grid{};
   for (uint32_t row = 0; row < Engine::PrismNdfGridSize; ++row) {
@@ -140,8 +172,17 @@ TEST(PrismNdfMathTests, ProjectedEnergyNormalizationIsFiniteAndUnitIntegral) {
 TEST(PrismNdfMathTests, InvalidGridValuesAreRejected) {
   std::vector<float> grid(Engine::PrismNdfSampleCount, 1.0F);
   Engine::PrismNdfData payload;
+  payload.normalization = 3.0F;
+  const Engine::PrismNdfData original = payload;
   std::string error;
   grid[0] = std::numeric_limits<float>::quiet_NaN();
   EXPECT_FALSE(Engine::Renderer::FitPrismNdfPayload(grid, payload, error));
   EXPECT_FALSE(error.empty());
+  EXPECT_EQ(payload, original);
+  grid[0] = -1.0F;
+  EXPECT_FALSE(Engine::Renderer::FitPrismNdfPayload(grid, payload, error));
+  EXPECT_EQ(payload, original);
+  std::ranges::fill(grid, 0.0F);
+  EXPECT_FALSE(Engine::Renderer::FitPrismNdfPayload(grid, payload, error));
+  EXPECT_EQ(payload, original);
 }

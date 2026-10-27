@@ -9,7 +9,9 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <limits>
 #include <string>
+#include <string_view>
 #include <system_error>
 #include <vector>
 
@@ -213,6 +215,113 @@ TEST(ScenePersistenceTests, GeneratedNdfRejectsWrongCoefficientCountAndUnsupport
   generated["dataVersion"] = Engine::PrismNdfDataVersion + 1;
   writeScene();
   EXPECT_FALSE(Engine::SceneSerializer::Load(path));
+}
+
+TEST(ScenePersistenceTests, SchemasOneThroughEightRemainLoadableWithoutGeneratedNdfRuntimeData) {
+  TemporaryProject project;
+  const auto path = project.Root() / "legacy-schema.scene.json";
+  for (uint32_t version = 1; version <= 8; ++version) {
+    {
+      std::ofstream scene(path, std::ios::binary | std::ios::trunc);
+      scene << nlohmann::json{{"schemaVersion", version},
+                              {"unitsPerMeter", 1.0F},
+                              {"entities", nlohmann::json::array()}};
+      ASSERT_TRUE(scene.good());
+    }
+    const auto loaded = Engine::SceneSerializer::Load(path);
+    ASSERT_TRUE(loaded) << "schema=" << version << " " << loaded.error;
+    EXPECT_EQ(loaded.document.schemaVersion, version);
+    EXPECT_TRUE(loaded.document.entities.empty());
+  }
+}
+
+TEST(ScenePersistenceTests, GeneratedNdfValidationFailureMatrixRejectsInvalidPayloads) {
+  TemporaryProject project;
+  const auto path = project.Root() / "generated-ndf-invalid.scene.json";
+  const auto validPayload = [] {
+    return nlohmann::json{{"gridSize", Engine::PrismNdfGridSize},
+                          {"degree", Engine::PrismNdfDegree},
+                          {"dataVersion", Engine::PrismNdfDataVersion},
+                          {"normalization", 1.0F},
+                          {"zernikeCoefficients", std::vector<float>(Engine::PrismNdfCoefficientCount, 0.0F)},
+                          {"residuals", std::vector<float>(Engine::PrismNdfSampleCount, 0.0F)}};
+  };
+  const auto write = [&path](const nlohmann::json& payload, std::string_view brdf = "prismNdf", bool include = true) {
+    nlohmann::json material{{"brdfModel", brdf}};
+    if (include) {
+      material["generatedNdf"] = payload;
+    }
+    std::ofstream scene(path, std::ios::binary | std::ios::trunc);
+    scene << nlohmann::json{{"schemaVersion", Engine::CurrentSceneSchemaVersion},
+                            {"unitsPerMeter", 1.0F},
+                            {"entities", {{{"id", 1}, {"primitiveType", "sphere"}, {"material", material}}}}};
+  };
+  const auto expectRejected = [&path, &write](nlohmann::json payload, std::string_view brdf = "prismNdf",
+                                              bool include = true) {
+    write(payload, brdf, include);
+    EXPECT_FALSE(Engine::SceneSerializer::Load(path)) << payload.dump();
+  };
+
+  auto payload = validPayload();
+  expectRejected(payload, "prismNdf", false);
+  expectRejected(payload, "ggx", true);
+  payload = validPayload();
+  payload["gridSize"] = Engine::PrismNdfGridSize + 1;
+  expectRejected(payload);
+  payload = validPayload();
+  payload["degree"] = Engine::PrismNdfDegree - 1;
+  expectRejected(payload);
+  payload = validPayload();
+  payload["zernikeCoefficients"] = std::vector<float>(Engine::PrismNdfCoefficientCount - 1, 0.0F);
+  expectRejected(payload);
+  payload = validPayload();
+  payload["residuals"] = std::vector<float>(Engine::PrismNdfSampleCount - 1, 0.0F);
+  expectRejected(payload);
+  payload = validPayload();
+  payload["zernikeCoefficients"][7] = std::numeric_limits<float>::infinity();
+  expectRejected(payload);
+  payload = validPayload();
+  payload["residuals"][11] = std::numeric_limits<float>::quiet_NaN();
+  expectRejected(payload);
+  payload = validPayload();
+  payload["normalization"] = 0.0F;
+  expectRejected(payload);
+  payload = validPayload();
+  payload["normalization"] = std::numeric_limits<float>::infinity();
+  expectRejected(payload);
+  payload = validPayload();
+  payload["dataVersion"] = Engine::PrismNdfDataVersion + 1;
+  expectRejected(payload);
+}
+
+TEST(ScenePersistenceTests, InvalidGeneratedNdfSavePreservesExistingSceneFile) {
+  TemporaryProject project;
+  Engine::AssetManager assets(project.Root());
+  Engine::SceneDocument document;
+  Engine::SceneEntityDocument entity;
+  entity.id = 1;
+  entity.primitiveType = "sphere";
+  entity.material.emplace();
+  document.entities.push_back(entity);
+  std::string error;
+  ASSERT_TRUE(assets.SaveScene("preserve.scene.json", document, error)) << error;
+  const auto path = project.Root() / "preserve.scene.json";
+  const auto readBytes = [&path] {
+    std::ifstream file(path, std::ios::binary);
+    return std::string(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+  };
+  const std::string original = readBytes();
+
+  auto& material = *document.entities.front().material;
+  material.brdfModel = "prismNdf";
+  material.generatedNdf.emplace();
+  material.generatedNdf->data.normalization = std::numeric_limits<float>::quiet_NaN();
+  EXPECT_FALSE(assets.SaveScene("preserve.scene.json", document, error));
+  EXPECT_FALSE(error.empty());
+  EXPECT_EQ(readBytes(), original);
+  const auto stillValid = assets.LoadScene("preserve.scene.json");
+  ASSERT_TRUE(stillValid) << stillValid.error;
+  EXPECT_EQ(stillValid.document.entities.front().material->brdfModel, "ggx");
 }
 
 TEST(ScenePersistenceTests, LegacyAuthoredMeshSettingsRestoreMeshRendererPresence) {

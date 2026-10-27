@@ -8,7 +8,9 @@
 
 namespace Engine::Renderer {
 
-/// Fits the canonical PRISM degree-8 basis and stores an exact signed grid residual.
+/// Fits the canonical degree-8 basis with streaming Givens QR and stores a signed residual
+/// that reconstructs each in-disk source sample within float storage precision. Returns false
+/// for malformed grids, rank-deficient fits, or values that cannot be represented in the payload.
 ENGINE_API auto FitPrismNdfPayload(std::span<const float> grid, PrismNdfData& output, std::string& error) -> bool;
 
 /// Computes the projected-disk energy scale using deterministic bilinear midpoint quadrature.

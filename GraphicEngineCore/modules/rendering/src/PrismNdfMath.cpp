@@ -5,14 +5,13 @@
 #include <cmath>
 #include <limits>
 #include <numbers>
-#include <utility>
 
 namespace Engine::Renderer {
 namespace {
 constexpr uint32_t RadialQuadratureResolution = 1024;
 constexpr uint32_t AngularQuadratureResolution = 2048;
 using BasisVector = std::array<double, PrismNdfCoefficientCount>;
-using NormalEquation = std::array<std::array<double, PrismNdfCoefficientCount + 1>, PrismNdfCoefficientCount>;
+using TriangularMatrix = std::array<BasisVector, PrismNdfCoefficientCount>;
 
 auto Jacobi(uint32_t order, double alpha, double beta, double x) noexcept -> double {
   if (order == 0) {
@@ -74,34 +73,51 @@ auto IsFiniteGrid(std::span<const float> grid, std::string& error) -> bool {
   return true;
 }
 
-auto Solve(NormalEquation& system, BasisVector& solution) -> bool {
+auto AccumulateQrRow(TriangularMatrix& upper, BasisVector& transformedTarget, BasisVector row, double target) noexcept
+    -> void {
   for (size_t column = 0; column < PrismNdfCoefficientCount; ++column) {
-    size_t pivot = column;
-    for (size_t row = column + 1; row < PrismNdfCoefficientCount; ++row) {
-      if (std::abs(system[row][column]) > std::abs(system[pivot][column])) {
-        pivot = row;
-      }
+    const double diagonal = upper[column][column];
+    const double incoming = row[column];
+    if (incoming == 0.0) {
+      continue;
     }
-    if (!std::isfinite(system[pivot][column]) || std::abs(system[pivot][column]) < 1.0e-12) {
+    const double radius = std::hypot(diagonal, incoming);
+    const double cosine = diagonal / radius;
+    const double sine = incoming / radius;
+    for (size_t entry = column; entry < PrismNdfCoefficientCount; ++entry) {
+      const double existing = upper[column][entry];
+      upper[column][entry] = cosine * existing + sine * row[entry];
+      row[entry] = -sine * existing + cosine * row[entry];
+    }
+    const double existingTarget = transformedTarget[column];
+    transformedTarget[column] = cosine * existingTarget + sine * target;
+    target = -sine * existingTarget + cosine * target;
+  }
+}
+
+auto SolveQr(const TriangularMatrix& upper, const BasisVector& transformedTarget, BasisVector& solution) noexcept
+    -> bool {
+  double largestDiagonal = 0.0;
+  for (size_t index = 0; index < PrismNdfCoefficientCount; ++index) {
+    largestDiagonal = (std::max)(largestDiagonal, std::abs(upper[index][index]));
+  }
+  if (!std::isfinite(largestDiagonal) || largestDiagonal == 0.0) {
+    return false;
+  }
+  const double rankTolerance = largestDiagonal * std::numeric_limits<double>::epsilon() * PrismNdfCoefficientCount;
+  for (size_t reverse = PrismNdfCoefficientCount; reverse-- > 0;) {
+    double value = transformedTarget[reverse];
+    for (size_t column = reverse + 1; column < PrismNdfCoefficientCount; ++column) {
+      value -= upper[reverse][column] * solution[column];
+    }
+    const double diagonal = upper[reverse][reverse];
+    if (!std::isfinite(diagonal) || std::abs(diagonal) <= rankTolerance) {
       return false;
     }
-    std::swap(system[pivot], system[column]);
-    const double diagonal = system[column][column];
-    for (size_t entry = column; entry <= PrismNdfCoefficientCount; ++entry) {
-      system[column][entry] /= diagonal;
+    solution[reverse] = value / diagonal;
+    if (!std::isfinite(solution[reverse])) {
+      return false;
     }
-    for (size_t row = 0; row < PrismNdfCoefficientCount; ++row) {
-      if (row == column) {
-        continue;
-      }
-      const double factor = system[row][column];
-      for (size_t entry = column; entry <= PrismNdfCoefficientCount; ++entry) {
-        system[row][entry] -= factor * system[column][entry];
-      }
-    }
-  }
-  for (size_t index = 0; index < PrismNdfCoefficientCount; ++index) {
-    solution[index] = system[index][PrismNdfCoefficientCount];
   }
   return true;
 }
@@ -145,7 +161,8 @@ auto FitPrismNdfPayload(std::span<const float> grid, PrismNdfData& output, std::
   if (!IsFiniteGrid(grid, error)) {
     return false;
   }
-  NormalEquation system{};
+  TriangularMatrix upper{};
+  BasisVector transformedTarget{};
   for (uint32_t row = 0; row < PrismNdfGridSize; ++row) {
     const double y = 2.0 * static_cast<double>(row) / static_cast<double>(PrismNdfGridSize - 1) - 1.0;
     for (uint32_t column = 0; column < PrismNdfGridSize; ++column) {
@@ -155,17 +172,12 @@ auto FitPrismNdfPayload(std::span<const float> grid, PrismNdfData& output, std::
       }
       const BasisVector basis = BasisAt(x, y);
       const double value = grid[static_cast<size_t>(row) * PrismNdfGridSize + column];
-      for (size_t left = 0; left < PrismNdfCoefficientCount; ++left) {
-        system[left][PrismNdfCoefficientCount] += basis[left] * value;
-        for (size_t right = 0; right < PrismNdfCoefficientCount; ++right) {
-          system[left][right] += basis[left] * basis[right];
-        }
-      }
+      AccumulateQrRow(upper, transformedTarget, basis, value);
     }
   }
   BasisVector coefficients{};
-  if (!Solve(system, coefficients)) {
-    error = "PRISM NDF least-squares projection is singular";
+  if (!SolveQr(upper, transformedTarget, coefficients)) {
+    error = "PRISM NDF least-squares projection is rank deficient or non-finite";
     return false;
   }
   PrismNdfData result;
