@@ -107,6 +107,11 @@ The root `CMakeLists.txt` wires these projects together. Tests live with Core
 under `GraphicEngineCore/tests/`, including editor-related test sources where
 they exercise shared behavior.
 
+PRISM's optional inference runtime is included only in the dedicated Windows
+release bundle. Ordinary presets do not fetch model files or install ONNX
+Runtime. See [PRISM model runtime and release package](prism-models.md) for
+runtime boundaries, provenance, and local package staging.
+
 ## Common setup problems
 
 - **CMake cannot find the vcpkg toolchain or packages:** confirm `VCPKG_ROOT`

@@ -360,6 +360,18 @@ void TestMaterialGpuAbiPacking() {
               std::abs(gpu.SpecularParams.z - 0.4F) < 1.0e-6F,
           "Explicit dielectric F0 must be packed");
 
+  auto generatedNdf = std::make_shared<::Engine::PrismNdfData>();
+  generatedNdf->zernikeCoefficients[0] = 0.25F;
+  generatedNdf->zernikeCoefficients[4] = -0.5F;
+  generatedNdf->zernikeCoefficients[44] = 2.0F;
+  generatedNdf->normalization = 0.75F;
+  properties.Model = ::Engine::Renderer::BrdfModel::PrismNdf;
+  properties.GeneratedNdf = generatedNdf;
+  const auto prism = ::Engine::Renderer::BuildMaterialGpu(properties);
+  Require(prism.ModelFlags.y == 9U && prism.NdfCoefficients[0].x == 0.25F && prism.NdfCoefficients[1].x == -0.5F &&
+              prism.NdfCoefficients[11].x == 2.0F && prism.NdfParams.x == 0.75F && sizeof(prism) == 512U,
+          "PRISM coefficient order, normalization, appended selector, and GPU ABI must be preserved");
+
   properties.Roughness = -1.0F;
   properties.Metallic = 2.0F;
   properties.GtrGamma = 16.0F;
@@ -385,10 +397,10 @@ void TestMaterialGpuAbiPacking() {
   properties.AnisotropicRoughnessU = 0.2F;
   properties.AnisotropicRoughnessV = 0.8F;
   const auto ashikhmin = ::Engine::Renderer::BuildMaterialGpu(properties);
-  Require(
-      ashikhmin.ModelFlags.y == 6U && ashikhmin.ModelFlags.x == 5U && sizeof(ashikhmin) == 304U &&
-          std::abs(ashikhmin.SpecularParams.w - 0.2F) < 1.0e-6F && std::abs(ashikhmin.AlphaParams.y - 0.8F) < 1.0e-6F,
-      "Ashikhmin-Shirley selection and anisotropic values must use ABI-v5 reserved lanes without growing the buffer");
+  Require(ashikhmin.ModelFlags.y == 6U && ashikhmin.ModelFlags.x == ::Engine::Renderer::MaterialGpuAbiVersion &&
+              sizeof(ashikhmin) == 512U && std::abs(ashikhmin.SpecularParams.w - 0.2F) < 1.0e-6F &&
+              std::abs(ashikhmin.AlphaParams.y - 0.8F) < 1.0e-6F,
+          "Ashikhmin-Shirley selection and anisotropic values must use their reserved lanes");
   properties.AnisotropicRoughnessU = std::numeric_limits<float>::quiet_NaN();
   properties.AnisotropicRoughnessV = 4.0F;
   const auto sanitized = ::Engine::Renderer::BuildMaterialGpu(properties);

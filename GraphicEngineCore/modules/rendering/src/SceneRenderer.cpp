@@ -75,7 +75,11 @@ auto MaterialPropertiesFromDocument(const ::Engine::SceneMaterialDocument& docum
                      : document.brdfModel == "ashikhminShirley" ? ::Engine::Renderer::BrdfModel::AshikhminShirley
                      : document.brdfModel == "schlick"          ? ::Engine::Renderer::BrdfModel::Schlick
                      : document.brdfModel == "sawicki"          ? ::Engine::Renderer::BrdfModel::Sawicki
+                     : document.brdfModel == "prismNdf"         ? ::Engine::Renderer::BrdfModel::PrismNdf
                                                                 : ::Engine::Renderer::BrdfModel::GGX;
+  if (document.generatedNdf) {
+    properties.GeneratedNdf = std::make_shared<::Engine::PrismNdfData>(document.generatedNdf->data);
+  }
   properties.Workflow = document.workflow == "specularGlossiness"
                             ? ::Engine::Renderer::MaterialWorkflow::SpecularGlossiness
                             : ::Engine::Renderer::MaterialWorkflow::MetallicRoughness;
@@ -340,7 +344,8 @@ void Engine::SceneRenderer::Init(nvrhi::IDevice* device, ::Engine::Renderer::Mat
       nvrhi::BindingLayoutItem::Sampler(7),        nvrhi::BindingLayoutItem::Texture_SRV(8),
       nvrhi::BindingLayoutItem::Sampler(8),        nvrhi::BindingLayoutItem::Texture_SRV(9),
       nvrhi::BindingLayoutItem::Sampler(9),        nvrhi::BindingLayoutItem::ConstantBuffer(4),
-      nvrhi::BindingLayoutItem::Texture_SRV(10),
+      nvrhi::BindingLayoutItem::Texture_SRV(10),   nvrhi::BindingLayoutItem::Texture_SRV(11),
+      nvrhi::BindingLayoutItem::Sampler(11),
   };
   m_SceneBindingLayout = device->createBindingLayout(sceneLayoutDesc);
 
@@ -620,10 +625,15 @@ auto Engine::SceneRenderer::GetSceneBindingSet(
                                                                     : m_EnvironmentLighting.PrefilteredEnvironment;
   const auto& prefilteredSampler = environmentSource != nullptr ? environmentSource->PrefilteredEnvironmentSampler
                                                                 : m_EnvironmentLighting.PrefilteredEnvironmentSampler;
+  const auto& environmentPanorama =
+      environmentSource != nullptr ? environmentSource->Panorama : m_EnvironmentLighting.Panorama;
+  const auto& environmentPanoramaSampler =
+      environmentSource != nullptr ? environmentSource->PanoramaSampler : m_EnvironmentLighting.PanoramaSampler;
   if ((m_Device == nullptr) || (lightBuffer == nullptr) || (shadowMap == nullptr) || (shadowSampler == nullptr) ||
       (cameraBuffer == nullptr) || (ambientOcclusion == nullptr) || (m_SceneBindingLayout == nullptr) ||
       !m_EnvironmentLightingReady || irradianceMap == nullptr || irradianceSampler == nullptr ||
-      prefilteredEnvironment == nullptr || prefilteredSampler == nullptr) {
+      prefilteredEnvironment == nullptr || prefilteredSampler == nullptr || environmentPanorama == nullptr ||
+      environmentPanoramaSampler == nullptr) {
     return nullptr;
   }
   if (m_SceneBindingCaches.size() <= viewIndex) {
@@ -633,7 +643,8 @@ auto Engine::SceneRenderer::GetSceneBindingSet(
   if ((cache.Bindings != nullptr) && cache.LightBuffer == lightBuffer && cache.ShadowMap == shadowMap &&
       cache.ShadowSampler == shadowSampler && cache.CameraBuffer == cameraBuffer &&
       cache.AmbientOcclusion == ambientOcclusion && cache.IrradianceMap == irradianceMap &&
-      cache.PrefilteredEnvironment == prefilteredEnvironment && cache.Layout == m_SceneBindingLayout) {
+      cache.PrefilteredEnvironment == prefilteredEnvironment && cache.EnvironmentPanorama == environmentPanorama &&
+      cache.Layout == m_SceneBindingLayout) {
     return cache.Bindings;
   }
 
@@ -649,6 +660,8 @@ auto Engine::SceneRenderer::GetSceneBindingSet(
   desc.addItem(nvrhi::BindingSetItem::Sampler(9, m_EnvironmentLighting.BrdfIntegrationSampler));
   desc.addItem(nvrhi::BindingSetItem::ConstantBuffer(4, cameraBuffer));
   desc.addItem(nvrhi::BindingSetItem::Texture_SRV(10, ambientOcclusion));
+  desc.addItem(nvrhi::BindingSetItem::Texture_SRV(11, environmentPanorama));
+  desc.addItem(nvrhi::BindingSetItem::Sampler(11, environmentPanoramaSampler));
   nvrhi::BindingSetHandle bindings = m_Device->createBindingSet(desc, m_SceneBindingLayout);
   if (bindings == nullptr) {
     ENGINE_LOG_ERROR("Render", "Scene binding-set creation failed | view_index: {} | environment_ready: {}", viewIndex,
@@ -662,6 +675,7 @@ auto Engine::SceneRenderer::GetSceneBindingSet(
   cache.AmbientOcclusion = std::move(ambientOcclusion);
   cache.IrradianceMap = irradianceMap;
   cache.PrefilteredEnvironment = prefilteredEnvironment;
+  cache.EnvironmentPanorama = environmentPanorama;
   cache.Layout = m_SceneBindingLayout;
   cache.Bindings = std::move(bindings);
   ++diagnostics.BindingSetAllocations;

@@ -12,6 +12,10 @@
     "tinygltf"
   ],
   "features": {
+    "prism-inference": {
+      "description": "Optional CPU ONNX Runtime for PRISM inference in packaged builds",
+      "dependencies": ["onnxruntime"]
+    },
     "benchmarks": {
       "description": "Opt-in engine performance benchmarks",
       "dependencies": ["benchmark"]

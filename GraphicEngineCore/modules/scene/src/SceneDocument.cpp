@@ -205,7 +205,7 @@ auto ValidateMaterialNames(const Json& value, SceneMaterialDocument& material, s
   }
   if (material.brdfModel != "ggx" && material.brdfModel != "gtr" && material.brdfModel != "beckmann" &&
       material.brdfModel != "gauss" && material.brdfModel != "blinnPhong" && material.brdfModel != "ashikhminShirley" &&
-      material.brdfModel != "schlick" && material.brdfModel != "sawicki") {
+      material.brdfModel != "schlick" && material.brdfModel != "sawicki" && material.brdfModel != "prismNdf") {
     error = "brdfModel has an unsupported value";
     return false;
   }
@@ -219,6 +219,79 @@ auto ValidateMaterialNames(const Json& value, SceneMaterialDocument& material, s
   }
   if (material.alphaMode != "opaque" && material.alphaMode != "mask" && material.alphaMode != "blend") {
     error = "alphaMode has an unsupported value";
+    return false;
+  }
+  return true;
+}
+
+auto ReadGeneratedNdf(const Json& value, SceneGeneratedNdfDocument& generated, std::string& error) -> bool {
+  if (!value.is_object()) {
+    error = "generatedNdf must be an object";
+    return false;
+  }
+  std::vector<std::string> warnings;
+  KnownKeys(value,
+            {"gridSize", "degree", "dataVersion", "directional", "prompt", "modelVersion", "exporterVersion",
+             "normalization", "zernikeCoefficients", "residuals"},
+            warnings, "generatedNdf");
+  for (const char* required :
+       {"gridSize", "degree", "dataVersion", "normalization", "zernikeCoefficients", "residuals"}) {
+    if (!value.contains(required)) {
+      error = std::string("generatedNdf is missing required field '") + required + "'";
+      return false;
+    }
+  }
+  const auto readUint = [&value, &error](const char* key, uint32_t& target) -> bool {
+    if (!value.contains(key)) {
+      return true;
+    }
+    const auto& field = value.at(key);
+    if ((!field.is_number_unsigned() && !field.is_number_integer()) || field.get<int64_t>() < 0 ||
+        field.get<uint64_t>() > std::numeric_limits<uint32_t>::max()) {
+      error = std::string("generatedNdf.") + key + " must be a non-negative 32-bit integer";
+      return false;
+    }
+    target = field.get<uint32_t>();
+    return true;
+  };
+  if (!readUint("gridSize", generated.gridSize) || !readUint("degree", generated.degree) ||
+      !readUint("dataVersion", generated.dataVersion) ||
+      !ReadNumber(value, "normalization", generated.data.normalization, error) ||
+      !ReadFloatArray(value.at("zernikeCoefficients"), generated.data.zernikeCoefficients,
+                      "generatedNdf.zernikeCoefficients", error) ||
+      !ReadFloatArray(value.at("residuals"), generated.data.residuals, "generatedNdf.residuals", error)) {
+    return false;
+  }
+  const auto readString = [&value, &error](const char* key, std::string& target) -> bool {
+    if (!value.contains(key)) {
+      return true;
+    }
+    if (!value.at(key).is_string()) {
+      error = std::string("generatedNdf.") + key + " must be a string";
+      return false;
+    }
+    target = value.at(key).get<std::string>();
+    return true;
+  };
+  if (!readString("prompt", generated.prompt) || !readString("modelVersion", generated.modelVersion) ||
+      !readString("exporterVersion", generated.exporterVersion)) {
+    return false;
+  }
+  if (value.contains("directional")) {
+    if (!value.at("directional").is_boolean()) {
+      error = "generatedNdf.directional must be a boolean";
+      return false;
+    }
+    generated.directional = value.at("directional").get<bool>();
+  }
+  const bool finiteCoefficients =
+      std::ranges::all_of(generated.data.zernikeCoefficients, [](float sample) { return std::isfinite(sample); });
+  const bool finiteResiduals =
+      std::ranges::all_of(generated.data.residuals, [](float sample) { return std::isfinite(sample); });
+  if (generated.gridSize != PrismNdfGridSize || generated.degree != PrismNdfDegree ||
+      generated.dataVersion != PrismNdfDataVersion || !finiteCoefficients || !finiteResiduals ||
+      !std::isfinite(generated.data.normalization) || generated.data.normalization <= 0.0F) {
+    error = "generatedNdf has unsupported dimensions/version or non-finite data";
     return false;
   }
   return true;
@@ -259,6 +332,7 @@ auto ReadMaterial(const Json& value, SceneMaterialDocument& material, std::vecto
                 "normalTextureRotation",
                 "textureAnisotropyLevels",
                 "normalScale",
+                "generatedNdf",
             },
             warnings, context);
   if (!ReadArrayField(value, "baseColor", material.baseColor, error) ||
@@ -346,6 +420,17 @@ auto ReadMaterial(const Json& value, SceneMaterialDocument& material, std::vecto
   if (!ValidateMaterialNames(value, material, warnings, context, error)) {
     return false;
   }
+  if (value.contains("generatedNdf")) {
+    SceneGeneratedNdfDocument generated;
+    if (!ReadGeneratedNdf(value.at("generatedNdf"), generated, error)) {
+      return false;
+    }
+    material.generatedNdf = std::move(generated);
+  }
+  if ((material.brdfModel == "prismNdf") != material.generatedNdf.has_value()) {
+    error = "generatedNdf payload must be present exactly when brdfModel is prismNdf";
+    return false;
+  }
   if (!std::isfinite(material.alphaCutoff) || material.alphaCutoff < 0.0F || material.alphaCutoff > 1.0F) {
     error = "alphaCutoff must be within [0, 1]";
     return false;
@@ -396,12 +481,22 @@ auto IsValidPrimitiveType(const std::string& type) -> bool {
 }
 
 auto IsValidMaterial(const SceneMaterialDocument& material) -> bool {
-  const auto validBrdf = material.brdfModel == "ggx" || material.brdfModel == "gtr" ||
-                         material.brdfModel == "beckmann" || material.brdfModel == "gauss" ||
-                         material.brdfModel == "blinnPhong" || material.brdfModel == "ashikhminShirley" ||
-                         material.brdfModel == "schlick" || material.brdfModel == "sawicki";
+  const auto validBrdf =
+      material.brdfModel == "ggx" || material.brdfModel == "gtr" || material.brdfModel == "beckmann" ||
+      material.brdfModel == "gauss" || material.brdfModel == "blinnPhong" || material.brdfModel == "ashikhminShirley" ||
+      material.brdfModel == "schlick" || material.brdfModel == "sawicki" || material.brdfModel == "prismNdf";
+  const bool validGeneratedNdf =
+      material.generatedNdf.has_value() == (material.brdfModel == "prismNdf") &&
+      (!material.generatedNdf ||
+       (material.generatedNdf->gridSize == PrismNdfGridSize && material.generatedNdf->degree == PrismNdfDegree &&
+        material.generatedNdf->dataVersion == PrismNdfDataVersion &&
+        std::isfinite(material.generatedNdf->data.normalization) && material.generatedNdf->data.normalization > 0.0F &&
+        std::ranges::all_of(material.generatedNdf->data.zernikeCoefficients,
+                            [](float value) { return std::isfinite(value); }) &&
+        std::ranges::all_of(material.generatedNdf->data.residuals, [](float value) { return std::isfinite(value); })));
   const bool validWorkflow = material.workflow == "metallicRoughness" || material.workflow == "specularGlossiness";
-  if (!validBrdf || !validWorkflow || (material.specularMode != "ior" && material.specularMode != "explicitF0") ||
+  if (!validBrdf || !validGeneratedNdf || !validWorkflow ||
+      (material.specularMode != "ior" && material.specularMode != "explicitF0") ||
       (material.alphaMode != "opaque" && material.alphaMode != "mask" && material.alphaMode != "blend") ||
       !std::isfinite(material.metallic) || !std::isfinite(material.roughness) || !std::isfinite(material.gtrGamma) ||
       !std::isfinite(material.ior) || !std::isfinite(material.alphaCutoff) || !std::isfinite(material.normalScale) ||
@@ -459,7 +554,7 @@ auto KnownKeys(const Json& object, std::initializer_list<const char*> known, std
 }
 
 auto MaterialJson(const SceneMaterialDocument& material) -> Json {
-  return {
+  Json result = {
       {"baseColor", material.baseColor},
       {"emissive", material.emissive},
       {"metallic", material.metallic},
@@ -488,6 +583,20 @@ auto MaterialJson(const SceneMaterialDocument& material) -> Json {
       {"textureAnisotropyLevels", material.textureAnisotropyLevels},
       {"normalScale", material.normalScale},
   };
+  if (material.generatedNdf) {
+    const auto& generated = *material.generatedNdf;
+    result["generatedNdf"] = {{"gridSize", generated.gridSize},
+                              {"degree", generated.degree},
+                              {"dataVersion", generated.dataVersion},
+                              {"directional", generated.directional},
+                              {"prompt", generated.prompt},
+                              {"modelVersion", generated.modelVersion},
+                              {"exporterVersion", generated.exporterVersion},
+                              {"normalization", generated.data.normalization},
+                              {"zernikeCoefficients", generated.data.zernikeCoefficients},
+                              {"residuals", generated.data.residuals}};
+  }
+  return result;
 }
 
 auto GuidJson(const std::optional<SceneGuidDocument>& guid) -> Json {

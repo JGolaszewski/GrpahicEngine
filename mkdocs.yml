@@ -58,6 +58,7 @@ nav:
       - Architecture: architecture.md
       - Editor guide: editor-guide.md
       - Asset pipeline: asset-pipeline.md
+      - PRISM model runtime: prism-models.md
       - C++ guidelines: cpp-guidelines.md
       - Logging: logging.md
       - Editor settings: editor-settings.md

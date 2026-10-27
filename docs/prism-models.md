@@ -1,0 +1,67 @@
+# PRISM model runtime and release package
+
+Windows application releases are intended to contain the complete application
+and PRISM runtime in one `GraphicEngine-<tag>-windows-x64.zip` archive. The
+archive includes the editor and engine binaries, hash-pinned PRISM ONNX graphs
+and external weight files, embedded CPython for tokenization, the pinned
+`tokenizers` wheel contents, ONNX Runtime CPU DLLs, notices, and a SHA-256
+sidecar. Model files and Python runtime binaries are generated during release
+packaging and are never committed to Git.
+
+## Development and ordinary builds
+
+Ordinary configure/build presets do not enable `prism-inference`, download
+models, or require Python or ONNX Runtime. Saved generated materials remain
+renderable from their serialized material data. Only the dedicated
+`x64-release-prism` preset enables the optional vcpkg ONNX Runtime dependency
+and installs the staged runtime into the application bundle.
+
+For a local package staging run on 64-bit Windows:
+
+```powershell
+python scripts/download_prism_models.py
+python scripts/stage_prism_runtime.py
+python scripts/validate_prism_onnx_contract.py
+cmake --preset x64-release-prism
+cmake --build --preset x64-release-prism
+cmake --install out/build/x64-release-prism --prefix out/package --config Release
+```
+
+Downloads land under the ignored `out/prism-runtime/` directory. Both model
+assets and the embedded Python and tokenizer archives are checked against
+expected byte counts and SHA-256 values before use. The pinned decoder emits
+only `ndf_grid_flat` (`float32[1,4096]`); it does not emit Zernike
+coefficients. The release validator requires this output name, dtype, and
+shape and rejects unexpected decoder outputs. After native C++ ONNX inference,
+the material generation service must fit the returned 64×64 grid to the
+45-term degree-8 Zernike basis using least squares, then retain the signed
+per-sample residual `grid - fitted_basis`. Rendering evaluates the fitted
+polynomial and adds the residual, preserving the decoded grid at its samples.
+The fit and residual construction belong to the C++ generation/postprocessing
+path, not to the ONNX model or release validator.
+
+## Runtime boundary
+
+The embedded CPython 3.13.17 runtime runs a persistent JSON-lines worker that
+prefixes prompts with `query: ` and emits exactly 128 `input_ids` and
+`attention_mask` values. The directional flag is passed through as metadata
+for the native retriever call; it does not alter tokenization. Python performs
+no model inference. The bundle supplies ONNX Runtime CPU libraries for the
+native C++ E5, retriever, and decoder inference service. This release and
+dependency change does not implement that Editor service. The worker's startup handshake and per-request
+errors use JSON lines on stdout; diagnostic output belongs on stderr.
+
+## Pins, provenance, and licenses
+
+The exact upstream PRISM source commit, E5 model revision, release tags, file
+sizes, and SHA-256 digests are recorded in
+[`prism-model-assets.json`](../scripts/prism-model-assets.json). The embedded
+CPython archive and tokenizer wheel pins are in
+[`prism-runtime-assets.json`](../scripts/prism-runtime-assets.json). ONNX
+Runtime is an optional vcpkg manifest feature resolved through the repository's
+pinned builtin baseline. No unpinned `latest` URL is used.
+
+E5 model/tokenizer licensing and PRISM-trained model licensing have distinct
+terms. The packaged notices carry the E5 MIT and PRISM CC BY-SA 4.0 texts and
+attributions. CPython and `tokenizers` retain their upstream license notices in
+the installed runtime. These notices travel with the application bundle.

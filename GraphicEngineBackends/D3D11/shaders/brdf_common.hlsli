@@ -6,6 +6,91 @@ static const float BRDF_EPSILON = 1.0e-6f;
 static const float BRDF_MIN_ALPHA = 1.0e-3f;
 static const float BRDF_MIN_GTR_GAMMA = 1.0f;
 static const float BRDF_MAX_GTR_GAMMA = 8.0f;
+static const uint PRISM_ZERNIKE_DEGREE = 8u;
+static const uint PRISM_ZERNIKE_COEFFICIENT_COUNT = 45u;
+
+// Evaluates the real, unnormalised Zernike basis used by the PRISM decoder.
+// Coefficients are ordered by n=0..8 and m=-n,-n+2,...,n. Negative m uses
+// the sine component and non-negative m uses cosine (m=0 is the radial term).
+// Jacobi recurrence avoids factorials, per-pixel trigonometry and atan2.
+float PrismJacobiP(uint order, float alpha, float beta, float x)
+{
+    if (order == 0u)
+    {
+        return 1.0f;
+    }
+
+    float previousPrevious = 1.0f;
+    float previous = 0.5f * (alpha - beta + (alpha + beta + 2.0f) * x);
+    if (order == 1u)
+    {
+        return previous;
+    }
+
+    [unroll]
+    for (uint index = 2u; index <= order; ++index)
+    {
+        const float k = float(index);
+        const float twoKAlphaBeta = 2.0f * k + alpha + beta;
+        const float denominator = 2.0f * k * (k + alpha + beta) * (twoKAlphaBeta - 2.0f);
+        const float first = (twoKAlphaBeta - 1.0f) *
+            (twoKAlphaBeta * (twoKAlphaBeta - 2.0f) * x + alpha * alpha - beta * beta) * previous;
+        const float second = 2.0f * (k + alpha - 1.0f) * (k + beta - 1.0f) * twoKAlphaBeta * previousPrevious;
+        const float current = (first - second) / denominator;
+        previousPrevious = previous;
+        previous = current;
+    }
+    return previous;
+}
+
+float PrismZernikeBasis(uint n, int signedM, float2 diskCoord)
+{
+    const uint m = uint(abs(signedM));
+    const float radiusSquared = dot(diskCoord, diskCoord);
+    if (radiusSquared > 1.0f || m > n || ((n - m) & 1u) != 0u)
+    {
+        return 0.0f;
+    }
+
+    const uint radialOrder = (n - m) / 2u;
+    const float radialPolynomial =
+        PrismJacobiP(radialOrder, 0.0f, float(m), 2.0f * radiusSquared - 1.0f);
+
+    // (x + iy)^m gives r^m*cos(m*phi) and r^m*sin(m*phi) directly.
+    float2 complexPower = float2(1.0f, 0.0f);
+    [unroll]
+    for (uint power = 0u; power < PRISM_ZERNIKE_DEGREE; ++power)
+    {
+        if (power < m)
+        {
+            complexPower = float2(complexPower.x * diskCoord.x - complexPower.y * diskCoord.y,
+                                  complexPower.x * diskCoord.y + complexPower.y * diskCoord.x);
+        }
+    }
+    const float realBasis = signedM < 0 ? complexPower.y : complexPower.x;
+    return radialPolynomial * realBasis;
+}
+
+float PrismZernikeNdf(float2 diskCoord, float4 packedCoefficients[12], float signedResidual,
+    float normalization)
+{
+    float base = 0.0f;
+    uint coefficientIndex = 0u;
+    [unroll]
+    for (uint n = 0u; n <= PRISM_ZERNIKE_DEGREE; ++n)
+    {
+        [unroll]
+        for (int m = -int(n); m <= int(n); m += 2)
+        {
+            const float coefficient = packedCoefficients[coefficientIndex >> 2u][coefficientIndex & 3u];
+            base += coefficient * PrismZernikeBasis(n, m, diskCoord);
+            ++coefficientIndex;
+        }
+    }
+
+    const float diskMask = dot(diskCoord, diskCoord) <= 1.0f ? 1.0f : 0.0f;
+    return max(base + signedResidual, 0.0f) * diskMask * normalization;
+}
 
 struct BrdfQuery
 {

@@ -67,6 +67,9 @@ endif()
 set(NVRHI_WITH_DX11 ON)
 set(ENGINE_MAX_LIGHTS 8 CACHE STRING "Maximum number of lights supported by CPU and GPU lighting buffers")
 option(ENGINE_ENABLE_LOGGING "Compile engine logging calls" ON)
+option(ENGINE_ENABLE_PRISM_INFERENCE "Enable optional native ONNX Runtime support for PRISM inference" OFF)
+set(ENGINE_PRISM_RUNTIME_ROOT "" CACHE PATH
+    "Staged PRISM model and embedded Python runtime root used for release packaging")
 set(ENGINE_LOG_LEVEL_MIN 0 CACHE STRING "Global minimum log level (0=Trace, 1=Debug, 2=Info, 3=Warn, 4=Error, 5=Fatal, 6=None)")
 set_property(CACHE ENGINE_LOG_LEVEL_MIN PROPERTY STRINGS 0 1 2 3 4 5 6)
 set(ENGINE_LOG_LEVEL_MIN_DEBUG "" CACHE STRING "Optional Debug log cutoff override; empty uses ENGINE_LOG_LEVEL_MIN")
@@ -121,6 +124,16 @@ find_package(glfw3 CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(OpenImageIO CONFIG REQUIRED)
 
+if(ENGINE_ENABLE_PRISM_INFERENCE)
+    find_package(onnxruntime CONFIG REQUIRED)
+    if(NOT ENGINE_PRISM_RUNTIME_ROOT OR NOT EXISTS "${ENGINE_PRISM_RUNTIME_ROOT}/models/prism")
+        message(FATAL_ERROR "ENGINE_ENABLE_PRISM_INFERENCE requires ENGINE_PRISM_RUNTIME_ROOT with staged models/prism and python directories")
+    endif()
+    if(NOT EXISTS "${ENGINE_PRISM_RUNTIME_ROOT}/python/python.exe")
+        message(FATAL_ERROR "The staged PRISM runtime is missing python/python.exe")
+    endif()
+endif()
+
 # tinygltf and stb are header-only vcpkg packages without CMake config targets.
 find_path(ENGINE_TINYGLTF_INCLUDE_DIR tiny_gltf.h)
 find_path(ENGINE_STB_INCLUDE_DIR stb_image.h PATH_SUFFIXES stb)
@@ -171,5 +184,34 @@ install(TARGETS GraphicEngineCore RenderBackendD3D11 Editor Sandbox
     ARCHIVE DESTINATION lib
 )
 install(DIRECTORY "${ENGINE_ASSET_ROOT}/shaders/" DESTINATION bin/shaders OPTIONAL)
+
+if(ENGINE_ENABLE_PRISM_INFERENCE)
+    install(DIRECTORY "${ENGINE_PRISM_RUNTIME_ROOT}/models/prism/"
+        DESTINATION bin/models/prism
+        FILES_MATCHING
+            PATTERN "*.onnx"
+            PATTERN "*.onnx.data"
+            PATTERN "*.json"
+            PATTERN "*.txt"
+            PATTERN "*.md"
+    )
+    install(DIRECTORY "${ENGINE_PRISM_RUNTIME_ROOT}/python/"
+        DESTINATION bin/python
+    )
+    install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/licenses/prism-models/"
+        DESTINATION bin/licenses/prism-models
+    )
+    if(DEFINED ENGINE_VCPKG_PREFIX)
+        if(NOT EXISTS "${ENGINE_VCPKG_PREFIX}/bin/onnxruntime.dll")
+            message(FATAL_ERROR "The prism-inference vcpkg feature is enabled, but onnxruntime.dll is missing from ${ENGINE_VCPKG_PREFIX}/bin")
+        endif()
+        install(DIRECTORY "${ENGINE_VCPKG_PREFIX}/bin/"
+            DESTINATION bin
+            FILES_MATCHING PATTERN "onnxruntime*.dll"
+        )
+    else()
+        message(FATAL_ERROR "The prism-inference vcpkg feature is enabled, but the installed vcpkg prefix cannot be resolved")
+    endif()
+endif()
 
 include(CPack)

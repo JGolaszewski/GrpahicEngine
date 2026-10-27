@@ -550,8 +550,9 @@ void InspectorPanel::DrawEntityInspector() {
         materialChanged |= ImGui::SliderFloat("Index of refraction", &material.ior, 1.0F, 3.0F, "%.2f");
       }
       ImGui::SeparatorText("MDF Parameters");
-      constexpr const char* brdfNames[] = {"GGX",     "GTR",    "Beckmann", "Gauss", "Blinn-Phong", "Ashikhmin-Shirley",
-                                           "Schlick", "Sawicki"};
+      constexpr const char* brdfNames[] = {"GGX",     "GTR",         "Beckmann",
+                                           "Gauss",   "Blinn-Phong", "Ashikhmin-Shirley",
+                                           "Schlick", "Sawicki",     "PRISM generated NDF"};
       int brdfIndex = material.brdfModel == "gtr"                ? 1
                       : material.brdfModel == "beckmann"         ? 2
                       : material.brdfModel == "gauss"            ? 3
@@ -559,8 +560,9 @@ void InspectorPanel::DrawEntityInspector() {
                       : material.brdfModel == "ashikhminShirley" ? 5
                       : material.brdfModel == "schlick"          ? 6
                       : material.brdfModel == "sawicki"          ? 7
+                      : material.brdfModel == "prismNdf"         ? 8
                                                                  : 0;
-      if (ImGui::Combo("BRDF distribution", &brdfIndex, brdfNames, 8)) {
+      if (ImGui::Combo("BRDF distribution", &brdfIndex, brdfNames, 9)) {
         material.brdfModel = brdfIndex == 1   ? "gtr"
                              : brdfIndex == 2 ? "beckmann"
                              : brdfIndex == 3 ? "gauss"
@@ -568,6 +570,7 @@ void InspectorPanel::DrawEntityInspector() {
                              : brdfIndex == 5 ? "ashikhminShirley"
                              : brdfIndex == 6 ? "schlick"
                              : brdfIndex == 7 ? "sawicki"
+                             : brdfIndex == 8 ? "prismNdf"
                                               : "ggx";
         materialChanged = true;
       }

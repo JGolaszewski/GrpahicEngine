@@ -1,17 +1,64 @@
 #include "rendering/src/MaterialSystem.h"
 #include "MaterialBackend.h"
 #include "TextureBackend.h"
+#include "rendering/include/renderer/PrismNdfMath.h"
 
 #include <algorithm>
 #include <array>
 
 namespace Engine::Renderer {
 namespace {
+auto CreateNdfResidualTexture(nvrhi::IDevice* device) -> nvrhi::TextureHandle {
+  if (device == nullptr) {
+    return nullptr;
+  }
+  nvrhi::TextureDesc desc;
+  desc.setDimension(nvrhi::TextureDimension::Texture2D)
+      .setWidth(PrismNdfGridSize)
+      .setHeight(PrismNdfGridSize)
+      .setArraySize(1)
+      .setMipLevels(1)
+      .setFormat(nvrhi::Format::R32_FLOAT)
+      .setDebugName("Material_PrismNdfResidual")
+      .enableAutomaticStateTracking(nvrhi::ResourceStates::ShaderResource);
+  return device->createTexture(desc);
+}
+
+auto BuildNdfDistribution(const PrismNdfData& payload) -> std::array<float, PrismNdfSampleCount> {
+  std::array<float, PrismNdfSampleCount> distribution{};
+  for (uint32_t row = 0; row < PrismNdfGridSize; ++row) {
+    const double y = 2.0 * row / static_cast<double>(PrismNdfGridSize - 1) - 1.0;
+    for (uint32_t column = 0; column < PrismNdfGridSize; ++column) {
+      const double x = 2.0 * column / static_cast<double>(PrismNdfGridSize - 1) - 1.0;
+      if (x * x + y * y > 1.0) {
+        continue;
+      }
+      double base = 0.0;
+      for (uint32_t coefficient = 0; coefficient < PrismNdfCoefficientCount; ++coefficient) {
+        base += payload.zernikeCoefficients[coefficient] * EvaluatePrismZernikeBasis(coefficient, x, y);
+      }
+      const size_t index = static_cast<size_t>(row) * PrismNdfGridSize + column;
+      distribution[index] =
+          static_cast<float>((std::max)(base + payload.residuals[index], 0.0) * payload.normalization);
+    }
+  }
+  return distribution;
+}
+
+void UploadNdfResidual(nvrhi::ICommandList* commandList, const nvrhi::TextureHandle& texture,
+                       const std::array<float, PrismNdfSampleCount>& residuals) {
+  if (commandList != nullptr && texture != nullptr) {
+    commandList->writeTexture(texture, 0, 0, residuals.data(), PrismNdfGridSize * sizeof(float), 0);
+  }
+}
+
 auto MakeMaterialBindingSet(nvrhi::IDevice* device, nvrhi::BindingLayoutHandle layout, nvrhi::BufferHandle constants,
                             const MaterialProperties& properties,
-                            const std::array<std::shared_ptr<TextureResource>, 5>& textures, uint32_t maxAnisotropy)
-    -> nvrhi::BindingSetHandle {
-  if (device == nullptr || layout == nullptr || constants == nullptr ||
+                            const std::array<std::shared_ptr<TextureResource>, 5>& textures,
+                            nvrhi::TextureHandle ndfResidual, nvrhi::TextureHandle ndfDistribution,
+                            nvrhi::SamplerHandle ndfSampler, uint32_t maxAnisotropy) -> nvrhi::BindingSetHandle {
+  if (device == nullptr || layout == nullptr || constants == nullptr || ndfResidual == nullptr ||
+      ndfDistribution == nullptr || ndfSampler == nullptr ||
       std::ranges::any_of(textures, [](const auto& texture) { return texture == nullptr; })) {
     return nullptr;
   }
@@ -28,6 +75,10 @@ auto MakeMaterialBindingSet(nvrhi::IDevice* device, nvrhi::BindingLayoutHandle l
       nvrhi::BindingSetItem::Sampler(1, sampler(textures[1], 1)),
       nvrhi::BindingSetItem::Texture_SRV(2, TextureBackendAccess::GetTexture(*textures[2])),
       nvrhi::BindingSetItem::Sampler(2, sampler(textures[2], 2)),
+      nvrhi::BindingSetItem::Texture_SRV(3, ndfResidual),
+      nvrhi::BindingSetItem::Sampler(3, ndfSampler),
+      nvrhi::BindingSetItem::Texture_SRV(12, ndfDistribution),
+      nvrhi::BindingSetItem::Sampler(12, ndfSampler),
       nvrhi::BindingSetItem::Texture_SRV(4, TextureBackendAccess::GetTexture(*textures[3])),
       nvrhi::BindingSetItem::Sampler(4, sampler(textures[3], 3)),
       nvrhi::BindingSetItem::Texture_SRV(5, TextureBackendAccess::GetTexture(*textures[4])),
@@ -53,6 +104,10 @@ MaterialSystem::MaterialSystem(nvrhi::IDevice* device, nvrhi::ShaderHandle stand
       nvrhi::BindingLayoutItem::Sampler(1),
   };
   layoutDesc.bindings.insert(layoutDesc.bindings.end(), {
+                                                            nvrhi::BindingLayoutItem::Texture_SRV(3),
+                                                            nvrhi::BindingLayoutItem::Sampler(3),
+                                                            nvrhi::BindingLayoutItem::Texture_SRV(12),
+                                                            nvrhi::BindingLayoutItem::Sampler(12),
                                                             nvrhi::BindingLayoutItem::Texture_SRV(2),
                                                             nvrhi::BindingLayoutItem::Sampler(2),
                                                             nvrhi::BindingLayoutItem::Texture_SRV(4),
@@ -61,6 +116,28 @@ MaterialSystem::MaterialSystem(nvrhi::IDevice* device, nvrhi::ShaderHandle stand
                                                             nvrhi::BindingLayoutItem::Sampler(5),
                                                         });
   m_StandardLayout = m_Device->createBindingLayout(layoutDesc);
+  m_FallbackNdfResidual = CreateNdfResidualTexture(m_Device);
+  m_FallbackNdfDistribution = CreateNdfResidualTexture(m_Device);
+  nvrhi::SamplerDesc residualSamplerDesc;
+  residualSamplerDesc.setAddressU(nvrhi::SamplerAddressMode::Clamp)
+      .setAddressV(nvrhi::SamplerAddressMode::Clamp)
+      .setAddressW(nvrhi::SamplerAddressMode::Clamp)
+      .setMinFilter(true)
+      .setMagFilter(true)
+      .setMipFilter(false);
+  m_NdfResidualSampler = m_Device->createSampler(residualSamplerDesc);
+  if (m_FallbackNdfResidual != nullptr && m_FallbackNdfDistribution != nullptr && m_NdfResidualSampler != nullptr) {
+    nvrhi::CommandListHandle commandList = m_Device->createCommandList();
+    if (commandList != nullptr) {
+      const std::array<float, PrismNdfSampleCount> zeroResidual{};
+      commandList->open();
+      UploadNdfResidual(commandList, m_FallbackNdfResidual, zeroResidual);
+      UploadNdfResidual(commandList, m_FallbackNdfDistribution, zeroResidual);
+      commandList->close();
+      m_Device->executeCommandList(commandList);
+      m_Device->waitForIdle();
+    }
+  }
 }
 
 MaterialSystem::~MaterialSystem() { m_ActiveMaterials.clear(); }
@@ -91,6 +168,10 @@ auto MaterialSystem::RegisterMaterial(std::shared_ptr<Material> material) -> boo
   material->m_MetallicRoughnessTexture = m_FallbackColor;
   material->m_OcclusionTexture = m_FallbackColor;
   material->m_EmissiveTexture = m_FallbackColor;
+  if (material->GetProperties().GeneratedNdf) {
+    MaterialBackendAccess::SetNdfResidualTexture(*material, CreateNdfResidualTexture(m_Device));
+    MaterialBackendAccess::SetNdfDistributionTexture(*material, CreateNdfResidualTexture(m_Device));
+  }
   material->m_DefaultBaseColorTexture = m_FallbackColor;
   material->m_DefaultNormalTexture = m_FallbackNormal;
   material->m_HasTextureOverrides = false;
@@ -98,7 +179,13 @@ auto MaterialSystem::RegisterMaterial(std::shared_ptr<Material> material) -> boo
                                            {material->m_BaseColorTexture, material->m_NormalTexture,
                                             material->m_MetallicRoughnessTexture, material->m_OcclusionTexture,
                                             material->m_EmissiveTexture},
-                                           m_MaxTextureAnisotropy);
+                                           MaterialBackendAccess::GetNdfResidualTexture(*material) != nullptr
+                                               ? MaterialBackendAccess::GetNdfResidualTexture(*material)
+                                               : m_FallbackNdfResidual,
+                                           MaterialBackendAccess::GetNdfDistributionTexture(*material) != nullptr
+                                               ? MaterialBackendAccess::GetNdfDistributionTexture(*material)
+                                               : m_FallbackNdfDistribution,
+                                           m_NdfResidualSampler, m_MaxTextureAnisotropy);
   MaterialBackendAccess::SetBindingSet(*material, bindingSet);
   if (bindingSet == nullptr) {
     MaterialBackendAccess::SetConstantBuffer(*material, nullptr);
@@ -126,12 +213,49 @@ void MaterialSystem::UpdateDirtyMaterials(nvrhi::ICommandList* commandList) {
     if (const auto material = it->lock()) {
       const auto constantBuffer = MaterialBackendAccess::GetConstantBuffer(*material);
       if (material->IsDirty() && (constantBuffer != nullptr)) {
+        const auto properties = material->GetProperties();
+        bool residualReady = true;
+        if (properties.GeneratedNdf != MaterialBackendAccess::GetUploadedNdf(*material)) {
+          if (properties.GeneratedNdf) {
+            auto residualTexture = MaterialBackendAccess::GetNdfResidualTexture(*material);
+            if (residualTexture == nullptr) {
+              residualTexture = CreateNdfResidualTexture(m_Device);
+              MaterialBackendAccess::SetNdfResidualTexture(*material, residualTexture);
+            }
+            auto distributionTexture = MaterialBackendAccess::GetNdfDistributionTexture(*material);
+            if (distributionTexture == nullptr) {
+              distributionTexture = CreateNdfResidualTexture(m_Device);
+              MaterialBackendAccess::SetNdfDistributionTexture(*material, distributionTexture);
+            }
+            if (residualTexture == nullptr || distributionTexture == nullptr) {
+              residualReady = false;
+            } else {
+              UploadNdfResidual(commandList, residualTexture, properties.GeneratedNdf->residuals);
+              UploadNdfResidual(commandList, distributionTexture, BuildNdfDistribution(*properties.GeneratedNdf));
+              MaterialBackendAccess::SetUploadedNdf(*material, properties.GeneratedNdf);
+            }
+          } else {
+            MaterialBackendAccess::SetNdfResidualTexture(*material, nullptr);
+            MaterialBackendAccess::SetNdfDistributionTexture(*material, nullptr);
+            MaterialBackendAccess::SetUploadedNdf(*material, {});
+          }
+        }
+        if (!residualReady) {
+          ++it;
+          continue;
+        }
         commandList->writeBuffer(constantBuffer, &material->m_Constants, sizeof(MaterialGpu));
-        auto bindingSet = MakeMaterialBindingSet(m_Device, m_StandardLayout, constantBuffer, material->GetProperties(),
+        auto bindingSet = MakeMaterialBindingSet(m_Device, m_StandardLayout, constantBuffer, properties,
                                                  {material->m_BaseColorTexture, material->m_NormalTexture,
                                                   material->m_MetallicRoughnessTexture, material->m_OcclusionTexture,
                                                   material->m_EmissiveTexture},
-                                                 m_MaxTextureAnisotropy);
+                                                 MaterialBackendAccess::GetNdfResidualTexture(*material) != nullptr
+                                                     ? MaterialBackendAccess::GetNdfResidualTexture(*material)
+                                                     : m_FallbackNdfResidual,
+                                                 MaterialBackendAccess::GetNdfDistributionTexture(*material) != nullptr
+                                                     ? MaterialBackendAccess::GetNdfDistributionTexture(*material)
+                                                     : m_FallbackNdfDistribution,
+                                                 m_NdfResidualSampler, m_MaxTextureAnisotropy);
         if (bindingSet != nullptr) {
           MaterialBackendAccess::SetBindingSet(*material, std::move(bindingSet));
           material->ClearDirtyFlag();
@@ -212,9 +336,16 @@ auto MaterialSystem::SetPbrTextureBindings(const std::shared_ptr<Material>& mate
   if (!baseColor || !normal || !metallicRoughness || !occlusion || !emissive) {
     return false;
   }
-  auto bindings = MakeMaterialBindingSet(
-      m_Device, m_StandardLayout, MaterialBackendAccess::GetConstantBuffer(*material), material->GetProperties(),
-      {baseColor, normal, metallicRoughness, occlusion, emissive}, m_MaxTextureAnisotropy);
+  auto bindings =
+      MakeMaterialBindingSet(m_Device, m_StandardLayout, MaterialBackendAccess::GetConstantBuffer(*material),
+                             material->GetProperties(), {baseColor, normal, metallicRoughness, occlusion, emissive},
+                             MaterialBackendAccess::GetNdfResidualTexture(*material) != nullptr
+                                 ? MaterialBackendAccess::GetNdfResidualTexture(*material)
+                                 : m_FallbackNdfResidual,
+                             MaterialBackendAccess::GetNdfDistributionTexture(*material) != nullptr
+                                 ? MaterialBackendAccess::GetNdfDistributionTexture(*material)
+                                 : m_FallbackNdfDistribution,
+                             m_NdfResidualSampler, m_MaxTextureAnisotropy);
   if (bindings == nullptr) {
     return false;
   }

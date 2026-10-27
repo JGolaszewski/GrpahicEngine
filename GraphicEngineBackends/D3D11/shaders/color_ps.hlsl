@@ -26,6 +26,8 @@ cbuffer MaterialCB : register(b1)
     float4 g_TextureParams;
     float4 g_TextureTransformRows[5];
     float4 g_TextureTransformOffsets[5];
+    float4 g_NdfCoefficients[12];
+    float4 g_NdfParams;
 };
 
 struct LightData
@@ -63,6 +65,56 @@ SamplerState g_PrefilteredEnvironmentSampler : register(s8);
 Texture2D<float2> g_BrdfIntegrationLut : register(t9);
 SamplerState g_BrdfIntegrationSampler : register(s9);
 Texture2D<float> g_AmbientOcclusionTexture : register(t10);
+Texture2D<float> g_NdfResidual : register(t3);
+SamplerState g_NdfResidualSampler : register(s3);
+Texture2D<float4> g_EnvironmentPanorama : register(t11);
+SamplerState g_EnvironmentPanoramaSampler : register(s11);
+Texture2D<float> g_NdfDistribution : register(t12);
+SamplerState g_NdfDistributionSampler : register(s12);
+
+float3 EvaluatePrismNdfEnvironmentSpecular(float3 normal, float3 viewDirection, float3 tangent,
+    float3 bitangent, float3 f0, float alpha, float2 pixelPosition)
+{
+    static const uint SAMPLE_COUNT = 128u;
+    static const float GOLDEN_COS = -0.737368878f;
+    static const float GOLDEN_SIN = 0.675490294f;
+    const float noV = max(dot(normal, viewDirection), BRDF_EPSILON);
+    const float3 localTangent = BrdfNormalizeOr(tangent - normal * dot(normal, tangent),
+        abs(normal.y) < 0.9f ? normalize(cross(float3(0.0f, 1.0f, 0.0f), normal)) : float3(1.0f, 0.0f, 0.0f));
+    const float handedness = dot(cross(normal, localTangent), bitangent) < 0.0f ? -1.0f : 1.0f;
+    const float3 localBitangent = cross(normal, localTangent) * handedness;
+    const float phase = frac(sin(dot(pixelPosition, float2(12.9898f, 78.233f))) * 43758.5453f) * 2.0f * BRDF_PI;
+    float2 rotation = float2(cos(phase), sin(phase));
+    float2 golden = float2(GOLDEN_COS, GOLDEN_SIN);
+    float3 accumulated = 0.0f;
+    [loop]
+    for (uint index = 0u; index < SAMPLE_COUNT; ++index)
+    {
+        const float radius = sqrt((float(index) + 0.5f) / float(SAMPLE_COUNT));
+        const float2 disk = rotation * radius;
+        const float2 uv = disk * 0.5f + 0.5f;
+        const float distribution = g_NdfDistribution.SampleLevel(g_NdfDistributionSampler, uv, 0.0f);
+        const float noH = sqrt(max(1.0f - dot(disk, disk), 0.0f));
+        const float3 halfVector = BrdfNormalizeOr(localTangent * disk.x + localBitangent * disk.y + normal * noH, normal);
+        const float voH = dot(viewDirection, halfVector);
+        if (distribution > 0.0f && noH > BRDF_EPSILON && voH > 0.0f)
+        {
+            const float3 lightDirection = 2.0f * voH * halfVector - viewDirection;
+            const float noL = dot(normal, lightDirection);
+            if (noL > BRDF_EPSILON)
+            {
+                const float geometry = BrdfSmithGgxCorrelated(noV, noL, alpha);
+                const float3 fresnel = BrdfFresnelSchlick(f0, voH);
+                const float3 radiance = g_EnvironmentPanorama.SampleLevel(
+                    g_EnvironmentPanoramaSampler, BrdfEnvironmentUv(lightDirection), 0.0f).rgb;
+                accumulated += radiance * fresnel * (distribution * geometry * voH / (noV * noH));
+            }
+        }
+        rotation = float2(rotation.x * golden.x - rotation.y * golden.y,
+                          rotation.x * golden.y + rotation.y * golden.x);
+    }
+    return accumulated * (BRDF_PI / float(SAMPLE_COUNT));
+}
 
 // Input structure
 struct VS_OUTPUT
@@ -273,7 +325,18 @@ PS_OUTPUT main_ps(VS_OUTPUT input)
         const float3 brdfF0 = isSpecularGlossiness ? specularF0 : dielectricF0;
         float3 diffuseBrdf;
         float3 specularBrdf;
-        if (g_ModelFlags.y == 6u)
+        if (g_ModelFlags.y == 9u)
+        {
+            const float3 ndfTangent = BrdfNormalizeOr(tangent - N * dot(N, tangent), tangent);
+            const float ndfHandedness = dot(cross(N, ndfTangent), bitangent) < 0.0f ? -1.0f : 1.0f;
+            const float3 ndfBitangent = cross(N, ndfTangent) * ndfHandedness;
+            const float2 ndfCoord = float2(dot(query.H, ndfTangent), dot(query.H, ndfBitangent));
+            const float residual = g_NdfResidual.SampleLevel(g_NdfResidualSampler, ndfCoord * 0.5f + 0.5f, 0.0f);
+            const float distribution = PrismZernikeNdf(ndfCoord, g_NdfCoefficients, residual, g_NdfParams.x);
+            EvaluateMicrofacetBrdfComponents(query, brdfBaseColor, brdfMetallic, brdfF0, alpha,
+                distribution, diffuseBrdf, specularBrdf);
+        }
+        else if (g_ModelFlags.y == 6u)
         {
             EvaluateAshikhminShirleyBrdfComponents(query, tangent, bitangent, brdfBaseColor, brdfMetallic,
                 brdfF0, g_SpecularParams.w, g_AlphaParams.y, diffuseBrdf, specularBrdf);
@@ -337,8 +400,18 @@ PS_OUTPUT main_ps(VS_OUTPUT input)
         const float2 brdfIntegration = g_BrdfIntegrationLut.Sample(g_BrdfIntegrationSampler,
             float2(saturate(dot(N, viewDirection)), saturate(roughness)));
         const float3 iblF0 = isSpecularGlossiness ? specularF0 : lerp(dielectricF0, baseColor.rgb, metallic);
-        EvaluateSplitSumIblComponents(irradiance, prefiltered, brdfIntegration, N, viewDirection,
-            diffuseColor, iblF0, saturate(roughness), 1.0f, ambientDiffuse, ambientSpecular);
+        if (g_ModelFlags.y == 9u)
+        {
+            ambientDiffuse = irradiance * diffuseColor * (1.0f - BrdfFresnelSchlickRoughness(
+                iblF0, saturate(dot(N, viewDirection)), saturate(roughness))) / BRDF_PI;
+            ambientSpecular = EvaluatePrismNdfEnvironmentSpecular(N, viewDirection, tangent, bitangent,
+                iblF0, alpha, input.pos.xy);
+        }
+        else
+        {
+            EvaluateSplitSumIblComponents(irradiance, prefiltered, brdfIntegration, N, viewDirection,
+                diffuseColor, iblF0, saturate(roughness), 1.0f, ambientDiffuse, ambientSpecular);
+        }
     }
     float3 sceneAmbientDiffuse = diffuseColor * g_AmbientLightColor.rgb * max(g_AmbientLightIntensity, 0.0f);
     float3 emissive = g_EmissiveMetallic.rgb;

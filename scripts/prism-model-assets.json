@@ -1,0 +1,95 @@
+{
+  "schema_version": 2,
+  "prism_repository": "https://github.com/JGolaszewski/PRISM",
+  "prism_source_commit": "93f66a5cd3889ac50b65429e3caab1b0317f8795",
+  "e5_model_repository": "https://huggingface.co/intfloat/e5-large-v2",
+  "e5_model_revision": "f169b11e22de13617baa190a028a32f3493550b6",
+  "decoder_contract": {
+    "contract_version": 1,
+    "grid_output": {"name": "ndf_grid_flat", "dtype": "float32", "shape": [1, 4096]},
+    "degree": 8,
+    "grid_size": 64
+  },
+  "onnx_contracts": {
+    "e5_encoder.onnx": {
+      "inputs": {
+        "input_ids": {"dtype": "int64", "shape": [1, 128]},
+        "attention_mask": {"dtype": "int64", "shape": [1, 128]}
+      },
+      "outputs": {"normalized_embedding": {"dtype": "float32", "shape": [1, 1024]}}
+    },
+    "retriever.onnx": {
+      "inputs": {
+        "embedding": {"dtype": "float32", "shape": [1, 1024]},
+        "directional": {"dtype": "bool", "shape": [1]}
+      },
+      "outputs": {"predicted_latent": {"dtype": "float32", "shape": [1, 16]}}
+    },
+    "vae_decoder.onnx": {
+      "inputs": {"latent": {"dtype": "float32", "shape": [1, 16]}},
+      "outputs": {"ndf_grid_flat": {"dtype": "float32", "shape": [1, 4096]}}
+    }
+  },
+  "assets": [
+    {
+      "name": "e5_encoder.onnx",
+      "release_tag": "e5-onnx-v1.0.0",
+      "size_bytes": 2521912,
+      "sha256": "69d68596bc286daa84aaff9c10be097397e21e5a517e7e5b0436e79bee0f6902"
+    },
+    {
+      "name": "e5_encoder.onnx.data",
+      "release_tag": "e5-onnx-v1.0.0",
+      "size_bytes": 1336886272,
+      "sha256": "ac8ff17adefc1bfdcb9a4d49ab936807f54a01f1be8bb494d1e9d827d56a2100"
+    },
+    {
+      "name": "special_tokens_map.json",
+      "release_tag": "e5-onnx-v1.0.0",
+      "size_bytes": 732,
+      "sha256": "5aa43c2f985a25296d5a5ce621c2f77376ca8091a47993c492fd5460b895b140"
+    },
+    {
+      "name": "tokenizer.json",
+      "release_tag": "e5-onnx-v1.0.0",
+      "size_bytes": 711396,
+      "sha256": "d241a60d5e8f04cc1b2b3e9ef7a4921b27bf526d9f6050ab90f9267a1f9e5c66"
+    },
+    {
+      "name": "tokenizer_config.json",
+      "release_tag": "e5-onnx-v1.0.0",
+      "size_bytes": 1276,
+      "sha256": "c709b7b834bdb716d8d328fdc8a26d746b9f3af7c9bf49523677025bcbc6bf24"
+    },
+    {
+      "name": "vocab.txt",
+      "release_tag": "e5-onnx-v1.0.0",
+      "size_bytes": 231508,
+      "sha256": "07eced375cec144d27c900241f3e339478dec958f92fddbc551f295c992038a3"
+    },
+    {
+      "name": "retriever.onnx",
+      "release_tag": "prism-onnx-v1.0.0",
+      "size_bytes": 15034,
+      "sha256": "778d6df82896ff49da7b1de45f864fd0ff5be969cae80822f6206ff4fda4028b"
+    },
+    {
+      "name": "retriever.onnx.data",
+      "release_tag": "prism-onnx-v1.0.0",
+      "size_bytes": 516336,
+      "sha256": "acf211df0a0ce175366d1b7b12088842b447b1fc04e2c7700626dea356f7ac12"
+    },
+    {
+      "name": "vae_decoder.onnx",
+      "release_tag": "prism-onnx-v1.0.0",
+      "size_bytes": 100427,
+      "sha256": "c89954c16ef6891c7ffa55552b4416d1d1828e9a7d41e7b4b6116660a8a9c045"
+    },
+    {
+      "name": "vae_decoder.onnx.data",
+      "release_tag": "prism-onnx-v1.0.0",
+      "size_bytes": 4508288,
+      "sha256": "9e35ab6003cec58a5f3417805282bdc0186d64d8257fcbe94f997041231e0913"
+    }
+  ]
+}

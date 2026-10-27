@@ -11,6 +11,7 @@
 #include <iterator>
 #include <string>
 #include <system_error>
+#include <vector>
 
 namespace {
 
@@ -140,6 +141,78 @@ TEST(ScenePersistenceTests, MissingTextureAnisotropyValuesDefaultToGlobalCapAndI
   loaded = Engine::SceneSerializer::Load(path);
   EXPECT_FALSE(loaded);
   EXPECT_NE(loaded.error.find("textureAnisotropyLevels"), std::string::npos);
+}
+
+TEST(ScenePersistenceTests, GeneratedNdfCoefficientsResidualAndPromptRoundTrip) {
+  TemporaryProject project;
+  Engine::AssetManager assets(project.Root());
+  Engine::SceneDocument document;
+  Engine::SceneEntityDocument entity;
+  entity.id = 1;
+  entity.primitiveType = "sphere";
+  Engine::SceneMaterialDocument material;
+  material.brdfModel = "prismNdf";
+  material.generatedNdf.emplace();
+  material.generatedNdf->directional = true;
+  material.generatedNdf->prompt = "brushed cobalt metal, fine anisotropic grain";
+  material.generatedNdf->modelVersion = "prism-models-v1";
+  material.generatedNdf->exporterVersion = "decoder-v2";
+  material.generatedNdf->data.normalization = 0.875F;
+  for (size_t index = 0; index < Engine::PrismNdfCoefficientCount; ++index) {
+    material.generatedNdf->data.zernikeCoefficients[index] = static_cast<float>(index) * 0.125F;
+  }
+  for (size_t index = 0; index < Engine::PrismNdfSampleCount; ++index) {
+    material.generatedNdf->data.residuals[index] = static_cast<float>(static_cast<int>(index % 17) - 8) * 0.001F;
+  }
+  entity.material = material;
+  document.entities.push_back(entity);
+
+  std::string error;
+  ASSERT_TRUE(assets.SaveScene("generated-ndf.scene.json", document, error)) << error;
+  const auto loaded = assets.LoadScene("generated-ndf.scene.json");
+  ASSERT_TRUE(loaded) << loaded.error;
+  ASSERT_TRUE(loaded.document.entities.front().material->generatedNdf.has_value());
+  const auto& restored = *loaded.document.entities.front().material->generatedNdf;
+  EXPECT_EQ(restored.data.zernikeCoefficients, material.generatedNdf->data.zernikeCoefficients);
+  EXPECT_EQ(restored.data.residuals, material.generatedNdf->data.residuals);
+  EXPECT_FLOAT_EQ(restored.data.normalization, 0.875F);
+  EXPECT_EQ(restored.prompt, material.generatedNdf->prompt);
+  EXPECT_EQ(restored.modelVersion, "prism-models-v1");
+  EXPECT_EQ(restored.exporterVersion, "decoder-v2");
+  EXPECT_TRUE(restored.directional);
+
+  std::ifstream savedScene(project.Root() / "generated-ndf.scene.json");
+  const auto materialJson = nlohmann::json::parse(savedScene);
+  EXPECT_EQ(materialJson.at("schemaVersion"), Engine::CurrentSceneSchemaVersion);
+  EXPECT_EQ(materialJson.at("entities").at(0).at("material").at("generatedNdf").at("residuals").size(),
+            Engine::PrismNdfSampleCount);
+}
+
+TEST(ScenePersistenceTests, GeneratedNdfRejectsWrongCoefficientCountAndUnsupportedVersion) {
+  TemporaryProject project;
+  const auto path = project.Root() / "invalid-generated-ndf.scene.json";
+  nlohmann::json generated = {{"gridSize", Engine::PrismNdfGridSize},
+                              {"degree", Engine::PrismNdfDegree},
+                              {"dataVersion", Engine::PrismNdfDataVersion},
+                              {"normalization", 1.0F},
+                              {"zernikeCoefficients", std::vector<float>(44, 0.0F)},
+                              {"residuals", std::vector<float>(Engine::PrismNdfSampleCount, 0.0F)}};
+  const auto writeScene = [&path, &generated]() {
+    std::ofstream scene(path, std::ios::binary | std::ios::trunc);
+    scene << nlohmann::json{{"schemaVersion", Engine::CurrentSceneSchemaVersion},
+                            {"unitsPerMeter", 1.0F},
+                            {"entities",
+                             {{{"id", 1},
+                               {"primitiveType", "sphere"},
+                               {"material", {{"brdfModel", "prismNdf"}, {"generatedNdf", generated}}}}}}};
+  };
+  writeScene();
+  EXPECT_FALSE(Engine::SceneSerializer::Load(path));
+
+  generated["zernikeCoefficients"] = std::vector<float>(Engine::PrismNdfCoefficientCount, 0.0F);
+  generated["dataVersion"] = Engine::PrismNdfDataVersion + 1;
+  writeScene();
+  EXPECT_FALSE(Engine::SceneSerializer::Load(path));
 }
 
 TEST(ScenePersistenceTests, LegacyAuthoredMeshSettingsRestoreMeshRendererPresence) {
@@ -577,12 +650,12 @@ TEST(ScenePersistenceTests, RejectsUnsupportedSchemaVersion) {
   Engine::AssetManager assets(project.Root());
   {
     std::ofstream scene(project.Root() / "future-schema.scene.json", std::ios::binary);
-    scene << R"({"schemaVersion":9,"unitsPerMeter":1.0,"entities":[]})";
+    scene << R"({"schemaVersion":10,"unitsPerMeter":1.0,"entities":[]})";
   }
 
   const auto loaded = assets.LoadScene("future-schema.scene.json");
   EXPECT_FALSE(loaded);
-  EXPECT_NE(loaded.error.find("unsupported scene schema version 9"), std::string::npos);
+  EXPECT_NE(loaded.error.find("unsupported scene schema version 10"), std::string::npos);
 }
 
 TEST(ScenePersistenceTests, RejectsMalformedEntityLightAndCameraFields) {

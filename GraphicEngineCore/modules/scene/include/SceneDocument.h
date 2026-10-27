@@ -1,6 +1,7 @@
 #pragma once
 
 #include "runtime/include/CoreExport.h"
+#include "runtime/include/PrismNdfData.h"
 #include "scene/include/AmbientLightSettings.h"
 #include "scene/include/components/CameraPostProcessing.h"
 
@@ -12,7 +13,7 @@
 #include <vector>
 
 namespace Engine {
-inline constexpr uint32_t CurrentSceneSchemaVersion = 8;
+inline constexpr uint32_t CurrentSceneSchemaVersion = 9;
 
 /// Persistent 128-bit scene identity stored as two unsigned words.
 struct SceneGuidDocument {
@@ -30,6 +31,19 @@ struct SceneMaterialTextureTransform {
   std::array<float, 2> scale = {1.0f, 1.0f};
   float rotation = 0.0f;
   auto operator==(const SceneMaterialTextureTransform& other) const noexcept -> bool = default;
+};
+
+/// PRISM generation provenance and reproducible render payload stored with a material.
+struct SceneGeneratedNdfDocument {
+  PrismNdfData data;
+  uint32_t gridSize = PrismNdfGridSize;
+  uint32_t degree = PrismNdfDegree;
+  uint32_t dataVersion = PrismNdfDataVersion;
+  bool directional = false;
+  std::string prompt;
+  std::string modelVersion;
+  std::string exporterVersion;
+  auto operator==(const SceneGeneratedNdfDocument& other) const noexcept -> bool = default;
 };
 
 struct SceneMaterialDocument {
@@ -56,6 +70,7 @@ struct SceneMaterialDocument {
   SceneMaterialTextureTransform baseColorTextureTransform;
   SceneMaterialTextureTransform normalTextureTransform;
   std::array<uint32_t, 5> textureAnisotropyLevels{}; ///< Per-slot requests: 0 means Global cap, otherwise 1/2/4/8/16.
+  std::optional<SceneGeneratedNdfDocument> generatedNdf; ///< Present for the PRISM NDF model.
   /// Compares every serialized material property.
   /// @param other Material document to compare with.
   /// @return True when all properties match.
