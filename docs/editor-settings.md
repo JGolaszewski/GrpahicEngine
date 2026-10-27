@@ -32,6 +32,13 @@ the active save path.
 
 ## Asset rename and assignment
 
+Use **Import HDR environment...** in the Assets panel to import a Radiance
+`.hdr` environment. Select the scene root and add a **Skybox** component to
+choose an HDR environment, a 2:1 `.png` panorama, or a solid color. HDRI
+lighting intensity is available only for HDR mode. HDR environments appear
+alongside models, textures, and materials and can be renamed while preserving
+their GUID.
+
 Use **Create material** in the Assets panel to create a reusable default
 material. Materials appear alongside models and textures and can be renamed
 with **Rename selected**; the editor moves the material document and metadata

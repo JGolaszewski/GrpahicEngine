@@ -55,6 +55,11 @@ Use **Scene Hierarchy** to inspect and edit the active scene:
 - A **Light** component supports directional, point, and spot types. The
   Inspector shows direction, range, and cone controls only when they apply,
   along with color, intensity, shadow bias, and cast-shadows controls.
+- Select the scene root and use **Add Skybox** to add its optional background.
+  Choose an HDR environment, an imported 2:1 PNG panorama, or a solid color in
+  the root Inspector. HDRI lighting and environment intensity are available for
+  HDR mode only. The environment and ambient-light intensity controls are
+  separate.
 
 Component and hierarchy edits update the active scene immediately. Entity
 selection is separate from the viewport navigation camera, and selecting a
