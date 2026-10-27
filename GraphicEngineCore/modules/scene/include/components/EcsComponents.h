@@ -7,6 +7,7 @@
 #include <DirectXMath.h>
 
 #include <array>
+#include <cctype>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -97,6 +98,19 @@ struct MeshRenderer {
   bool DisableDepthTest = false;                 ///< Whether depth testing is disabled for this mesh.
   std::optional<SceneMaterialDocument> Material; ///< Optional material override applied to all mesh slots.
   std::vector<std::optional<SceneMaterialDocument>> MaterialOverrides; ///< Optional per-submesh material overrides.
+};
+
+/// Background source selected by a scene-root skybox.
+enum class SkyboxMode : uint8_t { HdrEnvironment, LdrPanorama, SolidColor };
+
+/// Optional scene-root sky background with HDR environment lighting support.
+struct Skybox {
+  SkyboxMode Mode = SkyboxMode::HdrEnvironment;     ///< Background source mode.
+  std::string EnvironmentGuid;                      ///< Imported Radiance HDR asset identity, used in HDR mode.
+  std::string TextureGuid;                          ///< Imported LDR equirectangular image identity, used in LDR mode.
+  std::array<float, 3> Color = {0.2F, 0.35F, 0.6F}; ///< Linear RGB background, used in solid-color mode.
+  bool EnableEnvironmentLighting = true; ///< Whether the HDR environment contributes diffuse/specular lighting.
+  float Intensity = 1.0F;                ///< Nonnegative HDR environment-lighting multiplier.
 };
 
 /// Supported authored light types.
@@ -217,6 +231,41 @@ inline auto Validate(const Camera& component) -> Status {
     if (!ambientLightValidation) {
       return ambientLightValidation;
     }
+  }
+  return {};
+}
+
+/// Validates the skybox environment intensity.
+/// @param component Skybox component to validate.
+/// @return Success, or an error describing the invalid value.
+inline auto Validate(const Skybox& component) -> Status {
+  if (component.Mode != SkyboxMode::HdrEnvironment && component.Mode != SkyboxMode::LdrPanorama &&
+      component.Mode != SkyboxMode::SolidColor) {
+    return std::unexpected(MakeError("Skybox mode is unsupported"));
+  }
+  const std::string& assetGuid =
+      component.Mode == SkyboxMode::LdrPanorama ? component.TextureGuid : component.EnvironmentGuid;
+  if (!assetGuid.empty()) {
+    if (assetGuid.size() != 36) {
+      return std::unexpected(MakeError("Skybox asset GUID must be a valid asset GUID"));
+    }
+    for (size_t index = 0; index < assetGuid.size(); ++index) {
+      if (index == 8 || index == 13 || index == 18 || index == 23) {
+        if (assetGuid[index] != '-') {
+          return std::unexpected(MakeError("Skybox asset GUID must be a valid asset GUID"));
+        }
+      } else if (std::isxdigit(static_cast<unsigned char>(assetGuid[index])) == 0) {
+        return std::unexpected(MakeError("Skybox asset GUID must be a valid asset GUID"));
+      }
+    }
+  }
+  for (float value : component.Color) {
+    if (!std::isfinite(value) || value < 0.0F) {
+      return std::unexpected(MakeError("Skybox color must contain finite nonnegative values"));
+    }
+  }
+  if (!std::isfinite(component.Intensity) || component.Intensity < 0.0F) {
+    return std::unexpected(MakeError("Skybox intensity must be finite and nonnegative"));
   }
   return {};
 }

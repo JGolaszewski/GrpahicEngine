@@ -20,6 +20,10 @@ void AssetBrowserPanel::Draw() {
     EmitEvent(std::make_unique<AssetImportRequestedEvent>(AssetImportRequestedEvent::AssetType::Texture));
   }
   ImGui::SameLine();
+  if (ImGui::Button("Import HDR environment...")) {
+    EmitEvent(std::make_unique<AssetImportRequestedEvent>(AssetImportRequestedEvent::AssetType::Environment));
+  }
+  ImGui::SameLine();
   if (ImGui::Button("Create material")) {
     EmitEvent(std::make_unique<AssetImportRequestedEvent>(AssetImportRequestedEvent::AssetType::Material));
   }
@@ -28,6 +32,8 @@ void AssetBrowserPanel::Draw() {
       std::ranges::any_of(m_Models, [this](const auto& model) -> auto { return model.guid == m_SelectedGuid; });
   const auto selectedTexture =
       std::ranges::find(m_Textures, m_SelectedGuid, &Engine::AssetManager::TextureAssetInfo::guid);
+  const auto selectedEnvironment =
+      std::ranges::find(m_Environments, m_SelectedGuid, &Engine::AssetManager::EnvironmentAssetInfo::guid);
   const bool selectedImportableAsset = selectedModel || selectedTexture != m_Textures.end();
   if (!selectedImportableAsset) {
     ImGui::BeginDisabled();
@@ -50,7 +56,8 @@ void AssetBrowserPanel::Draw() {
   }
   const std::string* selectedName =
       selectedModel ? &std::ranges::find(m_Models, m_SelectedGuid, &Engine::AssetManager::ModelAssetInfo::guid)->name
-      : selectedTexture != m_Textures.end() ? &selectedTexture->name
+      : selectedTexture != m_Textures.end()         ? &selectedTexture->name
+      : selectedEnvironment != m_Environments.end() ? &selectedEnvironment->name
       : std::ranges::find(m_Materials, m_SelectedGuid, &Engine::AssetManager::MaterialAssetInfo::guid) !=
               m_Materials.end()
           ? &std::ranges::find(m_Materials, m_SelectedGuid, &Engine::AssetManager::MaterialAssetInfo::guid)->name
@@ -85,7 +92,7 @@ void AssetBrowserPanel::Draw() {
     ImGui::TextColored(m_StatusSucceeded ? ImVec4(0.45F, 0.85F, 0.5F, 1.0F) : ImVec4(0.95F, 0.4F, 0.35F, 1.0F), "%s",
                        m_StatusMessage.c_str());
   }
-  if (m_Models.empty() && m_Textures.empty() && m_Materials.empty()) {
+  if (m_Models.empty() && m_Textures.empty() && m_Materials.empty() && m_Environments.empty()) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg) // Dear ImGui formats text through its documented variadic API.
     ImGui::TextDisabled("No assets found in this project.");
   }
@@ -136,6 +143,21 @@ void AssetBrowserPanel::Draw() {
     }
     ImGui::PopID();
   }
+  if (!m_Environments.empty()) {
+    ImGui::TextDisabled("HDR Environments");
+  }
+  for (const auto& environment : m_Environments) {
+    ImGui::PushID(environment.guid.c_str());
+    const std::string label = environment.name + "  [HDR Environment]";
+    if (ImGui::Selectable(label.c_str(), m_SelectedGuid == environment.guid)) {
+      m_SelectedGuid = environment.guid;
+    }
+    if (ImGui::IsItemHovered()) {
+      ImGui::SetTooltip("HDR Environment\n%s\n%s", environment.guid.c_str(),
+                        environment.sourcePath.generic_string().c_str());
+    }
+    ImGui::PopID();
+  }
   if (!m_Materials.empty()) {
     ImGui::TextDisabled("Materials");
   }
@@ -159,13 +181,17 @@ void AssetBrowserPanel::OnEvent(Engine::Events::Event& event) {
     m_Models = update.GetModels();
     m_Textures = update.GetTextures();
     m_Materials = update.GetMaterials();
+    m_Environments = update.GetEnvironments();
     if (std::none_of(m_Models.begin(), m_Models.end(),
                      [this](const auto& model) -> auto { return model.guid == m_SelectedGuid; })) {
       if (std::none_of(m_Textures.begin(), m_Textures.end(),
                        [this](const auto& texture) -> auto { return texture.guid == m_SelectedGuid; })) {
         if (std::none_of(m_Materials.begin(), m_Materials.end(),
                          [this](const auto& material) -> auto { return material.guid == m_SelectedGuid; })) {
-          m_SelectedGuid.clear();
+          if (std::none_of(m_Environments.begin(), m_Environments.end(),
+                           [this](const auto& environment) -> auto { return environment.guid == m_SelectedGuid; })) {
+            m_SelectedGuid.clear();
+          }
         }
       }
     }

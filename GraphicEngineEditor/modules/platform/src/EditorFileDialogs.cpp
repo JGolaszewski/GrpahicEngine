@@ -120,6 +120,20 @@ auto ChooseTextureFile(const std::filesystem::path& projectRoot) -> std::optiona
   return (GetOpenFileNameW(&dialog) != 0) ? std::optional(std::filesystem::path(filename.data())) : std::nullopt;
 }
 
+auto ChooseEnvironmentFile(const std::filesystem::path& projectRoot) -> std::optional<std::filesystem::path> {
+  std::vector<wchar_t> filename(32768);
+  const auto initialDirectory = projectRoot.wstring();
+  OPENFILENAMEW dialog{};
+  dialog.lStructSize = sizeof(dialog);
+  dialog.lpstrFile = filename.data();
+  dialog.nMaxFile = static_cast<DWORD>(filename.size());
+  dialog.lpstrFilter = L"Radiance HDR environments (*.hdr)\0*.hdr\0\0";
+  dialog.nFilterIndex = 1;
+  dialog.lpstrInitialDir = initialDirectory.c_str();
+  dialog.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR;
+  return (GetOpenFileNameW(&dialog) != 0) ? std::optional(std::filesystem::path(filename.data())) : std::nullopt;
+}
+
 auto ChooseLogExportFile(const std::filesystem::path& initialPath) -> std::optional<std::filesystem::path> {
   std::vector<wchar_t> filename(32768);
   if (!initialPath.empty()) {

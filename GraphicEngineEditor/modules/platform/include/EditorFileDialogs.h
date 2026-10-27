@@ -12,6 +12,7 @@ std::optional<std::filesystem::path> ChooseSceneFile(bool save, const std::files
                                                      const std::filesystem::path& projectRoot);
 std::optional<std::filesystem::path> ChooseModelFile(const std::filesystem::path& projectRoot);
 std::optional<std::filesystem::path> ChooseTextureFile(const std::filesystem::path& projectRoot);
+std::optional<std::filesystem::path> ChooseEnvironmentFile(const std::filesystem::path& projectRoot);
 std::optional<std::filesystem::path> ChooseLogExportFile(const std::filesystem::path& initialPath);
 /// Opens an overwrite-confirming save dialog for a final-render image.
 /// @param exr When true, selects the multilayer OpenEXR filter; otherwise PNG.

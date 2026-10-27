@@ -217,7 +217,7 @@ void Editor::OnInit() {
   }
   BroadcastSceneChanged();
   AssetRegistryChangedEvent assets(GetAssetManager()->GetKnownModels(), GetAssetManager()->GetKnownTextures(),
-                                   GetAssetManager()->GetKnownMaterials());
+                                   GetAssetManager()->GetKnownMaterials(), GetAssetManager()->GetKnownEnvironments());
   BroadcastEvent(assets);
 }
 
@@ -336,6 +336,7 @@ void Editor::OnSetupViews() {
   binding.DebugSettings.ShowLightGizmos = m_EditorPreferences.ShowLightGizmos;
   binding.DebugSettings.ShowCameraFrustums = m_EditorPreferences.ShowCameraFrustums;
   binding.DebugSettings.ShowWireframePlane = m_EditorPreferences.ShowWireframePlane;
+  binding.ShowEnvironmentBackground = m_EditorPreferences.ShowSkyboxInEditorViewport;
   RegisterView(binding);
 
   UpdateCameraPreview();
@@ -492,7 +493,8 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
           ENGINE_LOG_WARN("Asset", "Project asset warning | {}", warning);
         }
         AssetRegistryChangedEvent changed(GetAssetManager()->GetKnownModels(), GetAssetManager()->GetKnownTextures(),
-                                          GetAssetManager()->GetKnownMaterials());
+                                          GetAssetManager()->GetKnownMaterials(),
+                                          GetAssetManager()->GetKnownEnvironments());
         BroadcastEvent(changed);
       }
       return true;
@@ -639,7 +641,8 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
         return true;
       }
       AssetRegistryChangedEvent changed(GetAssetManager()->GetKnownModels(), GetAssetManager()->GetKnownTextures(),
-                                        GetAssetManager()->GetKnownMaterials());
+                                        GetAssetManager()->GetKnownMaterials(),
+                                        GetAssetManager()->GetKnownEnvironments());
       BroadcastEvent(changed);
       if (request.GetTargetEntity() != Engine::InvalidEntityHandle && m_ActiveScene &&
           m_ActiveScene->World().IsAlive(request.GetTargetEntity())) {
@@ -673,12 +676,16 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
     }
     const auto path = request.GetAssetType() == AssetImportRequestedEvent::AssetType::Texture
                           ? EditorPlatform::ChooseTextureFile(GetAssetManager()->GetProjectRoot())
+                      : request.GetAssetType() == AssetImportRequestedEvent::AssetType::Environment
+                          ? EditorPlatform::ChooseEnvironmentFile(GetAssetManager()->GetProjectRoot())
                           : EditorPlatform::ChooseModelFile(GetAssetManager()->GetProjectRoot());
     if (!path) {
       return true;
     }
     auto imported = request.GetAssetType() == AssetImportRequestedEvent::AssetType::Texture
                         ? GetAssetManager()->ImportTexture(*path)
+                    : request.GetAssetType() == AssetImportRequestedEvent::AssetType::Environment
+                        ? GetAssetManager()->ImportEnvironment(*path)
                         : GetAssetManager()->ImportModel(*path);
     if (!imported) {
       ENGINE_LOG_ERROR("Asset", "Asset import failed | path: {} | reason: {}", path->generic_string(),
@@ -692,7 +699,8 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
       return true;
     }
     AssetRegistryChangedEvent changed(GetAssetManager()->GetKnownModels(), GetAssetManager()->GetKnownTextures(),
-                                      GetAssetManager()->GetKnownMaterials());
+                                      GetAssetManager()->GetKnownMaterials(),
+                                      GetAssetManager()->GetKnownEnvironments());
     BroadcastEvent(changed);
     return true;
   });
@@ -712,7 +720,8 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
       return true;
     }
     AssetRegistryChangedEvent changed(GetAssetManager()->GetKnownModels(), GetAssetManager()->GetKnownTextures(),
-                                      GetAssetManager()->GetKnownMaterials());
+                                      GetAssetManager()->GetKnownMaterials(),
+                                      GetAssetManager()->GetKnownEnvironments());
     BroadcastEvent(changed);
     AssetWorkflowFeedbackEvent feedback(true, "Asset renamed; scene references remain valid");
     BroadcastEvent(feedback);
@@ -1008,6 +1017,71 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
         queueMutation(*value);
       } else if (operation == EcsComponentMutationRequestedEvent::Operation::Add) {
         queueMutation(Engine::Ecs::CameraPostProcessing{});
+      }
+      break;
+    case EcsComponentMutationRequestedEvent::Component::Skybox:
+      if (operation == EcsComponentMutationRequestedEvent::Operation::Remove) {
+        (void)m_ActiveScene->QueueRemove<Engine::Ecs::Skybox>(entity);
+      } else if (const auto* value = std::get_if<Engine::Ecs::Skybox>(&payload)) {
+        if (const Engine::Status valid = Engine::Ecs::Validate(*value); !valid) {
+          AssetWorkflowFeedbackEvent feedback(false, valid.error().Message);
+          BroadcastEvent(feedback);
+          return true;
+        }
+        if (value->Mode == Engine::Ecs::SkyboxMode::HdrEnvironment && !value->EnvironmentGuid.empty()) {
+          std::string error;
+          if (GetAssetManager() == nullptr || !GetAssetManager()->LoadEnvironment(value->EnvironmentGuid, error)) {
+            if (error.empty()) {
+              error = "HDR environment asset manager is unavailable";
+            }
+            ENGINE_LOG_ERROR("Asset", "Skybox environment assignment rejected | guid: {} | reason: {}",
+                             value->EnvironmentGuid, error);
+            AssetWorkflowFeedbackEvent feedback(false, error);
+            BroadcastEvent(feedback);
+            return true;
+          }
+          if (GetRenderSystem() == nullptr ||
+              !GetRenderSystem()->PrepareAssetEnvironment(value->EnvironmentGuid, error)) {
+            if (error.empty()) {
+              error = "HDR environment renderer is unavailable";
+            }
+            ENGINE_LOG_ERROR("Asset", "Skybox environment preparation rejected | guid: {} | reason: {}",
+                             value->EnvironmentGuid, error);
+            AssetWorkflowFeedbackEvent feedback(false, error);
+            BroadcastEvent(feedback);
+            return true;
+          }
+        } else if (value->Mode == Engine::Ecs::SkyboxMode::LdrPanorama && !value->TextureGuid.empty()) {
+          std::string error;
+          if (GetAssetManager() == nullptr || !GetAssetManager()->LoadTexture(value->TextureGuid, error)) {
+            if (error.empty()) {
+              error = "PNG texture asset manager is unavailable";
+            }
+            AssetWorkflowFeedbackEvent feedback(false, error);
+            BroadcastEvent(feedback);
+            return true;
+          }
+          const auto image = GetAssetManager()->GetTexture(value->TextureGuid);
+          const auto path = GetAssetManager()->GetSourcePath(value->TextureGuid);
+          if (image == nullptr || !path || path->extension() != ".png" || image->height == 0 ||
+              image->width != image->height * 2U) {
+            AssetWorkflowFeedbackEvent feedback(false, "Skybox image must be a 2:1 equirectangular PNG panorama.");
+            BroadcastEvent(feedback);
+            return true;
+          }
+          if (GetRenderSystem() == nullptr ||
+              !GetRenderSystem()->PrepareAssetTexture(value->TextureGuid, true, error)) {
+            if (error.empty()) {
+              error = "PNG skybox renderer is unavailable";
+            }
+            AssetWorkflowFeedbackEvent feedback(false, error);
+            BroadcastEvent(feedback);
+            return true;
+          }
+        }
+        queueMutation(*value);
+      } else if (operation == EcsComponentMutationRequestedEvent::Operation::Add) {
+        queueMutation(Engine::Ecs::Skybox{});
       }
       break;
     }

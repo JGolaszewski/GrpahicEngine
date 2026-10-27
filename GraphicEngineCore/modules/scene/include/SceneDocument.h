@@ -12,7 +12,7 @@
 #include <vector>
 
 namespace Engine {
-inline constexpr uint32_t CurrentSceneSchemaVersion = 6;
+inline constexpr uint32_t CurrentSceneSchemaVersion = 8;
 
 /// Persistent 128-bit scene identity stored as two unsigned words.
 struct SceneGuidDocument {
@@ -60,6 +60,16 @@ struct SceneMaterialDocument {
   /// @param other Material document to compare with.
   /// @return True when all properties match.
   auto operator==(const SceneMaterialDocument& other) const noexcept -> bool = default;
+};
+
+/// Optional scene-wide sky background settings.
+struct SceneSkyboxDocument {
+  std::string mode = "hdr";                         ///< Background mode: hdr, ldr, or color; missing means legacy HDR.
+  std::string environmentGuid;                      ///< Imported Radiance HDR asset identity, empty until assigned.
+  std::string textureGuid;                          ///< Imported LDR equirectangular texture identity.
+  std::array<float, 3> color = {0.2f, 0.35f, 0.6f}; ///< Linear RGB solid background color.
+  bool enableEnvironmentLighting = true;            ///< Whether the environment contributes diffuse/specular lighting.
+  float intensity = 1.0f;                           ///< Nonnegative multiplier applied to environment lighting.
 };
 
 /// Persistent entity state stored in a scene document.
@@ -130,11 +140,11 @@ struct SceneCameraDocument {
   float farPlane = 1000.0f;                                 ///< Far clipping plane distance.
   /// Render output dimensions; missing values in older files use 1920 x 1080.
   uint32_t outputWidth = 1920;
-  uint32_t outputHeight = 1080;                            ///< Render output height in pixels.
-  int32_t priority = 0;                                    ///< Camera selection priority.
-  bool active = true;                                      ///< Whether this camera participates in camera selection.
+  uint32_t outputHeight = 1080;                             ///< Render output height in pixels.
+  int32_t priority = 0;                                     ///< Camera selection priority.
+  bool active = true;                                       ///< Whether this camera participates in camera selection.
   std::optional<AmbientLightSettings> ambientLightOverride; ///< Optional camera-specific ambient-light override.
-  std::optional<Ecs::CameraPostProcessing> postProcessing; ///< Camera lighting settings and ordered color effects.
+  std::optional<Ecs::CameraPostProcessing> postProcessing;  ///< Camera lighting settings and ordered color effects.
 };
 
 /// Complete persistent scene state, including its schema, permanent root, and authored objects.
@@ -142,6 +152,7 @@ struct SceneDocument {
   uint32_t schemaVersion = CurrentSceneSchemaVersion; ///< Serialized schema version.
   float unitsPerMeter = 1.0f;                         ///< Number of scene units representing one meter.
   AmbientLightSettings ambientLight;                  ///< Scene-wide diffuse ambient fill.
+  std::optional<SceneSkyboxDocument> skybox;          ///< Optional root-owned sky background and HDR lighting settings.
   std::vector<SceneEntityDocument> entities;          ///< Authored renderable entities.
   std::vector<SceneLightDocument> lights;             ///< Authored lights.
   std::vector<SceneCameraDocument> cameras;           ///< Authored cameras.

@@ -8,6 +8,7 @@
 #include <array>
 #include <chrono>
 #include <filesystem>
+#include <fstream>
 #include <string>
 #include <utility>
 
@@ -103,6 +104,10 @@ TEST(SceneEcsPersistenceTests, RoundTripsEntityIdentityHierarchyAndSupportedComp
                                                                                .Intensity = 1.5F,
                                                                                .SampleCount = 8,
                                                                                .DepthBias = 0.02F}});
+  (void)source.QueueAdd(source.SceneRootEntity(), Engine::Ecs::Skybox{.Mode = Engine::Ecs::SkyboxMode::SolidColor,
+                                                                      .EnvironmentGuid = {},
+                                                                      .TextureGuid = {},
+                                                                      .Color = {0.12F, 0.34F, 0.56F}});
   for (const auto& result : source.sync())
     ASSERT_TRUE(result.Outcome);
 
@@ -113,6 +118,9 @@ TEST(SceneEcsPersistenceTests, RoundTripsEntityIdentityHierarchyAndSupportedComp
   ASSERT_EQ(saved.cameras.size(), 1U);
   EXPECT_EQ(saved.ambientLight.Color, (std::array<float, 3>{0.7F, 0.6F, 0.5F}));
   EXPECT_FLOAT_EQ(saved.ambientLight.Intensity, 0.4F);
+  ASSERT_TRUE(saved.skybox.has_value());
+  EXPECT_EQ(saved.skybox->mode, "color");
+  EXPECT_EQ(saved.skybox->color, (std::array<float, 3>{0.12F, 0.34F, 0.56F}));
   EXPECT_EQ(saved.lights.front().name, "Key Light");
   EXPECT_EQ(saved.cameras.front().name, "Main Camera");
   EXPECT_EQ(saved.cameras.front().priority, -7);
@@ -151,6 +159,9 @@ TEST(SceneEcsPersistenceTests, RoundTripsEntityIdentityHierarchyAndSupportedComp
   ASSERT_EQ(loaded.cameras.size(), 1U);
   EXPECT_EQ(loaded.ambientLight.Color, saved.ambientLight.Color);
   EXPECT_FLOAT_EQ(loaded.ambientLight.Intensity, saved.ambientLight.Intensity);
+  ASSERT_TRUE(loaded.skybox.has_value());
+  EXPECT_EQ(loaded.skybox->mode, "color");
+  EXPECT_EQ(loaded.skybox->color, saved.skybox->color);
   for (const auto& expected : saved.entities) {
     const auto actual =
         std::ranges::find(loaded.entities, expected.identityGuid, &Engine::SceneEntityDocument::identityGuid);
@@ -224,6 +235,48 @@ TEST(SceneEcsPersistenceTests, RoundTripsEntityIdentityHierarchyAndSupportedComp
   EXPECT_FLOAT_EQ(loaded.cameras.front().farPlane, saved.cameras.front().farPlane);
   EXPECT_EQ(loaded.cameras.front().outputWidth, saved.cameras.front().outputWidth);
   EXPECT_EQ(loaded.cameras.front().outputHeight, saved.cameras.front().outputHeight);
+}
+
+TEST(SceneEcsPersistenceTests, LegacySkyboxWithoutModeLoadsAsHdrEnvironment) {
+  const auto scenePath = std::filesystem::temp_directory_path() /
+                         ("GraphicEngineLegacySkybox-" +
+                          std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + ".json");
+  {
+    std::ofstream output(scenePath, std::ios::binary | std::ios::trunc);
+    ASSERT_TRUE(output);
+    output
+        << R"({"schemaVersion":7,"unitsPerMeter":1.0,"skybox":{"environmentGuid":"00000000-0000-0000-0000-000000000001","enableEnvironmentLighting":true,"intensity":1.5}})";
+    ASSERT_TRUE(output);
+  }
+  const auto loaded = Engine::SceneSerializer::Load(scenePath);
+  std::error_code filesystemError;
+  std::filesystem::remove(scenePath, filesystemError);
+  ASSERT_TRUE(loaded) << loaded.error;
+  ASSERT_TRUE(loaded.document.skybox.has_value());
+  EXPECT_EQ(loaded.document.skybox->mode, "hdr");
+  EXPECT_EQ(loaded.document.skybox->environmentGuid, "00000000-0000-0000-0000-000000000001");
+  EXPECT_FLOAT_EQ(loaded.document.skybox->intensity, 1.5F);
+}
+
+TEST(SceneEcsPersistenceTests, LdrPanoramaSkyboxModeRoundTrips) {
+  Engine::SceneDocument document;
+  document.skybox = Engine::SceneSkyboxDocument{.mode = "ldr",
+                                                .environmentGuid = {},
+                                                .textureGuid = "00000000-0000-0000-0000-000000000002",
+                                                .color = {0.1F, 0.2F, 0.3F}};
+  const auto scenePath = std::filesystem::temp_directory_path() /
+                         ("GraphicEngineLdrSkybox-" +
+                          std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + ".json");
+  std::string error;
+  ASSERT_TRUE(Engine::SceneSerializer::SaveAtomic(scenePath, document, error)) << error;
+  const auto loaded = Engine::SceneSerializer::Load(scenePath);
+  std::error_code filesystemError;
+  std::filesystem::remove(scenePath, filesystemError);
+  ASSERT_TRUE(loaded) << loaded.error;
+  ASSERT_TRUE(loaded.document.skybox.has_value());
+  EXPECT_EQ(loaded.document.skybox->mode, "ldr");
+  EXPECT_EQ(loaded.document.skybox->textureGuid, "00000000-0000-0000-0000-000000000002");
+  EXPECT_EQ(loaded.document.skybox->color, (std::array<float, 3>{0.1F, 0.2F, 0.3F}));
 }
 
 TEST(SceneEcsPersistenceTests, MissingMaterialReferenceKeepsSceneUsableAndPreservesLegacyValues) {

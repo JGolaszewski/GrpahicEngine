@@ -100,6 +100,7 @@ void InspectorPanel::OnEvent(Engine::Events::Event& event) {
     m_Models = update.GetModels();
     m_Textures = update.GetTextures();
     m_Materials = update.GetMaterials();
+    m_Environments = update.GetEnvironments();
     return false;
   });
   dispatcher.Dispatch<AssetWorkflowFeedbackEvent>([this](const auto& update) -> bool {
@@ -160,13 +161,123 @@ void InspectorPanel::DrawEntityInspector() {
   }
   ImGui::PopID();
 
+  if (isSceneRoot) {
+    const auto* storedSkybox = world.Get<Engine::Ecs::Skybox>(entity);
+    if (storedSkybox == nullptr) {
+      if (ImGui::Button("Add Skybox")) {
+        emitAdd(Mutation::Component::Skybox);
+      }
+      ImGui::SameLine();
+      ImGui::TextDisabled("Add a scene-wide sky background.");
+    } else if (DrawComponentHeader("Skybox", "Skybox", "Skybox component header", Mutation::Component::Skybox,
+                                   emitRemove)) {
+      Engine::Ecs::Skybox skybox = *storedSkybox;
+      bool changed = false;
+      const char* modeName = skybox.Mode == Engine::Ecs::SkyboxMode::LdrPanorama  ? "PNG panorama"
+                             : skybox.Mode == Engine::Ecs::SkyboxMode::SolidColor ? "Solid color"
+                                                                                  : "HDR environment";
+      if (ImGui::BeginCombo("Background", modeName)) {
+        const auto selectMode = [&](Engine::Ecs::SkyboxMode mode, const char* label) -> void {
+          const bool selected = skybox.Mode == mode;
+          if (ImGui::Selectable(label, selected) && !selected) {
+            skybox.Mode = mode;
+            if (mode != Engine::Ecs::SkyboxMode::HdrEnvironment) {
+              skybox.EnvironmentGuid.clear();
+            }
+            if (mode != Engine::Ecs::SkyboxMode::LdrPanorama) {
+              skybox.TextureGuid.clear();
+            }
+            changed = true;
+          }
+          if (selected) {
+            ImGui::SetItemDefaultFocus();
+          }
+        };
+        selectMode(Engine::Ecs::SkyboxMode::HdrEnvironment, "HDR environment");
+        selectMode(Engine::Ecs::SkyboxMode::LdrPanorama, "PNG panorama");
+        selectMode(Engine::Ecs::SkyboxMode::SolidColor, "Solid color");
+        ImGui::EndCombo();
+      }
+      if (skybox.Mode == Engine::Ecs::SkyboxMode::HdrEnvironment) {
+        const auto selected = std::ranges::find(m_Environments, skybox.EnvironmentGuid,
+                                                &Engine::AssetManager::EnvironmentAssetInfo::guid);
+        const std::string preview = skybox.EnvironmentGuid.empty() ? "None"
+                                    : selected != m_Environments.end()
+                                        ? selected->name
+                                        : "Missing environment: " + skybox.EnvironmentGuid;
+        if (ImGui::BeginCombo("HDR environment asset", preview.c_str())) {
+          const bool noEnvironmentSelected = skybox.EnvironmentGuid.empty();
+          if (ImGui::Selectable("None", noEnvironmentSelected) && !noEnvironmentSelected) {
+            skybox.EnvironmentGuid.clear();
+            changed = true;
+          }
+          for (const auto& environment : m_Environments) {
+            ImGui::PushID(environment.guid.c_str());
+            const bool isSelected = skybox.EnvironmentGuid == environment.guid;
+            if (ImGui::Selectable(environment.name.c_str(), isSelected) && !isSelected) {
+              skybox.EnvironmentGuid = environment.guid;
+              changed = true;
+            }
+            if (isSelected) {
+              ImGui::SetItemDefaultFocus();
+            }
+            ImGui::PopID();
+          }
+          ImGui::EndCombo();
+        }
+        if (m_Environments.empty()) {
+          ImGui::TextDisabled("Import a .hdr environment from the Assets panel to use it here.");
+        }
+        changed |= ImGui::Checkbox("Enable HDRI lighting", &skybox.EnableEnvironmentLighting);
+        changed |= ImGui::SliderFloat("Environment intensity", &skybox.Intensity, 0.0F, 10.0F, "%.2f");
+      } else if (skybox.Mode == Engine::Ecs::SkyboxMode::LdrPanorama) {
+        const auto selected =
+            std::ranges::find(m_Textures, skybox.TextureGuid, &Engine::AssetManager::TextureAssetInfo::guid);
+        const std::string preview = skybox.TextureGuid.empty()     ? "None"
+                                    : selected != m_Textures.end() ? selected->name
+                                                                   : "Missing texture: " + skybox.TextureGuid;
+        if (ImGui::BeginCombo("PNG panorama asset", preview.c_str())) {
+          const bool noTextureSelected = skybox.TextureGuid.empty();
+          if (ImGui::Selectable("None", noTextureSelected) && !noTextureSelected) {
+            skybox.TextureGuid.clear();
+            changed = true;
+          }
+          for (const auto& texture : m_Textures) {
+            if (texture.sourcePath.extension() != ".png") {
+              continue;
+            }
+            ImGui::PushID(texture.guid.c_str());
+            const bool isSelected = skybox.TextureGuid == texture.guid;
+            if (ImGui::Selectable(texture.name.c_str(), isSelected) && !isSelected) {
+              skybox.TextureGuid = texture.guid;
+              changed = true;
+            }
+            if (isSelected) {
+              ImGui::SetItemDefaultFocus();
+            }
+            ImGui::PopID();
+          }
+          ImGui::EndCombo();
+        }
+        if (m_Textures.empty()) {
+          ImGui::TextDisabled("Import a PNG texture from the Assets panel to use it here.");
+        }
+      } else {
+        changed |= ImGui::ColorEdit3("Sky color (linear RGB)", skybox.Color.data());
+      }
+      if (changed) {
+        emitSet(Mutation::Component::Skybox, std::move(skybox));
+      }
+    }
+  }
+
   if (isSceneRoot && ImGui::CollapsingHeader("Scene Ambient Light", ImGuiTreeNodeFlags_DefaultOpen)) {
     Engine::AmbientLightSettings ambientLight = m_Scene->AmbientLight();
     bool changed = ImGui::Checkbox("Enabled", &ambientLight.Enabled);
     if (ambientLight.Enabled) {
       ImGui::Indent();
       changed |= ImGui::ColorEdit3("Color (linear RGB)", ambientLight.Color.data());
-      changed |= ImGui::SliderFloat("Intensity", &ambientLight.Intensity, 0.0F, 10.0F, "%.2f");
+      changed |= ImGui::SliderFloat("Ambient light intensity", &ambientLight.Intensity, 0.0F, 10.0F, "%.2f");
       ImGui::Unindent();
     }
     if (changed) {
@@ -818,6 +929,9 @@ void InspectorPanel::DrawEntityInspector() {
   }
   if (world.Has<Engine::Ecs::CameraPostProcessing>(entity)) {
     append("CameraPostProcessing");
+  }
+  if (world.Has<Engine::Ecs::Skybox>(entity)) {
+    append("Skybox");
   }
   signature += '}';
   ImGui::Separator();
