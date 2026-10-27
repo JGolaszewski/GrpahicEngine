@@ -225,13 +225,21 @@ TEST(ScenePersistenceTests, SchemasOneThroughEightRemainLoadableWithoutGenerated
       std::ofstream scene(path, std::ios::binary | std::ios::trunc);
       scene << nlohmann::json{{"schemaVersion", version},
                               {"unitsPerMeter", 1.0F},
-                              {"entities", nlohmann::json::array()}};
+                              {"entities",
+                               {{{"id", 1}, {"primitiveType", "cube"}, {"material", nlohmann::json::object()}}}}};
       ASSERT_TRUE(scene.good());
     }
     const auto loaded = Engine::SceneSerializer::Load(path);
     ASSERT_TRUE(loaded) << "schema=" << version << " " << loaded.error;
     EXPECT_EQ(loaded.document.schemaVersion, version);
-    EXPECT_TRUE(loaded.document.entities.empty());
+    ASSERT_EQ(loaded.document.entities.size(), 1U);
+    ASSERT_TRUE(loaded.document.entities.front().material.has_value());
+    const auto& material = *loaded.document.entities.front().material;
+    EXPECT_EQ(material.brdfModel, "ggx");
+    EXPECT_EQ(material.workflow, "metallicRoughness");
+    EXPECT_FALSE(material.generatedNdf.has_value());
+    EXPECT_FLOAT_EQ(material.metallic, 0.0F);
+    EXPECT_FLOAT_EQ(material.roughness, 0.5F);
   }
 }
 

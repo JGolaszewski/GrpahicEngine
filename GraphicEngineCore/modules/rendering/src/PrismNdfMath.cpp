@@ -161,6 +161,10 @@ auto FitPrismNdfPayload(std::span<const float> grid, PrismNdfData& output, std::
   if (!IsFiniteGrid(grid, error)) {
     return false;
   }
+  if (std::ranges::none_of(grid, [](float value) { return value > 0.0F; })) {
+    error = "PRISM NDF grid must contain positive energy";
+    return false;
+  }
   TriangularMatrix upper{};
   BasisVector transformedTarget{};
   for (uint32_t row = 0; row < PrismNdfGridSize; ++row) {
