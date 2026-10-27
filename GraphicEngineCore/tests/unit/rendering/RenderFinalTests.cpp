@@ -1,3 +1,4 @@
+#include "assets/include/AssetManager.h"
 #include "panels/include/AssetDragDropPayload.h"
 #include "panels/include/AssetDropAssignment.h"
 #include "rendering/include/RenderSystem.h"
@@ -12,13 +13,18 @@
 #include "../../support/WarpRenderBackend.h"
 
 #include <gtest/gtest.h>
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include <stb_image_write.h>
 
 #include <DirectXMath.h>
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
+#include <fstream>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -77,6 +83,186 @@ auto ReadViewportPixel(nvrhi::IDevice* device, Engine::Viewport& viewport, uint3
 auto LinearToDisplay(float linear) -> float {
   const float reinhard = std::max(linear, 0.0F) / (1.0F + std::max(linear, 0.0F));
   return reinhard <= 0.0031308F ? 12.92F * reinhard : 1.055F * std::pow(reinhard, 1.0F / 2.4F) - 0.055F;
+}
+
+void WriteSolidHdr(const std::filesystem::path& path) {
+  constexpr std::array<uint8_t, 8> pixels = {128, 64, 32, 130, 128, 64, 32, 130};
+  std::ofstream output(path, std::ios::binary | std::ios::trunc);
+  output << "#?RADIANCE\nFORMAT=32-bit_rle_rgbe\n\n-Y 1 +X 2\n";
+  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast) // Radiance fixture stores encoded RGBE bytes.
+  output.write(reinterpret_cast<const char*>(pixels.data()), static_cast<std::streamsize>(pixels.size()));
+}
+
+void WriteSolidPng(const std::filesystem::path& path) {
+  constexpr std::array<uint8_t, 8> pixels = {200, 50, 20, 255, 200, 50, 20, 255};
+  ASSERT_NE(stbi_write_png(path.string().c_str(), 2, 1, 4, pixels.data(), 8), 0);
+}
+
+TEST(RenderFinalTests, WARPSceneSkyboxRendersAsBackgroundInAllViewModes) {
+  EngineTests::WarpDevice device;
+  if (!device.Initialize()) {
+    GTEST_SKIP() << "D3D11 WARP device could not be created on this host";
+  }
+
+  const auto project =
+      std::filesystem::temp_directory_path() /
+      ("GraphicEngineSkybox-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+  std::filesystem::create_directories(project);
+  WriteSolidHdr(project / "sky.hdr");
+  Engine::AssetManager assets(project);
+  const auto environmentGuid = assets.ImportEnvironment("sky.hdr");
+  ASSERT_TRUE(environmentGuid.has_value()) << (environmentGuid.has_value() ? "" : environmentGuid.error().Message);
+
+  EngineTests::WarpRenderBackend backend(device.GetDevice());
+  Engine::RenderSystem renderer(&backend);
+  ASSERT_TRUE(renderer.IsValid());
+  renderer.SetAssetManager(&assets);
+  std::string error;
+  ASSERT_TRUE(renderer.PrepareAssetEnvironment(*environmentGuid, error)) << error;
+
+  Engine::Scene scene;
+  const uint64_t skyboxSequence =
+      scene.QueueAdd(scene.SceneRootEntity(), Engine::Ecs::Skybox{.EnvironmentGuid = *environmentGuid});
+  const auto skyboxResult = scene.sync();
+  ASSERT_EQ(skyboxResult.size(), 1U);
+  ASSERT_EQ(skyboxResult.front().Sequence, skyboxSequence);
+  ASSERT_TRUE(skyboxResult.front().Outcome);
+
+  const auto material = renderer.CreateMaterial(Engine::Renderer::MaterialProperties{});
+  ASSERT_NE(material, nullptr);
+  ASSERT_TRUE(renderer.CreatePrimitive(Engine::PrimitiveShape::Cube, material));
+  const uint64_t entitySequence = scene.QueueCreate("Skybox foreground object");
+  const auto entityResult = scene.sync();
+  ASSERT_EQ(entityResult.size(), 1U);
+  ASSERT_EQ(entityResult.front().Sequence, entitySequence);
+  ASSERT_TRUE(entityResult.front().Outcome);
+  (void)scene.QueueAdd(entityResult.front().Entity, Engine::Ecs::MeshRenderer{.PrimitiveType = "cube"});
+  ASSERT_TRUE(scene.Update(0.0F));
+
+  Engine::Renderer::CameraView camera;
+  camera.Position = {0.0F, 0.0F, -5.0F};
+  constexpr uint32_t imageSize = 32;
+  const auto finalOutput = renderer.RenderFinal(scene, camera, imageSize, imageSize);
+  ASSERT_TRUE(finalOutput.has_value()) << (finalOutput.has_value() ? "" : finalOutput.error().Message);
+  const auto finalColor = finalOutput->GetPixels(Engine::RenderAov::FinalColor);
+  const auto depth = finalOutput->GetPixels(Engine::RenderAov::Depth);
+  const size_t backgroundPixel = (static_cast<size_t>(2) * imageSize + 2U) * 4U;
+  const size_t centerDepth = static_cast<size_t>(imageSize / 2U) * imageSize + imageSize / 2U;
+  ASSERT_GT(finalColor.size(), backgroundPixel + 3U);
+  ASSERT_GT(depth.size(), centerDepth);
+  EXPECT_GT(finalColor[backgroundPixel], 0.1F);
+  EXPECT_GT(finalColor[backgroundPixel + 1U], 0.05F);
+  EXPECT_GT(finalColor[backgroundPixel + 2U], 0.01F);
+  EXPECT_FLOAT_EQ(finalColor[backgroundPixel + 3U], 1.0F);
+  EXPECT_FLOAT_EQ(depth[0], 1.0F);
+  EXPECT_LT(depth[centerDepth], depth[0]);
+  const auto authoredSpecular = finalOutput->GetPixels(Engine::RenderAov::SpecularLighting);
+  const size_t centerSpecular = centerDepth * 3U;
+  ASSERT_GT(authoredSpecular.size(), centerSpecular + 2U);
+  const float authoredSpecularEnergy =
+      authoredSpecular[centerSpecular] + authoredSpecular[centerSpecular + 1U] + authoredSpecular[centerSpecular + 2U];
+  EXPECT_GT(authoredSpecularEnergy, 0.0F);
+
+  (void)scene.QueueSet(scene.SceneRootEntity(), Engine::Ecs::Skybox{.Intensity = 0.0F});
+  ASSERT_TRUE(scene.Update(0.0F));
+  const auto emptyEnvironment = renderer.RenderFinal(scene, camera, imageSize, imageSize);
+  ASSERT_TRUE(emptyEnvironment.has_value()) << (emptyEnvironment.has_value() ? "" : emptyEnvironment.error().Message);
+  const auto emptySpecular = emptyEnvironment->GetPixels(Engine::RenderAov::SpecularLighting);
+  ASSERT_GT(emptySpecular.size(), centerSpecular + 2U);
+  EXPECT_NEAR(emptySpecular[centerSpecular] + emptySpecular[centerSpecular + 1U] + emptySpecular[centerSpecular + 2U],
+              0.0F, 1.0e-4F);
+
+  (void)scene.QueueSet(scene.SceneRootEntity(), Engine::Ecs::Skybox{.EnvironmentGuid = *environmentGuid});
+  ASSERT_TRUE(scene.Update(0.0F));
+  (void)scene.QueueSet(
+      scene.SceneRootEntity(),
+      Engine::Ecs::Skybox{.EnvironmentGuid = *environmentGuid, .EnableEnvironmentLighting = false, .Intensity = 1.0F});
+  ASSERT_TRUE(scene.Update(0.0F));
+  const auto disabledEnvironment = renderer.RenderFinal(scene, camera, imageSize, imageSize);
+  ASSERT_TRUE(disabledEnvironment.has_value())
+      << (disabledEnvironment.has_value() ? "" : disabledEnvironment.error().Message);
+  const auto disabledSpecular = disabledEnvironment->GetPixels(Engine::RenderAov::SpecularLighting);
+  ASSERT_GT(disabledSpecular.size(), centerSpecular + 2U);
+  EXPECT_NEAR(disabledSpecular[centerSpecular] + disabledSpecular[centerSpecular + 1U] +
+                  disabledSpecular[centerSpecular + 2U],
+              0.0F, 1.0e-4F);
+
+  (void)scene.QueueSet(
+      scene.SceneRootEntity(),
+      Engine::Ecs::Skybox{.EnvironmentGuid = *environmentGuid, .EnableEnvironmentLighting = true, .Intensity = 0.0F});
+  ASSERT_TRUE(scene.Update(0.0F));
+  const auto zeroIntensity = renderer.RenderFinal(scene, camera, imageSize, imageSize);
+  ASSERT_TRUE(zeroIntensity.has_value()) << (zeroIntensity.has_value() ? "" : zeroIntensity.error().Message);
+  const auto zeroSpecular = zeroIntensity->GetPixels(Engine::RenderAov::SpecularLighting);
+  ASSERT_GT(zeroSpecular.size(), centerSpecular + 2U);
+  EXPECT_NEAR(zeroSpecular[centerSpecular] + zeroSpecular[centerSpecular + 1U] + zeroSpecular[centerSpecular + 2U],
+              0.0F, 1.0e-4F);
+
+  (void)scene.QueueSet(scene.SceneRootEntity(), Engine::Ecs::Skybox{.Mode = Engine::Ecs::SkyboxMode::SolidColor,
+                                                                    .EnvironmentGuid = {},
+                                                                    .TextureGuid = {},
+                                                                    .Color = {0.8F, 0.05F, 0.02F}});
+  ASSERT_TRUE(scene.Update(0.0F));
+  const auto solidColorOutput = renderer.RenderFinal(scene, camera, imageSize, imageSize);
+  ASSERT_TRUE(solidColorOutput.has_value()) << (solidColorOutput.has_value() ? "" : solidColorOutput.error().Message);
+  const auto solidPixels = solidColorOutput->GetPixels(Engine::RenderAov::FinalColor);
+  ASSERT_GT(solidPixels.size(), backgroundPixel + 3U);
+  EXPECT_GT(solidPixels[backgroundPixel], 0.5F);
+  EXPECT_LT(solidPixels[backgroundPixel + 1U], 0.1F);
+  EXPECT_LT(solidPixels[backgroundPixel + 2U], 0.1F);
+  const auto solidSpecular = solidColorOutput->GetPixels(Engine::RenderAov::SpecularLighting);
+  ASSERT_GT(solidSpecular.size(), centerSpecular + 2U);
+  EXPECT_NEAR(solidSpecular[centerSpecular] + solidSpecular[centerSpecular + 1U] + solidSpecular[centerSpecular + 2U],
+              0.0F, 1.0e-4F);
+
+  WriteSolidPng(project / "sky.png");
+  const auto textureGuid = assets.ImportTexture("sky.png");
+  ASSERT_TRUE(textureGuid.has_value()) << (textureGuid.has_value() ? "" : textureGuid.error().Message);
+  ASSERT_TRUE(renderer.PrepareAssetTexture(*textureGuid, true, error)) << error;
+  (void)scene.QueueSet(scene.SceneRootEntity(), Engine::Ecs::Skybox{.Mode = Engine::Ecs::SkyboxMode::LdrPanorama,
+                                                                    .EnvironmentGuid = {},
+                                                                    .TextureGuid = *textureGuid});
+  ASSERT_TRUE(scene.Update(0.0F));
+  const auto pngOutput = renderer.RenderFinal(scene, camera, imageSize, imageSize);
+  ASSERT_TRUE(pngOutput.has_value()) << (pngOutput.has_value() ? "" : pngOutput.error().Message);
+  const auto pngPixels = pngOutput->GetPixels(Engine::RenderAov::FinalColor);
+  ASSERT_GT(pngPixels.size(), backgroundPixel + 3U);
+  EXPECT_GT(pngPixels[backgroundPixel], pngPixels[backgroundPixel + 1U] * 4.0F);
+  EXPECT_LT(pngPixels[backgroundPixel + 2U], pngPixels[backgroundPixel]);
+  const auto pngSpecular = pngOutput->GetPixels(Engine::RenderAov::SpecularLighting);
+  ASSERT_GT(pngSpecular.size(), centerSpecular + 2U);
+  EXPECT_NEAR(pngSpecular[centerSpecular] + pngSpecular[centerSpecular + 1U] + pngSpecular[centerSpecular + 2U], 0.0F,
+              1.0e-4F);
+
+  (void)scene.QueueSet(scene.SceneRootEntity(),
+                       Engine::Ecs::Skybox{.EnvironmentGuid = *environmentGuid, .Intensity = 0.0F});
+  ASSERT_TRUE(scene.Update(0.0F));
+
+  auto target = renderer.CreateViewportTarget(imageSize, imageSize);
+  ASSERT_NE(target, nullptr);
+  Engine::Viewport viewport(target);
+  Engine::ViewportBinding binding;
+  binding.TargetScene = &scene;
+  binding.TargetViewport = &viewport;
+  binding.Camera = camera;
+  for (const auto mode : {Engine::ViewportBinding::Mode::Preview, Engine::ViewportBinding::Mode::Editor}) {
+    binding.RenderMode = mode;
+    renderer.BeginFrame();
+    renderer.SubmitViews({binding});
+    renderer.EndFrame();
+    const auto displayPixel = ReadViewportPixel(device.GetDevice(), viewport, 2, 2);
+    EXPECT_GT(displayPixel[0], 30U) << "mode " << static_cast<int>(mode);
+  }
+  binding.RenderMode = Engine::ViewportBinding::Mode::Editor;
+  binding.ShowEnvironmentBackground = false;
+  renderer.BeginFrame();
+  renderer.SubmitViews({binding});
+  renderer.EndFrame();
+  const auto hiddenPixel = ReadViewportPixel(device.GetDevice(), viewport, 2, 2);
+  EXPECT_LT(hiddenPixel[0], 40U);
+
+  std::error_code cleanupError;
+  std::filesystem::remove_all(project, cleanupError);
 }
 
 TEST(RenderFinalTests, WARPFinalOutputUsesRequestedDimensionsAndOmitsDebugPass) {

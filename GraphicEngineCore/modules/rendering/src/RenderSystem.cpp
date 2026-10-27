@@ -6,6 +6,7 @@
 #include "rendering/src/ResourceManager.h"
 #include "rendering/src/SceneRenderer.h"
 #include "rendering/src/ShaderFactory.h"
+#include "rendering/src/TextureBackend.h"
 #include "rendering/src/render_graph/FrameContext.h"
 #include "rendering/src/render_graph/RenderGraph.h"
 #include "rendering/src/render_graph/RenderPass.h"
@@ -235,6 +236,41 @@ bool RenderSystem::PrepareAssetTexture(const std::string& guid, bool srgb, std::
   return true;
 }
 
+bool RenderSystem::PrepareAssetEnvironment(const std::string& guid, std::string& error) {
+  error.clear();
+  if (m_FrameActive) {
+    error = "authored environments must be prepared between render frames";
+    return false;
+  }
+  if (m_AssetManager == nullptr || guid.empty()) {
+    error = "asset manager and an environment GUID are required to prepare an authored environment";
+    return false;
+  }
+  if (!m_AssetManager->LoadEnvironment(guid, error)) {
+    return false;
+  }
+  const auto source = m_AssetManager->GetEnvironment(guid);
+  const auto generation = m_AssetManager->GetGeneration(guid);
+  if (source == nullptr || !generation) {
+    error = "environment GUID is registered without decoded HDR data or generation: " + guid;
+    return false;
+  }
+  const auto key = std::make_pair(guid, *generation);
+  if (m_AuthoredEnvironments.contains(key)) {
+    return true;
+  }
+
+  auto environment = std::make_shared<::Engine::Renderer::EnvironmentLightingResources>();
+  if (!environment->Initialize(GetNvrhiDevice(m_RenderBackend), *source, error)) {
+    ENGINE_LOG_ERROR("Render", "Authored environment preparation failed | guid: {} | generation: {} | reason: {}", guid,
+                     *generation, error);
+    return false;
+  }
+  std::erase_if(m_AuthoredEnvironments, [&guid](const auto& entry) { return entry.first.first == guid; });
+  m_AuthoredEnvironments.emplace(key, std::move(environment));
+  return true;
+}
+
 auto RenderSystem::GetPreparedAssetTexture(const std::string& guid, bool srgb, bool normalMap,
                                            bool preserveAlphaCoverage, float alphaCutoff) const
     -> std::shared_ptr<::Engine::Renderer::TextureResource> {
@@ -319,9 +355,32 @@ void RenderSystem::SubmitViews(const std::vector<Engine::ViewportBinding>& views
     view->TargetScene = binding.TargetScene;
     view->RenderMode = binding.RenderMode;
     view->Environment = binding.Environment;
+    view->ShowEnvironmentBackground = binding.ShowEnvironmentBackground;
     view->PostProcessing = binding.PostProcessing;
     view->AmbientLight =
         binding.HasAmbientLightOverride ? binding.AmbientLightOverride : binding.TargetScene->AmbientLight();
+    if (const auto* skybox =
+            binding.TargetScene->World().Get<::Engine::Ecs::Skybox>(binding.TargetScene->SceneRootEntity());
+        skybox != nullptr) {
+      view->HasSceneSkybox = true;
+      view->SceneSkybox = *skybox;
+      if (!skybox->EnvironmentGuid.empty()) {
+        const auto generation =
+            m_AssetManager == nullptr ? std::nullopt : m_AssetManager->GetGeneration(skybox->EnvironmentGuid);
+        if (generation) {
+          const auto environment = m_AuthoredEnvironments.find({skybox->EnvironmentGuid, *generation});
+          if (environment != m_AuthoredEnvironments.end()) {
+            view->EnvironmentSource = environment->second;
+          }
+        }
+      }
+      if (skybox->Mode == ::Engine::Ecs::SkyboxMode::LdrPanorama && !skybox->TextureGuid.empty()) {
+        const auto texture = GetPreparedAssetTexture(skybox->TextureGuid, true);
+        if (texture != nullptr) {
+          view->SkyboxPanorama = ::Engine::Renderer::TextureBackendAccess::GetTexture(*texture);
+        }
+      }
+    }
     if (!std::isfinite(view->Environment.Intensity)) {
       view->Environment.Intensity = 0.0F;
     }

@@ -3,10 +3,13 @@
 #include "rendering/include/renderer/DebugGeometry.h"
 #include "rendering/include/renderer/Light.h"
 #include "rendering/include/renderer/ViewportBinding.h"
+#include "rendering/src/EnvironmentLighting.h"
 #include "rendering/src/RenderPacket.h"
 #include "rendering/src/render_graph/RGResources.h"
 #include "scene/include/ArchetypeWorld.h"
+#include "scene/include/components/EcsComponents.h"
 #include <DirectXMath.h>
+#include <memory>
 #include <vector>
 
 // Forward declarations
@@ -78,6 +81,11 @@ public:
   RGResourceID DisplayColorResource;
   Engine::ViewportBinding::Mode RenderMode = Engine::ViewportBinding::Mode::Editor;
   Engine::EnvironmentLightingSettings Environment;
+  Engine::Ecs::Skybox SceneSkybox;
+  bool HasSceneSkybox = false;
+  bool ShowEnvironmentBackground = true;
+  std::shared_ptr<::Engine::Renderer::EnvironmentLightingResources> EnvironmentSource;
+  nvrhi::TextureHandle SkyboxPanorama;
   Engine::AmbientLightSettings AmbientLight;
   Engine::Ecs::CameraPostProcessing PostProcessing;
   std::vector<RGViewportAttachment> OutputAttachments;
