@@ -20,10 +20,10 @@ namespace Engine {
 /// Selects the environment source used for indirect lighting in a rendered view.
 enum class EnvironmentPreset : uint8_t {
   Disabled, ///< Do not add environment lighting.
-  Studio    ///< Use the renderer's built-in studio environment.
+  Studio    ///< Use the built-in studio environment when the scene has no skybox component.
 };
 
-/// Per-view environment lighting configuration.
+/// Per-view environment lighting configuration used when the scene has no skybox component.
 struct EnvironmentLightingSettings {
   EnvironmentPreset Preset = EnvironmentPreset::Disabled; ///< Environment source for this view.
   float Intensity = 1.0F; ///< Non-negative scale applied to indirect diffuse and specular lighting.
@@ -52,6 +52,7 @@ struct ENGINE_API ViewportBinding {
 
   ::Engine::Renderer::DebugRenderSettings DebugSettings; ///< Debug geometry settings for editor views.
   EnvironmentLightingSettings Environment;               ///< Environment source and intensity for this view.
+  bool ShowEnvironmentBackground = true;                 ///< Whether a scene skybox is drawn behind scene geometry.
   bool HasAmbientLightOverride = false;                  ///< Whether AmbientLightOverride replaces the scene setting.
   AmbientLightSettings AmbientLightOverride;        ///< Camera-specific ambient light, when the override flag is set.
   Engine::Ecs::CameraPostProcessing PostProcessing; ///< Authored camera's lighting settings and ordered color effects.

@@ -75,6 +75,15 @@ void WriteMinimalPng(const std::filesystem::path& path) {
   Require(static_cast<bool>(output), "could not write PNG fixture");
 }
 
+void WriteMinimalHdr(const std::filesystem::path& path) {
+  constexpr std::array<uint8_t, 8> rgbePixels = {128, 64, 32, 130, 0, 128, 128, 129};
+  std::ofstream output(path, std::ios::binary | std::ios::trunc);
+  output << "#?RADIANCE\nFORMAT=32-bit_rle_rgbe\n\n-Y 1 +X 2\n";
+  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast) // Radiance fixture stores encoded RGBE bytes.
+  output.write(reinterpret_cast<const char*>(rgbePixels.data()), static_cast<std::streamsize>(rgbePixels.size()));
+  Require(static_cast<bool>(output), "could not write Radiance HDR fixture");
+}
+
 void TestTextureImportAndRegistry(const std::filesystem::path& project) {
   WriteMinimalPng(project / "color.png");
   Engine::AssetManager first(project);
@@ -98,6 +107,43 @@ void TestTextureImportAndRegistry(const std::filesystem::path& project) {
   Engine::AssetManager duplicate(project);
   Require(!duplicate.ImportTexture("copied.png", guid, error) && error.contains("duplicate asset GUID"),
           "copied texture metadata did not report the duplicate GUID");
+}
+
+void TestEnvironmentImportAndRegistry(const std::filesystem::path& project) {
+  std::filesystem::create_directories(project);
+  WriteMinimalHdr(project / "studio.hdr");
+  WriteMinimalPng(project / "color.png");
+  Engine::AssetManager first(project);
+  std::string guid;
+  std::string error;
+  Require(first.ImportEnvironment("studio.hdr", guid, error), "HDR environment import failed");
+  Require(std::filesystem::exists(project / "studio.hdr.meta"), "HDR import did not write its metadata sidecar");
+  const auto environment = first.GetEnvironment(guid);
+  Require(environment && environment->width == 2 && environment->height == 1 && environment->rgb32f.size() == 6,
+          "HDR import did not produce tightly packed RGB32F environment data");
+  Require(environment->rgb32f.at(0) > 1.0F, "HDR import clamped a sample above one");
+  Require(first.GetKnownEnvironments().size() == 1, "HDR environment was not listed in the asset registry");
+
+  Engine::AssetManager reopened(project);
+  std::vector<std::string> warnings;
+  Require(reopened.RefreshRegistry(warnings, error), "environment registry refresh failed");
+  Require(warnings.empty(), "valid environment metadata produced registry warnings");
+  const auto reloaded = reopened.GetEnvironment(guid);
+  Require(reloaded && reloaded->rgb32f == environment->rgb32f,
+          "environment was not decoded again from its GUID sidecar");
+  Require(reopened.RenameAsset(guid, "renamed-environment", error), "registered environment rename failed");
+  Require(std::filesystem::exists(project / "renamed-environment.hdr.meta") &&
+              reopened.GetKnownEnvironments().front().guid == guid,
+          "renaming an environment did not preserve its sidecar identity");
+
+  std::ofstream invalid(project / "invalid.hdr", std::ios::binary | std::ios::trunc);
+  invalid << "not a Radiance image";
+  invalid.close();
+  Require(!reopened.ImportEnvironment("invalid.hdr", guid, error) && !error.empty(),
+          "invalid HDR source did not fail with a diagnostic");
+  Require(!std::filesystem::exists(project / "invalid.hdr.meta"), "failed HDR import wrote a metadata sidecar");
+  Require(!reopened.ImportEnvironment("color.png", guid, error) && error.contains("Radiance HDR"),
+          "non-HDR extension was accepted as an environment");
 }
 
 void TestImportAndGuidReload(const std::filesystem::path& project) {
@@ -417,6 +463,7 @@ auto main() -> int {
     TestImportAndGuidReload(workspace.Project());
     TestAssetRenamePreservesGuidAndSceneReferences(workspace.Project());
     TestTextureImportAndRegistry(workspace.Project());
+    TestEnvironmentImportAndRegistry(workspace.Project() / "environment-test");
     TestDuplicateGuidAndProjectBoundary(workspace.Path(), workspace.Project());
     TestSceneJsonRoundTrip(workspace.Project());
     TestReusableMaterialAssets(workspace.Project());

@@ -19,8 +19,8 @@
 #include "rendering/include/renderer/ModelResourceLibrary.h"
 #include "rendering/include/renderer/RenderResources.h"
 #include "rendering/include/renderer/ShadowDiagnostics.h"
-#include "rendering/src/MaterialSystem.h"
 #include "rendering/src/EnvironmentLighting.h"
+#include "rendering/src/MaterialSystem.h"
 #include "rendering/src/PipelineCache.h"
 #include "rendering/src/RenderPacket.h"
 #include "rendering/src/ShaderFactory.h"
@@ -92,7 +92,9 @@ public:
   nvrhi::BindingSetHandle GetSceneBindingSet(size_t viewIndex, nvrhi::BufferHandle lightBuffer,
                                              nvrhi::TextureHandle shadowMap, nvrhi::SamplerHandle shadowSampler,
                                              nvrhi::BufferHandle cameraBuffer, nvrhi::TextureHandle ambientOcclusion,
+                                             const ::Engine::Renderer::EnvironmentLightingResources* environmentSource,
                                              ::Engine::Renderer::FrameDiagnostics& diagnostics);
+  bool DrawEnvironmentBackground(nvrhi::ICommandList* commandList, const ::Engine::Renderer::RenderView& view);
   inline nvrhi::BufferHandle GetPerObjectBuffer() const { return m_PerObjectBuffer; }
   inline nvrhi::BindingSetHandle GetPerObjectBindingSet() const { return m_PerObjectBindingSet; }
   inline nvrhi::SamplerHandle GetShadowSampler() const { return m_ShadowSampler; }
@@ -139,12 +141,20 @@ private:
     nvrhi::SamplerHandle ShadowSampler;
     nvrhi::BufferHandle CameraBuffer;
     nvrhi::TextureHandle AmbientOcclusion;
+    nvrhi::TextureHandle IrradianceMap;
+    nvrhi::TextureHandle PrefilteredEnvironment;
     nvrhi::BindingLayoutHandle Layout;
     nvrhi::BindingSetHandle Bindings;
   };
   std::vector<SceneBindingCache> m_SceneBindingCaches;
   ::Engine::Renderer::EnvironmentLightingResources m_EnvironmentLighting;
   bool m_EnvironmentLightingReady = false;
+  nvrhi::ShaderHandle m_SkyboxVS;
+  nvrhi::ShaderHandle m_SkyboxPS;
+  nvrhi::BindingLayoutHandle m_SkyboxBindingLayout;
+  nvrhi::BufferHandle m_SkyboxConstantsBuffer;
+  nvrhi::SamplerHandle m_SkyboxSampler;
+  std::map<std::vector<uint32_t>, nvrhi::GraphicsPipelineHandle> m_SkyboxPipelines;
   nvrhi::BindingLayoutHandle m_PerObjectBindingLayout;
   nvrhi::BufferHandle m_PerObjectBuffer;
   nvrhi::BindingSetHandle m_PerObjectBindingSet;

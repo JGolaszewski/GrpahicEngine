@@ -8,18 +8,29 @@
 #include <cmath>
 #include <cstring>
 #include <limits>
+#include <numbers>
 
 #include "rendering/include/renderer/DebugGeometry.h"
 #include "rendering/include/renderer/Material.h"
 #include "rendering/include/renderer/Mesh.h"
 #include "rendering/src/MaterialBackend.h"
 #include "rendering/src/MeshBackend.h"
+#include "rendering/src/TextureBackend.h"
 #include "scene/include/Scene.h"
 
 namespace {
 struct DebugViewData {
   DirectX::XMFLOAT4X4 ViewProjection;
 };
+
+struct SkyboxGpuData {
+  DirectX::XMFLOAT4 Forward;
+  DirectX::XMFLOAT4 Right;
+  DirectX::XMFLOAT4 Up;
+  DirectX::XMFLOAT4 Projection;
+  DirectX::XMFLOAT4 ColorAndMode;
+};
+static_assert(sizeof(SkyboxGpuData) == 80);
 
 auto Equal(const DirectX::XMFLOAT3& left, const DirectX::XMFLOAT3& right) noexcept -> bool {
   return left.x == right.x && left.y == right.y && left.z == right.z;
@@ -292,7 +303,29 @@ void Engine::SceneRenderer::Init(nvrhi::IDevice* device, ::Engine::Renderer::Mat
     m_DebugPS = shaderFactory->GetShader("shaders/debug_ps.dxbc", nvrhi::ShaderType::Pixel);
     m_ShadowMaskPS = shaderFactory->GetShader("shaders/shadow_mask_ps.dxbc", nvrhi::ShaderType::Pixel);
     m_AmbientOcclusionPrepassPS = shaderFactory->GetShader("shaders/ssao_prepass_ps.dxbc", nvrhi::ShaderType::Pixel);
+    m_SkyboxVS = shaderFactory->GetShader("shaders/skybox_vs.dxbc", nvrhi::ShaderType::Vertex);
+    m_SkyboxPS = shaderFactory->GetShader("shaders/skybox_ps.dxbc", nvrhi::ShaderType::Pixel);
   }
+
+  nvrhi::BindingLayoutDesc skyboxLayoutDesc;
+  skyboxLayoutDesc.visibility = nvrhi::ShaderType::All;
+  skyboxLayoutDesc.bindings = {nvrhi::BindingLayoutItem::ConstantBuffer(0), nvrhi::BindingLayoutItem::Texture_SRV(0),
+                               nvrhi::BindingLayoutItem::Sampler(0)};
+  m_SkyboxBindingLayout = device->createBindingLayout(skyboxLayoutDesc);
+  nvrhi::SamplerDesc skyboxSamplerDesc;
+  skyboxSamplerDesc.setAddressU(nvrhi::SamplerAddressMode::Wrap)
+      .setAddressV(nvrhi::SamplerAddressMode::Clamp)
+      .setAddressW(nvrhi::SamplerAddressMode::Clamp)
+      .setMinFilter(true)
+      .setMagFilter(true);
+  m_SkyboxSampler = device->createSampler(skyboxSamplerDesc);
+  nvrhi::BufferDesc skyboxBufferDesc;
+  skyboxBufferDesc.byteSize = sizeof(SkyboxGpuData);
+  skyboxBufferDesc.isConstantBuffer = true;
+  skyboxBufferDesc.isVolatile = true;
+  skyboxBufferDesc.maxVersions = 64;
+  skyboxBufferDesc.debugName = "SkyboxPerViewConstants";
+  m_SkyboxConstantsBuffer = device->createBuffer(skyboxBufferDesc);
 
   nvrhi::BindingLayoutDesc perObjectLayoutDesc;
   perObjectLayoutDesc.visibility = nvrhi::ShaderType::All;
@@ -571,17 +604,26 @@ auto Engine::SceneRenderer::GetLightBuffer(size_t viewIndex, ::Engine::Renderer:
       static_cast<uint32_t>(::Engine::Renderer::FrameContext::FramesInFlight + 1));
 }
 
-auto Engine::SceneRenderer::GetSceneBindingSet(size_t viewIndex, nvrhi::BufferHandle lightBuffer,
-                                               nvrhi::TextureHandle shadowMap, nvrhi::SamplerHandle shadowSampler,
-                                               nvrhi::BufferHandle cameraBuffer, nvrhi::TextureHandle ambientOcclusion,
-                                               ::Engine::Renderer::FrameDiagnostics& diagnostics)
-    -> nvrhi::BindingSetHandle {
+auto Engine::SceneRenderer::GetSceneBindingSet(
+    size_t viewIndex, nvrhi::BufferHandle lightBuffer, nvrhi::TextureHandle shadowMap,
+    nvrhi::SamplerHandle shadowSampler, nvrhi::BufferHandle cameraBuffer, nvrhi::TextureHandle ambientOcclusion,
+    const ::Engine::Renderer::EnvironmentLightingResources* environmentSource,
+    ::Engine::Renderer::FrameDiagnostics& diagnostics) -> nvrhi::BindingSetHandle {
   if (ambientOcclusion == nullptr) {
     ambientOcclusion = m_MaterialSystem != nullptr ? m_MaterialSystem->GetFallbackColorTexture() : nullptr;
   }
+  const auto& irradianceMap =
+      environmentSource != nullptr ? environmentSource->IrradianceMap : m_EnvironmentLighting.IrradianceMap;
+  const auto& irradianceSampler =
+      environmentSource != nullptr ? environmentSource->IrradianceSampler : m_EnvironmentLighting.IrradianceSampler;
+  const auto& prefilteredEnvironment = environmentSource != nullptr ? environmentSource->PrefilteredEnvironment
+                                                                    : m_EnvironmentLighting.PrefilteredEnvironment;
+  const auto& prefilteredSampler = environmentSource != nullptr ? environmentSource->PrefilteredEnvironmentSampler
+                                                                : m_EnvironmentLighting.PrefilteredEnvironmentSampler;
   if ((m_Device == nullptr) || (lightBuffer == nullptr) || (shadowMap == nullptr) || (shadowSampler == nullptr) ||
       (cameraBuffer == nullptr) || (ambientOcclusion == nullptr) || (m_SceneBindingLayout == nullptr) ||
-      !m_EnvironmentLightingReady) {
+      !m_EnvironmentLightingReady || irradianceMap == nullptr || irradianceSampler == nullptr ||
+      prefilteredEnvironment == nullptr || prefilteredSampler == nullptr) {
     return nullptr;
   }
   if (m_SceneBindingCaches.size() <= viewIndex) {
@@ -590,7 +632,8 @@ auto Engine::SceneRenderer::GetSceneBindingSet(size_t viewIndex, nvrhi::BufferHa
   auto& cache = m_SceneBindingCaches.at(viewIndex);
   if ((cache.Bindings != nullptr) && cache.LightBuffer == lightBuffer && cache.ShadowMap == shadowMap &&
       cache.ShadowSampler == shadowSampler && cache.CameraBuffer == cameraBuffer &&
-      cache.AmbientOcclusion == ambientOcclusion && cache.Layout == m_SceneBindingLayout) {
+      cache.AmbientOcclusion == ambientOcclusion && cache.IrradianceMap == irradianceMap &&
+      cache.PrefilteredEnvironment == prefilteredEnvironment && cache.Layout == m_SceneBindingLayout) {
     return cache.Bindings;
   }
 
@@ -598,10 +641,10 @@ auto Engine::SceneRenderer::GetSceneBindingSet(size_t viewIndex, nvrhi::BufferHa
   desc.addItem(nvrhi::BindingSetItem::ConstantBuffer(2, lightBuffer));
   desc.addItem(nvrhi::BindingSetItem::Texture_SRV(6, shadowMap));
   desc.addItem(nvrhi::BindingSetItem::Sampler(6, shadowSampler));
-  desc.addItem(nvrhi::BindingSetItem::Texture_SRV(7, m_EnvironmentLighting.IrradianceMap));
-  desc.addItem(nvrhi::BindingSetItem::Sampler(7, m_EnvironmentLighting.IrradianceSampler));
-  desc.addItem(nvrhi::BindingSetItem::Texture_SRV(8, m_EnvironmentLighting.PrefilteredEnvironment));
-  desc.addItem(nvrhi::BindingSetItem::Sampler(8, m_EnvironmentLighting.PrefilteredEnvironmentSampler));
+  desc.addItem(nvrhi::BindingSetItem::Texture_SRV(7, irradianceMap));
+  desc.addItem(nvrhi::BindingSetItem::Sampler(7, irradianceSampler));
+  desc.addItem(nvrhi::BindingSetItem::Texture_SRV(8, prefilteredEnvironment));
+  desc.addItem(nvrhi::BindingSetItem::Sampler(8, prefilteredSampler));
   desc.addItem(nvrhi::BindingSetItem::Texture_SRV(9, m_EnvironmentLighting.BrdfIntegrationLut));
   desc.addItem(nvrhi::BindingSetItem::Sampler(9, m_EnvironmentLighting.BrdfIntegrationSampler));
   desc.addItem(nvrhi::BindingSetItem::ConstantBuffer(4, cameraBuffer));
@@ -617,10 +660,116 @@ auto Engine::SceneRenderer::GetSceneBindingSet(size_t viewIndex, nvrhi::BufferHa
   cache.ShadowSampler = std::move(shadowSampler);
   cache.CameraBuffer = std::move(cameraBuffer);
   cache.AmbientOcclusion = std::move(ambientOcclusion);
+  cache.IrradianceMap = irradianceMap;
+  cache.PrefilteredEnvironment = prefilteredEnvironment;
   cache.Layout = m_SceneBindingLayout;
   cache.Bindings = std::move(bindings);
   ++diagnostics.BindingSetAllocations;
   return cache.Bindings;
+}
+
+bool Engine::SceneRenderer::DrawEnvironmentBackground(nvrhi::ICommandList* commandList,
+                                                      const ::Engine::Renderer::RenderView& view) {
+  if (!view.ShowEnvironmentBackground || !view.HasSceneSkybox || commandList == nullptr) {
+    return true;
+  }
+  nvrhi::TextureHandle panorama;
+  nvrhi::SamplerHandle panoramaSampler;
+  bool drawSolidColor = false;
+  if (view.SceneSkybox.Mode == Engine::Ecs::SkyboxMode::HdrEnvironment) {
+    if (view.EnvironmentSource == nullptr) {
+      return true;
+    }
+    panorama = view.EnvironmentSource->Panorama;
+    panoramaSampler = view.EnvironmentSource->PanoramaSampler;
+  } else if (view.SceneSkybox.Mode == Engine::Ecs::SkyboxMode::LdrPanorama) {
+    panorama = view.SkyboxPanorama;
+    panoramaSampler = m_SkyboxSampler;
+    if (panorama == nullptr || panoramaSampler == nullptr) {
+      return true;
+    }
+  } else {
+    drawSolidColor = true;
+    panorama = m_MaterialSystem == nullptr ? nullptr : m_MaterialSystem->GetFallbackColorTexture();
+    panoramaSampler = m_SkyboxSampler;
+  }
+  if (m_Device == nullptr || m_SkyboxVS == nullptr || m_SkyboxPS == nullptr || m_SkyboxBindingLayout == nullptr ||
+      m_SkyboxConstantsBuffer == nullptr || panorama == nullptr || panoramaSampler == nullptr ||
+      view.TargetFramebuffer == nullptr) {
+    ENGINE_LOG_ERROR("Render", "Skybox background resources are incomplete | environment: {}",
+                     view.SceneSkybox.EnvironmentGuid);
+    return false;
+  }
+
+  const nvrhi::FramebufferInfo& framebufferInfo = view.TargetFramebuffer->getFramebufferInfo();
+  std::vector<uint32_t> key;
+  key.reserve(framebufferInfo.colorFormats.size() + 3);
+  for (const nvrhi::Format format : framebufferInfo.colorFormats) {
+    key.push_back(static_cast<uint32_t>(format));
+  }
+  key.push_back(static_cast<uint32_t>(framebufferInfo.depthFormat));
+  key.push_back(framebufferInfo.sampleCount);
+  key.push_back(framebufferInfo.sampleQuality);
+  auto pipeline = m_SkyboxPipelines.find(key);
+  if (pipeline == m_SkyboxPipelines.end()) {
+    nvrhi::GraphicsPipelineDesc desc;
+    desc.primType = nvrhi::PrimitiveType::TriangleList;
+    desc.VS = m_SkyboxVS;
+    desc.PS = m_SkyboxPS;
+    desc.bindingLayouts = {m_SkyboxBindingLayout};
+    desc.renderState.depthStencilState.depthTestEnable = false;
+    desc.renderState.depthStencilState.depthWriteEnable = false;
+    desc.renderState.rasterState.cullMode = nvrhi::RasterCullMode::None;
+    for (size_t target = 0; target < framebufferInfo.colorFormats.size(); ++target) {
+      nvrhi::BlendState::RenderTarget blendTarget;
+      if (target != 0) {
+        blendTarget.setColorWriteMask(static_cast<nvrhi::ColorMask>(0));
+      }
+      desc.renderState.blendState.setRenderTarget(static_cast<uint32_t>(target), blendTarget);
+    }
+    auto created = m_Device->createGraphicsPipeline(desc, framebufferInfo);
+    if (created == nullptr) {
+      ENGINE_LOG_ERROR("Render", "Skybox background pipeline creation failed | environment: {} | targets: {}",
+                       view.SceneSkybox.EnvironmentGuid, framebufferInfo.colorFormats.size());
+      return false;
+    }
+    pipeline = m_SkyboxPipelines.emplace(std::move(key), std::move(created)).first;
+  }
+
+  const float tangentHalfFov = std::tan(view.CameraVerticalFovRadians * 0.5F);
+  const SkyboxGpuData constants{
+      {view.CameraForward.x, view.CameraForward.y, view.CameraForward.z, 0.0F},
+      {view.CameraRight.x, view.CameraRight.y, view.CameraRight.z, 0.0F},
+      {view.CameraUp.x, view.CameraUp.y, view.CameraUp.z, 0.0F},
+      {tangentHalfFov, view.CameraAspectRatio, static_cast<float>(view.ViewportWidth),
+       static_cast<float>(view.ViewportHeight)},
+      {view.SceneSkybox.Color[0], view.SceneSkybox.Color[1], view.SceneSkybox.Color[2], drawSolidColor ? 1.0F : 0.0F}};
+  commandList->writeBuffer(m_SkyboxConstantsBuffer, &constants, sizeof(constants));
+  nvrhi::BindingSetDesc bindingDesc;
+  bindingDesc.addItem(nvrhi::BindingSetItem::ConstantBuffer(0, m_SkyboxConstantsBuffer));
+  bindingDesc.addItem(nvrhi::BindingSetItem::Texture_SRV(0, panorama));
+  bindingDesc.addItem(nvrhi::BindingSetItem::Sampler(0, panoramaSampler));
+  const nvrhi::BindingSetHandle bindings = m_Device->createBindingSet(bindingDesc, m_SkyboxBindingLayout);
+  if (bindings == nullptr) {
+    ENGINE_LOG_ERROR("Render", "Skybox background binding creation failed | environment: {}",
+                     view.SceneSkybox.EnvironmentGuid);
+    return false;
+  }
+
+  const nvrhi::FramebufferInfoEx framebuffer = view.TargetFramebuffer->getFramebufferInfo();
+  nvrhi::GraphicsState state;
+  state.pipeline = pipeline->second;
+  state.framebuffer = view.TargetFramebuffer;
+  state.viewport.addViewport(
+      nvrhi::Viewport(static_cast<float>(framebuffer.width), static_cast<float>(framebuffer.height)));
+  state.viewport.addScissorRect(nvrhi::Rect(static_cast<int>(framebuffer.width), static_cast<int>(framebuffer.height)));
+  state.bindings = {bindings};
+  commandList->setGraphicsState(state);
+  nvrhi::DrawArguments arguments;
+  arguments.vertexCount = 3;
+  arguments.instanceCount = 1;
+  commandList->draw(arguments);
+  return true;
 }
 
 auto Engine::SceneRenderer::EnsurePerObjectResources(size_t maxDrawCount,

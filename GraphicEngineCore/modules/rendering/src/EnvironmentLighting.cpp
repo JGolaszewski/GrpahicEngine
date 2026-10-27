@@ -4,6 +4,7 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <functional>
 #include <numbers>
 #include <vector>
 
@@ -79,7 +80,31 @@ auto Hammersley(uint32_t index) -> std::array<float, 2> {
   return {static_cast<float>(index) / static_cast<float>(IntegrationSamples), RadicalInverse(index)};
 }
 
-auto SampleStudio(float u, float v) -> Vec3 { return StudioRadiance(DirectionFromUv(u, v)); }
+using RadianceSampler = std::function<Vec3(float, float)>;
+
+auto SampleEnvironment(const ::Engine::ImportedEnvironment& source, float u, float v) -> Vec3 {
+  if (source.width == 0 || source.height == 0 ||
+      source.rgb32f.size() != static_cast<size_t>(source.width) * source.height * 3) {
+    return {};
+  }
+  u -= std::floor(u);
+  v = std::clamp(v, 0.0F, 1.0F);
+  const float x = u * static_cast<float>(source.width) - 0.5F;
+  const float y = v * static_cast<float>(source.height) - 0.5F;
+  const int32_t x0 = static_cast<int32_t>(std::floor(x));
+  const int32_t y0 = static_cast<int32_t>(std::floor(y));
+  const float tx = x - static_cast<float>(x0);
+  const float ty = y - static_cast<float>(y0);
+  const auto sample = [&source](int32_t px, int32_t py) -> Vec3 {
+    const int32_t width = static_cast<int32_t>(source.width);
+    const int32_t height = static_cast<int32_t>(source.height);
+    px = (px % width + width) % width;
+    py = std::clamp(py, 0, height - 1);
+    const size_t offset = (static_cast<size_t>(py) * source.width + static_cast<uint32_t>(px)) * 3;
+    return {source.rgb32f[offset], source.rgb32f[offset + 1], source.rgb32f[offset + 2]};
+  };
+  return Mix(Mix(sample(x0, y0), sample(x0 + 1, y0), tx), Mix(sample(x0, y0 + 1), sample(x0 + 1, y0 + 1), tx), ty);
+}
 
 auto ImportanceSampleCosine(const std::array<float, 2>& xi, Vec3 normal) -> Vec3 {
   const float radius = std::sqrt(xi[0]);
@@ -105,18 +130,18 @@ auto ImportanceSampleGgx(const std::array<float, 2>& xi, Vec3 normal, float roug
                        Scale(normal, halfVectorLocal.Z)));
 }
 
-auto IntegrateIrradiance(Vec3 normal) -> Vec3 {
+auto IntegrateIrradiance(Vec3 normal, const RadianceSampler& sampleRadiance) -> Vec3 {
   Vec3 result{0.0F, 0.0F, 0.0F};
   for (uint32_t sample = 0; sample < IntegrationSamples; ++sample) {
     const Vec3 direction = ImportanceSampleCosine(Hammersley(sample), normal);
     const float u = std::atan2(direction.Z, direction.X) / (2.0F * Pi) + 0.5F;
     const float v = std::acos(std::clamp(direction.Y, -1.0F, 1.0F)) / Pi;
-    result = Add(result, SampleStudio(u, v));
+    result = Add(result, sampleRadiance(u, v));
   }
   return Scale(result, Pi / static_cast<float>(IntegrationSamples));
 }
 
-auto IntegratePrefilter(Vec3 normal, float roughness) -> Vec3 {
+auto IntegratePrefilter(Vec3 normal, float roughness, const RadianceSampler& sampleRadiance) -> Vec3 {
   const Vec3 view = normal;
   Vec3 result{0.0F, 0.0F, 0.0F};
   float totalWeight = 0.0F;
@@ -127,11 +152,11 @@ auto IntegratePrefilter(Vec3 normal, float roughness) -> Vec3 {
     if (noL > 0.0F) {
       const float u = std::atan2(light.Z, light.X) / (2.0F * Pi) + 0.5F;
       const float v = std::acos(std::clamp(light.Y, -1.0F, 1.0F)) / Pi;
-      result = Add(result, Scale(SampleStudio(u, v), noL));
+      result = Add(result, Scale(sampleRadiance(u, v), noL));
       totalWeight += noL;
     }
   }
-  return (totalWeight > 0.0F) ? Scale(result, 1.0F / totalWeight) : SampleStudio(0.5F, 0.5F);
+  return (totalWeight > 0.0F) ? Scale(result, 1.0F / totalWeight) : sampleRadiance(0.5F, 0.5F);
 }
 
 auto GeometrySmithGgx(float noV, float noL, float roughness) -> float {
@@ -173,20 +198,20 @@ void StorePixel(FloatMip& mip, uint32_t x, uint32_t y, Vec3 color, float alpha =
   mip.Pixels.at(offset + 3) = alpha;
 }
 
-auto MakeIrradianceMip() -> FloatMip {
+auto MakeIrradianceMip(const RadianceSampler& sampleRadiance) -> FloatMip {
   FloatMip mip{IrradianceWidth, IrradianceHeight,
                std::vector<float>(static_cast<size_t>(IrradianceWidth) * IrradianceHeight * 4)};
   for (uint32_t y = 0; y < mip.Height; ++y) {
     for (uint32_t x = 0; x < mip.Width; ++x) {
       const Vec3 normal = DirectionFromUv((static_cast<float>(x) + 0.5F) / static_cast<float>(mip.Width),
                                           (static_cast<float>(y) + 0.5F) / static_cast<float>(mip.Height));
-      StorePixel(mip, x, y, IntegrateIrradiance(normal));
+      StorePixel(mip, x, y, IntegrateIrradiance(normal, sampleRadiance));
     }
   }
   return mip;
 }
 
-auto MakePrefilterMips() -> std::vector<FloatMip> {
+auto MakePrefilterMips(const RadianceSampler& sampleRadiance) -> std::vector<FloatMip> {
   std::vector<FloatMip> mips;
   uint32_t width = EnvironmentWidth;
   uint32_t height = EnvironmentHeight;
@@ -198,7 +223,9 @@ auto MakePrefilterMips() -> std::vector<FloatMip> {
         const Vec3 direction = DirectionFromUv((static_cast<float>(x) + 0.5F) / static_cast<float>(width),
                                                (static_cast<float>(y) + 0.5F) / static_cast<float>(height));
         StorePixel(mip, x, y,
-                   roughness <= 0.001F ? StudioRadiance(direction) : IntegratePrefilter(direction, roughness));
+                   roughness <= 0.001F ? sampleRadiance(std::atan2(direction.Z, direction.X) / (2.0F * Pi) + 0.5F,
+                                                        std::acos(std::clamp(direction.Y, -1.0F, 1.0F)) / Pi)
+                                       : IntegratePrefilter(direction, roughness, sampleRadiance));
       }
     }
     mips.push_back(std::move(mip));
@@ -258,6 +285,26 @@ auto CreateSampler(nvrhi::IDevice* device, bool mipFilter) -> nvrhi::SamplerHand
       .setMipFilter(mipFilter);
   return device->createSampler(desc);
 }
+
+auto MakePanoramaMip(const ::Engine::ImportedEnvironment& source) -> FloatMip {
+  FloatMip mip{source.width, source.height, std::vector<float>(static_cast<size_t>(source.width) * source.height * 4)};
+  for (size_t pixel = 0; pixel < static_cast<size_t>(source.width) * source.height; ++pixel) {
+    mip.Pixels[pixel * 4] = source.rgb32f[pixel * 3];
+    mip.Pixels[pixel * 4 + 1] = source.rgb32f[pixel * 3 + 1];
+    mip.Pixels[pixel * 4 + 2] = source.rgb32f[pixel * 3 + 2];
+    mip.Pixels[pixel * 4 + 3] = 1.0F;
+  }
+  return mip;
+}
+
+void WriteMipChain(nvrhi::ICommandList* commandList, const nvrhi::TextureHandle& texture,
+                   const std::vector<FloatMip>& mips) {
+  for (size_t mipIndex = 0; mipIndex < mips.size(); ++mipIndex) {
+    const FloatMip& mip = mips.at(mipIndex);
+    commandList->writeTexture(texture, 0, static_cast<uint32_t>(mipIndex), mip.Pixels.data(),
+                              static_cast<size_t>(mip.Width) * 4 * sizeof(float), 0);
+  }
+}
 } // namespace
 
 bool EnvironmentLightingResources::Initialize(nvrhi::IDevice* device, std::string& error) {
@@ -267,8 +314,9 @@ bool EnvironmentLightingResources::Initialize(nvrhi::IDevice* device, std::strin
     return false;
   }
 
-  const FloatMip irradiance = MakeIrradianceMip();
-  const std::vector<FloatMip> prefilteredMips = MakePrefilterMips();
+  const RadianceSampler sampleRadiance = [](float u, float v) -> Vec3 { return StudioRadiance(DirectionFromUv(u, v)); };
+  const FloatMip irradiance = MakeIrradianceMip(sampleRadiance);
+  const std::vector<FloatMip> prefilteredMips = MakePrefilterMips(sampleRadiance);
   const FloatMip brdfLut = MakeBrdfLut();
   IrradianceMap = CreateTexture(device, {irradiance}, "StudioEnvironmentIrradiance");
   PrefilteredEnvironment = CreateTexture(device, prefilteredMips, "StudioEnvironmentPrefiltered");
@@ -288,15 +336,52 @@ bool EnvironmentLightingResources::Initialize(nvrhi::IDevice* device, std::strin
     return false;
   }
   commandList->open();
-  commandList->writeTexture(IrradianceMap, 0, 0, irradiance.Pixels.data(),
-                            static_cast<size_t>(IrradianceWidth) * 4 * sizeof(float), 0);
-  for (size_t mipIndex = 0; mipIndex < prefilteredMips.size(); ++mipIndex) {
-    const FloatMip& mip = prefilteredMips.at(mipIndex);
-    commandList->writeTexture(PrefilteredEnvironment, 0, static_cast<uint32_t>(mipIndex), mip.Pixels.data(),
-                              static_cast<size_t>(mip.Width) * 4 * sizeof(float), 0);
-  }
+  WriteMipChain(commandList, IrradianceMap, {irradiance});
+  WriteMipChain(commandList, PrefilteredEnvironment, prefilteredMips);
   commandList->writeTexture(BrdfIntegrationLut, 0, 0, brdfLut.Pixels.data(),
                             static_cast<size_t>(BrdfLutSize) * 4 * sizeof(float), 0);
+  commandList->close();
+  device->executeCommandList(commandList);
+  device->waitForIdle();
+  return true;
+}
+
+bool EnvironmentLightingResources::Initialize(nvrhi::IDevice* device, const ::Engine::ImportedEnvironment& source,
+                                              std::string& error) {
+  error.clear();
+  if (device == nullptr || source.width == 0 || source.height == 0 ||
+      source.rgb32f.size() != static_cast<size_t>(source.width) * source.height * 3) {
+    error = "environment resource creation requires a valid device and decoded HDR panorama";
+    return false;
+  }
+
+  const RadianceSampler sampleRadiance = [&source](float u, float v) -> Vec3 {
+    return SampleEnvironment(source, u, v);
+  };
+  const FloatMip panorama = MakePanoramaMip(source);
+  const FloatMip irradiance = MakeIrradianceMip(sampleRadiance);
+  const std::vector<FloatMip> prefilteredMips = MakePrefilterMips(sampleRadiance);
+  Panorama = CreateTexture(device, {panorama}, "AuthoredEnvironmentPanorama");
+  IrradianceMap = CreateTexture(device, {irradiance}, "AuthoredEnvironmentIrradiance");
+  PrefilteredEnvironment = CreateTexture(device, prefilteredMips, "AuthoredEnvironmentPrefiltered");
+  PanoramaSampler = CreateSampler(device, false);
+  IrradianceSampler = CreateSampler(device, false);
+  PrefilteredEnvironmentSampler = CreateSampler(device, true);
+  if (Panorama == nullptr || IrradianceMap == nullptr || PrefilteredEnvironment == nullptr ||
+      PanoramaSampler == nullptr || IrradianceSampler == nullptr || PrefilteredEnvironmentSampler == nullptr) {
+    error = "NVRHI failed to create authored environment textures or samplers";
+    return false;
+  }
+
+  nvrhi::CommandListHandle commandList = device->createCommandList();
+  if (commandList == nullptr) {
+    error = "NVRHI failed to create the authored environment upload command list";
+    return false;
+  }
+  commandList->open();
+  WriteMipChain(commandList, Panorama, {panorama});
+  WriteMipChain(commandList, IrradianceMap, {irradiance});
+  WriteMipChain(commandList, PrefilteredEnvironment, prefilteredMips);
   commandList->close();
   device->executeCommandList(commandList);
   device->waitForIdle();

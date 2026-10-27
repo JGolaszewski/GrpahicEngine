@@ -15,6 +15,7 @@ private:
   std::vector<Engine::AssetManager::ModelAssetInfo> m_Models;
   std::vector<Engine::AssetManager::TextureAssetInfo> m_Textures;
   std::vector<Engine::AssetManager::MaterialAssetInfo> m_Materials;
+  std::vector<Engine::AssetManager::EnvironmentAssetInfo> m_Environments;
   std::string m_SelectedGuid;
   std::array<char, 256> m_RenameBuffer{};
   std::string m_StatusMessage;

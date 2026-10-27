@@ -42,6 +42,7 @@ class ShaderFactory;
 struct DisplayTransformResources;
 struct CameraPostProcessResources;
 struct AmbientOcclusionResources;
+class EnvironmentLightingResources;
 class FrameContext;
 class RenderGraph;
 } // namespace Renderer
@@ -76,6 +77,11 @@ public:
   /// @return True when the texture resource is ready for scene material bindings.
   bool PrepareAssetTexture(const std::string& guid, bool srgb, std::string& error, bool normalMap = false,
                            bool preserveAlphaCoverage = false, float alphaCutoff = 0.5F);
+  /// Loads and prepares the GPU panorama and lighting maps for an imported HDR environment.
+  /// @param guid Stable environment asset identity.
+  /// @param error Receives a missing asset or GPU resource diagnostic.
+  /// @return True when the environment is ready for rendered views.
+  bool PrepareAssetEnvironment(const std::string& guid, std::string& error);
   /// Returns a previously prepared authored project texture.
   /// @param guid Stable texture asset identity.
   /// @param srgb Whether the texture uses sRGB sampling.
@@ -336,6 +342,8 @@ private:
   AssetManager* m_AssetManager = nullptr;
   std::map<std::tuple<std::string, bool, bool, bool, float>, std::shared_ptr<::Engine::Renderer::TextureResource>>
       m_AuthoredTextures;
+  std::map<std::pair<std::string, uint64_t>, std::shared_ptr<::Engine::Renderer::EnvironmentLightingResources>>
+      m_AuthoredEnvironments;
 
   std::unique_ptr<::Engine::Renderer::FrameContext> m_FrameContext;
   std::unique_ptr<::Engine::Renderer::RenderGraph> m_RenderGraph;

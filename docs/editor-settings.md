@@ -6,7 +6,7 @@ The file is created when a setting is changed. A missing file uses the built-in 
 Settings use versioned JSON categories:
 
 - `runtime`: frame limiter frequency in hertz (`0` disables the limiter). Simulation pause is session state and resets on launch.
-- `rendering`: editor gizmos, wireframe plane, shadow map resolution, shadow caster limit, maximum texture anisotropy, and VSync.
+- `rendering`: editor gizmos, wireframe plane, skybox background visibility in the editor viewport, shadow map resolution, shadow caster limit, maximum texture anisotropy, and VSync.
 - `camera_preview`: display scale and render quality, stored as fractions from `0.0` to `1.0`.
 
 The maximum texture anisotropy accepts 1x, 2x, 4x, 8x, or 16x and defaults to 8x. Invalid or unreadable settings are reported in the editor log and defaults are used so the editor can still launch.
@@ -31,6 +31,13 @@ Sandbox** loads `Sandbox.template.scene.json` and sets `Sandbox.scene.json` as
 the active save path.
 
 ## Asset rename and assignment
+
+Use **Import HDR environment...** in the Assets panel to import a Radiance
+`.hdr` environment. Select the scene root and add a **Skybox** component to
+choose an HDR environment, a 2:1 `.png` panorama, or a solid color. HDRI
+lighting intensity is available only for HDR mode. HDR environments appear
+alongside models, textures, and materials and can be renamed while preserving
+their GUID.
 
 Use **Create material** in the Assets panel to create a reusable default
 material. Materials appear alongside models and textures and can be renamed

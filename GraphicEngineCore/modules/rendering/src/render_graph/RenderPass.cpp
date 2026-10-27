@@ -328,8 +328,14 @@ auto ForwardPass::Execute(nvrhi::ICommandList* cmd, const ::Engine::Renderer::Re
       lightData.Lights[i] = view->Lights.at(i);
     }
     lightData.LightCount = lightCount;
-    lightData.EnvironmentEnabled = view->Environment.Preset == Engine::EnvironmentPreset::Studio ? 1U : 0U;
-    lightData.EnvironmentIntensity = view->Environment.Intensity;
+    const bool useSceneSkyboxEnvironment =
+        view->HasSceneSkybox && view->SceneSkybox.Mode == Engine::Ecs::SkyboxMode::HdrEnvironment;
+    const bool useAuthoredEnvironment =
+        useSceneSkyboxEnvironment && view->SceneSkybox.EnableEnvironmentLighting && view->EnvironmentSource != nullptr;
+    const bool useStudioEnvironment =
+        !view->HasSceneSkybox && view->Environment.Preset == Engine::EnvironmentPreset::Studio;
+    lightData.EnvironmentEnabled = (useAuthoredEnvironment || useStudioEnvironment) ? 1U : 0U;
+    lightData.EnvironmentIntensity = useAuthoredEnvironment ? view->SceneSkybox.Intensity : view->Environment.Intensity;
     lightData.AmbientLightIntensity = view->AmbientLight.Enabled ? view->AmbientLight.Intensity : 0.0F;
     lightData.AmbientLightColor = {view->AmbientLight.Color[0], view->AmbientLight.Color[1],
                                    view->AmbientLight.Color[2], 0.0F};
@@ -343,6 +349,7 @@ auto ForwardPass::Execute(nvrhi::ICommandList* cmd, const ::Engine::Renderer::Re
         (m_SceneRenderer != nullptr)
             ? m_SceneRenderer->GetSceneBindingSet(viewIndex, view->LightBuffer, physicalShadowMap, shadowSampler,
                                                   view->CameraBuffer, ambientOcclusion,
+                                                  useAuthoredEnvironment ? view->EnvironmentSource.get() : nullptr,
                                                   ctx.GetFrameContext().GetDiagnostics())
             : nullptr;
     if (sceneBindings == nullptr) {
@@ -351,6 +358,9 @@ auto ForwardPass::Execute(nvrhi::ICommandList* cmd, const ::Engine::Renderer::Re
 
     nvrhi::IFramebuffer* mainFramebuffer = view->TargetFramebuffer;
     if (!ClearForwardAttachments(cmd, view->OutputAttachments, ctx)) {
+      return false;
+    }
+    if (m_SceneRenderer != nullptr && !m_SceneRenderer->DrawEnvironmentBackground(cmd, *view)) {
       return false;
     }
 

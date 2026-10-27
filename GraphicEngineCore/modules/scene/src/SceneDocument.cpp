@@ -726,6 +726,70 @@ auto ReadAmbientLight(const Json& value, AmbientLightSettings& settings, std::st
   return true;
 }
 
+auto SkyboxJson(const SceneSkyboxDocument& skybox) -> Json {
+  return {{"mode", skybox.mode},
+          {"environmentGuid", skybox.environmentGuid},
+          {"textureGuid", skybox.textureGuid},
+          {"color", skybox.color},
+          {"enableEnvironmentLighting", skybox.enableEnvironmentLighting},
+          {"intensity", skybox.intensity}};
+}
+
+auto ReadSkybox(const Json& value, SceneSkyboxDocument& skybox, std::vector<std::string>& warnings, std::string& error)
+    -> bool {
+  if (!value.is_object()) {
+    error = "skybox must be an object";
+    return false;
+  }
+  KnownKeys(value, {"mode", "environmentGuid", "textureGuid", "color", "enableEnvironmentLighting", "intensity"},
+            warnings, "skybox");
+  if (value.contains("mode")) {
+    if (!value.at("mode").is_string()) {
+      error = "mode must be a string";
+      return false;
+    }
+    skybox.mode = value.at("mode").get<std::string>();
+    if (skybox.mode != "hdr" && skybox.mode != "ldr" && skybox.mode != "color") {
+      error = "mode must be 'hdr', 'ldr', or 'color'";
+      return false;
+    }
+  }
+  if (value.contains("environmentGuid")) {
+    if (!value.at("environmentGuid").is_string()) {
+      error = "environmentGuid must be a string";
+      return false;
+    }
+    skybox.environmentGuid = value.at("environmentGuid").get<std::string>();
+    if (!skybox.environmentGuid.empty() && !IsGuid(skybox.environmentGuid)) {
+      error = "environmentGuid must be empty or a valid asset GUID";
+      return false;
+    }
+  }
+  if (value.contains("textureGuid")) {
+    if (!value.at("textureGuid").is_string()) {
+      error = "textureGuid must be a string";
+      return false;
+    }
+    skybox.textureGuid = value.at("textureGuid").get<std::string>();
+    if (!skybox.textureGuid.empty() && !IsGuid(skybox.textureGuid)) {
+      error = "textureGuid must be empty or a valid asset GUID";
+      return false;
+    }
+  }
+  if (value.contains("color") && !ReadFloatArray(value.at("color"), skybox.color, "color", error)) {
+    return false;
+  }
+  if (!ReadBool(value, "enableEnvironmentLighting", skybox.enableEnvironmentLighting, error) ||
+      !ReadNumber(value, "intensity", skybox.intensity, error)) {
+    return false;
+  }
+  if (!std::isfinite(skybox.intensity) || skybox.intensity < 0.0F) {
+    error = "skybox intensity must be finite and nonnegative";
+    return false;
+  }
+  return true;
+}
+
 auto CameraJson(const SceneCameraDocument& camera) -> Json {
   return {
       {"id", camera.id},
@@ -757,6 +821,7 @@ auto ToJson(const SceneDocument& document) -> Json {
       {"schemaVersion", document.schemaVersion},
       {"unitsPerMeter", document.unitsPerMeter},
       {"ambientLight", AmbientLightJson(document.ambientLight)},
+      {"skybox", document.skybox ? SkyboxJson(*document.skybox) : Json(nullptr)},
       {"coordinateSystem", "right-handed-y-up"},
       {"entities", Json::array()},
       {"lights", Json::array()},
@@ -777,6 +842,16 @@ auto ToJson(const SceneDocument& document) -> Json {
 auto ValidateSceneHeader(const std::filesystem::path& path, const SceneDocument& document, std::string& error) -> bool {
   if ((document.schemaVersion >= 1 && document.schemaVersion <= CurrentSceneSchemaVersion) &&
       std::isfinite(document.unitsPerMeter) && document.unitsPerMeter > 0.0F) {
+    if (document.skybox &&
+        ((document.skybox->mode != "hdr" && document.skybox->mode != "ldr" && document.skybox->mode != "color") ||
+         (!document.skybox->environmentGuid.empty() && !IsGuid(document.skybox->environmentGuid)) ||
+         (!document.skybox->textureGuid.empty() && !IsGuid(document.skybox->textureGuid)) ||
+         !std::isfinite(document.skybox->intensity) || document.skybox->intensity < 0.0F ||
+         std::ranges::any_of(
+             document.skybox->color, [](float value) { return !std::isfinite(value) || value < 0.0F; }))) {
+      error = FileContext(path, "document contains invalid skybox settings or environment GUID");
+      return false;
+    }
     if (const Status ambientLightValidation = Engine::Validate(document.ambientLight); ambientLightValidation) {
       return true;
     } else {
@@ -1425,10 +1500,10 @@ auto SceneSerializer::Load(const std::filesystem::path& path) -> SceneDocumentRe
     result.error = FileContext(path, "scene root must be an object");
     return result;
   }
-  KnownKeys(
-      root,
-      {"schemaVersion", "coordinateSystem", "unitsPerMeter", "ambientLight", "entities", "lights", "cameras", "editor"},
-      result.warnings, "scene");
+  KnownKeys(root,
+            {"schemaVersion", "coordinateSystem", "unitsPerMeter", "ambientLight", "skybox", "entities", "lights",
+             "cameras", "editor"},
+            result.warnings, "scene");
   if (!root.contains("schemaVersion") || !root.at("schemaVersion").is_number_unsigned()) {
     result.error = FileContext(path, "schemaVersion must be an unsigned integer");
     return result;
@@ -1454,6 +1529,14 @@ auto SceneSerializer::Load(const std::filesystem::path& path) -> SceneDocumentRe
       !ReadAmbientLight(root.at("ambientLight"), result.document.ambientLight, fieldError)) {
     result.error = FileContext(path, "ambientLight: " + fieldError);
     return result;
+  }
+  if (root.contains("skybox") && !root.at("skybox").is_null()) {
+    SceneSkyboxDocument skybox;
+    if (!ReadSkybox(root.at("skybox"), skybox, result.warnings, fieldError)) {
+      result.error = FileContext(path, "skybox: " + fieldError);
+      return result;
+    }
+    result.document.skybox = std::move(skybox);
   }
   if (!LoadEntityArray(root, result, path, fieldError) || !LoadLightArray(root, result, path, fieldError) ||
       !LoadCameraArray(root, result, path, fieldError)) {

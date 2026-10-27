@@ -42,8 +42,10 @@ resource lifetimes, and access states for diagnostics.
   array. The configured shadow resolution is shared by its slices. The pass
   writes one slice per shadow view.
 - **`ForwardPass`** reads the shadow map and renders each scene view to its
-  imported color and depth attachments. It clears the attachments, then draws
-  opaque, masked, skybox, transparent, and UI queues in that order.
+  imported color and depth attachments. It clears the attachments, draws the
+  optional sky background into color only, then draws opaque, masked,
+  transparent, and UI queues. The background runs before geometry with depth
+  writes disabled, leaving depth and auxiliary outputs at their clear values.
 - **`DebugPass`** writes the editor view attachments and draws editor debug
   geometry. It is added only when at least one submitted view uses editor mode;
   it skips preview and final views.

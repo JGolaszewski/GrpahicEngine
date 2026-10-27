@@ -410,6 +410,52 @@ auto Application::LoadSceneDocument(const SceneDocument& document, std::string& 
     error = ambientLightValidation.error().Message;
     return false;
   }
+  if (document.skybox) {
+    if (document.skybox->mode != "hdr" && document.skybox->mode != "ldr" && document.skybox->mode != "color") {
+      error = "scene skybox mode must be 'hdr', 'ldr', or 'color'";
+      return false;
+    }
+    const Ecs::SkyboxMode mode = document.skybox->mode == "ldr"     ? Ecs::SkyboxMode::LdrPanorama
+                                 : document.skybox->mode == "color" ? Ecs::SkyboxMode::SolidColor
+                                                                    : Ecs::SkyboxMode::HdrEnvironment;
+    const Ecs::Skybox skybox{.Mode = mode,
+                             .EnvironmentGuid = document.skybox->environmentGuid,
+                             .TextureGuid = document.skybox->textureGuid,
+                             .Color = document.skybox->color,
+                             .EnableEnvironmentLighting = document.skybox->enableEnvironmentLighting,
+                             .Intensity = document.skybox->intensity};
+    if (const Status skyboxValidation = Ecs::Validate(skybox); !skyboxValidation) {
+      error = skyboxValidation.error().Message;
+      return false;
+    }
+    std::string skyError;
+    if (skybox.Mode == Ecs::SkyboxMode::HdrEnvironment && !skybox.EnvironmentGuid.empty()) {
+      if (m_AssetManager == nullptr || !m_AssetManager->LoadEnvironment(skybox.EnvironmentGuid, skyError)) {
+        warnings.push_back("scene skybox HDR environment " + skybox.EnvironmentGuid +
+                           " could not be loaded: " + skyError);
+      } else if (m_RenderSystem != nullptr &&
+                 !m_RenderSystem->PrepareAssetEnvironment(skybox.EnvironmentGuid, skyError)) {
+        warnings.push_back("scene skybox HDR environment " + skybox.EnvironmentGuid +
+                           " could not be prepared for rendering: " + skyError);
+      }
+    } else if (skybox.Mode == Ecs::SkyboxMode::LdrPanorama && !skybox.TextureGuid.empty()) {
+      if (m_AssetManager == nullptr || !m_AssetManager->LoadTexture(skybox.TextureGuid, skyError)) {
+        warnings.push_back("scene skybox LDR texture " + skybox.TextureGuid + " could not be loaded: " + skyError);
+      } else {
+        const auto image = m_AssetManager->GetTexture(skybox.TextureGuid);
+        const auto sourcePath = m_AssetManager->GetSourcePath(skybox.TextureGuid);
+        if (image == nullptr || !sourcePath || sourcePath->extension() != ".png" || image->height == 0 ||
+            image->width != image->height * 2U) {
+          warnings.push_back("scene skybox LDR texture " + skybox.TextureGuid +
+                             " is not a 2:1 equirectangular PNG panorama");
+        } else if (m_RenderSystem != nullptr &&
+                   !m_RenderSystem->PrepareAssetTexture(skybox.TextureGuid, true, skyError)) {
+          warnings.push_back("scene skybox LDR texture " + skybox.TextureGuid +
+                             " could not be prepared for rendering: " + skyError);
+        }
+      }
+    }
+  }
   auto stagedScene = std::make_shared<Scene>();
   stagedScene->SetUnitsPerMeter(document.unitsPerMeter);
   if (const Status ambientLightStatus = stagedScene->SetAmbientLight(document.ambientLight); !ambientLightStatus) {
@@ -742,6 +788,18 @@ auto Application::LoadSceneDocument(const SceneDocument& document, std::string& 
       (void)stagedScene->QueueAdd(pending.Handle, *source.postProcessing);
     }
   }
+  if (document.skybox) {
+    const Ecs::SkyboxMode mode = document.skybox->mode == "ldr"     ? Ecs::SkyboxMode::LdrPanorama
+                                 : document.skybox->mode == "color" ? Ecs::SkyboxMode::SolidColor
+                                                                    : Ecs::SkyboxMode::HdrEnvironment;
+    (void)stagedScene->QueueAdd(stagedScene->SceneRootEntity(),
+                                Ecs::Skybox{.Mode = mode,
+                                            .EnvironmentGuid = document.skybox->environmentGuid,
+                                            .TextureGuid = document.skybox->textureGuid,
+                                            .Color = document.skybox->color,
+                                            .EnableEnvironmentLighting = document.skybox->enableEnvironmentLighting,
+                                            .Intensity = document.skybox->intensity});
+  }
   for (const auto& result : stagedScene->sync()) {
     if (!result.Outcome) {
       error = result.Outcome.error().Message;
@@ -782,6 +840,17 @@ auto Application::CreateSceneDocument(const Scene& scene) const -> SceneDocument
   document.unitsPerMeter = scene.GetUnitsPerMeter();
   document.ambientLight = scene.AmbientLight();
   const auto& world = scene.World();
+  if (const auto* skybox = world.Get<Ecs::Skybox>(scene.SceneRootEntity()); skybox != nullptr) {
+    const std::string mode = skybox->Mode == Ecs::SkyboxMode::LdrPanorama  ? "ldr"
+                             : skybox->Mode == Ecs::SkyboxMode::SolidColor ? "color"
+                                                                           : "hdr";
+    document.skybox = SceneSkyboxDocument{.mode = mode,
+                                          .environmentGuid = skybox->EnvironmentGuid,
+                                          .textureGuid = skybox->TextureGuid,
+                                          .color = skybox->Color,
+                                          .enableEnvironmentLighting = skybox->EnableEnvironmentLighting,
+                                          .intensity = skybox->Intensity};
+  }
   world.ForEachChunkReadOnly<Ecs::Name, Ecs::PersistentIdentity, Ecs::LocalTransform, Ecs::LocalVisibility>(
       [&document, &world](std::span<const EntityHandle> handles, std::span<const Ecs::Name> names,
                           std::span<const Ecs::PersistentIdentity> identities,

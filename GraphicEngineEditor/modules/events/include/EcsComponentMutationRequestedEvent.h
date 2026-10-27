@@ -16,11 +16,12 @@ public:
     MeshRenderer,
     SpotLight,
     Camera,
-    CameraPostProcessing
+    CameraPostProcessing,
+    Skybox
   };
   using Payload = std::variant<std::monostate, Engine::Ecs::Name, Engine::Ecs::LocalTransform,
                                Engine::Ecs::LocalVisibility, Engine::Ecs::MeshRenderer, Engine::Ecs::SpotLight,
-                               Engine::Ecs::Camera, Engine::Ecs::CameraPostProcessing>;
+                               Engine::Ecs::Camera, Engine::Ecs::CameraPostProcessing, Engine::Ecs::Skybox>;
 
   EcsComponentMutationRequestedEvent(Engine::EntityHandle entity, Operation operation, Component component,
                                      Payload payload = {})

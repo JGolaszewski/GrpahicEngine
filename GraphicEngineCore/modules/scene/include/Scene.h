@@ -360,6 +360,11 @@ private:
                                 std::is_same_v<Component, Ecs::SpotLight> || std::is_same_v<Component, Ecs::Camera>)) {
       return std::unexpected(MakeError("Renderable and authored components are not valid on the scene root"));
     }
+    if constexpr (std::is_same_v<Component, Ecs::Skybox>) {
+      if (!IsSceneRoot(entity)) {
+        return std::unexpected(MakeError("Skybox components can only be attached to the scene root"));
+      }
+    }
     if constexpr (std::is_same_v<Component, Ecs::CameraPostProcessing>) {
       if (!m_World.Has<Ecs::Camera>(entity)) {
         return std::unexpected(MakeError("Camera post-processing requires a Camera component on the same entity"));

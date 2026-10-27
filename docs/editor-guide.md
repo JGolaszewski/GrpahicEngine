@@ -55,6 +55,11 @@ Use **Scene Hierarchy** to inspect and edit the active scene:
 - A **Light** component supports directional, point, and spot types. The
   Inspector shows direction, range, and cone controls only when they apply,
   along with color, intensity, shadow bias, and cast-shadows controls.
+- Select the scene root and use **Add Skybox** to add its optional background.
+  Choose an HDR environment, an imported 2:1 PNG panorama, or a solid color in
+  the root Inspector. HDRI lighting and environment intensity are available for
+  HDR mode only. The environment and ambient-light intensity controls are
+  separate.
 
 Component and hierarchy edits update the active scene immediately. Entity
 selection is separate from the viewport navigation camera, and selecting a
@@ -107,6 +112,7 @@ Open **Window > Settings** for runtime, rendering, and backend controls.
 | Rendering | Show light gizmos | Toggles light debug geometry in the viewport. |
 | Rendering | Show camera frustums | Toggles visible scene camera frustums. |
 | Rendering | Show wireframe plane | Toggles the debug wireframe plane. |
+| Rendering | Show skybox in editor viewport | Toggles the scene skybox background in the editor viewport. Hiding the background does not disable environment lighting. |
 | Rendering | Camera PiP display scale | Sets the on-screen preview size from 10% to 80% of the viewport, subject to the preview's 480-pixel maximum edge. |
 | Rendering | Camera PiP render quality | Sets preview render resolution from 5% to 100% of the camera output dimensions. |
 | Rendering | Shadow map resolution | Sets shadow map resolution between 128 and 8192 pixels. Higher values use more GPU memory and bandwidth. |
