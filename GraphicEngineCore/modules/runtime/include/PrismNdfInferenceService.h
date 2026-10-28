@@ -9,6 +9,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 
 namespace Engine {
 
@@ -61,7 +62,7 @@ public:
   /// Queue one prompt and directional-mode request. Only one request may be
   /// active; the previous terminal snapshot is discarded when the next request
   /// starts so completed payload memory does not accumulate.
-  [[nodiscard]] ENGINE_API auto Start(std::string prompt, bool directional) -> Result<uint64_t>;
+  [[nodiscard]] ENGINE_API auto Start(std::string_view prompt, bool directional) -> Result<uint64_t>;
   /// Returns a snapshot or no value while the request has not been recorded.
   [[nodiscard]] ENGINE_API auto Poll(uint64_t requestId) const -> std::optional<PrismNdfInferenceStatus>;
   /// Requests cancellation; completion is reported by a later Poll.

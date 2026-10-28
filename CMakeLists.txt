@@ -213,7 +213,10 @@ if(ENGINE_ENABLE_PRISM_INFERENCE)
         endif()
         install(DIRECTORY "${ENGINE_VCPKG_PREFIX}/bin/"
             DESTINATION bin
-            FILES_MATCHING PATTERN "onnxruntime*.dll"
+            FILES_MATCHING
+                PATTERN "*.dll"
+                PATTERN "gtest*.dll" EXCLUDE
+                PATTERN "gmock*.dll" EXCLUDE
         )
     else()
         message(FATAL_ERROR "The prism-inference vcpkg feature is enabled, but the installed vcpkg prefix cannot be resolved")

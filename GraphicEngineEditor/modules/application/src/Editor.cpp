@@ -110,7 +110,10 @@ private:
     }
     if (!error.empty()) {
       for (auto& [entity, previous] : applied) {
-        (void)m_Scene->SetInPlace(entity, std::move(previous));
+        const Engine::Status rollbackStatus = m_Scene->SetInPlace(entity, std::move(previous));
+        if (!rollbackStatus) {
+          ENGINE_LOG_ERROR("Asset", "PRISM scene rollback failed | reason: {}", rollbackStatus.error().Message);
+        }
       }
       std::string rollbackError;
       if (!m_Assets.SaveMaterial(m_Guid, rollback, rollbackError)) {
@@ -259,15 +262,19 @@ void Editor::OnInit() {
                                        .pythonExecutable = runtimeDirectory / "python" / "python.exe",
                                        .tokenizerWorker = runtimeDirectory / "python" / "prism_tokenizer_worker.py"});
   PrismNdfGenerationAdapter prismGeneration{
-      .start = [this](std::string prompt, bool directional) -> Engine::Result<uint64_t> {
-        return m_PrismNdfInferenceService->Start(std::move(prompt), directional);
+      .start = [this](const std::string& prompt, bool directional) -> Engine::Result<uint64_t> {
+        return m_PrismNdfInferenceService->Start(prompt, directional);
       },
       .poll = [this](uint64_t requestId) -> std::optional<Engine::PrismNdfInferenceStatus> {
         return m_PrismNdfInferenceService->Poll(requestId);
       },
       .cancel = [this](uint64_t requestId) -> void {
         if (m_PrismNdfInferenceService != nullptr) {
-          (void)m_PrismNdfInferenceService->Cancel(requestId);
+          const Engine::Status cancelStatus = m_PrismNdfInferenceService->Cancel(requestId);
+          if (!cancelStatus) {
+            ENGINE_LOG_WARN("Asset", "PRISM generation cancellation was rejected | reason: {}",
+                            cancelStatus.error().Message);
+          }
         }
       },
       .isAvailable = [] -> bool { return Engine::PrismNdfInferenceService::IsAvailable(); }};

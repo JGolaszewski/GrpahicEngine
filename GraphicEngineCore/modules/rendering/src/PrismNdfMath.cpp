@@ -208,7 +208,7 @@ auto FitPrismNdfPayload(std::span<const float> grid, PrismNdfData& output, std::
       result.residuals[sampleIndex] = grid[sampleIndex] - static_cast<float>(polynomial);
     }
   }
-  output = std::move(result);
+  output = result;
   return true;
 }
 

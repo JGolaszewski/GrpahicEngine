@@ -78,10 +78,16 @@ def verify(package: Path) -> None:
             or len(tokens.get("input_ids", [])) != 128
             or len(tokens.get("attention_mask", [])) != 128):
         raise ValueError("packaged tokenizer worker returned an invalid handshake or tensor payload")
-    runtime_dlls = list(binary.glob("onnxruntime*.dll"))
-    if not runtime_dlls:
-        raise FileNotFoundError(f"packaged ONNX Runtime DLL is missing from {binary}")
-    print("Packaged PRISM models, contracts, licenses, tokenizer, worker protocol, and ONNX Runtime DLLs verified.")
+    required_runtime_dlls = (
+        "onnxruntime.dll",
+        "onnxruntime_providers_shared.dll",
+        "OpenImageIO.dll",
+        "OpenImageIO_Util.dll",
+    )
+    missing_runtime_dlls = [name for name in required_runtime_dlls if not (binary / name).is_file()]
+    if missing_runtime_dlls:
+        raise FileNotFoundError(f"packaged runtime DLLs are missing from {binary}: {missing_runtime_dlls}")
+    print("Packaged PRISM models, contracts, licenses, tokenizer, worker protocol, and runtime DLLs verified.")
 
 
 def main() -> int:

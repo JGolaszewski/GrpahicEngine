@@ -73,6 +73,13 @@ if(BUILD_TESTING)
     add_test(NAME BrdfReferenceTests COMMAND BrdfReferenceTests)
     set_tests_properties(BrdfReferenceTests PROPERTIES LABELS "unit")
 
+    if(ENGINE_ENABLE_PRISM_INFERENCE)
+        add_executable(PrismNdfPackageSmoke PrismNdfPackageSmoke.cpp)
+        target_link_libraries(PrismNdfPackageSmoke PRIVATE GraphicEngineCore)
+        target_compile_features(PrismNdfPackageSmoke PRIVATE cxx_std_23)
+        engine_configure_test_target(PrismNdfPackageSmoke)
+    endif()
+
     # These named targets provide stable entry points in Visual Studio, Ninja,
     # and CI. CTest still exposes each individual test to Test Explorer.
     add_custom_target(engine-unit-tests

@@ -50,6 +50,28 @@ jobs:
       - name: Verify installed PRISM package and tokenizer smoke test
         run: python scripts/verify_prism_package.py --package out/package
 
+      - name: Run native inference against packaged PRISM assets
+        shell: pwsh
+        run: |
+          $env:PATH = "$(Resolve-Path out/package/bin);$env:PATH"
+          New-Item -ItemType Directory -Force out/prism-smoke | Out-Null
+          Copy-Item out/build/x64-release-prism/bin/PrismNdfPackageSmoke.exe out/package/bin/
+          Push-Location out/package/bin
+          try {
+            & .\PrismNdfPackageSmoke.exe . *> ..\..\prism-inference-smoke.log
+            $smokeExitCode = $LASTEXITCODE
+          } finally {
+            Pop-Location
+          }
+          Move-Item out/package/bin/PrismNdfPackageSmoke.exe out/prism-smoke/ -Force
+          if ($smokeExitCode -ne 0) {
+            Get-Content out/prism-inference-smoke.log -Tail 80
+            throw "Packaged native PRISM generation failed with exit code $smokeExitCode"
+          }
+          $result = Select-String -Path out/prism-inference-smoke.log -Pattern '^Packaged PRISM inference generated a finite 45-term, 4096-residual payload'
+          if ($null -eq $result) { throw "Packaged native PRISM generation did not report a completed payload" }
+          $result.Line
+
       - name: Create release ZIP and SHA-256 checksum
         id: package
         env:

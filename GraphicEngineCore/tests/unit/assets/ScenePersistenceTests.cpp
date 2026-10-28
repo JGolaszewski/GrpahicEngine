@@ -131,8 +131,9 @@ TEST(ScenePersistenceTests, MissingTextureAnisotropyValuesDefaultToGlobalCapAndI
   }
   auto loaded = Engine::SceneSerializer::Load(path);
   ASSERT_TRUE(loaded) << loaded.error;
-  ASSERT_TRUE(loaded.document.entities.front().material.has_value());
-  EXPECT_EQ(loaded.document.entities.front().material->textureAnisotropyLevels, (std::array<uint32_t, 5>{}));
+  const auto& restoredMaterial = loaded.document.entities.front().material;
+  ASSERT_TRUE(restoredMaterial.has_value());
+  EXPECT_EQ(restoredMaterial->textureAnisotropyLevels, (std::array<uint32_t, 5>{}));
 
   {
     std::ofstream scene(path, std::ios::binary | std::ios::trunc);
@@ -173,8 +174,11 @@ TEST(ScenePersistenceTests, GeneratedNdfCoefficientsResidualAndPromptRoundTrip) 
   ASSERT_TRUE(assets.SaveScene("generated-ndf.scene.json", document, error)) << error;
   const auto loaded = assets.LoadScene("generated-ndf.scene.json");
   ASSERT_TRUE(loaded) << loaded.error;
-  ASSERT_TRUE(loaded.document.entities.front().material->generatedNdf.has_value());
-  const auto& restored = *loaded.document.entities.front().material->generatedNdf;
+  const auto& restoredMaterial = loaded.document.entities.front().material;
+  ASSERT_TRUE(restoredMaterial.has_value());
+  const auto& generatedNdf = restoredMaterial->generatedNdf;
+  ASSERT_TRUE(generatedNdf.has_value());
+  const auto& restored = *generatedNdf;
   EXPECT_EQ(restored.data.zernikeCoefficients, material.generatedNdf->data.zernikeCoefficients);
   EXPECT_EQ(restored.data.residuals, material.generatedNdf->data.residuals);
   EXPECT_FLOAT_EQ(restored.data.normalization, 0.875F);
@@ -264,7 +268,7 @@ TEST(ScenePersistenceTests, GeneratedNdfValidationFailureMatrixRejectsInvalidPay
                             {"unitsPerMeter", 1.0F},
                             {"entities", {{{"id", 1}, {"primitiveType", "sphere"}, {"material", material}}}}};
   };
-  const auto expectRejected = [&path, &write](nlohmann::json payload, std::string_view brdf = "prismNdf",
+  const auto expectRejected = [&path, &write](const nlohmann::json& payload, std::string_view brdf = "prismNdf",
                                               bool include = true) {
     write(payload, brdf, include);
     EXPECT_FALSE(Engine::SceneSerializer::Load(path)) << payload.dump();
@@ -320,7 +324,12 @@ TEST(ScenePersistenceTests, InvalidGeneratedNdfSavePreservesExistingSceneFile) {
   };
   const std::string original = readBytes();
 
-  auto& material = *document.entities.front().material;
+  auto& optionalMaterial = document.entities.front().material;
+  if (!optionalMaterial.has_value()) {
+    FAIL() << "Expected the saved document fixture to contain a material";
+    return;
+  }
+  auto& material = optionalMaterial.value();
   material.brdfModel = "prismNdf";
   material.generatedNdf.emplace();
   material.generatedNdf->data.normalization = std::numeric_limits<float>::quiet_NaN();
@@ -329,7 +338,9 @@ TEST(ScenePersistenceTests, InvalidGeneratedNdfSavePreservesExistingSceneFile) {
   EXPECT_EQ(readBytes(), original);
   const auto stillValid = assets.LoadScene("preserve.scene.json");
   ASSERT_TRUE(stillValid) << stillValid.error;
-  EXPECT_EQ(stillValid.document.entities.front().material->brdfModel, "ggx");
+  const auto& stillValidMaterial = stillValid.document.entities.front().material;
+  ASSERT_TRUE(stillValidMaterial.has_value());
+  EXPECT_EQ(stillValidMaterial->brdfModel, "ggx");
 }
 
 TEST(ScenePersistenceTests, LegacyAuthoredMeshSettingsRestoreMeshRendererPresence) {

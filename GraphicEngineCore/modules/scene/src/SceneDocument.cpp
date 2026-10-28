@@ -1548,7 +1548,9 @@ auto LoadCameraArray(const Json& root, SceneDocumentResult& result, const std::f
       if (item.contains("ambientLightOverride") && !item.at("ambientLightOverride").is_null()) {
         AmbientLightSettings overrideSettings;
         if (!ReadAmbientLight(item.at("ambientLightOverride"), overrideSettings, fieldError)) {
-          result.error = FileContext(path, context + ".ambientLightOverride: " + fieldError);
+          std::string fieldContext = context;
+          fieldContext.append(".ambientLightOverride: ").append(fieldError);
+          result.error = FileContext(path, fieldContext);
           return false;
         }
         camera.ambientLightOverride = overrideSettings;
@@ -1556,7 +1558,9 @@ auto LoadCameraArray(const Json& root, SceneDocumentResult& result, const std::f
       if (item.contains("postProcessing") && !item.at("postProcessing").is_null()) {
         Ecs::CameraPostProcessing postProcessing;
         if (!ReadCameraPostProcessing(item.at("postProcessing"), postProcessing, fieldError)) {
-          result.error = FileContext(path, context + ".postProcessing: " + fieldError);
+          std::string fieldContext = context;
+          fieldContext.append(".postProcessing: ").append(fieldError);
+          result.error = FileContext(path, fieldContext);
           return false;
         }
         camera.postProcessing = std::move(postProcessing);
@@ -1566,7 +1570,9 @@ auto LoadCameraArray(const Json& root, SceneDocumentResult& result, const std::f
           camera.postProcessing.emplace();
         }
         if (!ReadCameraAmbientOcclusion(item.at("ambientOcclusion"), *camera.postProcessing, fieldError)) {
-          result.error = FileContext(path, context + ".ambientOcclusion: " + fieldError);
+          std::string fieldContext = context;
+          fieldContext.append(".ambientOcclusion: ").append(fieldError);
+          result.error = FileContext(path, fieldContext);
           return false;
         }
       }

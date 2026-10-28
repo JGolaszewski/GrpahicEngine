@@ -4,9 +4,10 @@ Windows application releases are intended to contain the complete application
 and PRISM runtime in one `GraphicEngine-<tag>-windows-x64.zip` archive. The
 archive includes the editor and engine binaries, hash-pinned PRISM ONNX graphs
 and external weight files, embedded CPython for tokenization, the pinned
-`tokenizers` wheel contents, ONNX Runtime CPU DLLs, notices, and a SHA-256
-sidecar. Model files and Python runtime binaries are generated during release
-packaging and are never committed to Git.
+`tokenizers` wheel contents, the required vcpkg runtime DLLs (including ONNX
+Runtime and OpenImageIO), notices, and a SHA-256 sidecar. Model files and
+Python runtime binaries are generated during release packaging and are never
+committed to Git.
 
 ## Development and ordinary builds
 
@@ -26,6 +27,15 @@ cmake --preset x64-release-prism
 cmake --build --preset x64-release-prism
 cmake --install out/build/x64-release-prism --prefix out/package --config Release
 python scripts/verify_prism_package.py --package out/package
+$env:PATH = "$(Resolve-Path out/package/bin);$env:PATH"
+Copy-Item out/build/x64-release-prism/bin/PrismNdfPackageSmoke.exe out/package/bin/
+Push-Location out/package/bin
+try {
+    .\PrismNdfPackageSmoke.exe .
+} finally {
+    Pop-Location
+}
+Move-Item out/package/bin/PrismNdfPackageSmoke.exe out/prism-smoke/ -Force
 ```
 
 Downloads land under the ignored `out/prism-runtime/` directory. Both model
@@ -52,9 +62,11 @@ prefixes prompts with `query:` followed by a space and emits exactly 128 `input_
 `attention_mask` values. The directional flag is passed through as metadata
 for the native retriever call; it does not alter tokenization. Python performs
 no model inference. The bundle supplies ONNX Runtime CPU libraries for the
-native C++ E5, retriever, and decoder inference service. This release and
-dependency change does not implement that Editor service. The worker's startup handshake and per-request
-errors use JSON lines on stdout; diagnostic output belongs on stderr.
+native C++ E5, retriever, and decoder inference service. The package smoke
+executable runs a real directional prompt through that service and checks the
+returned prompt, provenance, finite coefficients and residuals, and positive
+normalization. The worker's startup handshake and per-request errors use JSON
+lines on stdout; diagnostic output belongs on stderr.
 
 ## Pins, provenance, and licenses
 
@@ -67,11 +79,12 @@ pinned builtin baseline. No unpinned `latest` URL is used.
 
 The release workflow verifies the installed model files, ONNX tensor
 contracts, package notices, embedded Python/tokenizers versions, tokenizer
-worker protocol and fixed tensor lengths, and ONNX Runtime DLL presence before
-creating the release ZIP. It also runs the ZIP integrity check and publishes a
-SHA-256 sidecar for the completed archive. The embedded runtime carries a
-per-file size and SHA-256 inventory, which is checked both after staging and
-against the installed package.
+worker protocol and fixed tensor lengths, and ONNX Runtime DLL presence. It
+then runs native inference against the installed package before creating the
+release ZIP. It also runs the ZIP integrity check and publishes a SHA-256
+sidecar for the completed archive. The embedded runtime carries a per-file size
+and SHA-256 inventory, which is checked both after staging and against the
+installed package.
 
 E5 model/tokenizer licensing and PRISM-trained model licensing have distinct
 terms. The packaged notices carry the E5 MIT and PRISM CC BY-SA 4.0 texts and

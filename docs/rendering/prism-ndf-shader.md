@@ -44,6 +44,14 @@ independent factorial definition and checks aggregate double-precision
 reconstruction, disk boundary/exterior behavior, signed residual, clamp, and
 normalization semantics. These CPU checks do not establish GPU parity.
 
+The PRISM IBL loop samples the projected unit disk uniformly in area using
+`r = sqrt((i + 0.5) / N)`. Its per-sample integrand is the BRDF half-vector
+change of variables: `D(h) * G(v,l) * F(v,h) * (v·h) / ((n·v)(n·h))`.
+Since the disk sample PDF is `1/π`, the final `π / N` multiplier is the
+Monte Carlo area weight. With normalized `D`, it must not be removed or
+duplicated. This derivation does not replace the required numerical comparison
+against a high-sample reference.
+
 ## Open #190 verification criteria
 
 - An independent D3D11 GPU-versus-double test must evaluate all 45 terms over

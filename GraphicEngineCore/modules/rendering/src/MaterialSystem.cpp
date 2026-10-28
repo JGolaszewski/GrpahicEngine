@@ -52,11 +52,12 @@ void UploadNdfResidual(nvrhi::ICommandList* commandList, const nvrhi::TextureHan
   }
 }
 
-auto MakeMaterialBindingSet(nvrhi::IDevice* device, nvrhi::BindingLayoutHandle layout, nvrhi::BufferHandle constants,
+auto MakeMaterialBindingSet(nvrhi::IDevice* device, const nvrhi::BindingLayoutHandle& layout,
+                            const nvrhi::BufferHandle& constants,
                             const MaterialProperties& properties,
                             const std::array<std::shared_ptr<TextureResource>, 5>& textures,
-                            nvrhi::TextureHandle ndfResidual, nvrhi::TextureHandle ndfDistribution,
-                            nvrhi::SamplerHandle ndfSampler, uint32_t maxAnisotropy) -> nvrhi::BindingSetHandle {
+                            const nvrhi::TextureHandle& ndfResidual, const nvrhi::TextureHandle& ndfDistribution,
+                            const nvrhi::SamplerHandle& ndfSampler, uint32_t maxAnisotropy) -> nvrhi::BindingSetHandle {
   if (device == nullptr || layout == nullptr || constants == nullptr || ndfResidual == nullptr ||
       ndfDistribution == nullptr || ndfSampler == nullptr ||
       std::ranges::any_of(textures, [](const auto& texture) { return texture == nullptr; })) {

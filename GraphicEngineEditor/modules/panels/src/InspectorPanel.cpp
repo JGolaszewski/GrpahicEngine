@@ -1180,10 +1180,10 @@ void InspectorPanel::DrawEntityInspector() {
       postProcessing.Effects.erase(postProcessing.Effects.begin() + static_cast<std::ptrdiff_t>(*removeEffect));
       changed = true;
     } else if (reorderEffect) {
-      auto effect = std::move(postProcessing.Effects[reorderEffect->first]);
+      auto effect = postProcessing.Effects[reorderEffect->first];
       postProcessing.Effects.erase(postProcessing.Effects.begin() + static_cast<std::ptrdiff_t>(reorderEffect->first));
       postProcessing.Effects.insert(postProcessing.Effects.begin() + static_cast<std::ptrdiff_t>(reorderEffect->second),
-                                    std::move(effect));
+                                    effect);
       changed = true;
     }
     static constexpr const char* effectTypes[] = {"Color Grading", "Bloom", "FXAA"};

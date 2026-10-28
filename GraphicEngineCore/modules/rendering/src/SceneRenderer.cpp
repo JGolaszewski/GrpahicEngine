@@ -937,7 +937,11 @@ auto Engine::SceneRenderer::ConfigureAndQueuePacket(
     ambientOcclusionKey.MaterialLayout = m_MaterialSystem->GetStandardMaterialLayout();
     ambientOcclusionKey.DepthTest = true;
     ambientOcclusionKey.DepthWrite = true;
-    ambientOcclusionKey.BlendState = {};
+    nvrhi::BlendState noBlend;
+    for (auto& target : noBlend.targets) {
+      target.disableBlend();
+    }
+    ambientOcclusionKey.BlendState = noBlend;
     packet.AmbientOcclusionPipelineKey = std::move(ambientOcclusionKey);
   }
   switch (packet.Queue) {

@@ -586,14 +586,15 @@ PrismNdfInferenceService::PrismNdfInferenceService(PrismNdfInferenceOptions opti
     : m_Impl(std::make_unique<Impl>(std::move(options))) {}
 PrismNdfInferenceService::~PrismNdfInferenceService() = default;
 
-auto PrismNdfInferenceService::Start(std::string prompt, bool directional) -> Result<uint64_t> {
+auto PrismNdfInferenceService::Start(std::string_view promptText, bool directional) -> Result<uint64_t> {
 #if ENGINE_ENABLE_PRISM_INFERENCE
-  if (prompt.empty()) {
+  if (promptText.empty()) {
     return std::unexpected(MakeError("PRISM prompt must not be empty"));
   }
-  if (prompt.size() > 16U * 1024U) {
+  if (promptText.size() > 16U * 1024U) {
     return std::unexpected(MakeError("PRISM prompt exceeds the 16 KiB input limit"));
   }
+  std::string prompt(promptText);
   const auto isFile = [](const std::filesystem::path& path) {
     std::error_code error;
     return std::filesystem::is_regular_file(path, error) && !error;
@@ -640,7 +641,7 @@ auto PrismNdfInferenceService::Start(std::string prompt, bool directional) -> Re
   m_Impl->Wake.notify_one();
   return id;
 #else
-  (void)prompt;
+  (void)promptText;
   (void)directional;
   return std::unexpected(MakeError(
       "PRISM generation is unavailable in this build. Configure with ENGINE_ENABLE_PRISM_INFERENCE=ON and the "
