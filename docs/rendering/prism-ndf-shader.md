@@ -18,19 +18,27 @@ The caller owns residual texture sampling and must use identical coordinates,
 filtering, coefficient order, residual sign, and normalization in both material
 shader variants.
 
-## Integration boundary
+## D3D11 bindings and integration
 
-The current D3D11 material constant buffer has no PRISM coefficients or
-normalization value, and the current shader resource slots are already used by
-shadow, environment lighting, and ambient occlusion. This helper therefore does
-not declare a resource register or change either material shader's dispatch.
-Core/SceneRenderer must define the matching coefficient packing and a free
-residual SRV binding before a model value can safely select this evaluator.
-The environment prefilter and BRDF integration LUT also remain on their
-existing analytic path; a PRISM-specific IBL cache requires the separate
-environment pipeline change.
+`MaterialGpu` packs the 45 coefficients into the first 45 lanes of the 12
+`float4` entries and places projected-energy normalization in `NdfParams.x`.
+The direct-light shaders evaluate this payload and add the signed residual
+sample at material SRV `t3`/sampler `s3`. PRISM-conditioned environment
+integration samples the precomputed normalized distribution at `t6`/`s6` and
+the active panorama at `t12`/`s12`.
 
-The shared function compiles as part of both existing pixel shaders. This is a
-syntax/build check only: numerical CPU/GPU parity, actual residual sampling,
-normalization integration, direct-light response, and IBL parity require the
-matching payload producer and GPU validation fixture.
+Material resources occupy the contiguous SRV range `t0`–`t6`; scene resources
+occupy `t7`–`t12`. This separation is required by the D3D11 NVRHI backend:
+binding a set applies its complete contiguous SRV range, including null holes.
+If a material resource extends through a scene slot, binding the material after
+the scene set clears the scene resource at that slot. Keep the two ranges
+disjoint when adding bindings. Sampler ranges follow the corresponding
+resource assignments.
+
+Both color pixel-shader variants implement the same direct-light and
+PRISM-conditioned IBL math. The WARP rendering tests verify that coefficient
+and signed-residual changes affect direct-light output, that the conditioned
+environment contribution is repeatable, and that environment and AO bindings
+remain functional. The independent basis and fit reference tests live in
+`PrismNdfMathTests`; an exhaustive GPU-versus-double reference across boundary,
+exterior, and residual cases remains a separate validation gap.

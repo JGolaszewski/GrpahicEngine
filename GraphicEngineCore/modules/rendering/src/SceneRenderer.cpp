@@ -339,13 +339,13 @@ void Engine::SceneRenderer::Init(nvrhi::IDevice* device, ::Engine::Renderer::Mat
   nvrhi::BindingLayoutDesc sceneLayoutDesc;
   sceneLayoutDesc.visibility = nvrhi::ShaderType::All;
   sceneLayoutDesc.bindings = {
-      nvrhi::BindingLayoutItem::ConstantBuffer(2), nvrhi::BindingLayoutItem::Texture_SRV(6),
-      nvrhi::BindingLayoutItem::Sampler(6),        nvrhi::BindingLayoutItem::Texture_SRV(7),
+      nvrhi::BindingLayoutItem::ConstantBuffer(2), nvrhi::BindingLayoutItem::Texture_SRV(7),
       nvrhi::BindingLayoutItem::Sampler(7),        nvrhi::BindingLayoutItem::Texture_SRV(8),
       nvrhi::BindingLayoutItem::Sampler(8),        nvrhi::BindingLayoutItem::Texture_SRV(9),
-      nvrhi::BindingLayoutItem::Sampler(9),        nvrhi::BindingLayoutItem::ConstantBuffer(4),
-      nvrhi::BindingLayoutItem::Texture_SRV(10),   nvrhi::BindingLayoutItem::Texture_SRV(11),
-      nvrhi::BindingLayoutItem::Sampler(11),
+      nvrhi::BindingLayoutItem::Sampler(9),        nvrhi::BindingLayoutItem::Texture_SRV(10),
+      nvrhi::BindingLayoutItem::Sampler(10),       nvrhi::BindingLayoutItem::ConstantBuffer(4),
+      nvrhi::BindingLayoutItem::Texture_SRV(11),   nvrhi::BindingLayoutItem::Texture_SRV(12),
+      nvrhi::BindingLayoutItem::Sampler(12),
   };
   m_SceneBindingLayout = device->createBindingLayout(sceneLayoutDesc);
 
@@ -650,18 +650,18 @@ auto Engine::SceneRenderer::GetSceneBindingSet(
 
   nvrhi::BindingSetDesc desc;
   desc.addItem(nvrhi::BindingSetItem::ConstantBuffer(2, lightBuffer));
-  desc.addItem(nvrhi::BindingSetItem::Texture_SRV(6, shadowMap));
-  desc.addItem(nvrhi::BindingSetItem::Sampler(6, shadowSampler));
-  desc.addItem(nvrhi::BindingSetItem::Texture_SRV(7, irradianceMap));
-  desc.addItem(nvrhi::BindingSetItem::Sampler(7, irradianceSampler));
-  desc.addItem(nvrhi::BindingSetItem::Texture_SRV(8, prefilteredEnvironment));
-  desc.addItem(nvrhi::BindingSetItem::Sampler(8, prefilteredSampler));
-  desc.addItem(nvrhi::BindingSetItem::Texture_SRV(9, m_EnvironmentLighting.BrdfIntegrationLut));
-  desc.addItem(nvrhi::BindingSetItem::Sampler(9, m_EnvironmentLighting.BrdfIntegrationSampler));
+  desc.addItem(nvrhi::BindingSetItem::Texture_SRV(7, shadowMap));
+  desc.addItem(nvrhi::BindingSetItem::Sampler(7, shadowSampler));
+  desc.addItem(nvrhi::BindingSetItem::Texture_SRV(8, irradianceMap));
+  desc.addItem(nvrhi::BindingSetItem::Sampler(8, irradianceSampler));
+  desc.addItem(nvrhi::BindingSetItem::Texture_SRV(9, prefilteredEnvironment));
+  desc.addItem(nvrhi::BindingSetItem::Sampler(9, prefilteredSampler));
+  desc.addItem(nvrhi::BindingSetItem::Texture_SRV(10, m_EnvironmentLighting.BrdfIntegrationLut));
+  desc.addItem(nvrhi::BindingSetItem::Sampler(10, m_EnvironmentLighting.BrdfIntegrationSampler));
   desc.addItem(nvrhi::BindingSetItem::ConstantBuffer(4, cameraBuffer));
-  desc.addItem(nvrhi::BindingSetItem::Texture_SRV(10, ambientOcclusion));
-  desc.addItem(nvrhi::BindingSetItem::Texture_SRV(11, environmentPanorama));
-  desc.addItem(nvrhi::BindingSetItem::Sampler(11, environmentPanoramaSampler));
+  desc.addItem(nvrhi::BindingSetItem::Texture_SRV(11, ambientOcclusion));
+  desc.addItem(nvrhi::BindingSetItem::Texture_SRV(12, environmentPanorama));
+  desc.addItem(nvrhi::BindingSetItem::Sampler(12, environmentPanoramaSampler));
   nvrhi::BindingSetHandle bindings = m_Device->createBindingSet(desc, m_SceneBindingLayout);
   if (bindings == nullptr) {
     ENGINE_LOG_ERROR("Render", "Scene binding-set creation failed | view_index: {} | environment_ready: {}", viewIndex,

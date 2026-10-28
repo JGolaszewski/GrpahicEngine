@@ -56,21 +56,21 @@ cbuffer CameraCB : register(b4)
     float4 g_AmbientOcclusionParams;
 };
 
-Texture2DArray<float>  g_ShadowMaps    : register(t6);
-SamplerComparisonState g_ShadowSampler : register(s6);
-Texture2D<float4> g_IrradianceMap : register(t7);
-SamplerState g_IrradianceSampler : register(s7);
-Texture2D<float4> g_PrefilteredEnvironment : register(t8);
-SamplerState g_PrefilteredEnvironmentSampler : register(s8);
-Texture2D<float2> g_BrdfIntegrationLut : register(t9);
-SamplerState g_BrdfIntegrationSampler : register(s9);
-Texture2D<float> g_AmbientOcclusionTexture : register(t10);
+Texture2DArray<float>  g_ShadowMaps    : register(t7);
+SamplerComparisonState g_ShadowSampler : register(s7);
+Texture2D<float4> g_IrradianceMap : register(t8);
+SamplerState g_IrradianceSampler : register(s8);
+Texture2D<float4> g_PrefilteredEnvironment : register(t9);
+SamplerState g_PrefilteredEnvironmentSampler : register(s9);
+Texture2D<float2> g_BrdfIntegrationLut : register(t10);
+SamplerState g_BrdfIntegrationSampler : register(s10);
+Texture2D<float> g_AmbientOcclusionTexture : register(t11);
 Texture2D<float> g_NdfResidual : register(t3);
 SamplerState g_NdfResidualSampler : register(s3);
-Texture2D<float4> g_EnvironmentPanorama : register(t11);
-SamplerState g_EnvironmentPanoramaSampler : register(s11);
-Texture2D<float> g_NdfDistribution : register(t12);
-SamplerState g_NdfDistributionSampler : register(s12);
+Texture2D<float4> g_EnvironmentPanorama : register(t12);
+SamplerState g_EnvironmentPanoramaSampler : register(s12);
+Texture2D<float> g_NdfDistribution : register(t6);
+SamplerState g_NdfDistributionSampler : register(s6);
 
 float3 EvaluatePrismNdfEnvironmentSpecular(float3 normal, float3 viewDirection, float3 tangent,
     float3 bitangent, float3 f0, float alpha, float2 pixelPosition)

@@ -3,6 +3,7 @@
 #include "panels/include/AssetDropAssignment.h"
 #include "rendering/include/RenderSystem.h"
 #include "rendering/include/renderer/Material.h"
+#include "rendering/include/renderer/brdf/Brdf.h"
 #include "rendering/include/renderer/Viewport.h"
 #include "rendering/src/SceneRenderer.h"
 #include "rendering/src/render_graph/RenderGraph.h"
@@ -27,6 +28,7 @@
 #include <fstream>
 #include <limits>
 #include <memory>
+#include <numeric>
 #include <optional>
 #include <span>
 #include <string>
@@ -1202,6 +1204,100 @@ TEST(RenderFinalTests, WARPSplitSumEnvironmentAffectsDielectricAndMetalOnlyWhenE
   EXPECT_GT(totalDifference(enabledDiffuse, disabledDiffuse), 1.0F);
   EXPECT_GT(totalDifference(enabledSpecular, disabledSpecular), 1.0F);
   EXPECT_EQ(disabled.Preset, Engine::EnvironmentPreset::Disabled);
+}
+
+TEST(RenderFinalTests, WARPPrismNdfDirectAndEnvironmentLightingUseGeneratedPayload) {
+  EngineTests::WarpDevice device;
+  if (!device.Initialize()) {
+    GTEST_SKIP() << "D3D11 WARP device could not be created on this host";
+  }
+  EngineTests::WarpRenderBackend backend(device.GetDevice());
+  Engine::RenderSystem renderer(&backend);
+  ASSERT_TRUE(renderer.IsValid());
+
+  auto payload = std::make_shared<Engine::PrismNdfData>();
+  payload->zernikeCoefficients[0] = 1.0F;
+  payload->normalization = 1.0F / Engine::Renderer::Brdf::Pi;
+  Engine::Renderer::MaterialProperties properties;
+  properties.Model = Engine::Renderer::BrdfModel::PrismNdf;
+  properties.Roughness = 0.4F;
+  properties.GeneratedNdf = payload;
+  auto material = renderer.CreateMaterial(properties);
+  ASSERT_NE(material, nullptr);
+  ASSERT_TRUE(renderer.CreatePrimitive(Engine::PrimitiveShape::Sphere, material));
+
+  Engine::Scene scene;
+  const auto sphereSequence = scene.QueueCreate("PRISM generated NDF sphere");
+  const auto lightSequence =
+      scene.QueueCreate("PRISM directional test light", Engine::InvalidEntityHandle, Engine::Scene::EntityPreset::SpotLight);
+  const auto lightCreated = scene.sync();
+  ASSERT_EQ(lightCreated.size(), 2U);
+  ASSERT_EQ(lightCreated.front().Sequence, sphereSequence);
+  ASSERT_EQ(lightCreated.back().Sequence, lightSequence);
+  ASSERT_TRUE(lightCreated.front().Outcome);
+  ASSERT_TRUE(lightCreated.back().Outcome);
+  (void)scene.QueueAdd(lightCreated.front().Entity, Engine::Ecs::MeshRenderer{.PrimitiveType = "sphere"});
+  Engine::Ecs::Light light;
+  light.Type = Engine::Ecs::LightType::Directional;
+  light.Direction = {0.0F, 0.0F, 1.0F};
+  light.Intensity = 2.0F;
+  light.CastShadows = false;
+  (void)scene.QueueSet(lightCreated.back().Entity, light);
+  ASSERT_TRUE(scene.Update(0.0F));
+
+  Engine::Renderer::CameraView camera;
+  camera.Position = {0.0F, 0.0F, -6.0F};
+  constexpr uint32_t imageSize = 64;
+  const auto direct = renderer.RenderFinal(scene, camera, imageSize, imageSize);
+  ASSERT_TRUE(direct.has_value()) << (direct.has_value() ? "" : direct.error().Message);
+  const auto directSpecular = direct->GetPixels(Engine::RenderAov::SpecularLighting);
+  const float directEnergy = std::accumulate(directSpecular.begin(), directSpecular.end(), 0.0F);
+  EXPECT_GT(directEnergy, 0.0F);
+
+  auto zeroPayload = std::make_shared<Engine::PrismNdfData>(*payload);
+  zeroPayload->zernikeCoefficients.fill(0.0F);
+  properties.GeneratedNdf = zeroPayload;
+  material->SetProperties(properties);
+  const auto cleared = renderer.RenderFinal(scene, camera, imageSize, imageSize);
+  ASSERT_TRUE(cleared.has_value()) << (cleared.has_value() ? "" : cleared.error().Message);
+  const auto clearedSpecular = cleared->GetPixels(Engine::RenderAov::SpecularLighting);
+  ASSERT_EQ(clearedSpecular.size(), directSpecular.size());
+  float payloadDifference = 0.0F;
+  for (size_t index = 0; index < directSpecular.size(); ++index) {
+    payloadDifference += std::abs(directSpecular[index] - clearedSpecular[index]);
+  }
+  EXPECT_GT(payloadDifference, 1.0e-3F);
+
+  auto residualPayload = std::make_shared<Engine::PrismNdfData>(*zeroPayload);
+  residualPayload->residuals.fill(0.5F);
+  properties.GeneratedNdf = residualPayload;
+  material->SetProperties(properties);
+  const auto residualOutput = renderer.RenderFinal(scene, camera, imageSize, imageSize);
+  ASSERT_TRUE(residualOutput.has_value())
+      << (residualOutput.has_value() ? "" : residualOutput.error().Message);
+  const auto residualSpecular = residualOutput->GetPixels(Engine::RenderAov::SpecularLighting);
+  float residualEnergy = std::accumulate(residualSpecular.begin(), residualSpecular.end(), 0.0F);
+  EXPECT_GT(residualEnergy, 1.0e-3F);
+
+  properties.GeneratedNdf = payload;
+  material->SetProperties(properties);
+  const Engine::EnvironmentLightingSettings studio{Engine::EnvironmentPreset::Studio, 1.0F};
+  const auto withEnvironment = renderer.RenderFinal(scene, camera, imageSize, imageSize, {}, studio);
+  const auto repeatedEnvironment = renderer.RenderFinal(scene, camera, imageSize, imageSize, {}, studio);
+  ASSERT_TRUE(withEnvironment.has_value())
+      << (withEnvironment.has_value() ? "" : withEnvironment.error().Message);
+  ASSERT_TRUE(repeatedEnvironment.has_value())
+      << (repeatedEnvironment.has_value() ? "" : repeatedEnvironment.error().Message);
+  const auto environmentSpecular = withEnvironment->GetPixels(Engine::RenderAov::SpecularLighting);
+  const auto repeatedSpecular = repeatedEnvironment->GetPixels(Engine::RenderAov::SpecularLighting);
+  ASSERT_EQ(environmentSpecular.size(), directSpecular.size());
+  ASSERT_EQ(repeatedSpecular.size(), environmentSpecular.size());
+  float environmentDifference = 0.0F;
+  for (size_t index = 0; index < environmentSpecular.size(); ++index) {
+    environmentDifference += std::abs(environmentSpecular[index] - directSpecular[index]);
+  }
+  EXPECT_GT(environmentDifference, 1.0e-3F);
+  EXPECT_TRUE(std::ranges::equal(environmentSpecular, repeatedSpecular));
 }
 
 TEST(RenderFinalTests, WARPFinalRenderRejectsInvalidAmbientOverrideBeforeStartingTheFrame) {
