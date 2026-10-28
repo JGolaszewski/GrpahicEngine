@@ -55,7 +55,8 @@ auto GridAt(std::span<const float> grid, double x, double y) -> double {
 } // namespace
 
 TEST(PrismNdfMathTests, AllFortyFiveBasisTermsMatchIndependentFactorialDefinition) {
-  const std::array points{std::array{0.0, 0.0}, std::array{0.31, -0.47}, std::array{0.6, 0.8}, std::array{-1.0, 0.0},
+  const std::array points{std::array{0.0, 0.0}, std::array{0.31, -0.47}, std::array{0.6, 0.8},
+                          std::array{-1.0, 0.0}, std::array{0.0, 1.0}, std::array{0.6, 0.8 + 1.0e-12},
                           std::array{1.01, -0.2}};
   uint32_t coefficientIndex = 0;
   for (uint32_t n = 0; n <= Engine::PrismNdfDegree; ++n) {
@@ -68,6 +69,47 @@ TEST(PrismNdfMathTests, AllFortyFiveBasisTermsMatchIndependentFactorialDefinitio
     }
   }
   EXPECT_EQ(coefficientIndex, Engine::PrismNdfCoefficientCount);
+}
+
+TEST(PrismNdfMathTests, ResidualMaskClampAndNormalizationMatchIndependentDoubleReference) {
+  const std::array points{std::array{0.0, 0.0}, std::array{0.31, -0.47}, std::array{0.6, 0.8},
+                          std::array{-1.0, 0.0}, std::array{0.0, 1.0}, std::array{1.0001, 0.0}};
+  std::array<float, Engine::PrismNdfCoefficientCount> coefficients{};
+  for (size_t index = 0; index < coefficients.size(); ++index) {
+    coefficients[index] = static_cast<float>((static_cast<int>(index % 9) - 4) * 0.0375);
+  }
+  constexpr double residual = -0.025;
+  constexpr double normalization = 1.375;
+  for (const auto& point : points) {
+    double implementationPolynomial = 0.0;
+    double referencePolynomial = 0.0;
+    uint32_t coefficient = 0;
+    for (uint32_t n = 0; n <= Engine::PrismNdfDegree; ++n) {
+      for (int32_t m = -static_cast<int32_t>(n); m <= static_cast<int32_t>(n); m += 2, ++coefficient) {
+        implementationPolynomial += static_cast<double>(coefficients[coefficient]) *
+                                    Engine::Renderer::EvaluatePrismZernikeBasis(coefficient, point[0], point[1]);
+        referencePolynomial += static_cast<double>(coefficients[coefficient]) *
+                               IndependentBasis(n, m, point[0], point[1]);
+      }
+    }
+    const double diskMask = point[0] * point[0] + point[1] * point[1] <= 1.0 ? 1.0 : 0.0;
+    const double implementation = std::max(implementationPolynomial + residual, 0.0) * diskMask * normalization;
+    const double reference = std::max(referencePolynomial + residual, 0.0) * diskMask * normalization;
+    EXPECT_NEAR(implementation, reference, 1.0e-11);
+    EXPECT_GE(reference, 0.0);
+    if (diskMask == 0.0) {
+      EXPECT_DOUBLE_EQ(reference, 0.0);
+    }
+    EXPECT_NEAR(implementation / normalization, reference / normalization, 1.0e-11);
+  }
+
+  // Isolate signed residual, ReLU, mask, and scale semantics from the polynomial.
+  const auto compose = [](double base, double signedResidual, double mask, double scale) {
+    return std::max(base + signedResidual, 0.0) * mask * scale;
+  };
+  EXPECT_DOUBLE_EQ(compose(0.0, -0.25, 1.0, normalization), 0.0);
+  EXPECT_DOUBLE_EQ(compose(0.0, 0.25, 1.0, normalization), 0.25 * normalization);
+  EXPECT_DOUBLE_EQ(compose(0.0, 0.25, 0.0, normalization), 0.0);
 }
 
 TEST(PrismNdfMathTests, LeastSquaresCoefficientsAndSignedResidualReconstructEverySample) {

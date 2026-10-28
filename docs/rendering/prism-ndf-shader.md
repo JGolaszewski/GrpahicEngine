@@ -39,6 +39,23 @@ Both color pixel-shader variants implement the same direct-light and
 PRISM-conditioned IBL math. The WARP rendering tests verify that coefficient
 and signed-residual changes affect direct-light output, that the conditioned
 environment contribution is repeatable, and that environment and AO bindings
-remain functional. The independent basis and fit reference tests live in
-`PrismNdfMathTests`; an exhaustive GPU-versus-double reference across boundary,
-exterior, and residual cases remains a separate validation gap.
+remain functional. `PrismNdfMathTests` compares every CPU basis term to an
+independent factorial definition and checks aggregate double-precision
+reconstruction, disk boundary/exterior behavior, signed residual, clamp, and
+normalization semantics. These CPU checks do not establish GPU parity.
+
+## Open #190 verification criteria
+
+- An independent D3D11 GPU-versus-double test must evaluate all 45 terms over
+  interior, boundary, and exterior points, plus residual, clamp, and scale, with
+  the issue's absolute `1e-4` and relative `5e-4` tolerances. Existing WARP
+  rendering tests exercise the integrated material shaders but do not expose
+  per-sample shader results for this comparison.
+- Direct-light and high-sample PRISM IBL output still need numerical reference
+  comparisons. Existing WARP tests establish response and repeatability only.
+- The Intel Graphics and RTX 5080 adapters are present on the development host,
+  but this checkout has no PRISM GPU microbenchmark or timestamp-query fixture.
+  A measured per-pixel/IBL budget is therefore open until a hardware benchmark
+  with warmup, repeated GPU timestamp samples, adapter/driver identification,
+  and a documented scene/sample workload is available. WARP timings are not a
+  substitute for that measurement.
