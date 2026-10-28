@@ -89,6 +89,28 @@ def interface(path: Path) -> tuple[dict[str, tuple[int, list[int]]], dict[str, t
     return inputs, outputs
 
 
+def validate_models(manifest: dict, models: Path) -> None:
+    expected_models = manifest["onnx_contracts"]
+    type_codes = {"float32": 1, "int64": 7, "bool": 9}
+    for filename, contracts in expected_models.items():
+        found_inputs, found_outputs = interface(models / filename)
+        for direction, found in (("inputs", found_inputs), ("outputs", found_outputs)):
+            expected = contracts[direction]
+            wanted_names = set(expected)
+            if set(found) != wanted_names:
+                raise ValueError(
+                    f"{filename} {direction} names must be {sorted(wanted_names)}; got {sorted(found)}"
+                )
+            for name, contract in expected.items():
+                actual = found[name]
+                wanted = (type_codes[contract["dtype"]], contract["shape"])
+                if actual != wanted:
+                    raise ValueError(
+                        f"{filename} {direction[:-1]} {name!r} must be {contract['dtype']} "
+                        f"{contract['shape']}; got {actual}"
+                    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", type=Path, default=Path(__file__).with_name("prism-model-assets.json"))
@@ -104,24 +126,7 @@ def main() -> int:
                 description[name] = dict(zip(("inputs", "outputs"), interface(args.models / name)))
             print(json.dumps(description, indent=2))
             return 0
-        type_codes = {"float32": 1, "int64": 7, "bool": 9}
-        for filename, contracts in expected_models.items():
-            found_inputs, found_outputs = interface(args.models / filename)
-            for direction, found in (("inputs", found_inputs), ("outputs", found_outputs)):
-                expected = contracts[direction]
-                wanted_names = set(expected)
-                if set(found) != wanted_names:
-                    raise ValueError(
-                        f"{filename} {direction} names must be {sorted(wanted_names)}; got {sorted(found)}"
-                    )
-                for name, contract in expected.items():
-                    actual = found[name]
-                    wanted = (type_codes[contract["dtype"]], contract["shape"])
-                    if actual != wanted:
-                        raise ValueError(
-                            f"{filename} {direction[:-1]} {name!r} must be {contract['dtype']} "
-                            f"{contract['shape']}; got {actual}"
-                        )
+        validate_models(manifest, args.models)
         print("All pinned PRISM ONNX model inputs and outputs match the declared tensor contract.")
     except (OSError, ValueError, KeyError, StopIteration) as error:
         print(f"PRISM ONNX contract validation failed: {error}", file=sys.stderr)

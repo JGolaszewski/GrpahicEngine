@@ -25,11 +25,16 @@ python scripts/validate_prism_onnx_contract.py
 cmake --preset x64-release-prism
 cmake --build --preset x64-release-prism
 cmake --install out/build/x64-release-prism --prefix out/package --config Release
+python scripts/verify_prism_package.py --package out/package
 ```
 
 Downloads land under the ignored `out/prism-runtime/` directory. Both model
 assets and the embedded Python and tokenizer archives are checked against
-expected byte counts and SHA-256 values before use. The pinned decoder emits
+expected byte counts and SHA-256 values before use. Staging builds a clean
+sibling tree and swaps it into place only after validation; verified existing
+model files may be reused, while stale files are removed from the managed
+model directory. If staging fails, the previously installed directory remains
+available. The pinned decoder emits
 only `ndf_grid_flat` (`float32[1,4096]`); it does not emit Zernike
 coefficients. The release validator requires this output name, dtype, and
 shape and rejects unexpected decoder outputs. After native C++ ONNX inference,
@@ -43,7 +48,7 @@ path, not to the ONNX model or release validator.
 ## Runtime boundary
 
 The embedded CPython 3.13.17 runtime runs a persistent JSON-lines worker that
-prefixes prompts with `query: ` and emits exactly 128 `input_ids` and
+prefixes prompts with `query:` followed by a space and emits exactly 128 `input_ids` and
 `attention_mask` values. The directional flag is passed through as metadata
 for the native retriever call; it does not alter tokenization. Python performs
 no model inference. The bundle supplies ONNX Runtime CPU libraries for the
@@ -55,11 +60,18 @@ errors use JSON lines on stdout; diagnostic output belongs on stderr.
 
 The exact upstream PRISM source commit, E5 model revision, release tags, file
 sizes, and SHA-256 digests are recorded in
-[`prism-model-assets.json`](../scripts/prism-model-assets.json). The embedded
-CPython archive and tokenizer wheel pins are in
-[`prism-runtime-assets.json`](../scripts/prism-runtime-assets.json). ONNX
+`scripts/prism-model-assets.json`. The embedded CPython archive and tokenizer
+wheel pins are in `scripts/prism-runtime-assets.json`. ONNX
 Runtime is an optional vcpkg manifest feature resolved through the repository's
 pinned builtin baseline. No unpinned `latest` URL is used.
+
+The release workflow verifies the installed model files, ONNX tensor
+contracts, package notices, embedded Python/tokenizers versions, tokenizer
+worker protocol and fixed tensor lengths, and ONNX Runtime DLL presence before
+creating the release ZIP. It also runs the ZIP integrity check and publishes a
+SHA-256 sidecar for the completed archive. The embedded runtime carries a
+per-file size and SHA-256 inventory, which is checked both after staging and
+against the installed package.
 
 E5 model/tokenizer licensing and PRISM-trained model licensing have distinct
 terms. The packaged notices carry the E5 MIT and PRISM CC BY-SA 4.0 texts and

@@ -13,6 +13,8 @@ import tempfile
 import urllib.error
 import urllib.request
 from pathlib import Path
+from validate_prism_onnx_contract import validate_models
+from prism_staging import replace_directory, temporary_sibling
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -123,6 +125,19 @@ is restricted to text tokenization.
     (destination / "README.md").write_text(readme, encoding="utf-8", newline="\n")
 
 
+def verify_staged_notices(destination: Path, manifest_path: Path) -> None:
+    for filename in NOTICE_FILES[1:]:
+        expected = (LICENSES / filename).read_bytes()
+        actual = (destination / filename).read_bytes()
+        if actual != expected:
+            raise ValueError(f"staged notice differs from source: {filename}")
+    if (destination / "prism-model-assets.json").read_bytes() != manifest_path.read_bytes():
+        raise ValueError("staged model manifest differs from the pinned source manifest")
+    readme = (destination / "README.md").read_text(encoding="utf-8")
+    if "SHA-256" not in readme or "tokenization" not in readme:
+        raise ValueError("staged model package README is missing required package details")
+
+
 def validate_notice_sources() -> None:
     missing = [str(LICENSES / name) for name in NOTICE_FILES[1:] if not (LICENSES / name).is_file()]
     if missing:
@@ -140,19 +155,40 @@ def main() -> int:
         manifest = load_manifest(arguments.manifest)
         validate_notice_sources()
         destination = arguments.destination.resolve()
-        destination.mkdir(parents=True, exist_ok=True)
-        failures: list[str] = []
-        for asset in manifest["assets"]:
-            path = destination / asset["name"]
-            if verify_asset(path, asset):
-                print(f"verified {asset['name']} (already staged)")
-            elif arguments.verify_only:
-                failures.append(f"missing or invalid asset: {path}")
-            else:
-                download_asset(asset, destination)
-        if failures:
-            raise ValueError("\n".join(failures))
-        stage_notices(destination, arguments.manifest)
+        if arguments.verify_only:
+            expected_names = {asset["name"] for asset in manifest["assets"]}
+            expected_names.update({"README.md", "prism-model-assets.json", *NOTICE_FILES[1:]})
+            actual_names = {entry.name for entry in destination.iterdir()} if destination.is_dir() else set()
+            if actual_names != expected_names:
+                raise ValueError(f"staged model directory contents mismatch; missing={sorted(expected_names - actual_names)}, "
+                                 f"extra={sorted(actual_names - expected_names)}")
+            failures = [f"missing or invalid asset: {destination / asset['name']}" for asset in manifest["assets"]
+                        if not verify_asset(destination / asset["name"], asset)]
+            if failures:
+                raise ValueError("\n".join(failures))
+            validate_models(manifest, destination)
+            verify_staged_notices(destination, arguments.manifest)
+            print("All pinned model assets, ONNX contracts, and package notices verified.")
+            return 0
+
+        staged = temporary_sibling(destination)
+        try:
+            old_destination = destination if destination.is_dir() else None
+            for asset in manifest["assets"]:
+                old_asset = old_destination / asset["name"] if old_destination else None
+                staged_asset = staged / asset["name"]
+                if old_asset is not None and verify_asset(old_asset, asset):
+                    shutil.copyfile(old_asset, staged_asset)
+                    print(f"verified {asset['name']} (reused pinned asset)")
+                else:
+                    download_asset(asset, staged)
+            stage_notices(staged, arguments.manifest)
+            validate_models(manifest, staged)
+            verify_staged_notices(staged, arguments.manifest)
+            replace_directory(staged, destination)
+        finally:
+            if staged.exists():
+                shutil.rmtree(staged)
     except (OSError, ValueError, RuntimeError, urllib.error.URLError) as error:
         print(f"PRISM model staging failed: {error}", file=sys.stderr)
         return 1

@@ -47,6 +47,9 @@ jobs:
       - name: Install complete application bundle
         run: cmake --install out/build/x64-release-prism --prefix out/package --config Release
 
+      - name: Verify installed PRISM package and tokenizer smoke test
+        run: python scripts/verify_prism_package.py --package out/package
+
       - name: Create release ZIP and SHA-256 checksum
         id: package
         env:
@@ -57,6 +60,8 @@ jobs:
           $archive = Join-Path $env:RUNNER_TEMP "GraphicEngine-$safeTag-windows-x64.zip"
           7z.exe a -tzip -mx=0 $archive '.\out\package\*' | Out-Host
           if ($LASTEXITCODE -ne 0) { throw "7-Zip failed with exit code $LASTEXITCODE" }
+          7z.exe t $archive | Out-Host
+          if ($LASTEXITCODE -ne 0) { throw "7-Zip archive verification failed with exit code $LASTEXITCODE" }
           $hash = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
           Set-Content -LiteralPath "$archive.sha256" -Value "$hash  $(Split-Path -Leaf $archive)" -NoNewline
           "archive=$archive" >> $env:GITHUB_OUTPUT
