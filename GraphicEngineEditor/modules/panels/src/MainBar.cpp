@@ -1,11 +1,23 @@
 #include "panels/include/MainBar.h"
 
+#include "events/include/CommandHistoryActionRequestedEvent.h"
 #include "events/include/SceneFileActionRequestedEvent.h"
 #include <imgui.h>
 
 void MainBar::Draw() {
   if (ImGui::BeginMainMenuBar()) {
     DrawFileMenu();
+    if (ImGui::BeginMenu("Edit")) {
+      if (ImGui::MenuItem("Undo")) {
+        EmitEvent(
+            std::make_unique<CommandHistoryActionRequestedEvent>(CommandHistoryActionRequestedEvent::Action::Undo));
+      }
+      if (ImGui::MenuItem("Redo")) {
+        EmitEvent(
+            std::make_unique<CommandHistoryActionRequestedEvent>(CommandHistoryActionRequestedEvent::Action::Redo));
+      }
+      ImGui::EndMenu();
+    }
     DrawWindowMenu();
     ImGui::EndMainMenuBar();
   }

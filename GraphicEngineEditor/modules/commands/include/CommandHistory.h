@@ -31,7 +31,7 @@ public:
   // stack. Any existing redo history is invalidated because a new command
   // branches the timeline.
   // ------------------------------------------------------------------------
-  void Execute(std::unique_ptr<ICommand> cmd);
+  [[nodiscard]] auto Execute(std::unique_ptr<ICommand> cmd) -> bool;
 
   // ------------------------------------------------------------------------
   // Undo
@@ -39,7 +39,7 @@ public:
   // Pops the most recent command from the undo stack, calls Undo(), and
   // transfers it to the redo stack.
   // ------------------------------------------------------------------------
-  void Undo();
+  [[nodiscard]] auto Undo() -> bool;
 
   // ------------------------------------------------------------------------
   // Redo
@@ -47,7 +47,7 @@ public:
   // Pops the most recent command from the redo stack, re-executes it, and
   // transfers it back to the undo stack.
   // ------------------------------------------------------------------------
-  void Redo();
+  [[nodiscard]] auto Redo() -> bool;
 
   // Queries
   [[nodiscard]] bool CanUndo() const noexcept;

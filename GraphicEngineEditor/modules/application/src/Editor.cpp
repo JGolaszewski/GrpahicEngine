@@ -1,6 +1,7 @@
 ﻿#include "application/include/Editor.h"
 
 #include "application/include/EditorProjectWorkflow.h"
+#include "commands/include/Command.h"
 #include "events/include/AssetRegistryChangedEvent.h"
 #include "events/include/EcsComponentMutationRequestedEvent.h"
 #include "events/include/EcsEntityCreateRequestedEvent.h"
@@ -31,14 +32,106 @@
 #include <DirectXMath.h>
 #include <algorithm>
 #include <cmath>
+#include <filesystem>
 #include <imgui.h>
 #include <imgui_internal.h>
 #include <span>
 #include <string>
+#include <string_view>
 #include <tuple>
 #include <utility>
 
+#ifdef _WIN32
+#  ifndef NOMINMAX
+#    define NOMINMAX
+#  endif
+#  include <Windows.h>
+#endif
+
 namespace {
+auto GetEditorRuntimeDirectory() -> std::filesystem::path {
+#ifdef _WIN32
+  std::array<wchar_t, 32768> executablePath{};
+  const DWORD length = GetModuleFileNameW(nullptr, executablePath.data(), static_cast<DWORD>(executablePath.size()));
+  if (length > 0 && length < static_cast<DWORD>(executablePath.size())) {
+    return std::filesystem::path(std::wstring_view(executablePath.data(), length)).parent_path();
+  }
+#endif
+  return std::filesystem::current_path();
+}
+
+class PrismMaterialApplyCommand final : public ICommand {
+public:
+  PrismMaterialApplyCommand(Engine::AssetManager& assets, std::shared_ptr<Engine::Scene> scene, std::string guid,
+                            Engine::SceneMaterialDocument before, Engine::SceneMaterialDocument after,
+                            std::function<void()> changed)
+      : m_Assets(assets), m_Scene(std::move(scene)), m_Guid(std::move(guid)), m_Before(std::move(before)),
+        m_After(std::move(after)), m_Changed(std::move(changed)) {}
+
+  auto Execute() -> bool override { return Apply(m_After, m_Before); }
+  auto Undo() -> bool override { return Apply(m_Before, m_After); }
+
+private:
+  auto Apply(const Engine::SceneMaterialDocument& target, const Engine::SceneMaterialDocument& rollback) -> bool {
+    if (m_Scene == nullptr) {
+      return false;
+    }
+    std::string error;
+    if (!m_Assets.SaveMaterial(m_Guid, target, error)) {
+      return false;
+    }
+    std::vector<std::pair<Engine::EntityHandle, Engine::Ecs::MeshRenderer>> updates;
+    m_Scene->World().ForEachChunkReadOnly<Engine::Ecs::MeshRenderer>(
+        [&updates, this, &target](std::span<const Engine::EntityHandle> entities,
+                                  std::span<const Engine::Ecs::MeshRenderer> meshes) -> void {
+          for (size_t index = 0; index < entities.size(); ++index) {
+            if (meshes[index].MaterialGuid == m_Guid) {
+              auto updated = meshes[index];
+              if (ApplyMaterialAssetEdit(updated, m_Guid, target)) {
+                updates.emplace_back(entities[index], std::move(updated));
+              }
+            }
+          }
+        });
+    std::vector<std::pair<Engine::EntityHandle, Engine::Ecs::MeshRenderer>> applied;
+    for (auto& [entity, updated] : updates) {
+      auto* current = m_Scene->World().Get<Engine::Ecs::MeshRenderer>(entity);
+      if (current == nullptr) {
+        error = "A shared material user was deleted during the transaction";
+        break;
+      }
+      Engine::Ecs::MeshRenderer previous = *current;
+      const Engine::Status status = m_Scene->SetInPlace(entity, std::move(updated));
+      if (!status) {
+        error = status.error().Message;
+        break;
+      }
+      applied.emplace_back(entity, std::move(previous));
+    }
+    if (!error.empty()) {
+      for (auto& [entity, previous] : applied) {
+        (void)m_Scene->SetInPlace(entity, std::move(previous));
+      }
+      std::string rollbackError;
+      if (!m_Assets.SaveMaterial(m_Guid, rollback, rollbackError)) {
+        ENGINE_LOG_ERROR("Asset", "PRISM material transaction rollback failed | reason: {}", rollbackError);
+      }
+      return false;
+    }
+    if (m_Changed) {
+      m_Changed();
+    }
+    return true;
+  }
+
+  Engine::AssetManager& m_Assets;
+  std::shared_ptr<Engine::Scene> m_Scene;
+  std::string m_Guid;
+  Engine::SceneMaterialDocument m_Before;
+  Engine::SceneMaterialDocument m_After;
+  std::function<void()> m_Changed;
+};
+
 auto QuaternionToPitchYawRoll(const std::array<float, 4>& quaternion) -> std::array<float, 3> {
   const DirectX::XMVECTOR rotation =
       DirectX::XMQuaternionNormalize(DirectX::XMVectorSet(quaternion[0], quaternion[1], quaternion[2], quaternion[3]));
@@ -160,7 +253,25 @@ void Editor::OnInit() {
   m_Panels.push_back(std::make_unique<StatWindow>(this));
   m_Panels.push_back(std::make_unique<ScenePanel>());
   m_Panels.push_back(std::make_unique<HierarchyPanel>());
-  m_Panels.push_back(std::make_unique<InspectorPanel>());
+  const auto runtimeDirectory = GetEditorRuntimeDirectory();
+  m_PrismNdfInferenceService = std::make_unique<Engine::PrismNdfInferenceService>(
+      Engine::PrismNdfInferenceOptions{.modelDirectory = runtimeDirectory / "models" / "prism",
+                                       .pythonExecutable = runtimeDirectory / "python" / "python.exe",
+                                       .tokenizerWorker = runtimeDirectory / "python" / "prism_tokenizer_worker.py"});
+  PrismNdfGenerationAdapter prismGeneration{
+      .start = [this](std::string prompt, bool directional) -> Engine::Result<uint64_t> {
+        return m_PrismNdfInferenceService->Start(std::move(prompt), directional);
+      },
+      .poll = [this](uint64_t requestId) -> std::optional<Engine::PrismNdfInferenceStatus> {
+        return m_PrismNdfInferenceService->Poll(requestId);
+      },
+      .cancel = [this](uint64_t requestId) -> void {
+        if (m_PrismNdfInferenceService != nullptr) {
+          (void)m_PrismNdfInferenceService->Cancel(requestId);
+        }
+      },
+      .isAvailable = [] -> bool { return Engine::PrismNdfInferenceService::IsAvailable(); }};
+  m_Panels.push_back(std::make_unique<InspectorPanel>(std::move(prismGeneration)));
   m_Panels.push_back(std::make_unique<AssetBrowserPanel>());
   auto cameraPreviewPanel = std::make_unique<CameraPreviewPanel>(
       [this](Engine::EntityHandle entity) -> Engine::Result<Engine::RenderOutput> {
@@ -222,6 +333,7 @@ void Editor::OnInit() {
 }
 
 void Editor::OnSceneReplaced(const std::shared_ptr<Engine::Scene>& scene) {
+  m_CommandHistory.Clear();
   DestroyCameraPreview();
   if (m_CameraPreviewPanel != nullptr) {
     m_CameraPreviewPanel->Close();
@@ -434,6 +546,7 @@ void Editor::OnBeginUIFrame() { m_UiIntegration.BeginFrame(); }
 void Editor::OnEndUIFrame() { m_UiIntegration.EndFrame(); }
 
 void Editor::OnShutdownUI() {
+  m_PrismNdfInferenceService.reset();
   if (m_RenderOutputExportService != nullptr) {
     m_RenderOutputExportService->Shutdown();
     m_RenderOutputExportService.reset();
@@ -464,6 +577,25 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
     }
     return true;
   });
+  dispatcher.Dispatch<CommandHistoryActionRequestedEvent>([this](const auto& request) -> bool {
+    const bool succeeded = request.GetAction() == CommandHistoryActionRequestedEvent::Action::Undo
+                               ? m_CommandHistory.Undo()
+                               : m_CommandHistory.Redo();
+    if (!succeeded &&
+        (request.GetAction() == CommandHistoryActionRequestedEvent::Action::Undo ? m_CommandHistory.CanUndo()
+                                                                                 : m_CommandHistory.CanRedo())) {
+      AssetWorkflowFeedbackEvent feedback(false, "Material history operation failed; history position was retained");
+      BroadcastEvent(feedback);
+    }
+    return true;
+  });
+  dispatcher.Dispatch<CommandExecuteRequestedEvent>([this](auto& request) -> bool {
+    if (!m_CommandHistory.Execute(request.TakeCommand())) {
+      AssetWorkflowFeedbackEvent feedback(false, "Editor command failed; undo history was not changed");
+      BroadcastEvent(feedback);
+    }
+    return true;
+  });
   dispatcher.Dispatch<SceneFileActionRequestedEvent>([this](const auto& request) -> bool {
     if (GetAssetManager() == nullptr) {
       ENGINE_LOG_ERROR("Asset", "Cannot process the file action because the asset manager is unavailable");
@@ -488,6 +620,7 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
       if (result == EditorWorkflow::ProjectOpenResult::Failed) {
         ENGINE_LOG_ERROR("Asset", "Project selection failed | reason: {}", error);
       } else if (result == EditorWorkflow::ProjectOpenResult::Opened) {
+        m_CommandHistory.Clear();
         EditorPlatform::RememberProjectRoot(GetAssetManager()->GetProjectRoot());
         for (const std::string& warning : warnings) {
           ENGINE_LOG_WARN("Asset", "Project asset warning | {}", warning);
@@ -824,6 +957,44 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
     }
     BroadcastSceneChanged();
     AssetWorkflowFeedbackEvent feedback(true, "Shared material updated");
+    BroadcastEvent(feedback);
+    return true;
+  });
+  dispatcher.Dispatch<PrismNdfApplyRequestedEvent>([this](const auto& request) -> bool {
+    const auto fail = [this](std::string message) -> bool {
+      AssetWorkflowFeedbackEvent feedback(false, std::move(message));
+      BroadcastEvent(feedback);
+      return true;
+    };
+    if (GetAssetManager() == nullptr || !m_ActiveScene || request.GetEntity() != m_SelectedEntity ||
+        !m_ActiveScene->World().IsAlive(request.GetEntity())) {
+      return fail("PRISM preview is stale; select the originating material before applying");
+    }
+    auto* mesh = m_ActiveScene->World().Get<Engine::Ecs::MeshRenderer>(request.GetEntity());
+    if (mesh == nullptr || mesh->MaterialGuid != request.GetMaterialGuid() || !mesh->Material) {
+      return fail("The selected mesh no longer uses the material that produced this preview");
+    }
+    std::string error;
+    if (!GetAssetManager()->LoadMaterial(request.GetMaterialGuid(), error)) {
+      return fail(error);
+    }
+    const auto saved = GetAssetManager()->GetMaterial(request.GetMaterialGuid());
+    if (!saved) {
+      return fail("The selected material asset could not be loaded for PRISM Apply");
+    }
+    Engine::SceneMaterialDocument updated = *saved;
+    updated.brdfModel = "prismNdf";
+    updated.generatedNdf = request.GetGenerated();
+    auto command =
+        std::make_unique<PrismMaterialApplyCommand>(*GetAssetManager(), m_ActiveScene, request.GetMaterialGuid(),
+                                                    *saved, std::move(updated), [this] { BroadcastSceneChanged(); });
+    if (!m_CommandHistory.Execute(std::move(command))) {
+      AssetWorkflowFeedbackEvent feedback(
+          false, "PRISM material save/apply failed; the material and undo history were preserved");
+      BroadcastEvent(feedback);
+      return true;
+    }
+    AssetWorkflowFeedbackEvent feedback(true, "PRISM NDF applied to the shared material; one undo step was added");
     BroadcastEvent(feedback);
     return true;
   });
