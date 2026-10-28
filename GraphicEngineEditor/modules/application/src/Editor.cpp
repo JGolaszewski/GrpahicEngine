@@ -32,6 +32,7 @@
 
 #include <DirectXMath.h>
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <filesystem>
 #include <imgui.h>
@@ -39,6 +40,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <tuple>
 #include <utility>
 
@@ -50,7 +52,7 @@
 #endif
 
 namespace {
-auto GetEditorRuntimeDirectory() -> std::filesystem::path {
+auto GetEditorExecutableDirectory() -> std::filesystem::path {
 #ifdef _WIN32
   std::array<wchar_t, 32768> executablePath{};
   const DWORD length = GetModuleFileNameW(nullptr, executablePath.data(), static_cast<DWORD>(executablePath.size()));
@@ -59,6 +61,52 @@ auto GetEditorRuntimeDirectory() -> std::filesystem::path {
   }
 #endif
   return std::filesystem::current_path();
+}
+
+auto HasPrismRuntimeAssets(const std::filesystem::path& root) -> bool {
+  const std::array requiredFiles = {
+      root / "python" / "python.exe",
+      root / "python" / "prism_tokenizer_worker.py",
+      root / "models" / "prism" / "e5_encoder.onnx",
+      root / "models" / "prism" / "e5_encoder.onnx.data",
+      root / "models" / "prism" / "retriever.onnx",
+      root / "models" / "prism" / "retriever.onnx.data",
+      root / "models" / "prism" / "vae_decoder.onnx",
+      root / "models" / "prism" / "vae_decoder.onnx.data",
+  };
+  std::error_code error;
+  for (const auto& path : requiredFiles) {
+    if (!std::filesystem::is_regular_file(path, error) || error) {
+      return false;
+    }
+  }
+  return true;
+}
+
+auto GetPrismRuntimeDirectory() -> std::filesystem::path {
+#ifdef _WIN32
+  const DWORD environmentLength = GetEnvironmentVariableW(L"GRAPHICENGINE_PRISM_RUNTIME_DIR", nullptr, 0);
+  if (environmentLength > 1U && environmentLength < 32768U) {
+    std::wstring environmentRoot(environmentLength, L'\0');
+    const DWORD copiedLength =
+        GetEnvironmentVariableW(L"GRAPHICENGINE_PRISM_RUNTIME_DIR", environmentRoot.data(), environmentLength);
+    if (copiedLength > 0U && copiedLength < environmentLength) {
+      environmentRoot.resize(copiedLength);
+      return std::filesystem::path(environmentRoot);
+    }
+  }
+#endif
+  const auto executableDirectory = GetEditorExecutableDirectory();
+  if (HasPrismRuntimeAssets(executableDirectory)) {
+    return executableDirectory;
+  }
+#ifdef ENGINE_PRISM_CONFIGURED_RUNTIME_ROOT
+  const std::filesystem::path configuredRuntimeRoot(ENGINE_PRISM_CONFIGURED_RUNTIME_ROOT);
+  if (!configuredRuntimeRoot.empty()) {
+    return configuredRuntimeRoot;
+  }
+#endif
+  return executableDirectory;
 }
 
 auto QuaternionToPitchYawRoll(const std::array<float, 4>& quaternion) -> std::array<float, 3> {
@@ -182,7 +230,7 @@ void Editor::OnInit() {
   m_Panels.push_back(std::make_unique<StatWindow>(this));
   m_Panels.push_back(std::make_unique<ScenePanel>());
   m_Panels.push_back(std::make_unique<HierarchyPanel>());
-  const auto runtimeDirectory = GetEditorRuntimeDirectory();
+  const auto runtimeDirectory = GetPrismRuntimeDirectory();
   m_PrismNdfInferenceService = std::make_unique<Engine::PrismNdfInferenceService>(
       Engine::PrismNdfInferenceOptions{.modelDirectory = runtimeDirectory / "models" / "prism",
                                        .pythonExecutable = runtimeDirectory / "python" / "python.exe",

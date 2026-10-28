@@ -3,6 +3,7 @@
 #include "rendering/include/renderer/PrismNdfMath.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <condition_variable>
 #include <cstddef>
@@ -10,6 +11,7 @@
 #include <mutex>
 #include <ranges>
 #include <span>
+#include <sstream>
 #include <stdexcept>
 #include <string_view>
 #include <system_error>
@@ -599,12 +601,32 @@ auto PrismNdfInferenceService::Start(std::string_view promptText, bool direction
     std::error_code error;
     return std::filesystem::is_regular_file(path, error) && !error;
   };
-  if (!isFile(m_Impl->Options.pythonExecutable) || !isFile(m_Impl->Options.tokenizerWorker) ||
-      !isFile(m_Impl->Options.modelDirectory / "e5_encoder.onnx") ||
-      !isFile(m_Impl->Options.modelDirectory / "retriever.onnx") ||
-      !isFile(m_Impl->Options.modelDirectory / "vae_decoder.onnx")) {
-    return std::unexpected(MakeError(
-        "PRISM runtime assets are missing; verify the bundled python/, models/prism/ and tokenizer worker files"));
+  const std::array requiredFiles = {
+      m_Impl->Options.pythonExecutable,
+      m_Impl->Options.tokenizerWorker,
+      m_Impl->Options.modelDirectory / "e5_encoder.onnx",
+      m_Impl->Options.modelDirectory / "e5_encoder.onnx.data",
+      m_Impl->Options.modelDirectory / "retriever.onnx",
+      m_Impl->Options.modelDirectory / "retriever.onnx.data",
+      m_Impl->Options.modelDirectory / "vae_decoder.onnx",
+      m_Impl->Options.modelDirectory / "vae_decoder.onnx.data",
+  };
+  std::ostringstream missingAssets;
+  bool hasMissingAssets = false;
+  for (const auto& path : requiredFiles) {
+    if (!isFile(path)) {
+      if (hasMissingAssets) {
+        missingAssets << ", ";
+      }
+      missingAssets << '\'' << path.string() << '\'';
+      hasMissingAssets = true;
+    }
+  }
+  if (hasMissingAssets) {
+    return std::unexpected(MakeError("PRISM runtime assets are missing. Missing files: " + missingAssets.str() +
+                                     ". Stage them with scripts/download_prism_models.py and "
+                                     "scripts/stage_prism_runtime.py, then launch the PRISM-enabled editor "
+                                     "with its configured runtime root."));
   }
   std::lock_guard lock(m_Impl->Mutex);
   if (m_Impl->Stopping) {

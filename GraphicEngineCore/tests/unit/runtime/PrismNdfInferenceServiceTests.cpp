@@ -2,6 +2,8 @@
 
 #include <gtest/gtest.h>
 
+#include <filesystem>
+
 namespace Engine {
 
 TEST(PrismNdfInferenceServiceTests, PublicApiIsAvailableInEveryBuild) {
@@ -20,10 +22,19 @@ TEST(PrismNdfInferenceServiceTests, DisabledBuildReturnsActionableUnavailableSta
 }
 #else
 TEST(PrismNdfInferenceServiceTests, EnabledBuildRejectsMissingAssetsBeforeQueueing) {
-  PrismNdfInferenceService service({});
+  const auto missingRoot = std::filesystem::temp_directory_path() / "GraphicEngine-missing-prism-runtime";
+  PrismNdfInferenceService service({.modelDirectory = missingRoot / "models" / "prism",
+                                    .pythonExecutable = missingRoot / "python" / "python.exe",
+                                    .tokenizerWorker = missingRoot / "python" / "prism_tokenizer_worker.py"});
   auto request = service.Start("rough brushed titanium", false);
   ASSERT_FALSE(request.has_value());
   EXPECT_NE(request.error().Message.find("runtime assets are missing"), std::string::npos);
+  EXPECT_NE(request.error().Message.find((missingRoot / "models" / "prism" / "e5_encoder.onnx").string()),
+            std::string::npos);
+  EXPECT_NE(request.error().Message.find((missingRoot / "models" / "prism" / "e5_encoder.onnx.data").string()),
+            std::string::npos);
+  EXPECT_NE(request.error().Message.find((missingRoot / "python" / "python.exe").string()), std::string::npos);
+  EXPECT_NE(request.error().Message.find("scripts/stage_prism_runtime.py"), std::string::npos);
 }
 #endif
 

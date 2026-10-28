@@ -14,8 +14,31 @@ committed to Git.
 Ordinary configure/build presets do not enable `prism-inference`, download
 models, or require Python or ONNX Runtime. Saved generated materials remain
 renderable from their serialized material data. Only the dedicated
-`x64-release-prism` preset enables the optional vcpkg ONNX Runtime dependency
-and installs the staged runtime into the application bundle.
+`x64-release-prism` preset enables the optional vcpkg ONNX Runtime dependency.
+The staged model files remain in `out/prism-runtime` during development; CMake
+install places them beside the editor for a relocatable application bundle.
+
+## Run the build-tree editor
+
+On Windows, stage the models and embedded tokenizer runtime once, configure the
+PRISM preset, then build its run target:
+
+```powershell
+python scripts/download_prism_models.py
+python scripts/stage_prism_runtime.py
+python scripts/validate_prism_onnx_contract.py
+cmake --preset x64-release-prism
+cmake --build --preset x64-release-prism --target run-editor-prism
+```
+
+`run-editor-prism` launches the build-tree editor with
+`ENGINE_PRISM_RUNTIME_ROOT` supplied as `GRAPHICENGINE_PRISM_RUNTIME_DIR`. It
+does not copy the large model files into the build output. Launching
+`out/build/x64-release-prism/bin/Editor.exe` directly also resolves the staged
+root recorded by the PRISM-enabled configure. An explicit
+`GRAPHICENGINE_PRISM_RUNTIME_DIR` environment variable overrides both paths.
+
+## Create and verify an installable package
 
 For a local package staging run on 64-bit Windows:
 
@@ -25,18 +48,22 @@ python scripts/stage_prism_runtime.py
 python scripts/validate_prism_onnx_contract.py
 cmake --preset x64-release-prism
 cmake --build --preset x64-release-prism
-cmake --install out/build/x64-release-prism --prefix out/package --config Release
-python scripts/verify_prism_package.py --package out/package
-$env:PATH = "$(Resolve-Path out/package/bin);$env:PATH"
-Copy-Item out/build/x64-release-prism/bin/PrismNdfPackageSmoke.exe out/package/bin/
-Push-Location out/package/bin
+cmake --install out/build/x64-release-prism --prefix out/package-prism --config Release
+python scripts/verify_prism_package.py --package out/package-prism
+$env:PATH = "$(Resolve-Path out/package-prism/bin);$env:PATH"
+Copy-Item out/build/x64-release-prism/bin/PrismNdfPackageSmoke.exe out/package-prism/bin/
+Push-Location out/package-prism/bin
 try {
     .\PrismNdfPackageSmoke.exe .
 } finally {
     Pop-Location
 }
-Move-Item out/package/bin/PrismNdfPackageSmoke.exe out/prism-smoke/ -Force
+Move-Item out/package-prism/bin/PrismNdfPackageSmoke.exe out/prism-smoke/ -Force
 ```
+
+Launch `out/package-prism/bin/Editor.exe` to use the installed, relocatable
+runtime layout. A build alone does not install the package files; use the
+`run-editor-prism` target for development or `cmake --install` for a package.
 
 Downloads land under the ignored `out/prism-runtime/` directory. Both model
 assets and the embedded Python and tokenizer archives are checked against

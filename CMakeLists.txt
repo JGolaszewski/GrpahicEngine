@@ -69,7 +69,7 @@ set(ENGINE_MAX_LIGHTS 8 CACHE STRING "Maximum number of lights supported by CPU 
 option(ENGINE_ENABLE_LOGGING "Compile engine logging calls" ON)
 option(ENGINE_ENABLE_PRISM_INFERENCE "Enable optional native ONNX Runtime support for PRISM inference" OFF)
 set(ENGINE_PRISM_RUNTIME_ROOT "" CACHE PATH
-    "Staged PRISM model and embedded Python runtime root used for release packaging")
+    "Staged PRISM model and embedded Python runtime root used by local runs and release packaging")
 set(ENGINE_LOG_LEVEL_MIN 0 CACHE STRING "Global minimum log level (0=Trace, 1=Debug, 2=Info, 3=Warn, 4=Error, 5=Fatal, 6=None)")
 set_property(CACHE ENGINE_LOG_LEVEL_MIN PROPERTY STRINGS 0 1 2 3 4 5 6)
 set(ENGINE_LOG_LEVEL_MIN_DEBUG "" CACHE STRING "Optional Debug log cutoff override; empty uses ENGINE_LOG_LEVEL_MIN")
