@@ -70,6 +70,7 @@ nav:
           - Shadows: rendering/shadows.md
           - Final rendering: rendering/final-render.md
           - Environment lighting: rendering/environment-lighting.md
+          - PRISM inference: rendering/prism-inference.md
   - Workflows:
       - Getting started: getting-started.md
       - Development workflow: development-workflow.md

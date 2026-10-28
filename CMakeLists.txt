@@ -172,6 +172,12 @@ if(NVRHI_PUBLIC_INCLUDE_DIRS)
 endif()
 
 add_subdirectory ("GraphicEngineCore")
+target_compile_definitions(GraphicEngineCore PUBLIC
+    ENGINE_ENABLE_PRISM_INFERENCE=$<BOOL:${ENGINE_ENABLE_PRISM_INFERENCE}>
+)
+if(ENGINE_ENABLE_PRISM_INFERENCE)
+    target_link_libraries(GraphicEngineCore PRIVATE onnxruntime::onnxruntime)
+endif()
 add_subdirectory ("GraphicEngineBackends")
 add_subdirectory ("GraphicEngineEditor")
 add_subdirectory ("GraphicEngineCore/tests")

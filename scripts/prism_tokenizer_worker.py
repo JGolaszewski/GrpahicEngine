@@ -50,7 +50,11 @@ def main() -> int:
                 raise RuntimeError("tokenizer did not produce fixed length 128 tensors")
             print(json.dumps(response, separators=(",", ":")), flush=True)
         except Exception as error:
-            print(json.dumps({"type": "error", "id": locals().get("request_id"), "error": str(error)}), flush=True)
+            safe_error = str(error) if isinstance(error, ValueError) and str(error) in {
+                "prompt must be a string",
+                "directional must be a boolean",
+            } else "tokenizer request failed; verify the tokenizer assets and request format"
+            print(json.dumps({"type": "error", "id": locals().get("request_id"), "error": safe_error}), flush=True)
     return 0
 
 
