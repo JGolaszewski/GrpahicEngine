@@ -14,6 +14,25 @@ if(BUILD_TESTING)
         "${CMAKE_CURRENT_SOURCE_DIR}/unit/*.cpp"
     )
     add_executable(GraphicEngineUnitTests ${ENGINE_UNIT_TEST_SOURCES})
+    set(PRISM_NDF_GPU_PARITY_SHADER "${CMAKE_CURRENT_BINARY_DIR}/PrismNdfGpuParity.dxbc")
+    file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
+    add_custom_command(
+        OUTPUT "${PRISM_NDF_GPU_PARITY_SHADER}"
+        COMMAND "${FXC_EXECUTABLE}" /nologo
+                /I "${PROJECT_SOURCE_DIR}/GraphicEngineBackends/D3D11/shaders"
+                /T cs_5_0 /E main_cs /Fo "${PRISM_NDF_GPU_PARITY_SHADER}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/unit/rendering/PrismNdfGpuParity.hlsl"
+        DEPENDS
+            "${CMAKE_CURRENT_SOURCE_DIR}/unit/rendering/PrismNdfGpuParity.hlsl"
+            "${PROJECT_SOURCE_DIR}/GraphicEngineBackends/D3D11/shaders/brdf_common.hlsli"
+        VERBATIM
+    )
+    add_custom_target(PrismNdfGpuParityShader DEPENDS "${PRISM_NDF_GPU_PARITY_SHADER}")
+    add_dependencies(GraphicEngineUnitTests PrismNdfGpuParityShader)
+    file(TO_CMAKE_PATH "${PRISM_NDF_GPU_PARITY_SHADER}" PRISM_NDF_GPU_PARITY_SHADER_CMAKE_PATH)
+    target_compile_definitions(GraphicEngineUnitTests PRIVATE
+        ENGINE_PRISM_NDF_GPU_PARITY_SHADER="${PRISM_NDF_GPU_PARITY_SHADER_CMAKE_PATH}"
+    )
     # Compile the private encoding helpers into the test binary so tests can
     # exercise them without exporting implementation details from the engine DLL.
     target_sources(GraphicEngineUnitTests PRIVATE
@@ -32,6 +51,7 @@ if(BUILD_TESTING)
         imgui
         nvrhi_d3d11
         d3d11
+        dxgi
         nlohmann_json::nlohmann_json
         GTest::gtest_main
         OpenImageIO::OpenImageIO

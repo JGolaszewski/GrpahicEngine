@@ -36,13 +36,13 @@ disjoint when adding bindings. Sampler ranges follow the corresponding
 resource assignments.
 
 Both color pixel-shader variants implement the same direct-light and
-PRISM-conditioned IBL math. The WARP rendering tests verify that coefficient
-and signed-residual changes affect direct-light output, that the conditioned
-environment contribution is repeatable, and that environment and AO bindings
-remain functional. `PrismNdfMathTests` compares every CPU basis term to an
-independent factorial definition and checks aggregate double-precision
+PRISM-conditioned IBL math. The WARP rendering tests verify coefficient and
+signed-residual response, direct-light agreement at normal incidence, constant
+environment IBL against an independent high-sample integral, and resource
+updates after replacing the NDF or environment. `PrismNdfMathTests` also checks
+the CPU basis against an independent factorial definition, double-precision
 reconstruction, disk boundary/exterior behavior, signed residual, clamp, and
-normalization semantics. These CPU checks do not establish GPU parity.
+normalization.
 
 The PRISM IBL loop samples the projected unit disk uniformly in area using
 `r = sqrt((i + 0.5) / N)`. Its per-sample integrand is the BRDF half-vector
@@ -52,18 +52,58 @@ Monte Carlo area weight. With normalized `D`, it must not be removed or
 duplicated. This derivation does not replace the required numerical comparison
 against a high-sample reference.
 
-## Open #190 verification criteria
+`PrismNdfGpuParityTests.NvidiaD3D11MatchesIndependentDoubleReferenceForAllTermsAndEdgeCases`
+compiles a small compute entry point that includes the production
+`brdf_common.hlsli` and calls `PrismZernikeNdf` directly. It uses a hardware
+NVIDIA D3D11 adapter, one-hot isolation of each of the 45 coefficients, five
+interior/near-boundary/exact-boundary/exterior coordinates, a mixed-sign
+45-term case, and residual/clamp/normalization cases. The independent oracle
+uses double-precision factorial expansion. Every result is checked against
+`1e-4 + 5e-4 * abs(reference)`. The test skips when no NVIDIA adapter is
+available; WARP cannot satisfy this parity check. The production color shader
+variants are compiled by the separate `CompileShaders` target.
+The constant-environment WARP reference uses a 65x65 sphere render so its center
+pixel has normal and view aligned. A constant RGBE panorama isolates the
+specular estimator from environment variation. Its CPU oracle integrates the
+same projected-disk BRDF expression at 2^20 midpoint samples; the GPU's 128
+samples per pixel must agree within `2e-3 + 5e-3 * abs(reference)`. A normal
+incidence directional-light result is checked independently. The test then
+replaces the NDF payload and the authored environment and checks that rendered
+values track the new payload and radiance, exercising material texture upload
+and environment binding cache refresh.
 
-- An independent D3D11 GPU-versus-double test must evaluate all 45 terms over
-  interior, boundary, and exterior points, plus residual, clamp, and scale, with
-  the issue's absolute `1e-4` and relative `5e-4` tolerances. Existing WARP
-  rendering tests exercise the integrated material shaders but do not expose
-  per-sample shader results for this comparison.
-- Direct-light and high-sample PRISM IBL output still need numerical reference
-  comparisons. Existing WARP tests establish response and repeatability only.
-- The Intel Graphics and RTX 5080 adapters are present on the development host,
-  but this checkout has no PRISM GPU microbenchmark or timestamp-query fixture.
-  A measured per-pixel/IBL budget is therefore open until a hardware benchmark
-  with warmup, repeated GPU timestamp samples, adapter/driver identification,
-  and a documented scene/sample workload is available. WARP timings are not a
-  substitute for that measurement.
+## RTX 5080 timing budget
+
+The opt-in
+`PrismNdfGpuParityTests.NvidiaD3D11TimestampMeasuresPrismEnvironmentRenderCost`
+uses D3D11 timestamp and disjoint queries on the NVIDIA adapter, warms up each
+resolution, and records median GPU-timeline intervals for asynchronous final
+renders. The scene contains one sphere with a generated NDF and the built-in
+Studio environment; the production PRISM IBL loop uses 128 samples per covered
+pixel. The 1080p acceptance budget for this workload is one 60 Hz frame
+(`16.67 ms`). The interval covers render submission through its queued GPU work
+and readback copy, so it is a frame-path cost rather than an isolated pixel
+shader duration. Scene complexity and pixel coverage affect the result.
+
+Observed on 2026-10-28:
+
+| Resolution | Samples | Median GPU timeline |
+| --- | ---: | ---: |
+| 512x512 | 7 | 0.812448 ms |
+| 1024x1024 | 5 | 2.76176 ms |
+| 1920x1080 | 3 | 4.77741 ms |
+
+Adapter and driver were identified with `nvidia-smi`: NVIDIA GeForce RTX 5080,
+driver 616.64. The host was Windows 11 Pro build 26200 with an Intel Core Ultra
+9 285K CPU. The Debug x64 build used MSVC 19.51.36256 and Windows SDK 10.0.26100
+`fxc`; Windows power scheme was Balanced with no fixed GPU clock. The 1080p
+median was below the 16.67 ms fixture budget. Background GPU load was not
+controlled, and this is a single-host result, not a cross-driver guarantee or
+full-scene worst-case.
+Reproduce with:
+
+```powershell
+$env:ENGINE_PRISM_GPU_TIMING = '1'
+out/build/x64-debug/bin/GraphicEngineUnitTests.exe `
+  --gtest_filter=PrismNdfGpuParityTests.NvidiaD3D11TimestampMeasuresPrismEnvironmentRenderCost
+```
