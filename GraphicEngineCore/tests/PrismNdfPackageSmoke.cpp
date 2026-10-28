@@ -1,4 +1,5 @@
 #include "runtime/include/PrismNdfInferenceService.h"
+#include "scene/include/SceneDocument.h"
 
 #include <algorithm>
 #include <chrono>
@@ -10,6 +11,7 @@
 #include <string>
 #include <string_view>
 #include <thread>
+#include <utility>
 
 namespace {
 
@@ -59,8 +61,46 @@ auto Run(int argc, char** argv) -> int {
         std::cerr << "Packaged PRISM generation returned incomplete or invalid material data\n";
         return 1;
       }
+      Engine::SceneDocument document;
+      Engine::SceneEntityDocument entity;
+      entity.id = 1;
+      entity.primitiveType = "sphere";
+      entity.material.emplace();
+      entity.material->brdfModel = "prismNdf";
+      entity.material->generatedNdf.emplace();
+      entity.material->generatedNdf->data = *status->result;
+      entity.material->generatedNdf->directional = status->directional;
+      entity.material->generatedNdf->prompt = status->prompt;
+      entity.material->generatedNdf->modelVersion = status->modelProvenance;
+      document.entities.push_back(std::move(entity));
+      const auto savePath = std::filesystem::temp_directory_path() /
+                            ("GraphicEnginePrismPackageSmoke-" +
+                             std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + ".scene");
+      std::string saveError;
+      if (!Engine::SceneSerializer::SaveAtomic(savePath, document, saveError)) {
+        std::cerr << "Generated PRISM payload could not be saved: " << saveError << '\n';
+        return 1;
+      }
+      const auto reloaded = Engine::SceneSerializer::Load(savePath);
+      std::error_code cleanupError;
+      std::filesystem::remove(savePath, cleanupError);
+      if (!reloaded || reloaded.document.entities.size() != 1U ||
+          !reloaded.document.entities.front().material.has_value() ||
+          !reloaded.document.entities.front().material->generatedNdf.has_value()) {
+        std::cerr << "Generated PRISM material could not be reloaded: " << reloaded.error << '\n';
+        return 1;
+      }
+      const auto& loadedNdf = *reloaded.document.entities.front().material->generatedNdf;
+      if (loadedNdf.data.zernikeCoefficients != status->result->zernikeCoefficients ||
+          loadedNdf.data.residuals != status->result->residuals ||
+          loadedNdf.data.normalization != status->result->normalization || loadedNdf.prompt != prompt ||
+          loadedNdf.directional != status->directional || loadedNdf.modelVersion != status->modelProvenance) {
+        std::cerr << "Generated PRISM payload changed during material save/reload\n";
+        return 1;
+      }
       std::cout << "Packaged PRISM inference generated a finite 45-term, 4096-residual payload; normalization="
-                << status->result->normalization << ", provenance=" << status->modelProvenance << '\n';
+                << status->result->normalization << ", provenance=" << status->modelProvenance
+                << "; material save/reload retained coefficients, residuals, prompt, and model provenance\n";
       return 0;
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(100));

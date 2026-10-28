@@ -9,6 +9,7 @@
 #include "rendering/src/render_graph/RenderGraph.h"
 #include "rendering/src/render_graph/RenderView.h"
 #include "scene/include/Scene.h"
+#include "scene/include/SceneDocument.h"
 #include "scene/include/components/EcsComponents.h"
 
 #include "../../support/WarpRenderBackend.h"
@@ -1260,10 +1261,47 @@ TEST(RenderFinalTests, WARPPrismNdfDirectAndEnvironmentLightingUseGeneratedPaylo
   EngineTests::WarpRenderBackend backend(device.GetDevice());
   Engine::RenderSystem renderer(&backend);
   ASSERT_TRUE(renderer.IsValid());
+  const auto project = std::filesystem::temp_directory_path() /
+                       ("GraphicEnginePrismPersistence-" +
+                        std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+  std::filesystem::create_directories(project);
 
   auto payload = std::make_shared<Engine::PrismNdfData>();
   payload->zernikeCoefficients[0] = 1.0F;
+  payload->zernikeCoefficients[4] = 0.125F;
+  payload->residuals[0] = 0.25F;
   payload->normalization = 1.0F / Engine::Renderer::Brdf::Pi;
+  Engine::SceneDocument savedMaterialDocument;
+  Engine::SceneEntityDocument savedEntity;
+  savedEntity.id = 1;
+  savedEntity.primitiveType = "sphere";
+  Engine::SceneMaterialDocument savedMaterial;
+  savedMaterial.brdfModel = "prismNdf";
+  savedMaterial.generatedNdf.emplace();
+  savedMaterial.generatedNdf->data = *payload;
+  savedMaterial.generatedNdf->directional = true;
+  savedMaterial.generatedNdf->prompt = "silver leaf with fine directional grooves";
+  savedMaterial.generatedNdf->modelVersion = "prism-test-model";
+  savedEntity.material = savedMaterial;
+  savedMaterialDocument.entities.push_back(savedEntity);
+  const auto materialPath = project / "generated-material.scene.json";
+  std::string persistenceError;
+  ASSERT_TRUE(Engine::SceneSerializer::SaveAtomic(materialPath, savedMaterialDocument, persistenceError))
+      << persistenceError;
+  const auto reloadedMaterialDocument = Engine::SceneSerializer::Load(materialPath);
+  ASSERT_TRUE(reloadedMaterialDocument) << reloadedMaterialDocument.error;
+  ASSERT_EQ(reloadedMaterialDocument.document.entities.size(), 1U);
+  ASSERT_TRUE(reloadedMaterialDocument.document.entities.front().material.has_value());
+  const auto& reloadedMaterial = *reloadedMaterialDocument.document.entities.front().material;
+  ASSERT_TRUE(reloadedMaterial.generatedNdf.has_value());
+  EXPECT_EQ(reloadedMaterial.brdfModel, "prismNdf");
+  EXPECT_EQ(reloadedMaterial.generatedNdf->prompt, "silver leaf with fine directional grooves");
+  EXPECT_TRUE(reloadedMaterial.generatedNdf->directional);
+  EXPECT_TRUE(std::ranges::equal(reloadedMaterial.generatedNdf->data.zernikeCoefficients,
+                                 payload->zernikeCoefficients));
+  EXPECT_TRUE(std::ranges::equal(reloadedMaterial.generatedNdf->data.residuals, payload->residuals));
+  EXPECT_FLOAT_EQ(reloadedMaterial.generatedNdf->data.normalization, payload->normalization);
+  payload = std::make_shared<Engine::PrismNdfData>(reloadedMaterial.generatedNdf->data);
   Engine::Renderer::MaterialProperties properties;
   properties.Model = Engine::Renderer::BrdfModel::PrismNdf;
   properties.Roughness = 0.4F;
@@ -1344,6 +1382,7 @@ TEST(RenderFinalTests, WARPPrismNdfDirectAndEnvironmentLightingUseGeneratedPaylo
   }
   EXPECT_GT(environmentDifference, 1.0e-3F);
   EXPECT_TRUE(std::ranges::equal(environmentSpecular, repeatedSpecular));
+  std::filesystem::remove_all(project);
 }
 
 TEST(RenderFinalTests, WARPPrismDirectAndConstantEnvironmentMatchIndependentReferencesAndRefreshBindings) {

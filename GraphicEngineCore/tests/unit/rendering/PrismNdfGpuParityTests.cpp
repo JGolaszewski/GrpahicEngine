@@ -112,7 +112,7 @@ auto CreateNvidiaDevice(ComPtr<IDXGIAdapter1>& selectedAdapter, ComPtr<ID3D11Dev
     }
     if ((description.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) == 0U && description.VendorId == 0x10DEU) {
       const D3D_FEATURE_LEVEL levels[] = {D3D_FEATURE_LEVEL_11_1, D3D_FEATURE_LEVEL_11_0};
-      D3D_FEATURE_LEVEL selectedLevel{};
+      D3D_FEATURE_LEVEL selectedLevel = D3D_FEATURE_LEVEL_11_0;
       const HRESULT result = D3D11CreateDevice(
           selectedAdapter.Get(), D3D_DRIVER_TYPE_UNKNOWN, nullptr, D3D11_CREATE_DEVICE_BGRA_SUPPORT, levels,
           static_cast<UINT>(std::size(levels)), D3D11_SDK_VERSION, &device, &selectedLevel, &context);
@@ -216,7 +216,8 @@ auto TimestampRender(Engine::RenderSystem& renderer, ID3D11DeviceContext* contex
   }
   EXPECT_TRUE(output.has_value()) << "GPU final render did not complete before the timestamp query timeout";
   if (!output.has_value()) {
-    (void)renderer.CancelFinalRender(*ticket);
+    const auto cancelled = renderer.CancelFinalRender(*ticket);
+    EXPECT_TRUE(cancelled.has_value()) << (cancelled.has_value() ? "" : cancelled.error().Message);
     return -1.0;
   }
 
@@ -297,7 +298,8 @@ TEST(PrismNdfGpuParityTests, NvidiaD3D11MatchesIndependentDoubleReferenceForAllT
   allTerms.y = -0.47F;
   allTerms.normalization = 0.618F;
   for (uint32_t index = 0; index < Engine::PrismNdfCoefficientCount; ++index) {
-    allTerms.coefficients[index] = (index % 2U == 0U ? 1.0F : -1.0F) * (0.015F + 0.001F * index);
+    allTerms.coefficients[index] =
+        (index % 2U == 0U ? 1.0F : -1.0F) * (0.015F + 0.001F * static_cast<float>(index));
   }
   cases.push_back(allTerms);
 
