@@ -163,6 +163,7 @@ TEST(ScenePersistenceTests, GeneratedNdfCoefficientsResidualAndPromptRoundTrip) 
   material.generatedNdf->exporterVersion = "decoder-v2";
   material.generatedNdf->data.normalization = 0.875F;
   material.generatedNdf->data.residualsEnabled = false;
+  material.generatedNdf->data.residualFilter = Engine::PrismNdfResidualFilter::QuinticUv;
   material.generatedNdf->data.residuals.resize(Engine::PrismNdfSampleCount);
   for (size_t index = 0; index < Engine::PrismNdfCoefficientCount; ++index) {
     material.generatedNdf->data.zernikeCoefficients[index] = static_cast<float>(index) * 0.125F;
@@ -186,6 +187,7 @@ TEST(ScenePersistenceTests, GeneratedNdfCoefficientsResidualAndPromptRoundTrip) 
   EXPECT_EQ(restored.data.residuals, material.generatedNdf->data.residuals);
   EXPECT_FLOAT_EQ(restored.data.normalization, 0.875F);
   EXPECT_FALSE(restored.data.residualsEnabled);
+  EXPECT_EQ(restored.data.residualFilter, Engine::PrismNdfResidualFilter::QuinticUv);
   EXPECT_EQ(restored.prompt, material.generatedNdf->prompt);
   EXPECT_EQ(restored.modelVersion, "prism-models-v1");
   EXPECT_EQ(restored.exporterVersion, "decoder-v2");
@@ -196,6 +198,7 @@ TEST(ScenePersistenceTests, GeneratedNdfCoefficientsResidualAndPromptRoundTrip) 
   EXPECT_EQ(materialJson.at("schemaVersion"), Engine::CurrentSceneSchemaVersion);
   EXPECT_EQ(materialJson.at("entities").at(0).at("material").at("generatedNdf").at("residuals").size(),
             Engine::PrismNdfSampleCount);
+  EXPECT_EQ(materialJson.at("entities").at(0).at("material").at("generatedNdf").at("residualFilter"), "quinticUv");
 }
 
 TEST(ScenePersistenceTests, GeneratedNdfResidualsStayOffCommonMaterialStackLayouts) {
@@ -232,6 +235,7 @@ TEST(ScenePersistenceTests, GeneratedNdfLoadsLegacy64GridAndResamplesWhenCanonic
   ASSERT_TRUE(material.generatedNdf.has_value());
   const auto& migrated = material.generatedNdf.value();
   EXPECT_TRUE(migrated.data.residualsEnabled);
+  EXPECT_EQ(migrated.data.residualFilter, Engine::PrismNdfResidualFilter::Bilinear);
   EXPECT_EQ(migrated.gridSize, Engine::PrismNdfGridSize);
   EXPECT_EQ(migrated.data.residuals.front(), legacyResiduals.front());
   EXPECT_EQ(migrated.data.residuals.back(), legacyResiduals.back());
@@ -352,6 +356,12 @@ TEST(ScenePersistenceTests, GeneratedNdfValidationFailureMatrixRejectsInvalidPay
   expectRejected(payload);
   payload = validPayload();
   payload["residualsEnabled"] = "false";
+  expectRejected(payload);
+  payload = validPayload();
+  payload["residualFilter"] = "unknown";
+  expectRejected(payload);
+  payload = validPayload();
+  payload["residualFilter"] = 1;
   expectRejected(payload);
   payload = validPayload();
   payload["dataVersion"] = Engine::PrismNdfDataVersion + 1;

@@ -14,6 +14,8 @@ inline constexpr uint32_t PrismNdfCoefficientCount = 45;
 inline constexpr uint32_t PrismNdfSampleCount = PrismNdfGridSize * PrismNdfGridSize;
 inline constexpr uint32_t PrismNdfDataVersion = 2;
 
+enum class PrismNdfResidualFilter : uint8_t { Bilinear = 0, QuinticUv = 1 };
+
 /// CPU render payload. Residuals are heap-backed signed row-major samples over the unit disk.
 /// A valid payload contains exactly PrismNdfSampleCount residuals; the default payload is empty.
 struct PrismNdfData {
@@ -21,6 +23,7 @@ struct PrismNdfData {
   std::vector<float> residuals;
   float normalization = 1.0F;
   bool residualsEnabled = true; ///< Whether rendering adds the signed residual grid to the coefficient basis.
+  PrismNdfResidualFilter residualFilter = PrismNdfResidualFilter::Bilinear;
   auto operator==(const PrismNdfData& other) const noexcept -> bool = default;
 };
 

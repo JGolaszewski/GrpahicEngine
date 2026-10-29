@@ -1369,7 +1369,12 @@ TEST(RenderFinalTests, WARPPrismNdfDirectAndEnvironmentLightingUseGeneratedPaylo
   EXPECT_GT(payloadDifference, 1.0e-3F);
 
   auto residualPayload = std::make_shared<Engine::PrismNdfData>(*zeroPayload);
-  std::ranges::fill(residualPayload->residuals, 0.5F);
+  for (uint32_t y = 0; y < Engine::PrismNdfGridSize; ++y) {
+    for (uint32_t x = 0; x < Engine::PrismNdfGridSize; ++x) {
+      residualPayload->residuals[static_cast<size_t>(y) * Engine::PrismNdfGridSize + x] =
+          ((x + y) % 2U) == 0U ? 0.5F : -0.25F;
+    }
+  }
   properties.GeneratedNdf = residualPayload;
   material->SetProperties(properties);
   const auto residualOutput = renderer.RenderFinal(scene, camera, imageSize, imageSize);
@@ -1378,6 +1383,19 @@ TEST(RenderFinalTests, WARPPrismNdfDirectAndEnvironmentLightingUseGeneratedPaylo
   const auto residualSpecular = residualOutput->GetPixels(Engine::RenderAov::SpecularLighting);
   float residualEnergy = std::accumulate(residualSpecular.begin(), residualSpecular.end(), 0.0F);
   EXPECT_GT(residualEnergy, 1.0e-3F);
+
+  auto quinticPayload = std::make_shared<Engine::PrismNdfData>(*residualPayload);
+  quinticPayload->residualFilter = Engine::PrismNdfResidualFilter::QuinticUv;
+  properties.GeneratedNdf = quinticPayload;
+  material->SetProperties(properties);
+  const auto quinticOutput = renderer.RenderFinal(scene, camera, imageSize, imageSize);
+  ASSERT_TRUE(quinticOutput.has_value()) << (quinticOutput.has_value() ? "" : quinticOutput.error().Message);
+  const auto quinticSpecular = quinticOutput->GetPixels(Engine::RenderAov::SpecularLighting);
+  float filterDifference = 0.0F;
+  for (size_t index = 0; index < residualSpecular.size(); ++index) {
+    filterDifference += std::abs(residualSpecular[index] - quinticSpecular[index]);
+  }
+  EXPECT_GT(filterDifference, 1.0e-5F);
 
   auto residualsRemoved = std::make_shared<Engine::PrismNdfData>(*residualPayload);
   std::ranges::fill(residualsRemoved->residuals, 0.0F);
@@ -1405,7 +1423,12 @@ TEST(RenderFinalTests, WARPPrismNdfDirectAndEnvironmentLightingUseGeneratedPaylo
   EXPECT_FLOAT_EQ(residualsDisabled->residuals.back(), residualPayload->residuals.back());
 
   auto environmentPayload = std::make_shared<Engine::PrismNdfData>(*payload);
-  std::ranges::fill(environmentPayload->residuals, 0.5F);
+  for (uint32_t y = 0; y < Engine::PrismNdfGridSize; ++y) {
+    for (uint32_t x = 0; x < Engine::PrismNdfGridSize; ++x) {
+      environmentPayload->residuals[static_cast<size_t>(y) * Engine::PrismNdfGridSize + x] =
+          ((x + y) % 2U) == 0U ? 0.5F : -0.25F;
+    }
+  }
   properties.GeneratedNdf = environmentPayload;
   material->SetProperties(properties);
   const Engine::EnvironmentLightingSettings studio{Engine::EnvironmentPreset::Studio, 1.0F};
@@ -1425,6 +1448,20 @@ TEST(RenderFinalTests, WARPPrismNdfDirectAndEnvironmentLightingUseGeneratedPaylo
   }
   EXPECT_GT(environmentDifference, 1.0e-3F);
   EXPECT_TRUE(std::ranges::equal(environmentSpecular, repeatedSpecular));
+
+  auto environmentQuintic = std::make_shared<Engine::PrismNdfData>(*environmentPayload);
+  environmentQuintic->residualFilter = Engine::PrismNdfResidualFilter::QuinticUv;
+  properties.GeneratedNdf = environmentQuintic;
+  material->SetProperties(properties);
+  const auto filteredEnvironment = renderer.RenderFinal(scene, camera, imageSize, imageSize, {}, studio);
+  ASSERT_TRUE(filteredEnvironment.has_value())
+      << (filteredEnvironment.has_value() ? "" : filteredEnvironment.error().Message);
+  const auto filteredEnvironmentSpecular = filteredEnvironment->GetPixels(Engine::RenderAov::SpecularLighting);
+  float environmentFilterDifference = 0.0F;
+  for (size_t index = 0; index < environmentSpecular.size(); ++index) {
+    environmentFilterDifference += std::abs(environmentSpecular[index] - filteredEnvironmentSpecular[index]);
+  }
+  EXPECT_GT(environmentFilterDifference, 1.0e-5F);
 
   auto environmentResidualsRemoved = std::make_shared<Engine::PrismNdfData>(*environmentPayload);
   std::ranges::fill(environmentResidualsRemoved->residuals, 0.0F);
