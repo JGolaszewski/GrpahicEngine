@@ -96,12 +96,12 @@ auto GetPrismRuntimeDirectory() -> std::filesystem::path {
     }
   }
 #endif
-  const auto executableDirectory = GetEditorExecutableDirectory();
+  auto executableDirectory = GetEditorExecutableDirectory();
   if (HasPrismRuntimeAssets(executableDirectory)) {
     return executableDirectory;
   }
 #ifdef ENGINE_PRISM_CONFIGURED_RUNTIME_ROOT
-  const std::filesystem::path configuredRuntimeRoot(ENGINE_PRISM_CONFIGURED_RUNTIME_ROOT);
+  std::filesystem::path configuredRuntimeRoot(ENGINE_PRISM_CONFIGURED_RUNTIME_ROOT);
   if (!configuredRuntimeRoot.empty()) {
     return configuredRuntimeRoot;
   }

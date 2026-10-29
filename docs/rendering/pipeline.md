@@ -105,7 +105,7 @@ tangent and bitangent, both defaulting to `0.5` for isotropic behavior. The
 material GPU ABI is version 6: anisotropic roughness occupies the reserved
 `SpecularParams.w` and `AlphaParams.y` lanes. PRISM materials append 48 packed
 coefficient lanes and normalization to the constant buffer, bringing
-`MaterialGpu` to 512 bytes; their signed 64×64 residual is bound separately as
+`MaterialGpu` to 512 bytes; their signed 128×128 residual is bound separately as
 an R32F texture.
 The normalized anisotropic cosine-power distribution uses the interpolated
 tangent frame in both color pixel shaders and stays finite at the horizon for

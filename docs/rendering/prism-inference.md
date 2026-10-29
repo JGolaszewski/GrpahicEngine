@@ -20,16 +20,17 @@ retriever, and decoder execution all use native ONNX Runtime. One tokenizer
 process and the three model sessions are created and tensor-contract-checked
 once on the service worker thread, then reused for all requests during that
 service lifetime. The decoder's
-`[1,4096]` grid is shape-checked, fitted to degree-8 Zernike coefficients with
+`[1,16384]` grid is shape-checked, fitted to degree-8 Zernike coefficients with
 signed residuals, and normalized before becoming visible through `Poll`.
 
 The model interface sequence is fixed by the checked-in manifest:
 
 1. Tokenizer emits `input_ids` and `attention_mask`, each `int64[1,128]`.
 2. The E5 encoder produces `normalized_embedding`, `float32[1,1024]`.
-3. The retriever consumes the embedding and `directional: bool[1]`, producing
-   `predicted_latent`, `float32[1,16]`.
-4. The VAE decoder produces `ndf_grid_flat`, `float32[1,4096]`.
+3. The 128-grid text predictor consumes the embedding and seven normalized
+   `control_features`, `float32[1,7]`, producing `predicted_latent`,
+   `float32[1,16]`.
+4. The 128-grid VAE decoder produces `ndf_grid_flat`, `float32[1,16384]`.
 5. Native code validates the grid, fits the existing degree-8 Zernike basis,
    stores the signed residual samples, and computes projected-energy
    normalization before publishing the immutable result.
