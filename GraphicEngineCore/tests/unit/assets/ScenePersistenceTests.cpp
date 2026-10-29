@@ -217,8 +217,10 @@ TEST(ScenePersistenceTests, GeneratedNdfLoadsLegacy64GridAndResamplesWhenCanonic
 
   const auto loaded = Engine::SceneSerializer::Load(path);
   ASSERT_TRUE(loaded) << loaded.error;
-  ASSERT_TRUE(loaded.document.entities.front().material->generatedNdf.has_value());
-  const auto& migrated = *loaded.document.entities.front().material->generatedNdf;
+  ASSERT_TRUE(loaded.document.entities.front().material.has_value());
+  const auto& material = loaded.document.entities.front().material.value();
+  ASSERT_TRUE(material.generatedNdf.has_value());
+  const auto& migrated = material.generatedNdf.value();
   EXPECT_EQ(migrated.gridSize, Engine::PrismNdfGridSize);
   EXPECT_EQ(migrated.data.residuals.front(), legacyResiduals.front());
   EXPECT_EQ(migrated.data.residuals.back(), legacyResiduals.back());

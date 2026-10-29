@@ -51,9 +51,6 @@ struct PrismNdfInferenceService::Impl {
     {
       std::lock_guard lock(Mutex);
       Stopping = true;
-      if (ActiveRequest != 0) {
-        Cancelled.insert(ActiveRequest);
-      }
     }
     Wake.notify_all();
     if (Worker.joinable()) {
