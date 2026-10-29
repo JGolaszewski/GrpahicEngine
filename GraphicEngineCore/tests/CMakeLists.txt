@@ -58,6 +58,7 @@ if(BUILD_TESTING)
     )
     target_include_directories(GraphicEngineUnitTests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/../modules/rendering/src"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../modules/runtime/src"
         "${CMAKE_CURRENT_SOURCE_DIR}/../../GraphicEngineEditor/modules"
         "${CMAKE_CURRENT_SOURCE_DIR}/../../GraphicEngineEditor/modules/panels/src"
     )

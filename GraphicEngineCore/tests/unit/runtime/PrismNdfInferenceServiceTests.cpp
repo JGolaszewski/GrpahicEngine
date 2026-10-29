@@ -1,10 +1,37 @@
 #include "runtime/include/PrismNdfInferenceService.h"
+#include "PrismNdfInferenceControls.h"
 
 #include <gtest/gtest.h>
 
 #include <filesystem>
+#include <stdexcept>
 
 namespace Engine {
+
+TEST(PrismNdfInferenceControlsTests, DirectionalModeMapsToDefaultAnisotropy) {
+  const auto isotropic = Runtime::Detail::ParsePrismControlFeatures("polished titanium", false);
+  const auto directional = Runtime::Detail::ParsePrismControlFeatures("polished titanium", true);
+  EXPECT_FLOAT_EQ(isotropic[1], 0.0F);
+  EXPECT_FLOAT_EQ(isotropic[5], 0.0F);
+  EXPECT_FLOAT_EQ(directional[1], 1.0F);
+  EXPECT_FLOAT_EQ(directional[5], 1.0F);
+}
+
+TEST(PrismNdfInferenceControlsTests, ExplicitControlsOverrideDirectionalDefault) {
+  const auto features = Runtime::Detail::ParsePrismControlFeatures(
+      "roughness=25%, anisotropy=35%, orientation=90 degrees", true);
+  EXPECT_FLOAT_EQ(features[0], 0.25F);
+  EXPECT_FLOAT_EQ(features[1], 0.35F);
+  EXPECT_FLOAT_EQ(features[4], 1.0F);
+  EXPECT_FLOAT_EQ(features[5], 1.0F);
+  EXPECT_NEAR(features[2], 0.0F, 1.0e-6F);
+  EXPECT_NEAR(features[3], -1.0F, 1.0e-6F);
+  EXPECT_FLOAT_EQ(features[6], 1.0F);
+}
+
+TEST(PrismNdfInferenceControlsTests, RejectsOutOfRangeNumericControls) {
+  EXPECT_THROW(Runtime::Detail::ParsePrismControlFeatures("anisotropy=120%", false), std::runtime_error);
+}
 
 TEST(PrismNdfInferenceServiceTests, PublicApiIsAvailableInEveryBuild) {
   PrismNdfInferenceService service({});

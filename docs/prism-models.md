@@ -86,10 +86,11 @@ path, not to the ONNX model or release validator.
 
 The embedded CPython 3.13.17 runtime runs a persistent JSON-lines worker that
 prefixes prompts with `query:` followed by a space and emits exactly 128 `input_ids` and
-`attention_mask` values. The directional flag remains request metadata; the
-128×128 predictor consumes numeric control features rather than that flag.
-Python performs
-no model inference. The bundle supplies ONNX Runtime CPU libraries for the
+`attention_mask` values. The 128×128 predictor consumes seven numeric controls
+for roughness, anisotropy, and axial orientation. If directional mode is enabled
+and the prompt omits anisotropy, native inference supplies maximum normalized
+anisotropy while preserving any authored numeric controls. Python performs no
+model inference. The bundle supplies ONNX Runtime CPU libraries for the
 native C++ E5, text predictor, and decoder inference service. The package smoke
 executable runs a real directional prompt through that service and checks the
 returned prompt, provenance, finite coefficients and residuals, and positive
