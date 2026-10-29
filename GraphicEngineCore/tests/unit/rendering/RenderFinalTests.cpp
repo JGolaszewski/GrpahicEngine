@@ -1512,6 +1512,10 @@ TEST(RenderFinalTests, WARPPrismNdfDirectAndEnvironmentLightingUseGeneratedPaylo
   }
   EXPECT_GT(environmentFilterDifference, 1.0e-5F);
 
+  // Isolate environment lighting so the horizon toggle regression cannot be masked by direct light.
+  light.Intensity = 0.0F;
+  (void)scene.QueueSet(lightCreated.back().Entity, light);
+  ASSERT_TRUE(scene.Update(0.0F));
   const auto renderEnvironmentNdf = [&](const std::shared_ptr<Engine::PrismNdfData>& ndf) {
     properties.GeneratedNdf = ndf;
     material->SetProperties(properties);

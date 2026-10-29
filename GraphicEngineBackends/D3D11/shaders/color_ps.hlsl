@@ -110,8 +110,11 @@ float3 EvaluatePrismNdfEnvironmentSpecular(float3 normal, float3 viewDirection, 
     const float3 localBitangent = cross(normal, localTangent) * handedness;
     const float phase = frac(sin(dot(pixelPosition, float2(12.9898f, 78.233f))) * 43758.5453f) * 2.0f * BRDF_PI;
     float2 rotation = float2(cos(phase), sin(phase));
-    float2 rotationDx = ddx(rotation);
-    float2 rotationDy = ddy(rotation);
+    // The per-pixel phase only stratifies Monte Carlo samples; it is not a texture footprint.
+    // Estimate the footprint from coherent surface and view variation so random phase changes do
+    // not force unrelated residual samples into coarse mip levels.
+    const float surfaceFootprintX = length(ddx(normal)) + length(ddx(viewDirection));
+    const float surfaceFootprintY = length(ddy(normal)) + length(ddy(viewDirection));
     float2 golden = float2(GOLDEN_COS, GOLDEN_SIN);
     float3 accumulated = 0.0f;
     [loop]
@@ -120,8 +123,8 @@ float3 EvaluatePrismNdfEnvironmentSpecular(float3 normal, float3 viewDirection, 
         const float radius = sqrt((float(index) + 0.5f) / float(SAMPLE_COUNT));
         const float2 disk = rotation * radius;
         const float2 uv = disk * 0.5f + 0.5f;
-        const float2 uvDx = rotationDx * (radius * 0.5f);
-        const float2 uvDy = rotationDy * (radius * 0.5f);
+        const float2 uvDx = float2(surfaceFootprintX, 0.0f) * (radius * 0.5f);
+        const float2 uvDy = float2(0.0f, surfaceFootprintY) * (radius * 0.5f);
         const float2 residualUv = PrismNdfFilterUv(uv);
         float2 residualDx;
         float2 residualDy;
@@ -130,8 +133,9 @@ float3 EvaluatePrismNdfEnvironmentSpecular(float3 normal, float3 viewDirection, 
         const float sampledResidual = ((uint)g_NdfParams.z & 4u) != 0u
             ? g_NdfResidual.SampleGrad(g_NdfResidualSampler, residualUv, residualDx, residualDy)
             : g_NdfResidual.SampleLevel(g_NdfResidualSampler, residualUv, 0.0f);
-        const float residual = g_NdfParams.y > 0.5f
-            ? sampledResidual * smoothstep(0.0f, 0.1f, horizonNoV) : 0.0f;
+        const float horizonFade = ((uint)g_NdfParams.z & 2u) != 0u
+            ? smoothstep(0.0f, 0.1f, horizonNoV) : 1.0f;
+        const float residual = g_NdfParams.y > 0.5f ? sampledResidual * horizonFade : 0.0f;
         const float distribution = max(baseDistribution + residual * g_NdfParams.x, 0.0f);
         const float noH = sqrt(max(1.0f - dot(disk, disk), 0.0f));
         const float3 halfVector = BrdfNormalizeOr(localTangent * disk.x + localBitangent * disk.y + normal * noH, normal);
@@ -151,10 +155,6 @@ float3 EvaluatePrismNdfEnvironmentSpecular(float3 normal, float3 viewDirection, 
         }
         rotation = float2(rotation.x * golden.x - rotation.y * golden.y,
                           rotation.x * golden.y + rotation.y * golden.x);
-        rotationDx = float2(rotationDx.x * golden.x - rotationDx.y * golden.y,
-                            rotationDx.x * golden.y + rotationDx.y * golden.x);
-        rotationDy = float2(rotationDy.x * golden.x - rotationDy.y * golden.y,
-                            rotationDy.x * golden.y + rotationDy.y * golden.x);
     }
     return accumulated * (BRDF_PI / float(SAMPLE_COUNT));
 }
