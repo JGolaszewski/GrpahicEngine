@@ -20,9 +20,11 @@
 #include <imgui.h>
 #include <iterator>
 #include <limits>
+#include <numbers>
 #include <optional>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace {
 using Mutation = EcsComponentMutationRequestedEvent;
@@ -52,8 +54,60 @@ auto PrismPhaseLabel(Engine::PrismNdfInferencePhase phase) -> const char* {
   return "Working";
 }
 
-auto EvaluatePreviewNdf(const Engine::PrismNdfData& data, float x, float y) -> float {
-  if (data.residuals.size() != Engine::PrismNdfSampleCount || x * x + y * y > 1.0F) {
+auto MapPreviewResidualUv(const Engine::PrismNdfData& data, float x, float y) -> std::array<float, 2> {
+  const float radius = std::sqrt(x * x + y * y);
+  if (data.equalAngleResiduals && radius > 1.0e-6F) {
+    const float mappedRadius = std::asin(std::min(radius, 1.0F)) * (2.0F / std::numbers::pi_v<float>);
+    x *= mappedRadius / radius;
+    y *= mappedRadius / radius;
+  }
+  float u = x * 0.5F + 0.5F;
+  float v = y * 0.5F + 0.5F;
+  if (data.residualFilter == Engine::PrismNdfResidualFilter::QuinticUv) {
+    const auto warp = [](float coordinate) {
+      const float texel = coordinate * static_cast<float>(Engine::PrismNdfGridSize) - 0.5F;
+      const float fraction = texel - std::floor(texel);
+      const float square = fraction * fraction;
+      const float warped = square * fraction * (fraction * (fraction * 6.0F - 15.0F) + 10.0F);
+      return (std::floor(texel) + warped + 0.5F) / static_cast<float>(Engine::PrismNdfGridSize);
+    };
+    u = warp(u);
+    v = warp(v);
+  }
+  return {u, v};
+}
+
+auto SamplePreviewResidual(const std::vector<std::vector<float>>& mipChain, std::array<float, 2> uv, uint32_t mip)
+    -> double {
+  const auto& level = mipChain[mip];
+  const uint32_t size = Engine::PrismNdfGridSize >> mip;
+  const float x = uv[0] * static_cast<float>(size) - 0.5F;
+  const float y = uv[1] * static_cast<float>(size) - 0.5F;
+  const float floorX = std::floor(x);
+  const float floorY = std::floor(y);
+  const int32_t x0 = static_cast<int32_t>(floorX);
+  const int32_t y0 = static_cast<int32_t>(floorY);
+  const auto clampIndex = [size](int32_t index) {
+    return static_cast<uint32_t>(std::clamp(index, 0, static_cast<int32_t>(size) - 1));
+  };
+  const uint32_t x1 = clampIndex(x0 + 1);
+  const uint32_t y1 = clampIndex(y0 + 1);
+  const uint32_t sx0 = clampIndex(x0);
+  const uint32_t sy0 = clampIndex(y0);
+  const double tx = x - floorX;
+  const double ty = y - floorY;
+
+  const auto at = [&level, size](uint32_t sx, uint32_t sy) {
+    return static_cast<double>(level[static_cast<size_t>(sy) * size + sx]);
+  };
+  const double top = std::lerp(at(sx0, sy0), at(x1, sy0), tx);
+  const double bottom = std::lerp(at(sx0, y1), at(x1, y1), tx);
+  return std::lerp(top, bottom, ty);
+}
+
+auto EvaluatePreviewNdf(const Engine::PrismNdfData& data, const std::vector<std::vector<float>>& mipChain, float x,
+                        float y, float footprint) -> float {
+  if (data.residuals.size() != Engine::PrismNdfSampleCount || x * x + y * y > 1.0F || mipChain.empty()) {
     return 0.0F;
   }
   double value = 0.0;
@@ -61,32 +115,29 @@ auto EvaluatePreviewNdf(const Engine::PrismNdfData& data, float x, float y) -> f
     value +=
         static_cast<double>(data.zernikeCoefficients[index]) * Engine::Renderer::EvaluatePrismZernikeBasis(index, x, y);
   }
-  const float gridX = (x + 1.0F) * 0.5F * static_cast<float>(Engine::PrismNdfGridSize - 1);
-  const float gridY = (y + 1.0F) * 0.5F * static_cast<float>(Engine::PrismNdfGridSize - 1);
-  const uint32_t x0 = static_cast<uint32_t>(gridX);
-  const uint32_t y0 = static_cast<uint32_t>(gridY);
-  const uint32_t x1 = (std::min)(x0 + 1, Engine::PrismNdfGridSize - 1);
-  const uint32_t y1 = (std::min)(y0 + 1, Engine::PrismNdfGridSize - 1);
-  auto weight = [&data](float f) {
-    if (data.residualFilter == Engine::PrismNdfResidualFilter::QuinticUv) {
-      const float f2 = f * f;
-      const float f3 = f2 * f;
-      return f3 * (f * (f * 6.0F - 15.0F) + 10.0F);
-    }
-    return f;
-  };
-  const float tx = weight(gridX - static_cast<float>(x0));
-  const float ty = weight(gridY - static_cast<float>(y0));
-  const auto sample = [&data](uint32_t sx, uint32_t sy) -> double {
-    return data.residuals[static_cast<size_t>(sy) * Engine::PrismNdfGridSize + sx];
-  };
-  const double top = std::lerp(sample(x0, y0), sample(x1, y0), static_cast<double>(tx));
-  const double bottom = std::lerp(sample(x0, y1), sample(x1, y1), static_cast<double>(tx));
-  const double residual = data.residualsEnabled ? std::lerp(top, bottom, static_cast<double>(ty)) : 0.0;
+  const float radius = std::sqrt(x * x + y * y);
+  const auto uv = MapPreviewResidualUv(data, x, y);
+  const auto uvX = MapPreviewResidualUv(data, x + footprint, y);
+  const auto uvY = MapPreviewResidualUv(data, x, y + footprint);
+  const float gradientX = std::hypot((uvX[0] - uv[0]) * static_cast<float>(Engine::PrismNdfGridSize),
+                                     (uvX[1] - uv[1]) * static_cast<float>(Engine::PrismNdfGridSize));
+  const float gradientY = std::hypot((uvY[0] - uv[0]) * static_cast<float>(Engine::PrismNdfGridSize),
+                                     (uvY[1] - uv[1]) * static_cast<float>(Engine::PrismNdfGridSize));
+  const float rho = (std::max)(gradientX, gradientY);
+  const float lod = data.mipmappedResiduals
+                        ? std::clamp(std::log2((std::max)(rho, 1.0F)), 0.0F, static_cast<float>(mipChain.size() - 1))
+                        : 0.0F;
+  const uint32_t lowerMip = static_cast<uint32_t>(lod);
+  const uint32_t upperMip = (std::min)(lowerMip + 1, static_cast<uint32_t>(mipChain.size() - 1));
+  const double blend = static_cast<double>(lod - static_cast<float>(lowerMip));
+  const double lowerResidual = SamplePreviewResidual(mipChain, uv, lowerMip);
+  const double upperResidual = SamplePreviewResidual(mipChain, uv, upperMip);
+  const float fadeT = std::clamp(std::sqrt((std::max)(0.0F, 1.0F - radius * radius)) / 0.1F, 0.0F, 1.0F);
+  const float horizon = data.horizonFade ? fadeT * fadeT * (3.0F - 2.0F * fadeT) : 1.0F;
+  const double residual = data.residualsEnabled ? std::lerp(lowerResidual, upperResidual, blend) * horizon : 0.0;
   value = (std::max)(0.0, value + residual);
   return static_cast<float>(value * data.normalization);
 }
-
 auto HeatColor(float value, float maximum) -> ImU32 {
   const float t = std::clamp(value / (std::max)(maximum, 1.0e-8F), 0.0F, 1.0F);
   return ImGui::GetColorU32(ImVec4(std::clamp(1.8F * t - 0.7F, 0.0F, 1.0F),
@@ -278,8 +329,8 @@ auto InspectorPanel::DrawPrismNdfEditor(Engine::EntityHandle entity, const std::
   }
   if (m_PrismPreview || material.generatedNdf) {
     ImGui::SeparatorText("PRISM NDF settings");
-    bool residualsEnabled = m_PrismPreview ? m_PrismPreview->residualsEnabled
-                                           : material.generatedNdf->data.residualsEnabled;
+    bool residualsEnabled =
+        m_PrismPreview ? m_PrismPreview->residualsEnabled : material.generatedNdf->data.residualsEnabled;
     if (ImGui::Checkbox("Enable residuals", &residualsEnabled)) {
       if (m_PrismPreview) {
         auto updatedPreview = std::make_shared<Engine::PrismNdfData>(*m_PrismPreview);
@@ -301,7 +352,8 @@ auto InspectorPanel::DrawPrismNdfEditor(Engine::EntityHandle entity, const std::
     int filter = residualFilter == Engine::PrismNdfResidualFilter::QuinticUv ? 1 : 0;
     const char* filterNames[] = {"Bilinear", "Quintic UV"};
     if (ImGui::Combo("Residual filter", &filter, filterNames, 2)) {
-      const auto mode = filter == 1 ? Engine::PrismNdfResidualFilter::QuinticUv : Engine::PrismNdfResidualFilter::Bilinear;
+      const auto mode =
+          filter == 1 ? Engine::PrismNdfResidualFilter::QuinticUv : Engine::PrismNdfResidualFilter::Bilinear;
       if (m_PrismPreview) {
         auto updatedPreview = std::make_shared<Engine::PrismNdfData>(*m_PrismPreview);
         updatedPreview->residualFilter = mode;
@@ -313,6 +365,24 @@ auto InspectorPanel::DrawPrismNdfEditor(Engine::EntityHandle entity, const std::
       }
       m_PrismPreviewDirty = true;
     }
+    const auto drawNdfOption = [&](const char* label, bool Engine::PrismNdfData::* member) {
+      bool enabled = m_PrismPreview ? m_PrismPreview.get()->*member : material.generatedNdf->data.*member;
+      if (ImGui::Checkbox(label, &enabled)) {
+        if (m_PrismPreview) {
+          auto updated = std::make_shared<Engine::PrismNdfData>(*m_PrismPreview);
+          updated.get()->*member = enabled;
+          m_PrismPreview = std::move(updated);
+        }
+        if (material.generatedNdf && m_PrismPreviewFromSaved) {
+          material.generatedNdf->data.*member = enabled;
+          materialChanged = true;
+        }
+        m_PrismPreviewDirty = true;
+      }
+    };
+    drawNdfOption("Horizon fade", &Engine::PrismNdfData::horizonFade);
+    drawNdfOption("Mipmapped sampling", &Engine::PrismNdfData::mipmappedResiduals);
+    drawNdfOption("Equal-angle mapping", &Engine::PrismNdfData::equalAngleResiduals);
     ImGui::TextWrapped("Disabling residuals preserves the samples and uses the Zernike coefficient basis alone.");
   }
   ImGui::SeparatorText("PRISM NDF generation");
@@ -377,13 +447,15 @@ auto InspectorPanel::DrawPrismNdfEditor(Engine::EntityHandle entity, const std::
     return materialChanged;
   }
   if (m_PrismPreviewDirty) {
+    const auto residualMipChain = Engine::Renderer::BuildPrismNdfResidualMipChain(m_PrismPreview->residuals);
     m_PrismPreviewMaximum = 0.0F;
     for (uint32_t y = 0; y < Engine::PrismNdfGridSize; ++y) {
       for (uint32_t x = 0; x < Engine::PrismNdfGridSize; ++x) {
         const float px = 2.0F * static_cast<float>(x) / static_cast<float>(Engine::PrismNdfGridSize - 1) - 1.0F;
         const float py = 2.0F * static_cast<float>(y) / static_cast<float>(Engine::PrismNdfGridSize - 1) - 1.0F;
         const size_t index = static_cast<size_t>(y) * Engine::PrismNdfGridSize + x;
-        m_PrismPreviewHeatmap[index] = EvaluatePreviewNdf(*m_PrismPreview, px, py);
+        m_PrismPreviewHeatmap[index] = EvaluatePreviewNdf(*m_PrismPreview, residualMipChain, px, py,
+                                                          2.0F / static_cast<float>(Engine::PrismNdfGridSize - 1));
         m_PrismPreviewMaximum = (std::max)(m_PrismPreviewMaximum, m_PrismPreviewHeatmap[index]);
       }
     }
@@ -400,7 +472,8 @@ auto InspectorPanel::DrawPrismNdfEditor(Engine::EntityHandle entity, const std::
         }
         const float nz = std::sqrt(1.0F - radiusSquared);
         const float nDotL = (std::max)(0.0F, nx * light[0] + ny * light[1] + nz * light[2]);
-        const float ndf = EvaluatePreviewNdf(*m_PrismPreview, nx, ny);
+        const float ndf =
+            EvaluatePreviewNdf(*m_PrismPreview, residualMipChain, nx, ny, 2.0F / static_cast<float>(sphereSteps));
         const float shaded = (0.06F + 0.94F * nDotL) * (0.12F + 0.88F * ndf / (m_PrismPreviewMaximum + 1.0e-6F));
         const size_t index = static_cast<size_t>(row) * sphereSteps + column;
         m_PrismPreviewSphere[index] = shaded;

@@ -164,6 +164,9 @@ TEST(ScenePersistenceTests, GeneratedNdfCoefficientsResidualAndPromptRoundTrip) 
   material.generatedNdf->data.normalization = 0.875F;
   material.generatedNdf->data.residualsEnabled = false;
   material.generatedNdf->data.residualFilter = Engine::PrismNdfResidualFilter::QuinticUv;
+  material.generatedNdf->data.horizonFade = false;
+  material.generatedNdf->data.mipmappedResiduals = false;
+  material.generatedNdf->data.equalAngleResiduals = false;
   material.generatedNdf->data.residuals.resize(Engine::PrismNdfSampleCount);
   for (size_t index = 0; index < Engine::PrismNdfCoefficientCount; ++index) {
     material.generatedNdf->data.zernikeCoefficients[index] = static_cast<float>(index) * 0.125F;
@@ -188,6 +191,9 @@ TEST(ScenePersistenceTests, GeneratedNdfCoefficientsResidualAndPromptRoundTrip) 
   EXPECT_FLOAT_EQ(restored.data.normalization, 0.875F);
   EXPECT_FALSE(restored.data.residualsEnabled);
   EXPECT_EQ(restored.data.residualFilter, Engine::PrismNdfResidualFilter::QuinticUv);
+  EXPECT_FALSE(restored.data.horizonFade);
+  EXPECT_FALSE(restored.data.mipmappedResiduals);
+  EXPECT_FALSE(restored.data.equalAngleResiduals);
   EXPECT_EQ(restored.prompt, material.generatedNdf->prompt);
   EXPECT_EQ(restored.modelVersion, "prism-models-v1");
   EXPECT_EQ(restored.exporterVersion, "decoder-v2");
@@ -216,16 +222,20 @@ TEST(ScenePersistenceTests, GeneratedNdfLoadsLegacy64GridAndResamplesWhenCanonic
       legacyResiduals[static_cast<size_t>(y) * 64U + x] = static_cast<float>(x + y * 64U);
     }
   }
-  const nlohmann::json generated = {
-      {"gridSize", 64}, {"degree", Engine::PrismNdfDegree}, {"dataVersion", 1}, {"normalization", 1.0F},
-      {"zernikeCoefficients", std::vector<float>(Engine::PrismNdfCoefficientCount, 0.0F)},
-      {"residuals", legacyResiduals}};
+  const nlohmann::json generated = {{"gridSize", 64},
+                                    {"degree", Engine::PrismNdfDegree},
+                                    {"dataVersion", 1},
+                                    {"normalization", 1.0F},
+                                    {"zernikeCoefficients", std::vector<float>(Engine::PrismNdfCoefficientCount, 0.0F)},
+                                    {"residuals", legacyResiduals}};
   {
     std::ofstream scene(path, std::ios::binary | std::ios::trunc);
     scene << nlohmann::json{{"schemaVersion", Engine::CurrentSceneSchemaVersion},
                             {"unitsPerMeter", 1.0F},
-                            {"entities", {{{"id", 1}, {"primitiveType", "sphere"},
-                                           {"material", {{"brdfModel", "prismNdf"}, {"generatedNdf", generated}}}}}}};
+                            {"entities",
+                             {{{"id", 1},
+                               {"primitiveType", "sphere"},
+                               {"material", {{"brdfModel", "prismNdf"}, {"generatedNdf", generated}}}}}}};
   }
 
   const auto loaded = Engine::SceneSerializer::Load(path);
@@ -236,6 +246,9 @@ TEST(ScenePersistenceTests, GeneratedNdfLoadsLegacy64GridAndResamplesWhenCanonic
   const auto& migrated = material.generatedNdf.value();
   EXPECT_TRUE(migrated.data.residualsEnabled);
   EXPECT_EQ(migrated.data.residualFilter, Engine::PrismNdfResidualFilter::Bilinear);
+  EXPECT_TRUE(migrated.data.horizonFade);
+  EXPECT_TRUE(migrated.data.mipmappedResiduals);
+  EXPECT_TRUE(migrated.data.equalAngleResiduals);
   EXPECT_EQ(migrated.gridSize, Engine::PrismNdfGridSize);
   EXPECT_EQ(migrated.data.residuals.front(), legacyResiduals.front());
   EXPECT_EQ(migrated.data.residuals.back(), legacyResiduals.back());
@@ -280,10 +293,10 @@ TEST(ScenePersistenceTests, SchemasOneThroughEightRemainLoadableWithoutGenerated
   for (uint32_t version = 1; version <= 8; ++version) {
     {
       std::ofstream scene(path, std::ios::binary | std::ios::trunc);
-      scene << nlohmann::json{{"schemaVersion", version},
-                              {"unitsPerMeter", 1.0F},
-                              {"entities",
-                               {{{"id", 1}, {"primitiveType", "cube"}, {"material", nlohmann::json::object()}}}}};
+      scene << nlohmann::json{
+          {"schemaVersion", version},
+          {"unitsPerMeter", 1.0F},
+          {"entities", {{{"id", 1}, {"primitiveType", "cube"}, {"material", nlohmann::json::object()}}}}};
       ASSERT_TRUE(scene.good());
     }
     const auto loaded = Engine::SceneSerializer::Load(path);
@@ -363,6 +376,11 @@ TEST(ScenePersistenceTests, GeneratedNdfValidationFailureMatrixRejectsInvalidPay
   payload = validPayload();
   payload["residualFilter"] = 1;
   expectRejected(payload);
+  for (const char* option : {"horizonFade", "mipmappedResiduals", "equalAngleResiduals"}) {
+    payload = validPayload();
+    payload[option] = "enabled";
+    expectRejected(payload);
+  }
   payload = validPayload();
   payload["dataVersion"] = Engine::PrismNdfDataVersion + 1;
   expectRejected(payload);

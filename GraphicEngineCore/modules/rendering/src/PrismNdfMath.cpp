@@ -157,6 +157,30 @@ auto EvaluatePrismZernikeBasis(uint32_t coefficientIndex, double x, double y) no
   return 0.0;
 }
 
+auto BuildPrismNdfResidualMipChain(std::span<const float> residuals) -> std::vector<std::vector<float>> {
+  if (residuals.size() != PrismNdfSampleCount) {
+    return {};
+  }
+  std::vector<std::vector<float>> levels;
+  levels.emplace_back(residuals.begin(), residuals.end());
+  uint32_t size = PrismNdfGridSize;
+  while (size > 1) {
+    const uint32_t nextSize = size / 2;
+    auto& previous = levels.back();
+    std::vector<float> next(static_cast<size_t>(nextSize) * nextSize);
+    for (uint32_t y = 0; y < nextSize; ++y) {
+      for (uint32_t x = 0; x < nextSize; ++x) {
+        const size_t top = (static_cast<size_t>(y) * 2U) * size + static_cast<size_t>(x) * 2U;
+        next[static_cast<size_t>(y) * nextSize + x] =
+            0.25F * (previous[top] + previous[top + 1] + previous[top + size] + previous[top + size + 1]);
+      }
+    }
+    levels.push_back(std::move(next));
+    size = nextSize;
+  }
+  return levels;
+}
+
 auto FitPrismNdfPayload(std::span<const float> grid, PrismNdfData& output, std::string& error) -> bool {
   error.clear();
   if (!IsFiniteGrid(grid, error)) {

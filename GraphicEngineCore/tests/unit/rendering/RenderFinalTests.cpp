@@ -1276,9 +1276,9 @@ TEST(RenderFinalTests, WARPPrismNdfDirectAndEnvironmentLightingUseGeneratedPaylo
   EngineTests::WarpRenderBackend backend(device.GetDevice());
   Engine::RenderSystem renderer(&backend);
   ASSERT_TRUE(renderer.IsValid());
-  const auto project = std::filesystem::temp_directory_path() /
-                       ("GraphicEnginePrismPersistence-" +
-                        std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+  const auto project =
+      std::filesystem::temp_directory_path() /
+      ("GraphicEnginePrismPersistence-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
   std::filesystem::create_directories(project);
 
   auto payload = std::make_shared<Engine::PrismNdfData>();
@@ -1313,8 +1313,8 @@ TEST(RenderFinalTests, WARPPrismNdfDirectAndEnvironmentLightingUseGeneratedPaylo
   EXPECT_EQ(reloadedMaterial.brdfModel, "prismNdf");
   EXPECT_EQ(reloadedMaterial.generatedNdf->prompt, "silver leaf with fine directional grooves");
   EXPECT_TRUE(reloadedMaterial.generatedNdf->directional);
-  EXPECT_TRUE(std::ranges::equal(reloadedMaterial.generatedNdf->data.zernikeCoefficients,
-                                 payload->zernikeCoefficients));
+  EXPECT_TRUE(
+      std::ranges::equal(reloadedMaterial.generatedNdf->data.zernikeCoefficients, payload->zernikeCoefficients));
   EXPECT_TRUE(std::ranges::equal(reloadedMaterial.generatedNdf->data.residuals, payload->residuals));
   EXPECT_FLOAT_EQ(reloadedMaterial.generatedNdf->data.normalization, payload->normalization);
   payload = std::make_shared<Engine::PrismNdfData>(reloadedMaterial.generatedNdf->data);
@@ -1328,8 +1328,8 @@ TEST(RenderFinalTests, WARPPrismNdfDirectAndEnvironmentLightingUseGeneratedPaylo
 
   Engine::Scene scene;
   const auto sphereSequence = scene.QueueCreate("PRISM generated NDF sphere");
-  const auto lightSequence =
-      scene.QueueCreate("PRISM directional test light", Engine::InvalidEntityHandle, Engine::Scene::EntityPreset::SpotLight);
+  const auto lightSequence = scene.QueueCreate("PRISM directional test light", Engine::InvalidEntityHandle,
+                                               Engine::Scene::EntityPreset::SpotLight);
   const auto lightCreated = scene.sync();
   ASSERT_EQ(lightCreated.size(), 2U);
   ASSERT_EQ(lightCreated.front().Sequence, sphereSequence);
@@ -1378,8 +1378,7 @@ TEST(RenderFinalTests, WARPPrismNdfDirectAndEnvironmentLightingUseGeneratedPaylo
   properties.GeneratedNdf = residualPayload;
   material->SetProperties(properties);
   const auto residualOutput = renderer.RenderFinal(scene, camera, imageSize, imageSize);
-  ASSERT_TRUE(residualOutput.has_value())
-      << (residualOutput.has_value() ? "" : residualOutput.error().Message);
+  ASSERT_TRUE(residualOutput.has_value()) << (residualOutput.has_value() ? "" : residualOutput.error().Message);
   const auto residualSpecular = residualOutput->GetPixels(Engine::RenderAov::SpecularLighting);
   float residualEnergy = std::accumulate(residualSpecular.begin(), residualSpecular.end(), 0.0F);
   EXPECT_GT(residualEnergy, 1.0e-3F);
@@ -1396,6 +1395,57 @@ TEST(RenderFinalTests, WARPPrismNdfDirectAndEnvironmentLightingUseGeneratedPaylo
     filterDifference += std::abs(residualSpecular[index] - quinticSpecular[index]);
   }
   EXPECT_GT(filterDifference, 1.0e-5F);
+
+  const auto renderDirectNdf = [&](const std::shared_ptr<Engine::PrismNdfData>& ndf) {
+    properties.GeneratedNdf = ndf;
+    material->SetProperties(properties);
+    return renderer.RenderFinal(scene, camera, imageSize, imageSize);
+  };
+  auto horizonOff = std::make_shared<Engine::PrismNdfData>(*residualPayload);
+  horizonOff->mipmappedResiduals = false;
+  horizonOff->equalAngleResiduals = false;
+  horizonOff->horizonFade = false;
+  auto horizonOn = std::make_shared<Engine::PrismNdfData>(*horizonOff);
+  horizonOn->horizonFade = true;
+  const auto directHorizonOff = renderDirectNdf(horizonOff);
+  const auto directHorizonOn = renderDirectNdf(horizonOn);
+  ASSERT_TRUE(directHorizonOff.has_value());
+  ASSERT_TRUE(directHorizonOn.has_value());
+  const auto directHorizonOffPixels = directHorizonOff->GetPixels(Engine::RenderAov::SpecularLighting);
+  const auto directHorizonOnPixels = directHorizonOn->GetPixels(Engine::RenderAov::SpecularLighting);
+  float directHorizonDifference = 0.0F;
+  for (size_t index = 0; index < directHorizonOffPixels.size(); ++index) {
+    directHorizonDifference += std::abs(directHorizonOffPixels[index] - directHorizonOnPixels[index]);
+  }
+  EXPECT_GT(directHorizonDifference, 1.0e-5F);
+
+  auto mipsOn = std::make_shared<Engine::PrismNdfData>(*horizonOff);
+  mipsOn->mipmappedResiduals = true;
+  const auto directMipsOff = renderDirectNdf(horizonOff);
+  const auto directMipsOn = renderDirectNdf(mipsOn);
+  ASSERT_TRUE(directMipsOff.has_value());
+  ASSERT_TRUE(directMipsOn.has_value());
+  const auto directMipsOffPixels = directMipsOff->GetPixels(Engine::RenderAov::SpecularLighting);
+  const auto directMipsOnPixels = directMipsOn->GetPixels(Engine::RenderAov::SpecularLighting);
+  float directMipDifference = 0.0F;
+  for (size_t index = 0; index < directMipsOffPixels.size(); ++index) {
+    directMipDifference += std::abs(directMipsOffPixels[index] - directMipsOnPixels[index]);
+  }
+  EXPECT_GT(directMipDifference, 1.0e-5F);
+
+  auto equalAngleOn = std::make_shared<Engine::PrismNdfData>(*horizonOff);
+  equalAngleOn->equalAngleResiduals = true;
+  const auto directEqualAngleOff = renderDirectNdf(horizonOff);
+  const auto directEqualAngleOn = renderDirectNdf(equalAngleOn);
+  ASSERT_TRUE(directEqualAngleOff.has_value());
+  ASSERT_TRUE(directEqualAngleOn.has_value());
+  const auto directEqualAngleOffPixels = directEqualAngleOff->GetPixels(Engine::RenderAov::SpecularLighting);
+  const auto directEqualAngleOnPixels = directEqualAngleOn->GetPixels(Engine::RenderAov::SpecularLighting);
+  float directEqualAngleDifference = 0.0F;
+  for (size_t index = 0; index < directEqualAngleOffPixels.size(); ++index) {
+    directEqualAngleDifference += std::abs(directEqualAngleOffPixels[index] - directEqualAngleOnPixels[index]);
+  }
+  EXPECT_GT(directEqualAngleDifference, 1.0e-5F);
 
   auto residualsRemoved = std::make_shared<Engine::PrismNdfData>(*residualPayload);
   std::ranges::fill(residualsRemoved->residuals, 0.0F);
@@ -1434,8 +1484,7 @@ TEST(RenderFinalTests, WARPPrismNdfDirectAndEnvironmentLightingUseGeneratedPaylo
   const Engine::EnvironmentLightingSettings studio{Engine::EnvironmentPreset::Studio, 1.0F};
   const auto withEnvironment = renderer.RenderFinal(scene, camera, imageSize, imageSize, {}, studio);
   const auto repeatedEnvironment = renderer.RenderFinal(scene, camera, imageSize, imageSize, {}, studio);
-  ASSERT_TRUE(withEnvironment.has_value())
-      << (withEnvironment.has_value() ? "" : withEnvironment.error().Message);
+  ASSERT_TRUE(withEnvironment.has_value()) << (withEnvironment.has_value() ? "" : withEnvironment.error().Message);
   ASSERT_TRUE(repeatedEnvironment.has_value())
       << (repeatedEnvironment.has_value() ? "" : repeatedEnvironment.error().Message);
   const auto environmentSpecular = withEnvironment->GetPixels(Engine::RenderAov::SpecularLighting);
@@ -1462,6 +1511,57 @@ TEST(RenderFinalTests, WARPPrismNdfDirectAndEnvironmentLightingUseGeneratedPaylo
     environmentFilterDifference += std::abs(environmentSpecular[index] - filteredEnvironmentSpecular[index]);
   }
   EXPECT_GT(environmentFilterDifference, 1.0e-5F);
+
+  const auto renderEnvironmentNdf = [&](const std::shared_ptr<Engine::PrismNdfData>& ndf) {
+    properties.GeneratedNdf = ndf;
+    material->SetProperties(properties);
+    return renderer.RenderFinal(scene, camera, imageSize, imageSize, {}, studio);
+  };
+  auto environmentOptionsOff = std::make_shared<Engine::PrismNdfData>(*environmentPayload);
+  environmentOptionsOff->horizonFade = false;
+  environmentOptionsOff->mipmappedResiduals = false;
+  environmentOptionsOff->equalAngleResiduals = false;
+  auto environmentHorizonOn = std::make_shared<Engine::PrismNdfData>(*environmentOptionsOff);
+  environmentHorizonOn->horizonFade = true;
+  const auto envHorizonOff = renderEnvironmentNdf(environmentOptionsOff);
+  const auto envHorizonOn = renderEnvironmentNdf(environmentHorizonOn);
+  ASSERT_TRUE(envHorizonOff.has_value());
+  ASSERT_TRUE(envHorizonOn.has_value());
+  const auto envHorizonOffPixels = envHorizonOff->GetPixels(Engine::RenderAov::SpecularLighting);
+  const auto envHorizonOnPixels = envHorizonOn->GetPixels(Engine::RenderAov::SpecularLighting);
+  float envHorizonDifference = 0.0F;
+  for (size_t index = 0; index < envHorizonOffPixels.size(); ++index) {
+    envHorizonDifference += std::abs(envHorizonOffPixels[index] - envHorizonOnPixels[index]);
+  }
+  EXPECT_GT(envHorizonDifference, 1.0e-5F);
+
+  auto environmentMipsOn = std::make_shared<Engine::PrismNdfData>(*environmentOptionsOff);
+  environmentMipsOn->mipmappedResiduals = true;
+  const auto envMipsOff = renderEnvironmentNdf(environmentOptionsOff);
+  const auto envMipsOn = renderEnvironmentNdf(environmentMipsOn);
+  ASSERT_TRUE(envMipsOff.has_value());
+  ASSERT_TRUE(envMipsOn.has_value());
+  const auto envMipsOffPixels = envMipsOff->GetPixels(Engine::RenderAov::SpecularLighting);
+  const auto envMipsOnPixels = envMipsOn->GetPixels(Engine::RenderAov::SpecularLighting);
+  float envMipDifference = 0.0F;
+  for (size_t index = 0; index < envMipsOffPixels.size(); ++index) {
+    envMipDifference += std::abs(envMipsOffPixels[index] - envMipsOnPixels[index]);
+  }
+  EXPECT_GT(envMipDifference, 1.0e-5F);
+
+  auto environmentEqualAngleOn = std::make_shared<Engine::PrismNdfData>(*environmentOptionsOff);
+  environmentEqualAngleOn->equalAngleResiduals = true;
+  const auto envEqualAngleOff = renderEnvironmentNdf(environmentOptionsOff);
+  const auto envEqualAngleOn = renderEnvironmentNdf(environmentEqualAngleOn);
+  ASSERT_TRUE(envEqualAngleOff.has_value());
+  ASSERT_TRUE(envEqualAngleOn.has_value());
+  const auto envEqualAngleOffPixels = envEqualAngleOff->GetPixels(Engine::RenderAov::SpecularLighting);
+  const auto envEqualAngleOnPixels = envEqualAngleOn->GetPixels(Engine::RenderAov::SpecularLighting);
+  float envEqualAngleDifference = 0.0F;
+  for (size_t index = 0; index < envEqualAngleOffPixels.size(); ++index) {
+    envEqualAngleDifference += std::abs(envEqualAngleOffPixels[index] - envEqualAngleOnPixels[index]);
+  }
+  EXPECT_GT(envEqualAngleDifference, 1.0e-5F);
 
   auto environmentResidualsRemoved = std::make_shared<Engine::PrismNdfData>(*environmentPayload);
   std::ranges::fill(environmentResidualsRemoved->residuals, 0.0F);

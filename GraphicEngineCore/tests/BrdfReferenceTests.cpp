@@ -1,4 +1,5 @@
-﻿#include "rendering/include/renderer/Material.h"
+#include "rendering/include/renderer/Material.h"
+#include "rendering/include/renderer/PrismNdfMath.h"
 #include "rendering/include/renderer/Viewport.h"
 #include "rendering/include/renderer/brdf/Brdf.h"
 #include "rendering/src/render_graph/RenderView.h"
@@ -13,6 +14,7 @@
 #include <limits>
 #include <numbers>
 #include <utility>
+#include <vector>
 
 namespace {
 void Require(bool condition, const char* message) {
@@ -371,8 +373,13 @@ void TestMaterialGpuAbiPacking() {
   const auto prism = ::Engine::Renderer::BuildMaterialGpu(properties);
   Require(prism.ModelFlags.y == 9U && prism.NdfCoefficients[0].x == 0.25F && prism.NdfCoefficients[1].x == -0.5F &&
               prism.NdfCoefficients[11].x == 2.0F && prism.NdfParams.x == 0.75F && prism.NdfParams.y == 1.0F &&
-              sizeof(prism) == 512U,
+              prism.NdfParams.z == 14.0F && sizeof(prism) == 512U,
           "PRISM coefficient order, normalization, appended selector, and GPU ABI must be preserved");
+  auto mipmappedOnlyOff = std::make_shared<::Engine::PrismNdfData>(*generatedNdf);
+  mipmappedOnlyOff->mipmappedResiduals = false;
+  properties.GeneratedNdf = mipmappedOnlyOff;
+  Require(::Engine::Renderer::BuildMaterialGpu(properties).NdfParams.z == 10.0F,
+          "PRISM material GPU options must independently encode the mipmapped-sampling switch");
   auto coefficientsOnly = std::make_shared<::Engine::PrismNdfData>(*generatedNdf);
   coefficientsOnly->residualsEnabled = false;
   properties.GeneratedNdf = coefficientsOnly;
@@ -425,6 +432,26 @@ void TestMaterialGpuAbiPacking() {
           "Sawicki selector must append value eight without changing the material GPU ABI");
 }
 
+void TestPrismResidualMipChainPreservesSignedAverages() {
+  std::vector<float> residuals(::Engine::PrismNdfSampleCount, -2.0F);
+  residuals[0] = -4.0F;
+  residuals[1] = 2.0F;
+  residuals[::Engine::PrismNdfGridSize] = 6.0F;
+  residuals[::Engine::PrismNdfGridSize + 1] = 0.0F;
+  const auto levels = ::Engine::Renderer::BuildPrismNdfResidualMipChain(residuals);
+  Require(levels.size() == 8 && levels.front().size() == ::Engine::PrismNdfSampleCount && levels.back().size() == 1,
+          "PRISM residual mip chain must include all levels from 128x128 through 1x1");
+  Require(levels[1].size() == static_cast<size_t>(4096U) && std::abs(levels[1][0] - 1.0F) < 1.0e-6F,
+          "PRISM residual mip levels must average signed 2x2 sample footprints");
+  float sum = 0.0F;
+  for (const float sample : residuals)
+    sum += sample;
+  const float expectedAverage = sum / static_cast<float>(residuals.size());
+  Require(std::abs(levels.back()[0] - expectedAverage) < 1.0e-5F,
+          "PRISM final residual mip must preserve the signed grid average");
+  Require(::Engine::Renderer::BuildPrismNdfResidualMipChain(std::span<const float>(residuals).first(4)).empty(),
+          "PRISM mip generation must reject malformed residual grids");
+}
 void TestMaterialPropertiesRoundTrip() {
   ::Engine::Renderer::Material material(0);
   ::Engine::Renderer::MaterialProperties properties;
@@ -479,6 +506,7 @@ auto main() -> int {
     TestGtrLimitsAndRoughnessMapping();
     TestReciprocityAndWhiteFurnace();
     TestMaterialGpuAbiPacking();
+    TestPrismResidualMipChainPreservesSignedAverages();
     TestMaterialPropertiesRoundTrip();
     TestRenderViewUsesExplicitCameraView();
     TestEcsTransformComponentValidation();

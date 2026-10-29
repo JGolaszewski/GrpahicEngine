@@ -75,7 +75,8 @@ struct MaterialGpu {
   DirectX::XMFLOAT4 TextureTransformRows[5]; ///< Two UV transform rows for each material texture slot.
   DirectX::XMFLOAT4 TextureTransformOffsets[5]; ///< UV offsets for each material texture slot.
   DirectX::XMFLOAT4 NdfCoefficients[12];        ///< 45 degree-8 real Zernike coefficients, packed as float4 values.
-  DirectX::XMFLOAT4 NdfParams; ///< Projected-energy normalization, residual-enable flag, filter mode, and reserved value.
+  DirectX::XMFLOAT4 NdfParams; ///< Projected-energy normalization, residual-enable flag, residual option bitfield, and
+                               ///< reserved value.
 };
 
 static_assert(sizeof(DirectX::XMFLOAT4) == 16);
@@ -237,7 +238,11 @@ inline MaterialGpu BuildMaterialGpu(const MaterialProperties& properties) noexce
             ? properties.GeneratedNdf->normalization
             : 1.0F;
     gpu.NdfParams.y = properties.GeneratedNdf->residualsEnabled ? 1.0F : 0.0F;
-    gpu.NdfParams.z = properties.GeneratedNdf->residualFilter == PrismNdfResidualFilter::QuinticUv ? 1.0F : 0.0F;
+    const auto& ndf = *properties.GeneratedNdf;
+    const uint32_t options = (ndf.residualFilter == PrismNdfResidualFilter::QuinticUv ? 1U : 0U) |
+                             (ndf.horizonFade ? 2U : 0U) | (ndf.mipmappedResiduals ? 4U : 0U) |
+                             (ndf.equalAngleResiduals ? 8U : 0U);
+    gpu.NdfParams.z = static_cast<float>(options);
   }
   return gpu;
 }
