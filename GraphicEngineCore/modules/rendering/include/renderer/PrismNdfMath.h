@@ -25,4 +25,10 @@ ENGINE_API auto EvaluatePrismZernikeBasis(uint32_t coefficientIndex, double x, d
 /// Returns an empty chain unless the input contains exactly PrismNdfSampleCount samples.
 ENGINE_API auto BuildPrismNdfResidualMipChain(std::span<const float> residuals) -> std::vector<std::vector<float>>;
 
+/// Evaluates one Inspector preview sample using the same residual mapping, filtering, mip, and horizon controls as the
+/// shaders. `footprint` is the disk-space distance to a neighboring preview sample; mipLevels comes from
+/// BuildPrismNdfResidualMipChain.
+ENGINE_API auto EvaluatePrismNdfPreview(const PrismNdfData& data, const std::vector<std::vector<float>>& mipLevels,
+                                        float x, float y, float footprint) -> float;
+
 } // namespace Engine::Renderer

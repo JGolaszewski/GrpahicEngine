@@ -181,6 +181,90 @@ auto BuildPrismNdfResidualMipChain(std::span<const float> residuals) -> std::vec
   return levels;
 }
 
+namespace {
+auto MapPreviewResidualUv(const PrismNdfData& data, float x, float y) -> std::array<float, 2> {
+  const float radius = std::sqrt(x * x + y * y);
+  if (data.equalAngleResiduals && radius > 1.0e-6F) {
+    const float mappedRadius = std::asin(std::min(radius, 1.0F)) * (2.0F / std::numbers::pi_v<float>);
+    x *= mappedRadius / radius;
+    y *= mappedRadius / radius;
+  }
+  float u = x * 0.5F + 0.5F;
+  float v = y * 0.5F + 0.5F;
+  if (data.residualFilter == PrismNdfResidualFilter::QuinticUv) {
+    const auto warp = [](float coordinate) {
+      const float texel = coordinate * static_cast<float>(PrismNdfGridSize) - 0.5F;
+      const float fraction = texel - std::floor(texel);
+      const float square = fraction * fraction;
+      const float warped = square * fraction * (fraction * (fraction * 6.0F - 15.0F) + 10.0F);
+      return (std::floor(texel) + warped + 0.5F) / static_cast<float>(PrismNdfGridSize);
+    };
+    u = warp(u);
+    v = warp(v);
+  }
+  return {u, v};
+}
+
+auto SamplePreviewResidual(const std::vector<std::vector<float>>& mipLevels, const std::array<float, 2>& uv,
+                           uint32_t mip) -> double {
+  const auto& level = mipLevels[mip];
+  const uint32_t size = PrismNdfGridSize >> mip;
+  const float x = uv[0] * static_cast<float>(size) - 0.5F;
+  const float y = uv[1] * static_cast<float>(size) - 0.5F;
+  const float floorX = std::floor(x);
+  const float floorY = std::floor(y);
+  const int32_t x0 = static_cast<int32_t>(floorX);
+  const int32_t y0 = static_cast<int32_t>(floorY);
+  const auto clampIndex = [size](int32_t index) {
+    return static_cast<uint32_t>(std::clamp(index, 0, static_cast<int32_t>(size) - 1));
+  };
+  const uint32_t x1 = clampIndex(x0 + 1);
+  const uint32_t y1 = clampIndex(y0 + 1);
+  const uint32_t sx0 = clampIndex(x0);
+  const uint32_t sy0 = clampIndex(y0);
+  const double tx = x - floorX;
+  const double ty = y - floorY;
+  const auto at = [&level, size](uint32_t sx, uint32_t sy) {
+    return static_cast<double>(level[static_cast<size_t>(sy) * size + sx]);
+  };
+  const double top = std::lerp(at(sx0, sy0), at(x1, sy0), tx);
+  const double bottom = std::lerp(at(sx0, y1), at(x1, y1), tx);
+  return std::lerp(top, bottom, ty);
+}
+} // namespace
+
+auto EvaluatePrismNdfPreview(const PrismNdfData& data, const std::vector<std::vector<float>>& mipLevels, float x,
+                             float y, float footprint) -> float {
+  if (data.residuals.size() != PrismNdfSampleCount || x * x + y * y > 1.0F || mipLevels.empty() ||
+      !std::isfinite(footprint) || footprint <= 0.0F) {
+    return 0.0F;
+  }
+  double value = 0.0;
+  for (uint32_t index = 0; index < PrismNdfCoefficientCount; ++index) {
+    value += static_cast<double>(data.zernikeCoefficients[index]) * EvaluatePrismZernikeBasis(index, x, y);
+  }
+  const float radius = std::sqrt(x * x + y * y);
+  const auto uv = MapPreviewResidualUv(data, x, y);
+  const auto uvX = MapPreviewResidualUv(data, x + footprint, y);
+  const auto uvY = MapPreviewResidualUv(data, x, y + footprint);
+  const float gradientX = std::hypot((uvX[0] - uv[0]) * static_cast<float>(PrismNdfGridSize),
+                                     (uvX[1] - uv[1]) * static_cast<float>(PrismNdfGridSize));
+  const float gradientY = std::hypot((uvY[0] - uv[0]) * static_cast<float>(PrismNdfGridSize),
+                                     (uvY[1] - uv[1]) * static_cast<float>(PrismNdfGridSize));
+  const float rho = (std::max)(gradientX, gradientY);
+  const float maxMip = static_cast<float>(mipLevels.size() - 1);
+  const float lod = data.mipmappedResiduals ? std::clamp(std::log2((std::max)(rho, 1.0F)), 0.0F, maxMip) : 0.0F;
+  const uint32_t lowerMip = static_cast<uint32_t>(lod);
+  const uint32_t upperMip = (std::min)(lowerMip + 1, static_cast<uint32_t>(mipLevels.size() - 1));
+  const double blend = static_cast<double>(lod - static_cast<float>(lowerMip));
+  const double lowerResidual = SamplePreviewResidual(mipLevels, uv, lowerMip);
+  const double upperResidual = SamplePreviewResidual(mipLevels, uv, upperMip);
+  const float fadeT = std::clamp(std::sqrt((std::max)(0.0F, 1.0F - radius * radius)) / 0.1F, 0.0F, 1.0F);
+  const float horizon = data.horizonFade ? fadeT * fadeT * (3.0F - 2.0F * fadeT) : 1.0F;
+  const double residual = data.residualsEnabled ? std::lerp(lowerResidual, upperResidual, blend) * horizon : 0.0;
+  value = (std::max)(0.0, value + residual);
+  return static_cast<float>(value * data.normalization);
+}
 auto FitPrismNdfPayload(std::span<const float> grid, PrismNdfData& output, std::string& error) -> bool {
   error.clear();
   if (!IsFiniteGrid(grid, error)) {

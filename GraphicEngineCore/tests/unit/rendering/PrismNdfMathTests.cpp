@@ -57,8 +57,8 @@ auto GridAt(std::span<const float> grid, double x, double y) -> double {
 } // namespace
 
 TEST(PrismNdfMathTests, AllFortyFiveBasisTermsMatchIndependentFactorialDefinition) {
-  const std::array points{std::array{0.0, 0.0}, std::array{0.31, -0.47}, std::array{0.6, 0.8},
-                          std::array{-1.0, 0.0}, std::array{0.0, 1.0}, std::array{0.6, 0.8 + 1.0e-12},
+  const std::array points{std::array{0.0, 0.0},  std::array{0.31, -0.47}, std::array{0.6, 0.8},
+                          std::array{-1.0, 0.0}, std::array{0.0, 1.0},    std::array{0.6, 0.8 + 1.0e-12},
                           std::array{1.01, -0.2}};
   uint32_t coefficientIndex = 0;
   for (uint32_t n = 0; n <= Engine::PrismNdfDegree; ++n) {
@@ -74,8 +74,8 @@ TEST(PrismNdfMathTests, AllFortyFiveBasisTermsMatchIndependentFactorialDefinitio
 }
 
 TEST(PrismNdfMathTests, ResidualMaskClampAndNormalizationMatchIndependentDoubleReference) {
-  const std::array points{std::array{0.0, 0.0}, std::array{0.31, -0.47}, std::array{0.6, 0.8},
-                          std::array{-1.0, 0.0}, std::array{0.0, 1.0}, std::array{1.0001, 0.0}};
+  const std::array points{std::array{0.0, 0.0},  std::array{0.31, -0.47}, std::array{0.6, 0.8},
+                          std::array{-1.0, 0.0}, std::array{0.0, 1.0},    std::array{1.0001, 0.0}};
   std::array<float, Engine::PrismNdfCoefficientCount> coefficients{};
   for (size_t index = 0; index < coefficients.size(); ++index) {
     coefficients[index] = static_cast<float>((static_cast<int>(index % 9) - 4) * 0.0375);
@@ -90,8 +90,8 @@ TEST(PrismNdfMathTests, ResidualMaskClampAndNormalizationMatchIndependentDoubleR
       for (int32_t m = -static_cast<int32_t>(n); m <= static_cast<int32_t>(n); m += 2, ++coefficient) {
         implementationPolynomial += static_cast<double>(coefficients[coefficient]) *
                                     Engine::Renderer::EvaluatePrismZernikeBasis(coefficient, point[0], point[1]);
-        referencePolynomial += static_cast<double>(coefficients[coefficient]) *
-                               IndependentBasis(n, m, point[0], point[1]);
+        referencePolynomial +=
+            static_cast<double>(coefficients[coefficient]) * IndependentBasis(n, m, point[0], point[1]);
       }
     }
     const double diskMask = point[0] * point[0] + point[1] * point[1] <= 1.0 ? 1.0 : 0.0;
@@ -213,6 +213,58 @@ TEST(PrismNdfMathTests, ProjectedEnergyNormalizationIsFiniteAndUnitIntegral) {
   EXPECT_NEAR(integral, 1.0, 1.0e-4);
 }
 
+TEST(PrismNdfMathTests, InspectorPreviewUsesIndependentResidualEdgeControls) {
+  Engine::PrismNdfData horizonData;
+  horizonData.residuals.assign(Engine::PrismNdfSampleCount, 1.0F);
+  horizonData.zernikeCoefficients[0] = 2.0F;
+  horizonData.horizonFade = false;
+  const auto horizonMips = Engine::Renderer::BuildPrismNdfResidualMipChain(horizonData.residuals);
+  EXPECT_FLOAT_EQ(Engine::Renderer::EvaluatePrismNdfPreview(horizonData, horizonMips, 1.0F, 0.0F, 0.01F), 3.0F);
+  horizonData.horizonFade = true;
+  EXPECT_FLOAT_EQ(Engine::Renderer::EvaluatePrismNdfPreview(horizonData, horizonMips, 1.0F, 0.0F, 0.01F), 2.0F);
+  const float nearHorizonRadius = 0.999F;
+  const float noV = std::sqrt(1.0F - nearHorizonRadius * nearHorizonRadius);
+  const float fadeT = noV / 0.1F;
+  const float expectedFade = fadeT * fadeT * (3.0F - 2.0F * fadeT);
+  EXPECT_NEAR(Engine::Renderer::EvaluatePrismNdfPreview(horizonData, horizonMips, nearHorizonRadius, 0.0F, 0.01F),
+              2.0F + expectedFade, 1.0e-4F);
+
+  Engine::PrismNdfData mipData;
+  mipData.residuals.resize(Engine::PrismNdfSampleCount);
+  mipData.horizonFade = false;
+  mipData.mipmappedResiduals = false;
+  mipData.equalAngleResiduals = false;
+  for (uint32_t y = 0; y < Engine::PrismNdfGridSize; ++y) {
+    for (uint32_t x = 0; x < Engine::PrismNdfGridSize; ++x) {
+      mipData.residuals[static_cast<size_t>(y) * Engine::PrismNdfGridSize + x] = x % 2U == 0U ? 1.0F : -1.0F;
+    }
+  }
+  const auto mipLevels = Engine::Renderer::BuildPrismNdfResidualMipChain(mipData.residuals);
+  const float aliasedValue = Engine::Renderer::EvaluatePrismNdfPreview(mipData, mipLevels, 0.13F, 0.0F, 0.0625F);
+  mipData.mipmappedResiduals = true;
+  const float mipFilteredValue = Engine::Renderer::EvaluatePrismNdfPreview(mipData, mipLevels, 0.13F, 0.0F, 0.0625F);
+  EXPECT_GT(aliasedValue, 0.5F);
+  EXPECT_NEAR(mipFilteredValue, 0.0F, 1.0e-6F);
+
+  Engine::PrismNdfData equalAngleData;
+  equalAngleData.residuals.resize(Engine::PrismNdfSampleCount);
+  equalAngleData.horizonFade = false;
+  equalAngleData.mipmappedResiduals = false;
+  equalAngleData.equalAngleResiduals = false;
+  for (uint32_t y = 0; y < Engine::PrismNdfGridSize; ++y) {
+    for (uint32_t x = 0; x < Engine::PrismNdfGridSize; ++x) {
+      equalAngleData.residuals[static_cast<size_t>(y) * Engine::PrismNdfGridSize + x] =
+          2.0F * static_cast<float>(x) / static_cast<float>(Engine::PrismNdfGridSize - 1) - 1.0F;
+    }
+  }
+  const auto equalAngleMips = Engine::Renderer::BuildPrismNdfResidualMipChain(equalAngleData.residuals);
+  const float sineMappedValue =
+      Engine::Renderer::EvaluatePrismNdfPreview(equalAngleData, equalAngleMips, 0.8F, 0.0F, 0.01F);
+  equalAngleData.equalAngleResiduals = true;
+  const float equalAngleValue =
+      Engine::Renderer::EvaluatePrismNdfPreview(equalAngleData, equalAngleMips, 0.8F, 0.0F, 0.01F);
+  EXPECT_GT(sineMappedValue - equalAngleValue, 0.15F);
+}
 TEST(PrismNdfMathTests, InvalidGridValuesAreRejected) {
   std::vector<float> grid(Engine::PrismNdfSampleCount, 1.0F);
   Engine::PrismNdfData payload;
