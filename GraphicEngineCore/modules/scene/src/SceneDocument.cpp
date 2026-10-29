@@ -285,7 +285,7 @@ auto ReadGeneratedNdf(const Json& value, SceneGeneratedNdfDocument& generated, s
       serializedResiduals.size() == PrismNdfSampleCount) {
     std::ranges::copy(serializedResiduals, generated.data.residuals.begin());
   } else if (generated.gridSize == 64 && generated.dataVersion == 1 &&
-             serializedResiduals.size() == 64U * 64U && PrismNdfGridSize != 64) {
+             serializedResiduals.size() == size_t{64} * 64 && PrismNdfGridSize != 64) {
     // Schema-v9 assets stored the residual over a 64x64 grid. Preserve those
     // materials by bilinearly resampling it to the current canonical grid.
     constexpr uint32_t legacySize = 64;

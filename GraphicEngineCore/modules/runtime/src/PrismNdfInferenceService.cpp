@@ -193,7 +193,7 @@ struct PrismNdfInferenceService::Impl {
   static auto Quote(const std::filesystem::path& path) -> std::wstring { return L"\"" + path.wstring() + L"\""; }
 
   static auto ReadLine(TokenizerWorker& worker, std::string& line) -> bool {
-    constexpr size_t maximumMessageSize = 1024U * 1024U;
+    constexpr size_t maximumMessageSize = size_t{1024} * 1024;
     std::array<char, 4096> buffer{};
     while (true) {
       const size_t delimiter = worker.StdoutBuffer.find('\n');
@@ -275,7 +275,7 @@ struct PrismNdfInferenceService::Impl {
     worker.Process = process.hProcess;
     worker.ProcessThread = process.hThread;
     worker.StderrDrain = std::thread([&worker] {
-      constexpr size_t maximumDiagnosticSize = 64U * 1024U;
+      constexpr size_t maximumDiagnosticSize = size_t{64} * 1024;
       std::array<char, 2048> buffer{};
       DWORD read = 0;
       while (ReadFile(worker.StderrRead, buffer.data(), static_cast<DWORD>(buffer.size()), &read, nullptr) &&
@@ -426,7 +426,7 @@ struct PrismNdfInferenceService::Impl {
     const std::string text(prompt);
     constexpr std::string_view number = R"(([-+]?(?:\d+(?:\.\d*)?|\.\d+)))";
     std::array<float, 7> features{};
-    const auto parseUnitControl = [&text, &features](std::string_view label, size_t featureIndex) {
+    const auto parseUnitControl = [&text, &features, number](std::string_view label, size_t featureIndex) {
       const std::regex pattern("\\b" + std::string(label) + "\\s*(?:=|:)\\s*" + std::string(number) +
                                "\\s*(%|percent)?(?=\\s|[,;.]|$)", std::regex::icase);
       std::smatch match;
@@ -638,7 +638,7 @@ auto PrismNdfInferenceService::Start(std::string_view promptText, bool direction
   if (promptText.empty()) {
     return std::unexpected(MakeError("PRISM prompt must not be empty"));
   }
-  if (promptText.size() > 16U * 1024U) {
+  if (promptText.size() > size_t{16} * 1024) {
     return std::unexpected(MakeError("PRISM prompt exceeds the 16 KiB input limit"));
   }
   std::string prompt(promptText);

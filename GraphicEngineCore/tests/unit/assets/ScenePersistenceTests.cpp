@@ -197,7 +197,7 @@ TEST(ScenePersistenceTests, GeneratedNdfCoefficientsResidualAndPromptRoundTrip) 
 TEST(ScenePersistenceTests, GeneratedNdfLoadsLegacy64GridAndResamplesWhenCanonicalGridIsLarger) {
   TemporaryProject project;
   const auto path = project.Root() / "legacy-generated-ndf.scene.json";
-  std::vector<float> legacyResiduals(64U * 64U);
+  std::vector<float> legacyResiduals(size_t{64} * 64);
   for (uint32_t y = 0; y < 64; ++y) {
     for (uint32_t x = 0; x < 64; ++x) {
       legacyResiduals[static_cast<size_t>(y) * 64U + x] = static_cast<float>(x + y * 64U);
@@ -217,6 +217,7 @@ TEST(ScenePersistenceTests, GeneratedNdfLoadsLegacy64GridAndResamplesWhenCanonic
 
   const auto loaded = Engine::SceneSerializer::Load(path);
   ASSERT_TRUE(loaded) << loaded.error;
+  ASSERT_TRUE(loaded.document.entities.front().material->generatedNdf.has_value());
   const auto& migrated = *loaded.document.entities.front().material->generatedNdf;
   EXPECT_EQ(migrated.gridSize, Engine::PrismNdfGridSize);
   EXPECT_EQ(migrated.data.residuals.front(), legacyResiduals.front());
