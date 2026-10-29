@@ -9,7 +9,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <mutex>
+#include <numbers>
 #include <ranges>
+#include <regex>
 #include <span>
 #include <sstream>
 #include <stdexcept>
@@ -78,7 +80,7 @@ struct PrismNdfInferenceService::Impl {
   struct RuntimeModels {
     std::unique_ptr<Ort::Env> Environment;
     std::unique_ptr<Ort::Session> Encoder;
-    std::unique_ptr<Ort::Session> Retriever;
+    std::unique_ptr<Ort::Session> Predictor;
     std::unique_ptr<Ort::Session> Decoder;
   };
 
@@ -132,16 +134,16 @@ struct PrismNdfInferenceService::Impl {
     sessionOptions.SetIntraOpNumThreads(0);
     sessionOptions.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
     const auto encoderPath = Options.modelDirectory / "e5_encoder.onnx";
-    const auto retrieverPath = Options.modelDirectory / "retriever.onnx";
-    const auto decoderPath = Options.modelDirectory / "vae_decoder.onnx";
+    const auto predictorPath = Options.modelDirectory / "prism_text_predictor_128.onnx";
+    const auto decoderPath = Options.modelDirectory / "prism_vae_decoder_128.onnx";
     models.Encoder = std::make_unique<Ort::Session>(*models.Environment, encoderPath.c_str(), sessionOptions);
-    models.Retriever = std::make_unique<Ort::Session>(*models.Environment, retrieverPath.c_str(), sessionOptions);
+    models.Predictor = std::make_unique<Ort::Session>(*models.Environment, predictorPath.c_str(), sessionOptions);
     models.Decoder = std::make_unique<Ort::Session>(*models.Environment, decoderPath.c_str(), sessionOptions);
     const std::array<int64_t, 2> tokenShape{1, 128};
     const std::array<int64_t, 2> embeddingShape{1, 1024};
-    const std::array<int64_t, 1> directionShape{1};
+    const std::array<int64_t, 2> controlsShape{1, 7};
     const std::array<int64_t, 2> latentShape{1, 16};
-    const std::array<int64_t, 2> gridShape{1, 4096};
+    const std::array<int64_t, 2> gridShape{1, 16384};
     const std::array<TensorContract, 2> encoderInputs{{
         {"input_ids", ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64, tokenShape},
         {"attention_mask", ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64, tokenShape},
@@ -149,11 +151,11 @@ struct PrismNdfInferenceService::Impl {
     const std::array<TensorContract, 1> encoderOutputs{{
         {"normalized_embedding", ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT, embeddingShape},
     }};
-    const std::array<TensorContract, 2> retrieverInputs{{
+    const std::array<TensorContract, 2> predictorInputs{{
         {"embedding", ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT, embeddingShape},
-        {"directional", ONNX_TENSOR_ELEMENT_DATA_TYPE_BOOL, directionShape},
+        {"control_features", ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT, controlsShape},
     }};
-    const std::array<TensorContract, 1> retrieverOutputs{{
+    const std::array<TensorContract, 1> predictorOutputs{{
         {"predicted_latent", ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT, latentShape},
     }};
     const std::array<TensorContract, 1> decoderInputs{{
@@ -164,8 +166,8 @@ struct PrismNdfInferenceService::Impl {
     }};
     ValidateTensors(*models.Encoder, true, encoderInputs);
     ValidateTensors(*models.Encoder, false, encoderOutputs);
-    ValidateTensors(*models.Retriever, true, retrieverInputs);
-    ValidateTensors(*models.Retriever, false, retrieverOutputs);
+    ValidateTensors(*models.Predictor, true, predictorInputs);
+    ValidateTensors(*models.Predictor, false, predictorOutputs);
     ValidateTensors(*models.Decoder, true, decoderInputs);
     ValidateTensors(*models.Decoder, false, decoderOutputs);
   }
@@ -418,6 +420,49 @@ struct PrismNdfInferenceService::Impl {
   }
 #  endif
 
+  static auto ParseControlFeatures(std::string_view prompt) -> std::array<float, 7> {
+    // Mirrors PRISM's parse_prompt_controls: roughness, anisotropy,
+    // sin/cos of the axial angle, then presence masks for those controls.
+    const std::string text(prompt);
+    constexpr std::string_view number = R"(([-+]?(?:\d+(?:\.\d*)?|\.\d+)))";
+    std::array<float, 7> features{};
+    const auto parseUnitControl = [&text, &features](std::string_view label, size_t featureIndex) {
+      const std::regex pattern("\\b" + std::string(label) + "\\s*(?:=|:)\\s*" + std::string(number) +
+                               "\\s*(%|percent)?(?=\\s|[,;.]|$)", std::regex::icase);
+      std::smatch match;
+      if (!std::regex_search(text, match, pattern)) {
+        return;
+      }
+      float value = std::stof(match[1].str());
+      if (match[2].matched) {
+        value /= 100.0F;
+      }
+      if (!std::isfinite(value) || value < 0.0F || value > 1.0F) {
+        throw std::runtime_error(std::string(label) + " control must be between 0 and 1 (or 0% and 100%)");
+      }
+      features[featureIndex] = value;
+      features[featureIndex + 4] = 1.0F;
+    };
+    parseUnitControl("roughness", 0);
+    parseUnitControl("anisotropy", 1);
+
+    const std::regex anglePattern("\\b(?:orientation|angle)\\s*(?:=|:)\\s*" + std::string(number) +
+                                      "\\s*(?:degrees?|deg|°)?(?=\\s|[,;.]|$)",
+                                  std::regex::icase);
+    std::smatch angleMatch;
+    if (std::regex_search(text, angleMatch, anglePattern)) {
+      const float degrees = std::stof(angleMatch[1].str());
+      if (!std::isfinite(degrees)) {
+        throw std::runtime_error("orientation control must be a finite angle in degrees");
+      }
+      const float radians = std::fmod(degrees, 180.0F) * (std::numbers::pi_v<float> / 180.0F);
+      features[2] = std::sin(2.0F * radians);
+      features[3] = std::cos(2.0F * radians);
+      features[6] = 1.0F;
+    }
+    return features;
+  }
+
   void Process(uint64_t id, const std::string& prompt, bool directional, RuntimeModels& models
 #  ifdef _WIN32
                ,
@@ -448,11 +493,11 @@ struct PrismNdfInferenceService::Impl {
 
       const Ort::MemoryInfo memory = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
       const std::array<int64_t, 2> tokenShape{1, 128};
-      const std::array<int64_t, 1> directionShape{1};
       const std::array<int64_t, 2> embeddingShape{1, 1024};
       const std::array<int64_t, 2> latentShape{1, 16};
-      const std::array<int64_t, 2> gridShape{1, 4096};
-      std::array<bool, 1> direction{directional};
+      const std::array<int64_t, 2> controlsShape{1, 7};
+      const std::array<int64_t, 2> gridShape{1, 16384};
+      auto controlFeatures = ParseControlFeatures(prompt);
 
       SetStatus(id, PrismNdfInferencePhase::Encoding, 0.3F);
       Ort::Value idsTensor = Ort::Value::CreateTensor<int64_t>(memory, inputIds.data(), inputIds.size(),
@@ -473,14 +518,14 @@ struct PrismNdfInferenceService::Impl {
       SetStatus(id, PrismNdfInferencePhase::Retrieving, 0.5F);
       Ort::Value embeddingTensor = Ort::Value::CreateTensor<float>(memory, embedding.data(), embedding.size(),
                                                                    embeddingShape.data(), embeddingShape.size());
-      Ort::Value directionalTensor = Ort::Value::CreateTensor<bool>(memory, direction.data(), direction.size(),
-                                                                    directionShape.data(), directionShape.size());
-      const char* retrieverInputs[] = {"embedding", "directional"};
-      const char* retrieverOutputs[] = {"predicted_latent"};
-      std::array<Ort::Value, 2> retrieverTensors{std::move(embeddingTensor), std::move(directionalTensor)};
-      auto retrieved = models.Retriever->Run(Ort::RunOptions{nullptr}, retrieverInputs, retrieverTensors.data(), 2,
-                                             retrieverOutputs, 1);
-      auto latent = TensorFloats(retrieved.front(), latentShape, "predicted_latent");
+      Ort::Value controlsTensor = Ort::Value::CreateTensor<float>(memory, controlFeatures.data(), controlFeatures.size(),
+                                                                  controlsShape.data(), controlsShape.size());
+      const char* predictorInputs[] = {"embedding", "control_features"};
+      const char* predictorOutputs[] = {"predicted_latent"};
+      std::array<Ort::Value, 2> predictorTensors{std::move(embeddingTensor), std::move(controlsTensor)};
+      auto predicted = models.Predictor->Run(Ort::RunOptions{nullptr}, predictorInputs, predictorTensors.data(), 2,
+                                            predictorOutputs, 1);
+      auto latent = TensorFloats(predicted.front(), latentShape, "predicted_latent");
       if (IsCancelled(id)) {
         SetStatus(id, PrismNdfInferencePhase::Cancelled, 1.0F, "Generation cancelled");
         return;
@@ -606,10 +651,10 @@ auto PrismNdfInferenceService::Start(std::string_view promptText, bool direction
       m_Impl->Options.tokenizerWorker,
       m_Impl->Options.modelDirectory / "e5_encoder.onnx",
       m_Impl->Options.modelDirectory / "e5_encoder.onnx.data",
-      m_Impl->Options.modelDirectory / "retriever.onnx",
-      m_Impl->Options.modelDirectory / "retriever.onnx.data",
-      m_Impl->Options.modelDirectory / "vae_decoder.onnx",
-      m_Impl->Options.modelDirectory / "vae_decoder.onnx.data",
+      m_Impl->Options.modelDirectory / "prism_text_predictor_128.onnx",
+      m_Impl->Options.modelDirectory / "prism_text_predictor_128.onnx.data",
+      m_Impl->Options.modelDirectory / "prism_vae_decoder_128.onnx",
+      m_Impl->Options.modelDirectory / "prism_vae_decoder_128.onnx.data",
   };
   std::ostringstream missingAssets;
   bool hasMissingAssets = false;
@@ -655,10 +700,10 @@ auto PrismNdfInferenceService::Start(std::string_view promptText, bool direction
                                                {},
                                                prompt,
                                                directional,
-                                               "PRISM source commit 93f66a5cd3889ac50b65429e3caab1b0317f8795; "
+                                               "PRISM 128x128 release prism-onnx-128x128-v1.0.0; "
                                                "E5 encoder release e5-onnx-v1.0.0 revision "
                                                "f169b11e22de13617baa190a028a32f3493550b6; "
-                                               "PRISM decoder release prism-onnx-v1.0.0"};
+                                               "decoder output ndf_grid_flat float32[1,16384]"};
   m_Impl->Pending.emplace(id, std::pair{std::move(prompt), directional});
   m_Impl->Wake.notify_one();
   return id;
