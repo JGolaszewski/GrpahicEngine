@@ -269,10 +269,10 @@ auto InspectorPanel::DrawPrismNdfEditor(Engine::EntityHandle entity, const std::
     }
   }
   if (m_PrismPreview || material.generatedNdf) {
-    ImGui::SeparatorText("NDF settings");
+    ImGui::SeparatorText("PRISM NDF settings");
     bool residualsEnabled = m_PrismPreview ? m_PrismPreview->residualsEnabled
                                            : material.generatedNdf->data.residualsEnabled;
-    if (ImGui::Checkbox("Use residuals", &residualsEnabled)) {
+    if (ImGui::Checkbox("Enable residuals", &residualsEnabled)) {
       if (m_PrismPreview) {
         auto updatedPreview = std::make_shared<Engine::PrismNdfData>(*m_PrismPreview);
         updatedPreview->residualsEnabled = residualsEnabled;
