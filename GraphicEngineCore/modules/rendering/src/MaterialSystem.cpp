@@ -18,7 +18,7 @@ auto CreateNdfResidualTexture(nvrhi::IDevice* device) -> nvrhi::TextureHandle {
       .setWidth(PrismNdfGridSize)
       .setHeight(PrismNdfGridSize)
       .setArraySize(1)
-      .setMipLevels(1)
+      .setMipLevels(8)
       .setFormat(nvrhi::Format::R32_FLOAT)
       .setDebugName("Material_PrismNdfResidual")
       .enableAutomaticStateTracking(nvrhi::ResourceStates::ShaderResource);
@@ -37,13 +37,12 @@ auto BuildNdfDistribution(const PrismNdfData& payload) -> std::array<float, Pris
       if (x * x + y * y > 1.0) {
         continue;
       }
+      const size_t index = static_cast<size_t>(row) * PrismNdfGridSize + column;
       double base = 0.0;
       for (uint32_t coefficient = 0; coefficient < PrismNdfCoefficientCount; ++coefficient) {
         base += payload.zernikeCoefficients[coefficient] * EvaluatePrismZernikeBasis(coefficient, x, y);
       }
-      const size_t index = static_cast<size_t>(row) * PrismNdfGridSize + column;
-      const double residual = payload.residualsEnabled ? payload.residuals[index] : 0.0;
-      distribution[index] = static_cast<float>((std::max)(base + residual, 0.0) * payload.normalization);
+      distribution[index] = static_cast<float>(base * payload.normalization);
     }
   }
   return distribution;
@@ -52,13 +51,17 @@ auto BuildNdfDistribution(const PrismNdfData& payload) -> std::array<float, Pris
 void UploadNdfResidual(nvrhi::ICommandList* commandList, const nvrhi::TextureHandle& texture,
                        std::span<const float> residuals) {
   if (commandList != nullptr && texture != nullptr && residuals.size() == PrismNdfSampleCount) {
-    commandList->writeTexture(texture, 0, 0, residuals.data(), PrismNdfGridSize * sizeof(float), 0);
+    const auto levels = BuildPrismNdfResidualMipChain(residuals);
+    uint32_t size = PrismNdfGridSize;
+    for (uint32_t mip = 0; mip < levels.size(); ++mip) {
+      commandList->writeTexture(texture, 0, mip, levels[mip].data(), size * sizeof(float), 0);
+      size = (std::max)(1U, size / 2U);
+    }
   }
 }
 
 auto MakeMaterialBindingSet(nvrhi::IDevice* device, const nvrhi::BindingLayoutHandle& layout,
-                            const nvrhi::BufferHandle& constants,
-                            const MaterialProperties& properties,
+                            const nvrhi::BufferHandle& constants, const MaterialProperties& properties,
                             const std::array<std::shared_ptr<TextureResource>, 5>& textures,
                             const nvrhi::TextureHandle& ndfResidual, const nvrhi::TextureHandle& ndfDistribution,
                             const nvrhi::SamplerHandle& ndfSampler, uint32_t maxAnisotropy) -> nvrhi::BindingSetHandle {
@@ -129,7 +132,8 @@ MaterialSystem::MaterialSystem(nvrhi::IDevice* device, nvrhi::ShaderHandle stand
       .setAddressW(nvrhi::SamplerAddressMode::Clamp)
       .setMinFilter(true)
       .setMagFilter(true)
-      .setMipFilter(false);
+      .setMipFilter(true)
+      .setMaxAnisotropy(8.0F);
   m_NdfResidualSampler = m_Device->createSampler(residualSamplerDesc);
   if (m_FallbackNdfResidual != nullptr && m_FallbackNdfDistribution != nullptr && m_NdfResidualSampler != nullptr) {
     nvrhi::CommandListHandle commandList = m_Device->createCommandList();

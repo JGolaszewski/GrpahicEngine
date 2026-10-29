@@ -24,6 +24,9 @@ struct PrismNdfData {
   float normalization = 1.0F;
   bool residualsEnabled = true; ///< Whether rendering adds the signed residual grid to the coefficient basis.
   PrismNdfResidualFilter residualFilter = PrismNdfResidualFilter::Bilinear;
+  bool horizonFade = true;         ///< Attenuates the signed residual as NoV approaches zero.
+  bool mipmappedResiduals = true;  ///< Uses screen-space gradients to select signed-residual mip levels.
+  bool equalAngleResiduals = true; ///< Remaps only the residual lookup radius to equal angular steps.
   auto operator==(const PrismNdfData& other) const noexcept -> bool = default;
 };
 

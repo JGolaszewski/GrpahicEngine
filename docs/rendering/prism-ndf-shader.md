@@ -24,20 +24,22 @@ shader variants.
 `float4` entries and places projected-energy normalization in `NdfParams.x`.
 `NdfParams.y` is a float enable flag for the residual contribution. When it is
 zero, the direct-light shaders use the coefficient basis alone and the
-precomputed distribution texture is built without residuals. When enabled,
-direct lighting adds the signed residual sample at material SRV `t3`/sampler
-`s3`. PRISM-conditioned environment
-integration samples the precomputed normalized distribution at `t6`/`s6` and
-the active panorama at `t12`/`s12`.
+precomputed distribution texture is built without residuals. When enabled, direct lighting adds the signed residual sample at material SRV `t3`/sampler
+`s3`. PRISM-conditioned environment integration samples the coefficient-only
+distribution at `t6`/`s6`, adds the signed residual from `t3`/`s3` using the same
+selected options, and samples the panorama at `t12`/`s12`.
 
-`NdfParams.z` selects residual filtering: zero keeps the existing bilinear
-coordinates, while one applies Quintic UV warping to the fractional texel
-coordinates before the same linear sampler call. The warp uses
-`6f^5 - 15f^4 + 10f^3` independently per coordinate and keeps each residual
-lookup to one hardware texture sample. The material's precomputed environment
-distribution uses the same mode when sampled; its CPU construction evaluates
-the residual at grid nodes, where both modes produce identical values.
-
+`NdfParams.z` is a bitfield: bit 0 selects Quintic UV filtering, bit 1 enables
+horizon fade, bit 2 enables mipmapped residual sampling, and bit 3 enables equal-angle
+mapping. Quintic UV applies `6f^5 - 15f^4 + 10f^3` independently per coordinate
+before the linear sample. Equal-angle mapping remaps the residual lookup radius as
+`asin(r)/(pi/2)` without changing the source grid. The residual texture contains
+eight levels, 128x128 through 1x1, formed by averaging signed 2x2 footprints.
+When mipmapping is enabled, direct and environment residual samples use screen-space
+gradients with the mipmapped anisotropic sampler (8x maximum); disabling it selects level zero. Each
+residual lookup still uses one hardware texture sample. Horizon fade multiplies
+only the signed residual by `smoothstep(0, 0.1, saturate(dot(N,V)))`; the coefficient
+basis and normalization path are unchanged.
 Material resources occupy the contiguous SRV range `t0`–`t6`; scene resources
 occupy `t7`–`t12`. This separation is required by the D3D11 NVRHI backend:
 binding a set applies its complete contiguous SRV range, including null holes.

@@ -74,28 +74,47 @@ SamplerState g_NdfDistributionSampler : register(s6);
 
 float2 PrismNdfFilterUv(float2 uv)
 {
-    if (g_NdfParams.z <= 0.5f) return uv;
+    const uint options = (uint)g_NdfParams.z;
     const float size = 128.0f;
+    if ((options & 8u) != 0u) {
+        float2 disk = uv * 2.0f - 1.0f;
+        const float radius = length(disk);
+        if (radius > 1.0e-6f) disk *= (asin(min(radius, 1.0f)) * (2.0f / 3.14159265359f)) / radius;
+        uv = disk * 0.5f + 0.5f;
+    }
     const float2 texel = uv * size - 0.5f;
+    if ((options & 1u) == 0u) return uv;
     const float2 f = frac(texel);
     const float2 f2 = f * f;
     const float2 warped = f2 * f * (f * (f * 6.0f - 15.0f) + 10.0f);
     return (floor(texel) + warped + 0.5f) / size;
 }
 
+void PrismNdfFilterGradients(float2 uv, float2 uvDx, float2 uvDy, out float2 mappedDx, out float2 mappedDy)
+{
+    const float2 mappedUv = PrismNdfFilterUv(uv);
+    mappedDx = PrismNdfFilterUv(uv + uvDx) - mappedUv;
+    mappedDy = PrismNdfFilterUv(uv + uvDy) - mappedUv;
+}
 float3 EvaluatePrismNdfEnvironmentSpecular(float3 normal, float3 viewDirection, float3 tangent,
     float3 bitangent, float3 f0, float alpha, float2 pixelPosition)
 {
     static const uint SAMPLE_COUNT = 128u;
     static const float GOLDEN_COS = -0.737368878f;
     static const float GOLDEN_SIN = 0.675490294f;
-    const float noV = max(dot(normal, viewDirection), BRDF_EPSILON);
+    const float horizonNoV = saturate(dot(normal, viewDirection));
+    const float noV = max(horizonNoV, BRDF_EPSILON);
     const float3 localTangent = BrdfNormalizeOr(tangent - normal * dot(normal, tangent),
         abs(normal.y) < 0.9f ? normalize(cross(float3(0.0f, 1.0f, 0.0f), normal)) : float3(1.0f, 0.0f, 0.0f));
     const float handedness = dot(cross(normal, localTangent), bitangent) < 0.0f ? -1.0f : 1.0f;
     const float3 localBitangent = cross(normal, localTangent) * handedness;
     const float phase = frac(sin(dot(pixelPosition, float2(12.9898f, 78.233f))) * 43758.5453f) * 2.0f * BRDF_PI;
     float2 rotation = float2(cos(phase), sin(phase));
+    // The per-pixel phase only stratifies Monte Carlo samples; it is not a texture footprint.
+    // Estimate the footprint from coherent surface and view variation so random phase changes do
+    // not force unrelated residual samples into coarse mip levels.
+    const float surfaceFootprintX = length(ddx(normal)) + length(ddx(viewDirection));
+    const float surfaceFootprintY = length(ddy(normal)) + length(ddy(viewDirection));
     float2 golden = float2(GOLDEN_COS, GOLDEN_SIN);
     float3 accumulated = 0.0f;
     [loop]
@@ -104,7 +123,20 @@ float3 EvaluatePrismNdfEnvironmentSpecular(float3 normal, float3 viewDirection, 
         const float radius = sqrt((float(index) + 0.5f) / float(SAMPLE_COUNT));
         const float2 disk = rotation * radius;
         const float2 uv = disk * 0.5f + 0.5f;
-        const float distribution = g_NdfDistribution.SampleLevel(g_NdfDistributionSampler, PrismNdfFilterUv(uv), 0.0f);
+        const float2 uvDx = float2(surfaceFootprintX, 0.0f) * (radius * 0.5f);
+        const float2 uvDy = float2(0.0f, surfaceFootprintY) * (radius * 0.5f);
+        const float2 residualUv = PrismNdfFilterUv(uv);
+        float2 residualDx;
+        float2 residualDy;
+        PrismNdfFilterGradients(uv, uvDx, uvDy, residualDx, residualDy);
+        const float baseDistribution = g_NdfDistribution.SampleLevel(g_NdfDistributionSampler, uv, 0.0f);
+        const float sampledResidual = ((uint)g_NdfParams.z & 4u) != 0u
+            ? g_NdfResidual.SampleGrad(g_NdfResidualSampler, residualUv, residualDx, residualDy)
+            : g_NdfResidual.SampleLevel(g_NdfResidualSampler, residualUv, 0.0f);
+        const float horizonFade = ((uint)g_NdfParams.z & 2u) != 0u
+            ? smoothstep(0.0f, 0.1f, horizonNoV) : 1.0f;
+        const float residual = g_NdfParams.y > 0.5f ? sampledResidual * horizonFade : 0.0f;
+        const float distribution = max(baseDistribution + residual * g_NdfParams.x, 0.0f);
         const float noH = sqrt(max(1.0f - dot(disk, disk), 0.0f));
         const float3 halfVector = BrdfNormalizeOr(localTangent * disk.x + localBitangent * disk.y + normal * noH, normal);
         const float voH = dot(viewDirection, halfVector);
@@ -338,9 +370,10 @@ PS_OUTPUT main_ps(VS_OUTPUT input)
     float3 diffuseAccum = 0.0f;
     float3 specAccum    = 0.0f;
 
-    [loop]
-    for (uint i = 0; i < g_LightCount; ++i)
+    [unroll(8)]
+    for (uint i = 0; i < ENGINE_MAX_LIGHTS; ++i)
     {
+        if (i >= g_LightCount) continue;
         float3 lightDir   = normalize(g_Lights[i].DirectionIntensity.xyz);
         float  intensity  = g_Lights[i].DirectionIntensity.w;
         float3 lightColor = g_Lights[i].ColorUsePosition.rgb;
@@ -402,9 +435,14 @@ PS_OUTPUT main_ps(VS_OUTPUT input)
             const float ndfHandedness = dot(cross(N, ndfTangent), bitangent) < 0.0f ? -1.0f : 1.0f;
             const float3 ndfBitangent = cross(N, ndfTangent) * ndfHandedness;
             const float2 ndfCoord = float2(dot(query.H, ndfTangent), dot(query.H, ndfBitangent));
-            const float residual = g_NdfParams.y > 0.5f
-                ? g_NdfResidual.SampleLevel(g_NdfResidualSampler, PrismNdfFilterUv(ndfCoord * 0.5f + 0.5f), 0.0f)
-                : 0.0f;
+            const float2 residualUv = PrismNdfFilterUv(ndfCoord * 0.5f + 0.5f);
+            float residual = 0.0f;
+            if (g_NdfParams.y > 0.5f) {
+                residual = ((uint)g_NdfParams.z & 4u) != 0u
+                    ? g_NdfResidual.SampleGrad(g_NdfResidualSampler, residualUv, ddx(residualUv), ddy(residualUv))
+                    : g_NdfResidual.SampleLevel(g_NdfResidualSampler, residualUv, 0.0f);
+                if (((uint)g_NdfParams.z & 2u) != 0u) residual *= smoothstep(0.0f, 0.1f, query.NoV);
+            }
             const float distribution = PrismZernikeNdf(ndfCoord, g_NdfCoefficients, residual, g_NdfParams.x);
             EvaluateMicrofacetBrdfComponents(query, brdfBaseColor, brdfMetallic, brdfF0, alpha,
                 distribution, diffuseBrdf, specularBrdf);

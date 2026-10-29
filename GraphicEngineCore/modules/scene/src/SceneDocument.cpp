@@ -233,7 +233,8 @@ auto ReadGeneratedNdf(const Json& value, SceneGeneratedNdfDocument& generated, s
   std::vector<std::string> warnings;
   KnownKeys(value,
             {"gridSize", "degree", "dataVersion", "directional", "prompt", "modelVersion", "exporterVersion",
-             "normalization", "zernikeCoefficients", "residuals", "residualsEnabled", "residualFilter"},
+             "normalization", "zernikeCoefficients", "residuals", "residualsEnabled", "residualFilter", "horizonFade",
+             "mipmappedResiduals", "equalAngleResiduals"},
             warnings, "generatedNdf");
   for (const char* required :
        {"gridSize", "degree", "dataVersion", "normalization", "zernikeCoefficients", "residuals"}) {
@@ -284,21 +285,21 @@ auto ReadGeneratedNdf(const Json& value, SceneGeneratedNdfDocument& generated, s
   if (generated.gridSize == PrismNdfGridSize && generated.dataVersion == PrismNdfDataVersion &&
       serializedResiduals.size() == PrismNdfSampleCount) {
     generated.data.residuals = std::move(serializedResiduals);
-  } else if (generated.gridSize == 64 && generated.dataVersion == 1 &&
-             serializedResiduals.size() == size_t{64} * 64 && PrismNdfGridSize != 64) {
+  } else if (generated.gridSize == 64 && generated.dataVersion == 1 && serializedResiduals.size() == size_t{64} * 64 &&
+             PrismNdfGridSize != 64) {
     // Schema-v9 assets stored the residual over a 64x64 grid. Preserve those
     // materials by bilinearly resampling it to the current canonical grid.
     constexpr uint32_t legacySize = 64;
     generated.data.residuals.resize(PrismNdfSampleCount);
     for (uint32_t y = 0; y < PrismNdfGridSize; ++y) {
-      const float sourceY = static_cast<float>(y) * static_cast<float>(legacySize - 1) /
-                            static_cast<float>(PrismNdfGridSize - 1);
+      const float sourceY =
+          static_cast<float>(y) * static_cast<float>(legacySize - 1) / static_cast<float>(PrismNdfGridSize - 1);
       const uint32_t y0 = static_cast<uint32_t>(sourceY);
       const uint32_t y1 = std::min(y0 + 1, legacySize - 1);
       const float fy = sourceY - static_cast<float>(y0);
       for (uint32_t x = 0; x < PrismNdfGridSize; ++x) {
-        const float sourceX = static_cast<float>(x) * static_cast<float>(legacySize - 1) /
-                              static_cast<float>(PrismNdfGridSize - 1);
+        const float sourceX =
+            static_cast<float>(x) * static_cast<float>(legacySize - 1) / static_cast<float>(PrismNdfGridSize - 1);
         const uint32_t x0 = static_cast<uint32_t>(sourceX);
         const uint32_t x1 = std::min(x0 + 1, legacySize - 1);
         const float fx = sourceX - static_cast<float>(x0);
@@ -351,17 +352,32 @@ auto ReadGeneratedNdf(const Json& value, SceneGeneratedNdfDocument& generated, s
       return false;
     }
     const auto filter = value.at("residualFilter").get<std::string>();
-    if (filter == "quinticUv") generated.data.residualFilter = PrismNdfResidualFilter::QuinticUv;
-    else if (filter != "bilinear") { error = "generatedNdf.residualFilter is unsupported"; return false; }
+    if (filter == "quinticUv")
+      generated.data.residualFilter = PrismNdfResidualFilter::QuinticUv;
+    else if (filter != "bilinear") {
+      error = "generatedNdf.residualFilter is unsupported";
+      return false;
+    }
+  }
+  for (const auto& [key, option] :
+       std::array<std::pair<const char*, bool*>, 3>{{{"horizonFade", &generated.data.horizonFade},
+                                                     {"mipmappedResiduals", &generated.data.mipmappedResiduals},
+                                                     {"equalAngleResiduals", &generated.data.equalAngleResiduals}}}) {
+    if (value.contains(key)) {
+      if (!value.at(key).is_boolean()) {
+        error = std::string("generatedNdf.") + key + " must be a boolean";
+        return false;
+      }
+      *option = value.at(key).get<bool>();
+    }
   }
   const bool finiteCoefficients =
       std::ranges::all_of(generated.data.zernikeCoefficients, [](float sample) { return std::isfinite(sample); });
   const bool finiteResiduals =
       std::ranges::all_of(generated.data.residuals, [](float sample) { return std::isfinite(sample); });
   if (generated.gridSize != PrismNdfGridSize || generated.data.residuals.size() != PrismNdfSampleCount ||
-      generated.degree != PrismNdfDegree ||
-      generated.dataVersion != PrismNdfDataVersion || !finiteCoefficients || !finiteResiduals ||
-      !std::isfinite(generated.data.normalization) || generated.data.normalization <= 0.0F) {
+      generated.degree != PrismNdfDegree || generated.dataVersion != PrismNdfDataVersion || !finiteCoefficients ||
+      !finiteResiduals || !std::isfinite(generated.data.normalization) || generated.data.normalization <= 0.0F) {
     error = "generatedNdf has unsupported dimensions/version or non-finite data";
     return false;
   }
@@ -561,8 +577,7 @@ auto IsValidMaterial(const SceneMaterialDocument& material) -> bool {
       (!material.generatedNdf ||
        (material.generatedNdf->gridSize == PrismNdfGridSize &&
         material.generatedNdf->data.residuals.size() == PrismNdfSampleCount &&
-        material.generatedNdf->degree == PrismNdfDegree &&
-        material.generatedNdf->dataVersion == PrismNdfDataVersion &&
+        material.generatedNdf->degree == PrismNdfDegree && material.generatedNdf->dataVersion == PrismNdfDataVersion &&
         std::isfinite(material.generatedNdf->data.normalization) && material.generatedNdf->data.normalization > 0.0F &&
         std::ranges::all_of(material.generatedNdf->data.zernikeCoefficients,
                             [](float value) { return std::isfinite(value); }) &&
@@ -669,7 +684,12 @@ auto MaterialJson(const SceneMaterialDocument& material) -> Json {
                               {"zernikeCoefficients", generated.data.zernikeCoefficients},
                               {"residuals", generated.data.residuals},
                               {"residualsEnabled", generated.data.residualsEnabled},
-                              {"residualFilter", generated.data.residualFilter == PrismNdfResidualFilter::QuinticUv ? "quinticUv" : "bilinear"}};
+                              {"residualFilter", generated.data.residualFilter == PrismNdfResidualFilter::QuinticUv
+                                                     ? "quinticUv"
+                                                     : "bilinear"},
+                              {"horizonFade", generated.data.horizonFade},
+                              {"mipmappedResiduals", generated.data.mipmappedResiduals},
+                              {"equalAngleResiduals", generated.data.equalAngleResiduals}};
   }
   return result;
 }
