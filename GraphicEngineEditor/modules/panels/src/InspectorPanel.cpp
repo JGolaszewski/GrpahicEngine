@@ -67,8 +67,16 @@ auto EvaluatePreviewNdf(const Engine::PrismNdfData& data, float x, float y) -> f
   const uint32_t y0 = static_cast<uint32_t>(gridY);
   const uint32_t x1 = (std::min)(x0 + 1, Engine::PrismNdfGridSize - 1);
   const uint32_t y1 = (std::min)(y0 + 1, Engine::PrismNdfGridSize - 1);
-  const float tx = gridX - static_cast<float>(x0);
-  const float ty = gridY - static_cast<float>(y0);
+  auto weight = [&data](float f) {
+    if (data.residualFilter == Engine::PrismNdfResidualFilter::QuinticUv) {
+      const float f2 = f * f;
+      const float f3 = f2 * f;
+      return f3 * (f * (f * 6.0F - 15.0F) + 10.0F);
+    }
+    return f;
+  };
+  const float tx = weight(gridX - static_cast<float>(x0));
+  const float ty = weight(gridY - static_cast<float>(y0));
   const auto sample = [&data](uint32_t sx, uint32_t sy) -> double {
     return data.residuals[static_cast<size_t>(sy) * Engine::PrismNdfGridSize + sx];
   };
@@ -280,6 +288,27 @@ auto InspectorPanel::DrawPrismNdfEditor(Engine::EntityHandle entity, const std::
       }
       if (material.generatedNdf && (!m_PrismPreview || m_PrismPreviewFromSaved)) {
         material.generatedNdf->data.residualsEnabled = residualsEnabled;
+        materialChanged = true;
+      }
+      m_PrismPreviewDirty = true;
+    }
+    auto residualFilter = Engine::PrismNdfResidualFilter::Bilinear;
+    if (m_PrismPreview) {
+      residualFilter = m_PrismPreview->residualFilter;
+    } else if (material.generatedNdf) {
+      residualFilter = material.generatedNdf->data.residualFilter;
+    }
+    int filter = residualFilter == Engine::PrismNdfResidualFilter::QuinticUv ? 1 : 0;
+    const char* filterNames[] = {"Bilinear", "Quintic UV"};
+    if (ImGui::Combo("Residual filter", &filter, filterNames, 2)) {
+      const auto mode = filter == 1 ? Engine::PrismNdfResidualFilter::QuinticUv : Engine::PrismNdfResidualFilter::Bilinear;
+      if (m_PrismPreview) {
+        auto updatedPreview = std::make_shared<Engine::PrismNdfData>(*m_PrismPreview);
+        updatedPreview->residualFilter = mode;
+        m_PrismPreview = std::move(updatedPreview);
+      }
+      if (material.generatedNdf && (!m_PrismPreview || m_PrismPreviewFromSaved)) {
+        material.generatedNdf->data.residualFilter = mode;
         materialChanged = true;
       }
       m_PrismPreviewDirty = true;

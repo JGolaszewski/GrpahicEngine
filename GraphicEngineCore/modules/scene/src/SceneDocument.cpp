@@ -233,7 +233,7 @@ auto ReadGeneratedNdf(const Json& value, SceneGeneratedNdfDocument& generated, s
   std::vector<std::string> warnings;
   KnownKeys(value,
             {"gridSize", "degree", "dataVersion", "directional", "prompt", "modelVersion", "exporterVersion",
-             "normalization", "zernikeCoefficients", "residuals", "residualsEnabled"},
+             "normalization", "zernikeCoefficients", "residuals", "residualsEnabled", "residualFilter"},
             warnings, "generatedNdf");
   for (const char* required :
        {"gridSize", "degree", "dataVersion", "normalization", "zernikeCoefficients", "residuals"}) {
@@ -344,6 +344,15 @@ auto ReadGeneratedNdf(const Json& value, SceneGeneratedNdfDocument& generated, s
       return false;
     }
     generated.data.residualsEnabled = value.at("residualsEnabled").get<bool>();
+  }
+  if (value.contains("residualFilter")) {
+    if (!value.at("residualFilter").is_string()) {
+      error = "generatedNdf.residualFilter must be a string";
+      return false;
+    }
+    const auto filter = value.at("residualFilter").get<std::string>();
+    if (filter == "quinticUv") generated.data.residualFilter = PrismNdfResidualFilter::QuinticUv;
+    else if (filter != "bilinear") { error = "generatedNdf.residualFilter is unsupported"; return false; }
   }
   const bool finiteCoefficients =
       std::ranges::all_of(generated.data.zernikeCoefficients, [](float sample) { return std::isfinite(sample); });
@@ -659,7 +668,8 @@ auto MaterialJson(const SceneMaterialDocument& material) -> Json {
                               {"normalization", generated.data.normalization},
                               {"zernikeCoefficients", generated.data.zernikeCoefficients},
                               {"residuals", generated.data.residuals},
-                              {"residualsEnabled", generated.data.residualsEnabled}};
+                              {"residualsEnabled", generated.data.residualsEnabled},
+                              {"residualFilter", generated.data.residualFilter == PrismNdfResidualFilter::QuinticUv ? "quinticUv" : "bilinear"}};
   }
   return result;
 }

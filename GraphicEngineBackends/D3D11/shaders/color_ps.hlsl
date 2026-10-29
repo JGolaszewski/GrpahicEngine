@@ -72,6 +72,17 @@ SamplerState g_EnvironmentPanoramaSampler : register(s12);
 Texture2D<float> g_NdfDistribution : register(t6);
 SamplerState g_NdfDistributionSampler : register(s6);
 
+float2 PrismNdfFilterUv(float2 uv)
+{
+    if (g_NdfParams.z <= 0.5f) return uv;
+    const float size = 128.0f;
+    const float2 texel = uv * size - 0.5f;
+    const float2 f = frac(texel);
+    const float2 f2 = f * f;
+    const float2 warped = f2 * f * (f * (f * 6.0f - 15.0f) + 10.0f);
+    return (floor(texel) + warped + 0.5f) / size;
+}
+
 float3 EvaluatePrismNdfEnvironmentSpecular(float3 normal, float3 viewDirection, float3 tangent,
     float3 bitangent, float3 f0, float alpha, float2 pixelPosition)
 {
@@ -93,7 +104,7 @@ float3 EvaluatePrismNdfEnvironmentSpecular(float3 normal, float3 viewDirection, 
         const float radius = sqrt((float(index) + 0.5f) / float(SAMPLE_COUNT));
         const float2 disk = rotation * radius;
         const float2 uv = disk * 0.5f + 0.5f;
-        const float distribution = g_NdfDistribution.SampleLevel(g_NdfDistributionSampler, uv, 0.0f);
+        const float distribution = g_NdfDistribution.SampleLevel(g_NdfDistributionSampler, PrismNdfFilterUv(uv), 0.0f);
         const float noH = sqrt(max(1.0f - dot(disk, disk), 0.0f));
         const float3 halfVector = BrdfNormalizeOr(localTangent * disk.x + localBitangent * disk.y + normal * noH, normal);
         const float voH = dot(viewDirection, halfVector);
@@ -332,7 +343,7 @@ PS_OUTPUT main_ps(VS_OUTPUT input)
             const float3 ndfBitangent = cross(N, ndfTangent) * ndfHandedness;
             const float2 ndfCoord = float2(dot(query.H, ndfTangent), dot(query.H, ndfBitangent));
             const float residual = g_NdfParams.y > 0.5f
-                ? g_NdfResidual.SampleLevel(g_NdfResidualSampler, ndfCoord * 0.5f + 0.5f, 0.0f)
+                ? g_NdfResidual.SampleLevel(g_NdfResidualSampler, PrismNdfFilterUv(ndfCoord * 0.5f + 0.5f), 0.0f)
                 : 0.0f;
             const float distribution = PrismZernikeNdf(ndfCoord, g_NdfCoefficients, residual, g_NdfParams.x);
             EvaluateMicrofacetBrdfComponents(query, brdfBaseColor, brdfMetallic, brdfF0, alpha,

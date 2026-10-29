@@ -30,6 +30,14 @@ direct lighting adds the signed residual sample at material SRV `t3`/sampler
 integration samples the precomputed normalized distribution at `t6`/`s6` and
 the active panorama at `t12`/`s12`.
 
+`NdfParams.z` selects residual filtering: zero keeps the existing bilinear
+coordinates, while one applies Quintic UV warping to the fractional texel
+coordinates before the same linear sampler call. The warp uses
+`6f^5 - 15f^4 + 10f^3` independently per coordinate and keeps each residual
+lookup to one hardware texture sample. The material's precomputed environment
+distribution uses the same mode when sampled; its CPU construction evaluates
+the residual at grid nodes, where both modes produce identical values.
+
 Material resources occupy the contiguous SRV range `t0`–`t6`; scene resources
 occupy `t7`–`t12`. This separation is required by the D3D11 NVRHI backend:
 binding a set applies its complete contiguous SRV range, including null holes.
