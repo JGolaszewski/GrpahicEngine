@@ -41,15 +41,17 @@ auto GridAt(std::span<const float> grid, double x, double y) -> double {
   if (x * x + y * y > 1.0) {
     return 0.0;
   }
-  const double px = (x + 1.0) * 0.5 * 63.0;
-  const double py = (y + 1.0) * 0.5 * 63.0;
+  const double px = (x + 1.0) * 0.5 * static_cast<double>(Engine::PrismNdfGridSize - 1);
+  const double py = (y + 1.0) * 0.5 * static_cast<double>(Engine::PrismNdfGridSize - 1);
   const uint32_t x0 = static_cast<uint32_t>(std::floor(px));
   const uint32_t y0 = static_cast<uint32_t>(std::floor(py));
-  const uint32_t x1 = (std::min)(x0 + 1, 63U);
-  const uint32_t y1 = (std::min)(y0 + 1, 63U);
+  const uint32_t x1 = (std::min)(x0 + 1, Engine::PrismNdfGridSize - 1);
+  const uint32_t y1 = (std::min)(y0 + 1, Engine::PrismNdfGridSize - 1);
   const double tx = px - x0;
   const double ty = py - y0;
-  const auto at = [&grid](uint32_t column, uint32_t row) { return static_cast<double>(grid[row * 64 + column]); };
+  const auto at = [&grid](uint32_t column, uint32_t row) {
+    return static_cast<double>(grid[row * Engine::PrismNdfGridSize + column]);
+  };
   return std::lerp(std::lerp(at(x0, y0), at(x1, y0), tx), std::lerp(at(x0, y1), at(x1, y1), tx), ty);
 }
 } // namespace
@@ -115,9 +117,9 @@ TEST(PrismNdfMathTests, ResidualMaskClampAndNormalizationMatchIndependentDoubleR
 TEST(PrismNdfMathTests, LeastSquaresCoefficientsAndSignedResidualReconstructEverySample) {
   std::array<float, Engine::PrismNdfSampleCount> grid{};
   for (uint32_t row = 0; row < Engine::PrismNdfGridSize; ++row) {
-    const double y = 2.0 * row / 63.0 - 1.0;
+    const double y = 2.0 * row / static_cast<double>(Engine::PrismNdfGridSize - 1) - 1.0;
     for (uint32_t column = 0; column < Engine::PrismNdfGridSize; ++column) {
-      const double x = 2.0 * column / 63.0 - 1.0;
+      const double x = 2.0 * column / static_cast<double>(Engine::PrismNdfGridSize - 1) - 1.0;
       if (x * x + y * y <= 1.0) {
         grid[row * Engine::PrismNdfGridSize + column] =
             static_cast<float>(std::exp(-3.0 * (x * x + 1.4 * y * y)) * (1.0 + 0.1 * x * y));
@@ -130,10 +132,10 @@ TEST(PrismNdfMathTests, LeastSquaresCoefficientsAndSignedResidualReconstructEver
   bool hasNegativeResidual = false;
   bool hasPositiveResidual = false;
   for (uint32_t row = 0; row < Engine::PrismNdfGridSize; ++row) {
-    const double y = 2.0 * row / 63.0 - 1.0;
+    const double y = 2.0 * row / static_cast<double>(Engine::PrismNdfGridSize - 1) - 1.0;
     for (uint32_t column = 0; column < Engine::PrismNdfGridSize; ++column) {
       const size_t sample = row * Engine::PrismNdfGridSize + column;
-      const double x = 2.0 * column / 63.0 - 1.0;
+      const double x = 2.0 * column / static_cast<double>(Engine::PrismNdfGridSize - 1) - 1.0;
       double base = 0.0;
       for (uint32_t coefficient = 0; coefficient < Engine::PrismNdfCoefficientCount; ++coefficient) {
         base +=
@@ -156,9 +158,9 @@ TEST(PrismNdfMathTests, StreamingQrRecoversIndependentKnownCoefficientOracle) {
   oracle[9] = 0.012;
   std::array<float, Engine::PrismNdfSampleCount> grid{};
   for (uint32_t row = 0; row < Engine::PrismNdfGridSize; ++row) {
-    const double y = 2.0 * row / 63.0 - 1.0;
+    const double y = 2.0 * row / static_cast<double>(Engine::PrismNdfGridSize - 1) - 1.0;
     for (uint32_t column = 0; column < Engine::PrismNdfGridSize; ++column) {
-      const double x = 2.0 * column / 63.0 - 1.0;
+      const double x = 2.0 * column / static_cast<double>(Engine::PrismNdfGridSize - 1) - 1.0;
       if (x * x + y * y > 1.0) {
         continue;
       }

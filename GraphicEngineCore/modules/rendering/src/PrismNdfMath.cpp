@@ -63,7 +63,7 @@ auto BasisAt(double x, double y) noexcept -> BasisVector {
 
 auto IsFiniteGrid(std::span<const float> grid, std::string& error) -> bool {
   if (grid.size() != PrismNdfSampleCount) {
-    error = "PRISM NDF grid must contain exactly 4096 samples";
+    error = "PRISM NDF grid must contain exactly " + std::to_string(PrismNdfSampleCount) + " samples";
     return false;
   }
   if (!std::ranges::all_of(grid, [](float value) { return std::isfinite(value) && value >= 0.0F; })) {
