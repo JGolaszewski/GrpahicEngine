@@ -194,6 +194,41 @@ TEST(ScenePersistenceTests, GeneratedNdfCoefficientsResidualAndPromptRoundTrip) 
             Engine::PrismNdfSampleCount);
 }
 
+TEST(ScenePersistenceTests, GeneratedNdfLoadsLegacy64GridAndResamplesWhenCanonicalGridIsLarger) {
+  TemporaryProject project;
+  const auto path = project.Root() / "legacy-generated-ndf.scene.json";
+  std::vector<float> legacyResiduals(64U * 64U);
+  for (uint32_t y = 0; y < 64; ++y) {
+    for (uint32_t x = 0; x < 64; ++x) {
+      legacyResiduals[static_cast<size_t>(y) * 64U + x] = static_cast<float>(x + y * 64U);
+    }
+  }
+  const nlohmann::json generated = {
+      {"gridSize", 64}, {"degree", Engine::PrismNdfDegree}, {"dataVersion", 1}, {"normalization", 1.0F},
+      {"zernikeCoefficients", std::vector<float>(Engine::PrismNdfCoefficientCount, 0.0F)},
+      {"residuals", legacyResiduals}};
+  {
+    std::ofstream scene(path, std::ios::binary | std::ios::trunc);
+    scene << nlohmann::json{{"schemaVersion", Engine::CurrentSceneSchemaVersion},
+                            {"unitsPerMeter", 1.0F},
+                            {"entities", {{{"id", 1}, {"primitiveType", "sphere"},
+                                           {"material", {{"brdfModel", "prismNdf"}, {"generatedNdf", generated}}}}}}};
+  }
+
+  const auto loaded = Engine::SceneSerializer::Load(path);
+  ASSERT_TRUE(loaded) << loaded.error;
+  const auto& migrated = *loaded.document.entities.front().material->generatedNdf;
+  EXPECT_EQ(migrated.gridSize, Engine::PrismNdfGridSize);
+  EXPECT_EQ(migrated.data.residuals.front(), legacyResiduals.front());
+  EXPECT_EQ(migrated.data.residuals.back(), legacyResiduals.back());
+  if constexpr (Engine::PrismNdfGridSize == 128) {
+    EXPECT_NEAR(migrated.data.residuals[1], 63.0F / 127.0F, 1.0e-6F);
+    EXPECT_NEAR(migrated.data.residuals[Engine::PrismNdfGridSize], 63.0F * 64.0F / 127.0F, 1.0e-5F);
+  } else {
+    EXPECT_EQ(migrated.data.residuals, legacyResiduals);
+  }
+}
+
 TEST(ScenePersistenceTests, GeneratedNdfRejectsWrongCoefficientCountAndUnsupportedVersion) {
   TemporaryProject project;
   const auto path = project.Root() / "invalid-generated-ndf.scene.json";

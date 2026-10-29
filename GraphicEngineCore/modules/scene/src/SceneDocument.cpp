@@ -13,6 +13,7 @@
 #include <numbers>
 #include <set>
 #include <type_traits>
+#include <vector>
 
 #ifdef _WIN32
 #  define WIN32_LEAN_AND_MEAN
@@ -258,8 +259,60 @@ auto ReadGeneratedNdf(const Json& value, SceneGeneratedNdfDocument& generated, s
       !readUint("dataVersion", generated.dataVersion) ||
       !ReadNumber(value, "normalization", generated.data.normalization, error) ||
       !ReadFloatArray(value.at("zernikeCoefficients"), generated.data.zernikeCoefficients,
-                      "generatedNdf.zernikeCoefficients", error) ||
-      !ReadFloatArray(value.at("residuals"), generated.data.residuals, "generatedNdf.residuals", error)) {
+                      "generatedNdf.zernikeCoefficients", error)) {
+    return false;
+  }
+  const auto& residualJson = value.at("residuals");
+  if (!residualJson.is_array()) {
+    error = "generatedNdf.residuals must be an array";
+    return false;
+  }
+  std::vector<float> serializedResiduals;
+  serializedResiduals.reserve(residualJson.size());
+  for (const auto& sample : residualJson) {
+    if (!sample.is_number()) {
+      error = "generatedNdf.residuals contains a non-numeric value";
+      return false;
+    }
+    const double number = sample.get<double>();
+    if (!std::isfinite(number) || std::abs(number) > std::numeric_limits<float>::max()) {
+      error = "generatedNdf.residuals contains a non-finite or unrepresentable value";
+      return false;
+    }
+    serializedResiduals.push_back(static_cast<float>(number));
+  }
+  if (generated.gridSize == PrismNdfGridSize && generated.dataVersion == PrismNdfDataVersion &&
+      serializedResiduals.size() == PrismNdfSampleCount) {
+    std::ranges::copy(serializedResiduals, generated.data.residuals.begin());
+  } else if (generated.gridSize == 64 && generated.dataVersion == 1 &&
+             serializedResiduals.size() == 64U * 64U && PrismNdfGridSize != 64) {
+    // Schema-v9 assets stored the residual over a 64x64 grid. Preserve those
+    // materials by bilinearly resampling it to the current canonical grid.
+    constexpr uint32_t legacySize = 64;
+    for (uint32_t y = 0; y < PrismNdfGridSize; ++y) {
+      const float sourceY = static_cast<float>(y) * static_cast<float>(legacySize - 1) /
+                            static_cast<float>(PrismNdfGridSize - 1);
+      const uint32_t y0 = static_cast<uint32_t>(sourceY);
+      const uint32_t y1 = std::min(y0 + 1, legacySize - 1);
+      const float fy = sourceY - static_cast<float>(y0);
+      for (uint32_t x = 0; x < PrismNdfGridSize; ++x) {
+        const float sourceX = static_cast<float>(x) * static_cast<float>(legacySize - 1) /
+                              static_cast<float>(PrismNdfGridSize - 1);
+        const uint32_t x0 = static_cast<uint32_t>(sourceX);
+        const uint32_t x1 = std::min(x0 + 1, legacySize - 1);
+        const float fx = sourceX - static_cast<float>(x0);
+        const auto at = [&serializedResiduals](uint32_t sx, uint32_t sy) {
+          return serializedResiduals[static_cast<size_t>(sy) * legacySize + sx];
+        };
+        const float top = std::lerp(at(x0, y0), at(x1, y0), fx);
+        const float bottom = std::lerp(at(x0, y1), at(x1, y1), fx);
+        generated.data.residuals[static_cast<size_t>(y) * PrismNdfGridSize + x] = std::lerp(top, bottom, fy);
+      }
+    }
+    generated.gridSize = PrismNdfGridSize;
+    generated.dataVersion = PrismNdfDataVersion;
+  } else {
+    error = "generatedNdf has unsupported grid dimensions or residual sample count";
     return false;
   }
   const auto readString = [&value, &error](const char* key, std::string& target) -> bool {
