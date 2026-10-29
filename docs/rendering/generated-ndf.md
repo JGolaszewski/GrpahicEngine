@@ -6,7 +6,7 @@ PRISM is an optional generated normal distribution function for a material. The 
 
 The coefficient ordering is the real Zernike sequence for radial order `n = 0..8` and azimuthal order `m = -n, -n+2, …, n`, for 45 values total. The shader reconstructs the polynomial base, adds the signed residual sampled over the unit disk when residuals are enabled, clamps the result to nonnegative values, masks points outside the disk, and multiplies by the stored normalization. The residual is row-major R32F data and is sampled linearly in the material tangent frame. CPU payloads keep residuals in vector-backed storage to avoid inflating every scene and material object; a valid payload must contain exactly 16,384 samples.
 
-PRISM material settings can disable residual contribution and render from the 45-term coefficient basis alone. This setting defaults to enabled, is stored as `generatedNdf.residualsEnabled`, and does not delete or modify the residual samples. Direct lighting, environment lighting, and the Inspector previews use the same setting.
+The Inspector exposes this toggle as **Enable residuals** in its **PRISM NDF settings** section. Disabling it renders from the 45-term coefficient basis alone. The setting defaults to enabled, is stored as `generatedNdf.residualsEnabled`, and does not delete or modify residual samples. Direct lighting, environment lighting, and the Inspector previews use the same setting.
 
 The stored normalization scales the projected-disk integral of `D` to one. This is the NDF normalization contract; it does not independently calibrate PRISM's learned shape as a complete BRDF. Direct and environment evaluation must use the same distribution and the engine's existing Fresnel and Smith geometry conventions.
 
