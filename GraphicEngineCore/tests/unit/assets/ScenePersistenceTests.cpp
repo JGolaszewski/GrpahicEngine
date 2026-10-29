@@ -162,6 +162,7 @@ TEST(ScenePersistenceTests, GeneratedNdfCoefficientsResidualAndPromptRoundTrip) 
   material.generatedNdf->modelVersion = "prism-models-v1";
   material.generatedNdf->exporterVersion = "decoder-v2";
   material.generatedNdf->data.normalization = 0.875F;
+  material.generatedNdf->data.residualsEnabled = false;
   material.generatedNdf->data.residuals.resize(Engine::PrismNdfSampleCount);
   for (size_t index = 0; index < Engine::PrismNdfCoefficientCount; ++index) {
     material.generatedNdf->data.zernikeCoefficients[index] = static_cast<float>(index) * 0.125F;
@@ -184,6 +185,7 @@ TEST(ScenePersistenceTests, GeneratedNdfCoefficientsResidualAndPromptRoundTrip) 
   EXPECT_EQ(restored.data.zernikeCoefficients, material.generatedNdf->data.zernikeCoefficients);
   EXPECT_EQ(restored.data.residuals, material.generatedNdf->data.residuals);
   EXPECT_FLOAT_EQ(restored.data.normalization, 0.875F);
+  EXPECT_FALSE(restored.data.residualsEnabled);
   EXPECT_EQ(restored.prompt, material.generatedNdf->prompt);
   EXPECT_EQ(restored.modelVersion, "prism-models-v1");
   EXPECT_EQ(restored.exporterVersion, "decoder-v2");
@@ -229,6 +231,7 @@ TEST(ScenePersistenceTests, GeneratedNdfLoadsLegacy64GridAndResamplesWhenCanonic
   const auto& material = loaded.document.entities.front().material.value();
   ASSERT_TRUE(material.generatedNdf.has_value());
   const auto& migrated = material.generatedNdf.value();
+  EXPECT_TRUE(migrated.data.residualsEnabled);
   EXPECT_EQ(migrated.gridSize, Engine::PrismNdfGridSize);
   EXPECT_EQ(migrated.data.residuals.front(), legacyResiduals.front());
   EXPECT_EQ(migrated.data.residuals.back(), legacyResiduals.back());
@@ -346,6 +349,9 @@ TEST(ScenePersistenceTests, GeneratedNdfValidationFailureMatrixRejectsInvalidPay
   expectRejected(payload);
   payload = validPayload();
   payload["normalization"] = std::numeric_limits<float>::infinity();
+  expectRejected(payload);
+  payload = validPayload();
+  payload["residualsEnabled"] = "false";
   expectRejected(payload);
   payload = validPayload();
   payload["dataVersion"] = Engine::PrismNdfDataVersion + 1;

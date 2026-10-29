@@ -74,7 +74,8 @@ auto EvaluatePreviewNdf(const Engine::PrismNdfData& data, float x, float y) -> f
   };
   const double top = std::lerp(sample(x0, y0), sample(x1, y0), static_cast<double>(tx));
   const double bottom = std::lerp(sample(x0, y1), sample(x1, y1), static_cast<double>(tx));
-  value = (std::max)(0.0, value + std::lerp(top, bottom, static_cast<double>(ty)));
+  const double residual = data.residualsEnabled ? std::lerp(top, bottom, static_cast<double>(ty)) : 0.0;
+  value = (std::max)(0.0, value + residual);
   return static_cast<float>(value * data.normalization);
 }
 
@@ -247,8 +248,9 @@ void InspectorPanel::Draw() {
   ImGui::End();
 }
 
-void InspectorPanel::DrawPrismNdfEditor(Engine::EntityHandle entity, const std::string& materialGuid,
-                                        Engine::SceneMaterialDocument& material) {
+auto InspectorPanel::DrawPrismNdfEditor(Engine::EntityHandle entity, const std::string& materialGuid,
+                                        Engine::SceneMaterialDocument& material) -> bool {
+  bool materialChanged = false;
   const bool contextChanged = m_PrismEditorEntity != entity || m_PrismMaterialGuid != materialGuid;
   if (contextChanged) {
     ResetPrismNdfEditor(true);
@@ -265,6 +267,24 @@ void InspectorPanel::DrawPrismNdfEditor(Engine::EntityHandle entity, const std::
       m_PrismPreviewDirectional = saved.directional;
       m_PrismPreviewFromSaved = true;
     }
+  }
+  if (m_PrismPreview || material.generatedNdf) {
+    ImGui::SeparatorText("NDF settings");
+    bool residualsEnabled = m_PrismPreview ? m_PrismPreview->residualsEnabled
+                                           : material.generatedNdf->data.residualsEnabled;
+    if (ImGui::Checkbox("Use residuals", &residualsEnabled)) {
+      if (m_PrismPreview) {
+        auto updatedPreview = std::make_shared<Engine::PrismNdfData>(*m_PrismPreview);
+        updatedPreview->residualsEnabled = residualsEnabled;
+        m_PrismPreview = std::move(updatedPreview);
+      }
+      if (material.generatedNdf && (!m_PrismPreview || m_PrismPreviewFromSaved)) {
+        material.generatedNdf->data.residualsEnabled = residualsEnabled;
+        materialChanged = true;
+      }
+      m_PrismPreviewDirty = true;
+    }
+    ImGui::TextWrapped("Disabling residuals preserves the samples and uses the Zernike coefficient basis alone.");
   }
   ImGui::SeparatorText("PRISM NDF generation");
   ImGui::InputTextMultiline("Text prompt", m_PrismPrompt.data(), m_PrismPrompt.size(), ImVec2(-1.0F, 72.0F));
@@ -325,7 +345,7 @@ void InspectorPanel::DrawPrismNdfEditor(Engine::EntityHandle entity, const std::
   }
 
   if (!m_PrismPreview) {
-    return;
+    return materialChanged;
   }
   if (m_PrismPreviewDirty) {
     m_PrismPreviewMaximum = 0.0F;
@@ -430,6 +450,7 @@ void InspectorPanel::DrawPrismNdfEditor(Engine::EntityHandle entity, const std::
       }
     }
   }
+  return materialChanged;
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
@@ -900,7 +921,7 @@ void InspectorPanel::DrawEntityInspector() {
       }
       if ((material.brdfModel == "prismNdf" || m_PrismEditorRequested) && !legacyEmbeddedMaterial &&
           !mesh.MaterialGuid.empty()) {
-        DrawPrismNdfEditor(entity, mesh.MaterialGuid, material);
+        materialChanged |= DrawPrismNdfEditor(entity, mesh.MaterialGuid, material);
       }
       if (material.brdfModel == "gtr") {
         materialChanged |= ImGui::SliderFloat("GTR gamma", &material.gtrGamma, 1.0F, 8.0F, "%.2f");

@@ -75,7 +75,7 @@ struct MaterialGpu {
   DirectX::XMFLOAT4 TextureTransformRows[5]; ///< Two UV transform rows for each material texture slot.
   DirectX::XMFLOAT4 TextureTransformOffsets[5]; ///< UV offsets for each material texture slot.
   DirectX::XMFLOAT4 NdfCoefficients[12];        ///< 45 degree-8 real Zernike coefficients, packed as float4 values.
-  DirectX::XMFLOAT4 NdfParams;                  ///< Projected-energy normalization and reserved values.
+  DirectX::XMFLOAT4 NdfParams; ///< Projected-energy normalization, residual-enable flag, and reserved values.
 };
 
 static_assert(sizeof(DirectX::XMFLOAT4) == 16);
@@ -236,6 +236,7 @@ inline MaterialGpu BuildMaterialGpu(const MaterialProperties& properties) noexce
         std::isfinite(properties.GeneratedNdf->normalization) && properties.GeneratedNdf->normalization > 0.0F
             ? properties.GeneratedNdf->normalization
             : 1.0F;
+    gpu.NdfParams.y = properties.GeneratedNdf->residualsEnabled ? 1.0F : 0.0F;
   }
   return gpu;
 }

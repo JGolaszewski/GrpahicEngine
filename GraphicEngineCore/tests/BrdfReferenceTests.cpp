@@ -370,8 +370,16 @@ void TestMaterialGpuAbiPacking() {
   properties.GeneratedNdf = generatedNdf;
   const auto prism = ::Engine::Renderer::BuildMaterialGpu(properties);
   Require(prism.ModelFlags.y == 9U && prism.NdfCoefficients[0].x == 0.25F && prism.NdfCoefficients[1].x == -0.5F &&
-              prism.NdfCoefficients[11].x == 2.0F && prism.NdfParams.x == 0.75F && sizeof(prism) == 512U,
+              prism.NdfCoefficients[11].x == 2.0F && prism.NdfParams.x == 0.75F && prism.NdfParams.y == 1.0F &&
+              sizeof(prism) == 512U,
           "PRISM coefficient order, normalization, appended selector, and GPU ABI must be preserved");
+  auto coefficientsOnly = std::make_shared<::Engine::PrismNdfData>(*generatedNdf);
+  coefficientsOnly->residualsEnabled = false;
+  properties.GeneratedNdf = coefficientsOnly;
+  const auto coefficientsOnlyGpu = ::Engine::Renderer::BuildMaterialGpu(properties);
+  Require(coefficientsOnlyGpu.NdfParams.x == 0.75F && coefficientsOnlyGpu.NdfParams.y == 0.0F &&
+              coefficientsOnly->residuals == generatedNdf->residuals,
+          "Disabling PRISM residuals must preserve samples and pack only the render control");
 
   properties.Roughness = -1.0F;
   properties.Metallic = 2.0F;

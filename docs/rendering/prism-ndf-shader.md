@@ -22,8 +22,11 @@ shader variants.
 
 `MaterialGpu` packs the 45 coefficients into the first 45 lanes of the 12
 `float4` entries and places projected-energy normalization in `NdfParams.x`.
-The direct-light shaders evaluate this payload and add the signed residual
-sample at material SRV `t3`/sampler `s3`. PRISM-conditioned environment
+`NdfParams.y` is a float enable flag for the residual contribution. When it is
+zero, the direct-light shaders use the coefficient basis alone and the
+precomputed distribution texture is built without residuals. When enabled,
+direct lighting adds the signed residual sample at material SRV `t3`/sampler
+`s3`. PRISM-conditioned environment
 integration samples the precomputed normalized distribution at `t6`/`s6` and
 the active panorama at `t12`/`s12`.
 
@@ -37,7 +40,8 @@ resource assignments.
 
 Both color pixel-shader variants implement the same direct-light and
 PRISM-conditioned IBL math. The WARP rendering tests verify coefficient and
-signed-residual response, direct-light agreement at normal incidence, constant
+signed-residual response, residual enable/disable parity in direct and
+environment lighting, direct-light agreement at normal incidence, constant
 environment IBL against an independent high-sample integral, and resource
 updates after replacing the NDF or environment. `PrismNdfMathTests` also checks
 the CPU basis against an independent factorial definition, double-precision

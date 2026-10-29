@@ -233,7 +233,7 @@ auto ReadGeneratedNdf(const Json& value, SceneGeneratedNdfDocument& generated, s
   std::vector<std::string> warnings;
   KnownKeys(value,
             {"gridSize", "degree", "dataVersion", "directional", "prompt", "modelVersion", "exporterVersion",
-             "normalization", "zernikeCoefficients", "residuals"},
+             "normalization", "zernikeCoefficients", "residuals", "residualsEnabled"},
             warnings, "generatedNdf");
   for (const char* required :
        {"gridSize", "degree", "dataVersion", "normalization", "zernikeCoefficients", "residuals"}) {
@@ -337,6 +337,13 @@ auto ReadGeneratedNdf(const Json& value, SceneGeneratedNdfDocument& generated, s
       return false;
     }
     generated.directional = value.at("directional").get<bool>();
+  }
+  if (value.contains("residualsEnabled")) {
+    if (!value.at("residualsEnabled").is_boolean()) {
+      error = "generatedNdf.residualsEnabled must be a boolean";
+      return false;
+    }
+    generated.data.residualsEnabled = value.at("residualsEnabled").get<bool>();
   }
   const bool finiteCoefficients =
       std::ranges::all_of(generated.data.zernikeCoefficients, [](float sample) { return std::isfinite(sample); });
@@ -651,7 +658,8 @@ auto MaterialJson(const SceneMaterialDocument& material) -> Json {
                               {"exporterVersion", generated.exporterVersion},
                               {"normalization", generated.data.normalization},
                               {"zernikeCoefficients", generated.data.zernikeCoefficients},
-                              {"residuals", generated.data.residuals}};
+                              {"residuals", generated.data.residuals},
+                              {"residualsEnabled", generated.data.residualsEnabled}};
   }
   return result;
 }

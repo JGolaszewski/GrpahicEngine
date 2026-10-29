@@ -42,8 +42,8 @@ auto BuildNdfDistribution(const PrismNdfData& payload) -> std::array<float, Pris
         base += payload.zernikeCoefficients[coefficient] * EvaluatePrismZernikeBasis(coefficient, x, y);
       }
       const size_t index = static_cast<size_t>(row) * PrismNdfGridSize + column;
-      distribution[index] =
-          static_cast<float>((std::max)(base + payload.residuals[index], 0.0) * payload.normalization);
+      const double residual = payload.residualsEnabled ? payload.residuals[index] : 0.0;
+      distribution[index] = static_cast<float>((std::max)(base + residual, 0.0) * payload.normalization);
     }
   }
   return distribution;

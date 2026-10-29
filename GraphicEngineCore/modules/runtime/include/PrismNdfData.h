@@ -20,6 +20,7 @@ struct PrismNdfData {
   std::array<float, PrismNdfCoefficientCount> zernikeCoefficients{};
   std::vector<float> residuals;
   float normalization = 1.0F;
+  bool residualsEnabled = true; ///< Whether rendering adds the signed residual grid to the coefficient basis.
   auto operator==(const PrismNdfData& other) const noexcept -> bool = default;
 };
 

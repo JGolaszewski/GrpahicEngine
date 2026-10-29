@@ -41,8 +41,8 @@ public:
 
 private:
   void DrawEntityInspector();
-  void DrawPrismNdfEditor(Engine::EntityHandle entity, const std::string& materialGuid,
-                          Engine::SceneMaterialDocument& material);
+  auto DrawPrismNdfEditor(Engine::EntityHandle entity, const std::string& materialGuid,
+                          Engine::SceneMaterialDocument& material) -> bool;
   void ResetPrismNdfEditor(bool cancelRequest);
   void PollPrismGeneration();
   std::shared_ptr<Engine::Scene> m_Scene;
