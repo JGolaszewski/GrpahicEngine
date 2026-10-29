@@ -283,12 +283,13 @@ auto ReadGeneratedNdf(const Json& value, SceneGeneratedNdfDocument& generated, s
   }
   if (generated.gridSize == PrismNdfGridSize && generated.dataVersion == PrismNdfDataVersion &&
       serializedResiduals.size() == PrismNdfSampleCount) {
-    std::ranges::copy(serializedResiduals, generated.data.residuals.begin());
+    generated.data.residuals = std::move(serializedResiduals);
   } else if (generated.gridSize == 64 && generated.dataVersion == 1 &&
              serializedResiduals.size() == size_t{64} * 64 && PrismNdfGridSize != 64) {
     // Schema-v9 assets stored the residual over a 64x64 grid. Preserve those
     // materials by bilinearly resampling it to the current canonical grid.
     constexpr uint32_t legacySize = 64;
+    generated.data.residuals.resize(PrismNdfSampleCount);
     for (uint32_t y = 0; y < PrismNdfGridSize; ++y) {
       const float sourceY = static_cast<float>(y) * static_cast<float>(legacySize - 1) /
                             static_cast<float>(PrismNdfGridSize - 1);
@@ -341,7 +342,8 @@ auto ReadGeneratedNdf(const Json& value, SceneGeneratedNdfDocument& generated, s
       std::ranges::all_of(generated.data.zernikeCoefficients, [](float sample) { return std::isfinite(sample); });
   const bool finiteResiduals =
       std::ranges::all_of(generated.data.residuals, [](float sample) { return std::isfinite(sample); });
-  if (generated.gridSize != PrismNdfGridSize || generated.degree != PrismNdfDegree ||
+  if (generated.gridSize != PrismNdfGridSize || generated.data.residuals.size() != PrismNdfSampleCount ||
+      generated.degree != PrismNdfDegree ||
       generated.dataVersion != PrismNdfDataVersion || !finiteCoefficients || !finiteResiduals ||
       !std::isfinite(generated.data.normalization) || generated.data.normalization <= 0.0F) {
     error = "generatedNdf has unsupported dimensions/version or non-finite data";
@@ -541,7 +543,9 @@ auto IsValidMaterial(const SceneMaterialDocument& material) -> bool {
   const bool validGeneratedNdf =
       material.generatedNdf.has_value() == (material.brdfModel == "prismNdf") &&
       (!material.generatedNdf ||
-       (material.generatedNdf->gridSize == PrismNdfGridSize && material.generatedNdf->degree == PrismNdfDegree &&
+       (material.generatedNdf->gridSize == PrismNdfGridSize &&
+        material.generatedNdf->data.residuals.size() == PrismNdfSampleCount &&
+        material.generatedNdf->degree == PrismNdfDegree &&
         material.generatedNdf->dataVersion == PrismNdfDataVersion &&
         std::isfinite(material.generatedNdf->data.normalization) && material.generatedNdf->data.normalization > 0.0F &&
         std::ranges::all_of(material.generatedNdf->data.zernikeCoefficients,

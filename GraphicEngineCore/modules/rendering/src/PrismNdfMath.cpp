@@ -5,6 +5,7 @@
 #include <cmath>
 #include <limits>
 #include <numbers>
+#include <utility>
 
 namespace Engine::Renderer {
 namespace {
@@ -192,6 +193,7 @@ auto FitPrismNdfPayload(std::span<const float> grid, PrismNdfData& output, std::
     }
     result.zernikeCoefficients[index] = static_cast<float>(coefficients[index]);
   }
+  result.residuals.resize(PrismNdfSampleCount);
   for (uint32_t row = 0; row < PrismNdfGridSize; ++row) {
     const double y = 2.0 * static_cast<double>(row) / static_cast<double>(PrismNdfGridSize - 1) - 1.0;
     for (uint32_t column = 0; column < PrismNdfGridSize; ++column) {
@@ -208,7 +210,7 @@ auto FitPrismNdfPayload(std::span<const float> grid, PrismNdfData& output, std::
       result.residuals[sampleIndex] = grid[sampleIndex] - static_cast<float>(polynomial);
     }
   }
-  output = result;
+  output = std::move(result);
   return true;
 }
 

@@ -17,6 +17,7 @@ namespace {
 
 auto IsFinitePayload(const Engine::PrismNdfData& payload) -> bool {
   return std::isfinite(payload.normalization) && payload.normalization > 0.0F &&
+         payload.residuals.size() == Engine::PrismNdfSampleCount &&
          std::ranges::all_of(payload.zernikeCoefficients, [](float value) { return std::isfinite(value); }) &&
          std::ranges::all_of(payload.residuals, [](float value) { return std::isfinite(value); });
 }

@@ -255,7 +255,8 @@ public:
   /// Releases the material's private GPU state.
   ~Material();
 
-  /// Replaces all editable factors and marks the material dirty for upload.
+  /// Replaces all editable factors and marks the material dirty for upload. A nonnull PRISM payload with an invalid
+  /// residual sample count is rejected without changing the material.
   /// @param properties New material factors and texture-coordinate selections.
   void SetProperties(const MaterialProperties& properties);
 

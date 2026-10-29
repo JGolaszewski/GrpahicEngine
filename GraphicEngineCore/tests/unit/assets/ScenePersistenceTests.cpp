@@ -5,6 +5,7 @@
 
 #include <array>
 #include <chrono>
+#include <cstddef>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -161,6 +162,7 @@ TEST(ScenePersistenceTests, GeneratedNdfCoefficientsResidualAndPromptRoundTrip) 
   material.generatedNdf->modelVersion = "prism-models-v1";
   material.generatedNdf->exporterVersion = "decoder-v2";
   material.generatedNdf->data.normalization = 0.875F;
+  material.generatedNdf->data.residuals.resize(Engine::PrismNdfSampleCount);
   for (size_t index = 0; index < Engine::PrismNdfCoefficientCount; ++index) {
     material.generatedNdf->data.zernikeCoefficients[index] = static_cast<float>(index) * 0.125F;
   }
@@ -192,6 +194,12 @@ TEST(ScenePersistenceTests, GeneratedNdfCoefficientsResidualAndPromptRoundTrip) 
   EXPECT_EQ(materialJson.at("schemaVersion"), Engine::CurrentSceneSchemaVersion);
   EXPECT_EQ(materialJson.at("entities").at(0).at("material").at("generatedNdf").at("residuals").size(),
             Engine::PrismNdfSampleCount);
+}
+
+TEST(ScenePersistenceTests, GeneratedNdfResidualsStayOffCommonMaterialStackLayouts) {
+  EXPECT_TRUE(Engine::PrismNdfData{}.residuals.empty());
+  EXPECT_LT(sizeof(Engine::SceneGeneratedNdfDocument), std::size_t{1024});
+  EXPECT_LT(sizeof(Engine::SceneMaterialDocument), std::size_t{2048});
 }
 
 TEST(ScenePersistenceTests, GeneratedNdfLoadsLegacy64GridAndResamplesWhenCanonicalGridIsLarger) {
@@ -370,6 +378,11 @@ TEST(ScenePersistenceTests, InvalidGeneratedNdfSavePreservesExistingSceneFile) {
   auto& material = optionalMaterial.value();
   material.brdfModel = "prismNdf";
   material.generatedNdf.emplace();
+  EXPECT_TRUE(material.generatedNdf->data.residuals.empty());
+  EXPECT_FALSE(assets.SaveScene("preserve.scene.json", document, error));
+  EXPECT_FALSE(error.empty());
+  EXPECT_EQ(readBytes(), original);
+  material.generatedNdf->data.residuals.resize(Engine::PrismNdfSampleCount);
   material.generatedNdf->data.normalization = std::numeric_limits<float>::quiet_NaN();
   EXPECT_FALSE(assets.SaveScene("preserve.scene.json", document, error));
   EXPECT_FALSE(error.empty());

@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstdint>
+#include <vector>
 
 namespace Engine {
 
@@ -13,10 +14,11 @@ inline constexpr uint32_t PrismNdfCoefficientCount = 45;
 inline constexpr uint32_t PrismNdfSampleCount = PrismNdfGridSize * PrismNdfGridSize;
 inline constexpr uint32_t PrismNdfDataVersion = 2;
 
-/// CPU render payload. Residuals are signed row-major samples over the unit disk.
+/// CPU render payload. Residuals are heap-backed signed row-major samples over the unit disk.
+/// A valid payload contains exactly PrismNdfSampleCount residuals; the default payload is empty.
 struct PrismNdfData {
   std::array<float, PrismNdfCoefficientCount> zernikeCoefficients{};
-  std::array<float, PrismNdfSampleCount> residuals{};
+  std::vector<float> residuals;
   float normalization = 1.0F;
   auto operator==(const PrismNdfData& other) const noexcept -> bool = default;
 };

@@ -361,6 +361,7 @@ void TestMaterialGpuAbiPacking() {
           "Explicit dielectric F0 must be packed");
 
   auto generatedNdf = std::make_shared<::Engine::PrismNdfData>();
+  generatedNdf->residuals.resize(::Engine::PrismNdfSampleCount);
   generatedNdf->zernikeCoefficients[0] = 0.25F;
   generatedNdf->zernikeCoefficients[4] = -0.5F;
   generatedNdf->zernikeCoefficients[44] = 2.0F;

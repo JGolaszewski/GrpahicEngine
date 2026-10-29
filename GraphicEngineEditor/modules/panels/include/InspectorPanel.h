@@ -72,7 +72,7 @@ private:
   bool m_PrismRequestEligible = false;
   std::optional<Engine::PrismNdfInferenceStatus> m_PrismStatus;
   std::shared_ptr<const Engine::PrismNdfData> m_PrismPreview;
-  std::array<float, Engine::PrismNdfSampleCount> m_PrismPreviewHeatmap{};
+  std::vector<float> m_PrismPreviewHeatmap = std::vector<float>(Engine::PrismNdfSampleCount);
   std::array<float, 64U * 64U> m_PrismPreviewSphere{};
   float m_PrismPreviewMaximum = 0.0F;
   float m_PrismPreviewSphereMaximum = 0.0F;

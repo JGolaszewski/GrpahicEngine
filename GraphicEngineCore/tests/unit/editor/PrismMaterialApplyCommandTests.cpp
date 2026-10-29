@@ -50,6 +50,7 @@ struct ApplyFixture final {
     after.brdfModel = "prismNdf";
     after.roughness = 0.31F;
     after.generatedNdf.emplace();
+    after.generatedNdf->data.residuals.resize(Engine::PrismNdfSampleCount);
     after.generatedNdf->prompt = "brushed silver with fine directional grooves";
     after.generatedNdf->data.zernikeCoefficients[0] = 0.8F;
     after.generatedNdf->data.residuals[17] = -0.025F;

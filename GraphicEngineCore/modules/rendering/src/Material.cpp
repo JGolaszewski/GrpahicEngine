@@ -95,6 +95,9 @@ Material::Material(uint32_t materialID)
     : m_MaterialID(materialID), m_GpuState(std::make_unique<GpuState>()), m_Constants(BuildMaterialGpu({})) {}
 
 void Material::SetProperties(const MaterialProperties& properties) {
+  if (properties.GeneratedNdf && properties.GeneratedNdf->residuals.size() != PrismNdfSampleCount) {
+    return;
+  }
   const MaterialGpu constants = BuildMaterialGpu(properties);
   if (properties.GeneratedNdf != m_GeneratedNdf) {
     m_GeneratedNdf = properties.GeneratedNdf;

@@ -53,7 +53,7 @@ auto PrismPhaseLabel(Engine::PrismNdfInferencePhase phase) -> const char* {
 }
 
 auto EvaluatePreviewNdf(const Engine::PrismNdfData& data, float x, float y) -> float {
-  if (x * x + y * y > 1.0F) {
+  if (data.residuals.size() != Engine::PrismNdfSampleCount || x * x + y * y > 1.0F) {
     return 0.0F;
   }
   double value = 0.0;

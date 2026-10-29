@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <array>
+#include <span>
 
 namespace Engine::Renderer {
 namespace {
@@ -26,6 +27,9 @@ auto CreateNdfResidualTexture(nvrhi::IDevice* device) -> nvrhi::TextureHandle {
 
 auto BuildNdfDistribution(const PrismNdfData& payload) -> std::array<float, PrismNdfSampleCount> {
   std::array<float, PrismNdfSampleCount> distribution{};
+  if (payload.residuals.size() != PrismNdfSampleCount) {
+    return distribution;
+  }
   for (uint32_t row = 0; row < PrismNdfGridSize; ++row) {
     const double y = 2.0 * row / static_cast<double>(PrismNdfGridSize - 1) - 1.0;
     for (uint32_t column = 0; column < PrismNdfGridSize; ++column) {
@@ -46,8 +50,8 @@ auto BuildNdfDistribution(const PrismNdfData& payload) -> std::array<float, Pris
 }
 
 void UploadNdfResidual(nvrhi::ICommandList* commandList, const nvrhi::TextureHandle& texture,
-                       const std::array<float, PrismNdfSampleCount>& residuals) {
-  if (commandList != nullptr && texture != nullptr) {
+                       std::span<const float> residuals) {
+  if (commandList != nullptr && texture != nullptr && residuals.size() == PrismNdfSampleCount) {
     commandList->writeTexture(texture, 0, 0, residuals.data(), PrismNdfGridSize * sizeof(float), 0);
   }
 }
@@ -286,6 +290,9 @@ auto MaterialSystem::GetFallbackColorTexture() const -> nvrhi::TextureHandle {
 }
 
 auto MaterialSystem::CreateMaterial(const MaterialProperties& properties) -> std::shared_ptr<Material> {
+  if (properties.GeneratedNdf && properties.GeneratedNdf->residuals.size() != PrismNdfSampleCount) {
+    return nullptr;
+  }
   auto material = std::make_shared<Material>(m_NextMaterialID++);
   material->SetProperties(properties);
   return RegisterMaterial(material) ? material : nullptr;

@@ -376,6 +376,7 @@ TEST(PrismNdfGpuParityTests, NvidiaD3D11TimestampMeasuresPrismEnvironmentRenderC
   Engine::RenderSystem renderer(&backend);
   ASSERT_TRUE(renderer.IsValid());
   auto payload = std::make_shared<Engine::PrismNdfData>();
+  payload->residuals.resize(Engine::PrismNdfSampleCount);
   payload->zernikeCoefficients[0] = 1.0F;
   payload->normalization = 1.0F / std::numbers::pi_v<float>;
   Engine::Renderer::MaterialProperties properties;

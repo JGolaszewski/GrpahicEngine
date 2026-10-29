@@ -4,7 +4,7 @@ PRISM is an optional generated normal distribution function for a material. The 
 
 ## Payload contract
 
-The coefficient ordering is the real Zernike sequence for radial order `n = 0..8` and azimuthal order `m = -n, -n+2, …, n`, for 45 values total. The shader reconstructs the polynomial base, adds the signed residual sampled over the unit disk, clamps the result to nonnegative values, masks points outside the disk, and multiplies by the stored normalization. The residual is row-major R32F data and is sampled linearly in the material tangent frame.
+The coefficient ordering is the real Zernike sequence for radial order `n = 0..8` and azimuthal order `m = -n, -n+2, …, n`, for 45 values total. The shader reconstructs the polynomial base, adds the signed residual sampled over the unit disk, clamps the result to nonnegative values, masks points outside the disk, and multiplies by the stored normalization. The residual is row-major R32F data and is sampled linearly in the material tangent frame. CPU payloads keep residuals in vector-backed storage to avoid inflating every scene and material object; a valid payload must contain exactly 16,384 samples.
 
 The stored normalization scales the projected-disk integral of `D` to one. This is the NDF normalization contract; it does not independently calibrate PRISM's learned shape as a complete BRDF. Direct and environment evaluation must use the same distribution and the engine's existing Fresnel and Smith geometry conventions.
 

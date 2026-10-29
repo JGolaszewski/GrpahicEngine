@@ -1253,6 +1253,21 @@ TEST(RenderFinalTests, WARPSplitSumEnvironmentAffectsDielectricAndMetalOnlyWhenE
   EXPECT_EQ(disabled.Preset, Engine::EnvironmentPreset::Disabled);
 }
 
+TEST(RenderFinalTests, RejectsPrismMaterialWithInvalidResidualCount) {
+  EngineTests::WarpDevice device;
+  if (!device.Initialize()) {
+    GTEST_SKIP() << "D3D11 WARP device could not be created on this host";
+  }
+  EngineTests::WarpRenderBackend backend(device.GetDevice());
+  Engine::RenderSystem renderer(&backend);
+  ASSERT_TRUE(renderer.IsValid());
+
+  Engine::Renderer::MaterialProperties properties;
+  properties.Model = Engine::Renderer::BrdfModel::PrismNdf;
+  properties.GeneratedNdf = std::make_shared<Engine::PrismNdfData>();
+  EXPECT_EQ(renderer.CreateMaterial(properties), nullptr);
+}
+
 TEST(RenderFinalTests, WARPPrismNdfDirectAndEnvironmentLightingUseGeneratedPayload) {
   EngineTests::WarpDevice device;
   if (!device.Initialize()) {
@@ -1267,6 +1282,7 @@ TEST(RenderFinalTests, WARPPrismNdfDirectAndEnvironmentLightingUseGeneratedPaylo
   std::filesystem::create_directories(project);
 
   auto payload = std::make_shared<Engine::PrismNdfData>();
+  payload->residuals.resize(Engine::PrismNdfSampleCount);
   payload->zernikeCoefficients[0] = 1.0F;
   payload->zernikeCoefficients[4] = 0.125F;
   payload->residuals[0] = 0.25F;
@@ -1353,7 +1369,7 @@ TEST(RenderFinalTests, WARPPrismNdfDirectAndEnvironmentLightingUseGeneratedPaylo
   EXPECT_GT(payloadDifference, 1.0e-3F);
 
   auto residualPayload = std::make_shared<Engine::PrismNdfData>(*zeroPayload);
-  residualPayload->residuals.fill(0.5F);
+  std::ranges::fill(residualPayload->residuals, 0.5F);
   properties.GeneratedNdf = residualPayload;
   material->SetProperties(properties);
   const auto residualOutput = renderer.RenderFinal(scene, camera, imageSize, imageSize);
@@ -1412,6 +1428,7 @@ TEST(RenderFinalTests, WARPPrismDirectAndConstantEnvironmentMatchIndependentRefe
   ASSERT_TRUE(renderer.PrepareAssetEnvironment(*dimGuid, error)) << error;
 
   auto payload = std::make_shared<Engine::PrismNdfData>();
+  payload->residuals.resize(Engine::PrismNdfSampleCount);
   payload->zernikeCoefficients[0] = 1.0F;
   payload->normalization = 1.0F / Engine::Renderer::Brdf::Pi;
   Engine::Renderer::MaterialProperties properties;
