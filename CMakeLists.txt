@@ -200,6 +200,8 @@ if(ENGINE_ENABLE_PRISM_INFERENCE)
             PATTERN "*.json"
             PATTERN "*.txt"
             PATTERN "*.md"
+            PATTERN "retriever.onnx" EXCLUDE
+            PATTERN "vae_decoder.onnx" EXCLUDE
     )
     install(DIRECTORY "${ENGINE_PRISM_RUNTIME_ROOT}/python/"
         DESTINATION bin/python

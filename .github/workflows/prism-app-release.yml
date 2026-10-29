@@ -68,7 +68,7 @@ jobs:
             Get-Content out/prism-inference-smoke.log -Tail 80
             throw "Packaged native PRISM generation failed with exit code $smokeExitCode"
           }
-          $result = Select-String -Path out/prism-inference-smoke.log -Pattern '^Packaged PRISM inference generated a finite 45-term, 4096-residual payload'
+          $result = Select-String -Path out/prism-inference-smoke.log -Pattern '^Packaged PRISM inference generated a finite 45-term, 16384-residual payload'
           if ($null -eq $result) { throw "Packaged native PRISM generation did not report a completed payload" }
           $result.Line
 

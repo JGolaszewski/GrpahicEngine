@@ -38,7 +38,7 @@ def load_manifest(path: Path) -> dict:
         name = asset.get("name")
         if not isinstance(name, str) or Path(name).name != name or name in names:
             raise ValueError(f"invalid or duplicate asset filename: {name!r}")
-        if asset.get("release_tag") not in {"e5-onnx-v1.0.0", "prism-onnx-v1.0.0"}:
+        if asset.get("release_tag") not in {"e5-onnx-v1.0.0", "prism-onnx-128x128-v1.0.0"}:
             raise ValueError(f"unapproved upstream release for {name}")
         if not isinstance(asset.get("size_bytes"), int) or asset["size_bytes"] < 0:
             raise ValueError(f"invalid expected size for {name}")
@@ -48,8 +48,8 @@ def load_manifest(path: Path) -> dict:
         names.add(name)
     required = {
         "e5_encoder.onnx", "e5_encoder.onnx.data", "special_tokens_map.json",
-        "tokenizer.json", "tokenizer_config.json", "vocab.txt", "retriever.onnx",
-        "retriever.onnx.data", "vae_decoder.onnx", "vae_decoder.onnx.data",
+        "tokenizer.json", "tokenizer_config.json", "vocab.txt", "prism_text_predictor_128.onnx",
+        "prism_text_predictor_128.onnx.data", "prism_vae_decoder_128.onnx", "prism_vae_decoder_128.onnx.data",
     }
     if names != required:
         raise ValueError(f"manifest asset set mismatch; missing={sorted(required - names)}, extra={sorted(names - required)}")
@@ -111,9 +111,9 @@ def stage_notices(destination: Path, manifest_path: Path) -> None:
     shutil.copyfile(manifest_path, destination / "prism-model-assets.json")
     readme = """# PRISM ONNX model assets
 
-These files are the pinned PRISM v1.0.0 ONNX release assets. The E5 encoder
-weights and tokenizer come from `e5-onnx-v1.0.0`; the PRISM retriever and
-decoder come from `prism-onnx-v1.0.0`. Keep each `.onnx.data` file beside its
+These files are the pinned PRISM ONNX release assets. The E5 encoder
+weights and tokenizer come from `e5-onnx-v1.0.0`; the 128x128 text predictor and
+decoder come from `prism-onnx-128x128-v1.0.0`. Keep each `.onnx.data` file beside its
 matching ONNX graph. The model package is approximately 1.35 GB.
 
 The checked-in `prism-model-assets.json` records upstream revisions, expected
@@ -157,7 +157,8 @@ def main() -> int:
         destination = arguments.destination.resolve()
         if arguments.verify_only:
             expected_names = {asset["name"] for asset in manifest["assets"]}
-            expected_names.update({"README.md", "prism-model-assets.json", *NOTICE_FILES[1:]})
+            expected_names.update({"README.md", "prism-model-assets.json", "retriever.onnx.data",
+                                   "vae_decoder.onnx.data", *NOTICE_FILES[1:]})
             actual_names = {entry.name for entry in destination.iterdir()} if destination.is_dir() else set()
             if actual_names != expected_names:
                 raise ValueError(f"staged model directory contents mismatch; missing={sorted(expected_names - actual_names)}, "
@@ -166,6 +167,14 @@ def main() -> int:
                         if not verify_asset(destination / asset["name"], asset)]
             if failures:
                 raise ValueError("\n".join(failures))
+            if digest_file(destination / "retriever.onnx.data") != digest_file(
+                destination / "prism_text_predictor_128.onnx.data"
+            ):
+                raise ValueError("predictor external-data alias differs from its pinned data asset")
+            if digest_file(destination / "vae_decoder.onnx.data") != digest_file(
+                destination / "prism_vae_decoder_128.onnx.data"
+            ):
+                raise ValueError("decoder external-data alias differs from its pinned data asset")
             validate_models(manifest, destination)
             verify_staged_notices(destination, arguments.manifest)
             print("All pinned model assets, ONNX contracts, and package notices verified.")
@@ -183,6 +192,10 @@ def main() -> int:
                 else:
                     download_asset(asset, staged)
             stage_notices(staged, arguments.manifest)
+            # The published predictor retains the external tensor-data location
+            # from its retriever export despite the new graph filename.
+            shutil.copyfile(staged / "prism_text_predictor_128.onnx.data", staged / "retriever.onnx.data")
+            shutil.copyfile(staged / "prism_vae_decoder_128.onnx.data", staged / "vae_decoder.onnx.data")
             validate_models(manifest, staged)
             verify_staged_notices(staged, arguments.manifest)
             replace_directory(staged, destination)

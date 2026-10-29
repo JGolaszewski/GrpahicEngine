@@ -36,8 +36,8 @@ def main() -> int:
             if not isinstance(directional, bool):
                 raise ValueError("directional must be a boolean")
             # PRISM's E5 encoder expects query-prefixed text. The directional
-            # flag is deliberately forwarded to native retriever inference,
-            # not inserted into the text prompt.
+            # flag remains request metadata; the 128x128 predictor receives
+            # numeric control_features instead of a directional tensor.
             encoding = tokenizer.encode("query: " + prompt, add_special_tokens=True)
             response = {
                 "type": "tokens",

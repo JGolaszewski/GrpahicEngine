@@ -26,7 +26,8 @@ def verify(package: Path) -> None:
     models = binary / "models" / "prism"
     manifest = load_manifest(MODEL_MANIFEST)
     expected_models = {asset["name"] for asset in manifest["assets"]}
-    expected_models.update({"README.md", "prism-model-assets.json", "THIRD_PARTY_NOTICES.md",
+    expected_models.update({"README.md", "prism-model-assets.json", "retriever.onnx.data", "vae_decoder.onnx.data",
+                            "THIRD_PARTY_NOTICES.md",
                             "LICENSE-E5-MIT.txt", "LICENSE-CC-BY-SA-4.0.txt"})
     actual_models = {entry.name for entry in models.iterdir()} if models.is_dir() else set()
     if actual_models != expected_models:
@@ -37,6 +38,14 @@ def verify(package: Path) -> None:
         if not verify_asset(path, asset):
             raise ValueError(f"packaged model hash or byte size mismatch: {path}")
     validate_models(manifest, models)
+    if hashlib.sha256((models / "retriever.onnx.data").read_bytes()).digest() != hashlib.sha256(
+        (models / "prism_text_predictor_128.onnx.data").read_bytes()
+    ).digest():
+        raise ValueError("packaged predictor external-data alias differs from its pinned weights")
+    if hashlib.sha256((models / "vae_decoder.onnx.data").read_bytes()).digest() != hashlib.sha256(
+        (models / "prism_vae_decoder_128.onnx.data").read_bytes()
+    ).digest():
+        raise ValueError("packaged decoder external-data alias differs from its pinned weights")
     if (models / "prism-model-assets.json").read_bytes() != MODEL_MANIFEST.read_bytes():
         raise ValueError("packaged model manifest differs from the pinned source manifest")
     for name in ("THIRD_PARTY_NOTICES.md", "LICENSE-E5-MIT.txt", "LICENSE-CC-BY-SA-4.0.txt"):

@@ -72,10 +72,10 @@ sibling tree and swaps it into place only after validation; verified existing
 model files may be reused, while stale files are removed from the managed
 model directory. If staging fails, the previously installed directory remains
 available. The pinned decoder emits
-only `ndf_grid_flat` (`float32[1,4096]`); it does not emit Zernike
+only `ndf_grid_flat` (`float32[1,16384]`); it does not emit Zernike
 coefficients. The release validator requires this output name, dtype, and
 shape and rejects unexpected decoder outputs. After native C++ ONNX inference,
-the material generation service must fit the returned 64×64 grid to the
+the material generation service must fit the returned 128×128 grid to the
 45-term degree-8 Zernike basis using least squares, then retain the signed
 per-sample residual `grid - fitted_basis`. Rendering evaluates the fitted
 polynomial and adds the residual, preserving the decoded grid at its samples.
@@ -86,10 +86,11 @@ path, not to the ONNX model or release validator.
 
 The embedded CPython 3.13.17 runtime runs a persistent JSON-lines worker that
 prefixes prompts with `query:` followed by a space and emits exactly 128 `input_ids` and
-`attention_mask` values. The directional flag is passed through as metadata
-for the native retriever call; it does not alter tokenization. Python performs
+`attention_mask` values. The directional flag remains request metadata; the
+128×128 predictor consumes numeric control features rather than that flag.
+Python performs
 no model inference. The bundle supplies ONNX Runtime CPU libraries for the
-native C++ E5, retriever, and decoder inference service. The package smoke
+native C++ E5, text predictor, and decoder inference service. The package smoke
 executable runs a real directional prompt through that service and checks the
 returned prompt, provenance, finite coefficients and residuals, and positive
 normalization. The worker's startup handshake and per-request errors use JSON

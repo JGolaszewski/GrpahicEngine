@@ -98,7 +98,7 @@ auto Run(int argc, char** argv) -> int {
         std::cerr << "Generated PRISM payload changed during material save/reload\n";
         return 1;
       }
-      std::cout << "Packaged PRISM inference generated a finite 45-term, 4096-residual payload; normalization="
+      std::cout << "Packaged PRISM inference generated a finite 45-term, 16384-residual payload; normalization="
                 << status->result->normalization << ", provenance=" << status->modelProvenance
                 << "; material save/reload retained coefficients, residuals, prompt, and model provenance\n";
       return 0;

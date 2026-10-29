@@ -653,8 +653,10 @@ auto PrismNdfInferenceService::Start(std::string_view promptText, bool direction
       m_Impl->Options.modelDirectory / "e5_encoder.onnx.data",
       m_Impl->Options.modelDirectory / "prism_text_predictor_128.onnx",
       m_Impl->Options.modelDirectory / "prism_text_predictor_128.onnx.data",
+      m_Impl->Options.modelDirectory / "retriever.onnx.data",
       m_Impl->Options.modelDirectory / "prism_vae_decoder_128.onnx",
       m_Impl->Options.modelDirectory / "prism_vae_decoder_128.onnx.data",
+      m_Impl->Options.modelDirectory / "vae_decoder.onnx.data",
   };
   std::ostringstream missingAssets;
   bool hasMissingAssets = false;
