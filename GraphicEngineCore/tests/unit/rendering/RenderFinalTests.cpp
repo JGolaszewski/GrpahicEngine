@@ -1379,7 +1379,34 @@ TEST(RenderFinalTests, WARPPrismNdfDirectAndEnvironmentLightingUseGeneratedPaylo
   float residualEnergy = std::accumulate(residualSpecular.begin(), residualSpecular.end(), 0.0F);
   EXPECT_GT(residualEnergy, 1.0e-3F);
 
-  properties.GeneratedNdf = payload;
+  auto residualsRemoved = std::make_shared<Engine::PrismNdfData>(*residualPayload);
+  std::ranges::fill(residualsRemoved->residuals, 0.0F);
+  properties.GeneratedNdf = residualsRemoved;
+  material->SetProperties(properties);
+  const auto withoutResidualSamples = renderer.RenderFinal(scene, camera, imageSize, imageSize);
+  ASSERT_TRUE(withoutResidualSamples.has_value())
+      << (withoutResidualSamples.has_value() ? "" : withoutResidualSamples.error().Message);
+  const auto withoutResidualSpecular = withoutResidualSamples->GetPixels(Engine::RenderAov::SpecularLighting);
+
+  auto residualsDisabled = std::make_shared<Engine::PrismNdfData>(*residualPayload);
+  residualsDisabled->residualsEnabled = false;
+  properties.GeneratedNdf = residualsDisabled;
+  material->SetProperties(properties);
+  const auto coefficientsOnly = renderer.RenderFinal(scene, camera, imageSize, imageSize);
+  ASSERT_TRUE(coefficientsOnly.has_value()) << (coefficientsOnly.has_value() ? "" : coefficientsOnly.error().Message);
+  const auto coefficientsOnlySpecular = coefficientsOnly->GetPixels(Engine::RenderAov::SpecularLighting);
+  ASSERT_EQ(coefficientsOnlySpecular.size(), withoutResidualSpecular.size());
+  float directToggleDifference = 0.0F;
+  for (size_t index = 0; index < coefficientsOnlySpecular.size(); ++index) {
+    directToggleDifference += std::abs(coefficientsOnlySpecular[index] - withoutResidualSpecular[index]);
+  }
+  EXPECT_LT(directToggleDifference, 1.0e-3F);
+  EXPECT_EQ(residualsDisabled->residuals.size(), Engine::PrismNdfSampleCount);
+  EXPECT_FLOAT_EQ(residualsDisabled->residuals.back(), residualPayload->residuals.back());
+
+  auto environmentPayload = std::make_shared<Engine::PrismNdfData>(*payload);
+  std::ranges::fill(environmentPayload->residuals, 0.5F);
+  properties.GeneratedNdf = environmentPayload;
   material->SetProperties(properties);
   const Engine::EnvironmentLightingSettings studio{Engine::EnvironmentPreset::Studio, 1.0F};
   const auto withEnvironment = renderer.RenderFinal(scene, camera, imageSize, imageSize, {}, studio);
@@ -1398,6 +1425,33 @@ TEST(RenderFinalTests, WARPPrismNdfDirectAndEnvironmentLightingUseGeneratedPaylo
   }
   EXPECT_GT(environmentDifference, 1.0e-3F);
   EXPECT_TRUE(std::ranges::equal(environmentSpecular, repeatedSpecular));
+
+  auto environmentResidualsRemoved = std::make_shared<Engine::PrismNdfData>(*environmentPayload);
+  std::ranges::fill(environmentResidualsRemoved->residuals, 0.0F);
+  properties.GeneratedNdf = environmentResidualsRemoved;
+  material->SetProperties(properties);
+  const auto environmentWithoutResidualSamples = renderer.RenderFinal(scene, camera, imageSize, imageSize, {}, studio);
+  ASSERT_TRUE(environmentWithoutResidualSamples.has_value())
+      << (environmentWithoutResidualSamples.has_value() ? "" : environmentWithoutResidualSamples.error().Message);
+
+  auto environmentResidualsDisabled = std::make_shared<Engine::PrismNdfData>(*environmentPayload);
+  environmentResidualsDisabled->residualsEnabled = false;
+  properties.GeneratedNdf = environmentResidualsDisabled;
+  material->SetProperties(properties);
+  const auto environmentCoefficientsOnly = renderer.RenderFinal(scene, camera, imageSize, imageSize, {}, studio);
+  ASSERT_TRUE(environmentCoefficientsOnly.has_value())
+      << (environmentCoefficientsOnly.has_value() ? "" : environmentCoefficientsOnly.error().Message);
+  const auto noResidualEnvironment = environmentWithoutResidualSamples->GetPixels(Engine::RenderAov::SpecularLighting);
+  const auto coefficientsOnlyEnvironment = environmentCoefficientsOnly->GetPixels(Engine::RenderAov::SpecularLighting);
+  ASSERT_EQ(coefficientsOnlyEnvironment.size(), noResidualEnvironment.size());
+  float environmentResidualDifference = 0.0F;
+  float environmentToggleDifference = 0.0F;
+  for (size_t index = 0; index < coefficientsOnlyEnvironment.size(); ++index) {
+    environmentResidualDifference += std::abs(environmentSpecular[index] - noResidualEnvironment[index]);
+    environmentToggleDifference += std::abs(coefficientsOnlyEnvironment[index] - noResidualEnvironment[index]);
+  }
+  EXPECT_GT(environmentResidualDifference, 1.0e-3F);
+  EXPECT_LT(environmentToggleDifference, 1.0e-3F);
   std::filesystem::remove_all(project);
 }
 

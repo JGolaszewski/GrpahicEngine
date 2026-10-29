@@ -54,6 +54,7 @@ struct ApplyFixture final {
     after.generatedNdf->prompt = "brushed silver with fine directional grooves";
     after.generatedNdf->data.zernikeCoefficients[0] = 0.8F;
     after.generatedNdf->data.residuals[17] = -0.025F;
+    after.generatedNdf->data.residualsEnabled = false;
 
     const auto created = assets.CreateMaterial("PRISM Apply Test", before);
     if (!created) {

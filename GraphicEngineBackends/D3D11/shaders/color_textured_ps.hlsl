@@ -391,7 +391,9 @@ PS_OUTPUT main_ps(VS_OUTPUT input)
             const float ndfHandedness = dot(cross(N, ndfTangent), bitangent) < 0.0f ? -1.0f : 1.0f;
             const float3 ndfBitangent = cross(N, ndfTangent) * ndfHandedness;
             const float2 ndfCoord = float2(dot(query.H, ndfTangent), dot(query.H, ndfBitangent));
-            const float residual = g_NdfResidual.SampleLevel(g_NdfResidualSampler, ndfCoord * 0.5f + 0.5f, 0.0f);
+            const float residual = g_NdfParams.y > 0.5f
+                ? g_NdfResidual.SampleLevel(g_NdfResidualSampler, ndfCoord * 0.5f + 0.5f, 0.0f)
+                : 0.0f;
             const float distribution = PrismZernikeNdf(ndfCoord, g_NdfCoefficients, residual, g_NdfParams.x);
             EvaluateMicrofacetBrdfComponents(query, brdfBaseColor, brdfMetallic, brdfF0, alpha,
                 distribution, diffuseBrdf, specularBrdf);
