@@ -59,6 +59,19 @@ target_include_directories(Editor PRIVATE
 )
 add_dependencies(Editor CompileShaders)
 
+if(ENGINE_ENABLE_PRISM_INFERENCE)
+    add_custom_target(run-editor-prism
+        COMMAND "${CMAKE_COMMAND}" -E env
+            "GRAPHICENGINE_PRISM_RUNTIME_DIR=${ENGINE_PRISM_RUNTIME_ROOT}"
+            "$<TARGET_FILE:Editor>"
+        DEPENDS Editor
+        WORKING_DIRECTORY "$<TARGET_FILE_DIR:Editor>"
+        USES_TERMINAL
+        VERBATIM
+        COMMENT "Launching Editor with the staged PRISM runtime"
+    )
+endif()
+
 set(EDITOR_HEADER_CHECK_SOURCES)
 set(EDITOR_HEADER_CHECK_DIR "${CMAKE_CURRENT_BINARY_DIR}/public_header_checks")
 file(MAKE_DIRECTORY "${EDITOR_HEADER_CHECK_DIR}")

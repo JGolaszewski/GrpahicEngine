@@ -5,13 +5,15 @@
 // ================================================================================
 // ================================================================================
 
-void CommandHistory::Execute(std::unique_ptr<ICommand> cmd) {
+auto CommandHistory::Execute(std::unique_ptr<ICommand> cmd) -> bool {
   if (!cmd) {
-    return;
+    return false;
   }
 
   // Execute first so the command is in a valid state before we own it.
-  cmd->Execute();
+  if (!cmd->Execute()) {
+    return false;
+  }
 
   // Take ownership and push onto the undo stack.
   m_UndoStack.push_back(std::move(cmd));
@@ -20,32 +22,41 @@ void CommandHistory::Execute(std::unique_ptr<ICommand> cmd) {
   if (!m_RedoStack.empty()) {
     m_RedoStack.clear();
   }
+  return true;
 }
 
-void CommandHistory::Undo() {
+auto CommandHistory::Undo() -> bool {
   if (!CanUndo()) {
-    return;
+    return false;
   }
 
   std::unique_ptr<ICommand> cmd = std::move(m_UndoStack.back());
   m_UndoStack.pop_back();
 
-  cmd->Undo();
+  if (!cmd->Undo()) {
+    m_UndoStack.push_back(std::move(cmd));
+    return false;
+  }
 
   m_RedoStack.push_back(std::move(cmd));
+  return true;
 }
 
-void CommandHistory::Redo() {
+auto CommandHistory::Redo() -> bool {
   if (!CanRedo()) {
-    return;
+    return false;
   }
 
   std::unique_ptr<ICommand> cmd = std::move(m_RedoStack.back());
   m_RedoStack.pop_back();
 
-  cmd->Execute();
+  if (!cmd->Execute()) {
+    m_RedoStack.push_back(std::move(cmd));
+    return false;
+  }
 
   m_UndoStack.push_back(std::move(cmd));
+  return true;
 }
 
 auto CommandHistory::CanUndo() const noexcept -> bool { return !m_UndoStack.empty(); }

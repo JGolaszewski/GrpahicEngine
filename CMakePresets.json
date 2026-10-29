@@ -66,6 +66,16 @@
       }
     },
     {
+      "name": "x64-release-prism",
+      "displayName": "x64 Release with bundled PRISM runtime",
+      "inherits": "x64-release",
+      "cacheVariables": {
+        "ENGINE_ENABLE_PRISM_INFERENCE": "ON",
+        "ENGINE_PRISM_RUNTIME_ROOT": "${sourceDir}/out/prism-runtime",
+        "VCPKG_MANIFEST_FEATURES": "prism-inference"
+      }
+    },
+    {
       "name": "x86-debug",
       "displayName": "x86 Debug",
       "inherits": "windows-base",
@@ -89,6 +99,11 @@
     }
   ],
   "buildPresets": [
+    {
+      "name": "x64-release-prism",
+      "configurePreset": "x64-release-prism",
+      "configuration": "Release"
+    },
     {
       "name": "x64-release-benchmarks",
       "configurePreset": "x64-release-benchmarks",

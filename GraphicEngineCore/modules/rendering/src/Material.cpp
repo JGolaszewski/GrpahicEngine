@@ -9,6 +9,9 @@ namespace Engine::Renderer {
 struct Material::GpuState {
   nvrhi::BufferHandle ConstantBuffer;
   nvrhi::BindingSetHandle BindingSet;
+  nvrhi::TextureHandle NdfResidualTexture;
+  nvrhi::TextureHandle NdfDistributionTexture;
+  std::shared_ptr<const PrismNdfData> UploadedNdf;
 };
 
 Material::~Material() = default;
@@ -23,6 +26,30 @@ void MaterialBackendAccess::SetConstantBuffer(Material& material, nvrhi::BufferH
 
 nvrhi::BindingSetHandle MaterialBackendAccess::GetBindingSet(const Material& material) {
   return material.m_GpuState->BindingSet;
+}
+
+nvrhi::TextureHandle MaterialBackendAccess::GetNdfResidualTexture(const Material& material) {
+  return material.m_GpuState->NdfResidualTexture;
+}
+
+void MaterialBackendAccess::SetNdfResidualTexture(Material& material, nvrhi::TextureHandle texture) {
+  material.m_GpuState->NdfResidualTexture = std::move(texture);
+}
+
+nvrhi::TextureHandle MaterialBackendAccess::GetNdfDistributionTexture(const Material& material) {
+  return material.m_GpuState->NdfDistributionTexture;
+}
+
+void MaterialBackendAccess::SetNdfDistributionTexture(Material& material, nvrhi::TextureHandle texture) {
+  material.m_GpuState->NdfDistributionTexture = std::move(texture);
+}
+
+auto MaterialBackendAccess::GetUploadedNdf(const Material& material) -> std::shared_ptr<const PrismNdfData> {
+  return material.m_GpuState->UploadedNdf;
+}
+
+void MaterialBackendAccess::SetUploadedNdf(Material& material, std::shared_ptr<const PrismNdfData> payload) {
+  material.m_GpuState->UploadedNdf = std::move(payload);
 }
 
 void MaterialBackendAccess::SetBindingSet(Material& material, nvrhi::BindingSetHandle bindingSet) {
@@ -52,6 +79,14 @@ bool Equal(const MaterialGpu& left, const MaterialGpu& right) {
       return false;
     }
   }
+  for (size_t index = 0; index < std::size(left.NdfCoefficients); ++index) {
+    if (!Equal(left.NdfCoefficients[index], right.NdfCoefficients[index])) {
+      return false;
+    }
+  }
+  if (!Equal(left.NdfParams, right.NdfParams)) {
+    return false;
+  }
   return true;
 }
 } // namespace
@@ -60,7 +95,14 @@ Material::Material(uint32_t materialID)
     : m_MaterialID(materialID), m_GpuState(std::make_unique<GpuState>()), m_Constants(BuildMaterialGpu({})) {}
 
 void Material::SetProperties(const MaterialProperties& properties) {
+  if (properties.GeneratedNdf && properties.GeneratedNdf->residuals.size() != PrismNdfSampleCount) {
+    return;
+  }
   const MaterialGpu constants = BuildMaterialGpu(properties);
+  if (properties.GeneratedNdf != m_GeneratedNdf) {
+    m_GeneratedNdf = properties.GeneratedNdf;
+    m_IsDirty = true;
+  }
   if (properties.TextureAnisotropyLevels != m_TextureAnisotropyLevels) {
     m_TextureAnisotropyLevels = properties.TextureAnisotropyLevels;
     m_IsDirty = true;
@@ -108,6 +150,7 @@ MaterialProperties Material::GetProperties() const {
   properties.Ior = m_Constants.SurfaceParams.w;
   properties.SpecularF0 = {m_Constants.SpecularParams.x, m_Constants.SpecularParams.y, m_Constants.SpecularParams.z};
   properties.Model = static_cast<BrdfModel>(m_Constants.ModelFlags.y);
+  properties.GeneratedNdf = m_GeneratedNdf;
   properties.SpecularMode = static_cast<DielectricSpecularMode>(m_Constants.ModelFlags.z & 0xffu);
   properties.Workflow = (m_Constants.ModelFlags.z & 0x100u) != 0 ? MaterialWorkflow::SpecularGlossiness
                                                                  : MaterialWorkflow::MetallicRoughness;

@@ -143,6 +143,7 @@ private:
     nvrhi::TextureHandle AmbientOcclusion;
     nvrhi::TextureHandle IrradianceMap;
     nvrhi::TextureHandle PrefilteredEnvironment;
+    nvrhi::TextureHandle EnvironmentPanorama;
     nvrhi::BindingLayoutHandle Layout;
     nvrhi::BindingSetHandle Bindings;
   };

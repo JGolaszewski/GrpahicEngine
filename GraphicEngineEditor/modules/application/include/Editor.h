@@ -2,6 +2,7 @@
 
 #include "application/include/EditorEventRouter.h"
 #include "application/include/EditorSceneDocument.h"
+#include "commands/include/CommandHistory.h"
 #include "panels/include/EditorConsole.h"
 #include "panels/include/EditorPanel.h"
 #include "platform/include/EditorFileDialogs.h"
@@ -9,6 +10,14 @@
 #include "rendering/include/RenderOutputExportService.h"
 #include "rendering/include/renderer/CameraView.h"
 #include "runtime/include/Application.h"
+#ifdef _MSC_VER
+#  pragma warning(push)
+#  pragma warning(disable : 4251) // The inference service uses a private PIMPL behind its exported API.
+#endif
+#include "runtime/include/PrismNdfInferenceService.h"
+#ifdef _MSC_VER
+#  pragma warning(pop)
+#endif
 #include "scene/include/Scene.h"
 
 #include <array>
@@ -65,6 +74,8 @@ private:
   std::shared_ptr<Engine::Viewport> m_CameraPreviewViewport;
   std::shared_ptr<Engine::ViewportTarget> m_CameraPreviewTarget;
   std::vector<std::unique_ptr<EditorPanel>> m_Panels;
+  std::unique_ptr<Engine::PrismNdfInferenceService> m_PrismNdfInferenceService;
+  CommandHistory m_CommandHistory;
   CameraPreviewPanel* m_CameraPreviewPanel = nullptr;
   EditorEventRouter m_EventRouter;
   std::vector<EditorEventRouter::Connection> m_PanelConnections;

@@ -102,8 +102,11 @@ distribution. It is never silently shaded as a different model.
 
 Ashikhmin-Shirley uses separate perceptual roughness controls along the mesh
 tangent and bitangent, both defaulting to `0.5` for isotropic behavior. The
-material GPU ABI is version 5: these values occupy the existing reserved
-`SpecularParams.w` and `AlphaParams.y` lanes, so `MaterialGpu` remains 304 bytes.
+material GPU ABI is version 6: anisotropic roughness occupies the reserved
+`SpecularParams.w` and `AlphaParams.y` lanes. PRISM materials append 48 packed
+coefficient lanes and normalization to the constant buffer, bringing
+`MaterialGpu` to 512 bytes; their signed 128×128 residual is bound separately as
+an R32F texture.
 The normalized anisotropic cosine-power distribution uses the interpolated
 tangent frame in both color pixel shaders and stays finite at the horizon for
 broad roughness values.

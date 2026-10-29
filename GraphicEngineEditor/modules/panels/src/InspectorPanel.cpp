@@ -3,27 +3,63 @@
 #include "events/include/AssetImportRequestedEvent.h"
 #include "events/include/MaterialAssetEditRequestedEvent.h"
 #include "events/include/MaterialAssetSelectionRequestedEvent.h"
+#include "events/include/PrismNdfApplyRequestedEvent.h"
 #include "events/include/SceneAmbientLightChangedEvent.h"
 #include "panels/include/AssetDragDropPayload.h"
 #include "panels/include/AssetDropAssignment.h"
 #include "panels/include/TransformRotation.h"
 #include "panels/include/TransformScaleLock.h"
+#include "rendering/include/renderer/PrismNdfMath.h"
 
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <cmath>
 #include <cstdint>
 #include <functional>
 #include <imgui.h>
 #include <iterator>
 #include <limits>
+#include <numbers>
 #include <optional>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace {
 using Mutation = EcsComponentMutationRequestedEvent;
 constexpr char kCameraPostProcessEffectPayload[] = "GE_CAMERA_POST_PROCESS_EFFECT";
+
+auto PrismPhaseLabel(Engine::PrismNdfInferencePhase phase) -> const char* {
+  switch (phase) {
+  case Engine::PrismNdfInferencePhase::Queued:
+    return "Queued";
+  case Engine::PrismNdfInferencePhase::Tokenizing:
+    return "Tokenizing prompt";
+  case Engine::PrismNdfInferencePhase::Encoding:
+    return "Encoding prompt";
+  case Engine::PrismNdfInferencePhase::Retrieving:
+    return "Retrieving model features";
+  case Engine::PrismNdfInferencePhase::Decoding:
+    return "Decoding NDF";
+  case Engine::PrismNdfInferencePhase::Fitting:
+    return "Fitting Zernike coefficients";
+  case Engine::PrismNdfInferencePhase::Completed:
+    return "Complete";
+  case Engine::PrismNdfInferencePhase::Failed:
+    return "Failed";
+  case Engine::PrismNdfInferencePhase::Cancelled:
+    return "Cancelled";
+  }
+  return "Working";
+}
+
+auto HeatColor(float value, float maximum) -> ImU32 {
+  const float t = std::clamp(value / (std::max)(maximum, 1.0e-8F), 0.0F, 1.0F);
+  return ImGui::GetColorU32(ImVec4(std::clamp(1.8F * t - 0.7F, 0.0F, 1.0F),
+                                   std::clamp(1.7F - std::abs(2.0F * t - 1.0F) * 1.7F, 0.0F, 1.0F),
+                                   std::clamp(1.0F - 1.6F * t, 0.0F, 1.0F), 1.0F));
+}
 
 auto Matches(const char* name, const char* filter) -> bool {
   if (filter[0] == '\0') {
@@ -82,17 +118,78 @@ auto DrawComponentHeader(const char* label, const char* componentName, const cha
 }
 } // namespace
 
+InspectorPanel::InspectorPanel(PrismNdfGenerationAdapter generation) : m_PrismGeneration(std::move(generation)) {}
+
+InspectorPanel::~InspectorPanel() { ResetPrismNdfEditor(true); }
+
+void InspectorPanel::ResetPrismNdfEditor(bool cancelRequest) {
+  if (cancelRequest && m_PrismRequestId && m_PrismGeneration.cancel) {
+    (void)m_PrismGeneration.cancel(*m_PrismRequestId);
+  }
+  m_PrismRequestEligible = false;
+  m_PrismEditorRequested = false;
+  m_PrismPreview.reset();
+  m_PrismPreviewFromSaved = false;
+  m_PrismPreviewDirty = false;
+  m_PrismStatus.reset();
+  m_PrismPrompt.fill('\0');
+  m_PrismDirectional = false;
+}
+
+void InspectorPanel::PollPrismGeneration() {
+  if (!m_PrismRequestId || !m_PrismGeneration.poll) {
+    return;
+  }
+  const auto status = m_PrismGeneration.poll(*m_PrismRequestId);
+  if (!status) {
+    return;
+  }
+  m_PrismStatus = *status;
+  const bool terminal = status->phase == Engine::PrismNdfInferencePhase::Completed ||
+                        status->phase == Engine::PrismNdfInferencePhase::Failed ||
+                        status->phase == Engine::PrismNdfInferencePhase::Cancelled;
+  if (!terminal) {
+    return;
+  }
+  const auto* currentMesh = m_Scene != nullptr && m_Scene->World().IsAlive(m_PrismRequestEntity)
+                                ? m_Scene->World().Get<Engine::Ecs::MeshRenderer>(m_PrismRequestEntity)
+                                : nullptr;
+  const bool requestTargetStillSelected = currentMesh != nullptr && m_SelectedEntity == m_PrismRequestEntity &&
+                                          currentMesh->MaterialGuid == m_PrismRequestMaterialGuid;
+  if (status->phase == Engine::PrismNdfInferencePhase::Completed && m_PrismRequestEligible &&
+      requestTargetStillSelected && status->result && m_PrismRequestEntity == m_PrismEditorEntity &&
+      m_PrismRequestMaterialGuid == m_PrismMaterialGuid) {
+    m_PrismPreview = status->result;
+    m_PrismPreviewFromSaved = false;
+    m_PrismPreviewDirty = true;
+    m_PrismPreviewPrompt = m_PrismRequestPrompt;
+    m_PrismPreviewDirectional = m_PrismRequestDirectional;
+  }
+  m_PrismRequestId.reset();
+  m_PrismRequestEligible = false;
+}
+
 void InspectorPanel::OnEvent(Engine::Events::Event& event) {
   Engine::Events::EventDispatcher dispatcher(event);
   dispatcher.Dispatch<EcsEntitySelectedEvent>([this](const auto& selection) -> bool {
+    if (m_SelectedEntity != selection.GetEntity()) {
+      ResetPrismNdfEditor(true);
+      m_PrismMaterialGuid.clear();
+    }
     m_SelectedEntity = selection.GetEntity();
     return false;
   });
   dispatcher.Dispatch<EntityDeselectedEvent>([this](const auto&) -> bool {
+    ResetPrismNdfEditor(true);
+    m_PrismMaterialGuid.clear();
     m_SelectedEntity = Engine::InvalidEntityHandle;
     return false;
   });
   dispatcher.Dispatch<SceneChangedEvent>([this](const auto& sceneEvent) -> bool {
+    if (m_Scene != sceneEvent.GetScene()) {
+      ResetPrismNdfEditor(true);
+      m_PrismMaterialGuid.clear();
+    }
     m_Scene = sceneEvent.GetScene();
     return false;
   });
@@ -111,6 +208,7 @@ void InspectorPanel::OnEvent(Engine::Events::Event& event) {
 }
 
 void InspectorPanel::Draw() {
+  PollPrismGeneration();
   ImGui::Begin("Inspector", nullptr, ImGuiWindowFlags_NoCollapse);
   if (m_Scene && m_SelectedEntity != Engine::InvalidEntityHandle && m_Scene->World().IsAlive(m_SelectedEntity)) {
     DrawEntityInspector();
@@ -123,6 +221,254 @@ void InspectorPanel::Draw() {
   }
 
   ImGui::End();
+}
+
+auto InspectorPanel::DrawPrismNdfEditor(Engine::EntityHandle entity, const std::string& materialGuid,
+                                        Engine::SceneMaterialDocument& material) -> bool {
+  bool materialChanged = false;
+  const bool contextChanged = m_PrismEditorEntity != entity || m_PrismMaterialGuid != materialGuid;
+  if (contextChanged) {
+    ResetPrismNdfEditor(true);
+    m_PrismEditorEntity = entity;
+    m_PrismMaterialGuid = materialGuid;
+    if (material.generatedNdf) {
+      const auto& saved = *material.generatedNdf;
+      const size_t length = (std::min)(saved.prompt.size(), m_PrismPrompt.size() - 1);
+      std::copy_n(saved.prompt.data(), length, m_PrismPrompt.data());
+      m_PrismDirectional = saved.directional;
+      m_PrismPreview = std::make_shared<const Engine::PrismNdfData>(saved.data);
+      m_PrismPreviewDirty = true;
+      m_PrismPreviewPrompt = saved.prompt;
+      m_PrismPreviewDirectional = saved.directional;
+      m_PrismPreviewFromSaved = true;
+    }
+  }
+  if (m_PrismPreview || material.generatedNdf) {
+    ImGui::SeparatorText("PRISM NDF settings");
+    bool residualsEnabled =
+        m_PrismPreview ? m_PrismPreview->residualsEnabled : material.generatedNdf->data.residualsEnabled;
+    if (ImGui::Checkbox("Enable residuals", &residualsEnabled)) {
+      if (m_PrismPreview) {
+        auto updatedPreview = std::make_shared<Engine::PrismNdfData>(*m_PrismPreview);
+        updatedPreview->residualsEnabled = residualsEnabled;
+        m_PrismPreview = std::move(updatedPreview);
+      }
+      if (material.generatedNdf && (!m_PrismPreview || m_PrismPreviewFromSaved)) {
+        material.generatedNdf->data.residualsEnabled = residualsEnabled;
+        materialChanged = true;
+      }
+      m_PrismPreviewDirty = true;
+    }
+    auto residualFilter = Engine::PrismNdfResidualFilter::Bilinear;
+    if (m_PrismPreview) {
+      residualFilter = m_PrismPreview->residualFilter;
+    } else if (material.generatedNdf) {
+      residualFilter = material.generatedNdf->data.residualFilter;
+    }
+    int filter = residualFilter == Engine::PrismNdfResidualFilter::QuinticUv ? 1 : 0;
+    const char* filterNames[] = {"Bilinear", "Quintic UV"};
+    if (ImGui::Combo("Residual filter", &filter, filterNames, 2)) {
+      const auto mode =
+          filter == 1 ? Engine::PrismNdfResidualFilter::QuinticUv : Engine::PrismNdfResidualFilter::Bilinear;
+      if (m_PrismPreview) {
+        auto updatedPreview = std::make_shared<Engine::PrismNdfData>(*m_PrismPreview);
+        updatedPreview->residualFilter = mode;
+        m_PrismPreview = std::move(updatedPreview);
+      }
+      if (material.generatedNdf && (!m_PrismPreview || m_PrismPreviewFromSaved)) {
+        material.generatedNdf->data.residualFilter = mode;
+        materialChanged = true;
+      }
+      m_PrismPreviewDirty = true;
+    }
+    const auto drawNdfOption = [&](const char* label, bool Engine::PrismNdfData::* member) {
+      bool enabled = m_PrismPreview ? m_PrismPreview.get()->*member : material.generatedNdf->data.*member;
+      if (ImGui::Checkbox(label, &enabled)) {
+        if (m_PrismPreview) {
+          auto updated = std::make_shared<Engine::PrismNdfData>(*m_PrismPreview);
+          updated.get()->*member = enabled;
+          m_PrismPreview = std::move(updated);
+        }
+        if (material.generatedNdf && m_PrismPreviewFromSaved) {
+          material.generatedNdf->data.*member = enabled;
+          materialChanged = true;
+        }
+        m_PrismPreviewDirty = true;
+      }
+    };
+    drawNdfOption("Horizon fade", &Engine::PrismNdfData::horizonFade);
+    drawNdfOption("Mipmapped sampling", &Engine::PrismNdfData::mipmappedResiduals);
+    drawNdfOption("Equal-angle mapping", &Engine::PrismNdfData::equalAngleResiduals);
+    ImGui::TextWrapped("Disabling residuals preserves the samples and uses the Zernike coefficient basis alone.");
+  }
+  ImGui::SeparatorText("PRISM NDF generation");
+  ImGui::InputTextMultiline("Text prompt", m_PrismPrompt.data(), m_PrismPrompt.size(), ImVec2(-1.0F, 72.0F));
+  ImGui::Checkbox("Directional distribution", &m_PrismDirectional);
+  ImGui::TextWrapped("Prompt and directional settings remain a preview until you apply the generated NDF.");
+
+  const bool available = m_PrismGeneration.isAvailable && m_PrismGeneration.isAvailable();
+  if (!available) {
+    ImGui::TextDisabled(
+        "PRISM inference is unavailable in this build. Install the packaged model runtime to generate NDFs.");
+  }
+  if (m_PrismRequestId) {
+    const bool cancelling = !m_PrismRequestEligible;
+    const char* phase = m_PrismStatus ? PrismPhaseLabel(m_PrismStatus->phase) : "Starting";
+    ImGui::Text("%s%s", cancelling ? "Cancelling: " : "Generating: ", phase);
+    if (m_PrismStatus && !cancelling) {
+      ImGui::ProgressBar(std::clamp(m_PrismStatus->progress, 0.0F, 1.0F), ImVec2(-1.0F, 0.0F));
+    }
+    if (m_PrismRequestEligible && ImGui::Button("Cancel generation")) {
+      if (m_PrismGeneration.cancel) {
+        (void)m_PrismGeneration.cancel(*m_PrismRequestId);
+      }
+      m_PrismRequestEligible = false;
+      m_PrismPreview.reset();
+      m_PrismPreviewDirty = false;
+      m_PrismPreviewFromSaved = false;
+    }
+  } else {
+    const std::string promptText(m_PrismPrompt.data());
+    const bool hasPrompt =
+        std::any_of(promptText.begin(), promptText.end(), [](unsigned char value) { return !std::isspace(value); });
+    ImGui::BeginDisabled(!available || !m_PrismGeneration.start || !hasPrompt);
+    if (ImGui::Button("Generate preview")) {
+      const std::string prompt(m_PrismPrompt.data());
+      auto started = m_PrismGeneration.start(prompt, m_PrismDirectional);
+      if (!started) {
+        m_PrismStatus = Engine::PrismNdfInferenceStatus{.phase = Engine::PrismNdfInferencePhase::Failed,
+                                                        .progress = 1.0F,
+                                                        .message = started.error().Message};
+      } else {
+        m_PrismRequestId = *started;
+        m_PrismRequestEntity = entity;
+        m_PrismRequestMaterialGuid = materialGuid;
+        m_PrismRequestPrompt = prompt;
+        m_PrismRequestDirectional = m_PrismDirectional;
+        m_PrismRequestEligible = true;
+        m_PrismStatus = Engine::PrismNdfInferenceStatus{.requestId = *started};
+        m_PrismPreview.reset();
+        m_PrismPreviewFromSaved = false;
+      }
+    }
+    ImGui::EndDisabled();
+  }
+  if (m_PrismStatus && !m_PrismStatus->message.empty()) {
+    const bool succeeded = m_PrismStatus->phase != Engine::PrismNdfInferencePhase::Failed;
+    ImGui::TextColored(succeeded ? ImVec4(0.45F, 0.85F, 0.5F, 1.0F) : ImVec4(0.95F, 0.4F, 0.35F, 1.0F), "%s",
+                       m_PrismStatus->message.c_str());
+  }
+
+  if (!m_PrismPreview) {
+    return materialChanged;
+  }
+  if (m_PrismPreviewDirty) {
+    const auto residualMipChain = Engine::Renderer::BuildPrismNdfResidualMipChain(m_PrismPreview->residuals);
+    m_PrismPreviewMaximum = 0.0F;
+    for (uint32_t y = 0; y < Engine::PrismNdfGridSize; ++y) {
+      for (uint32_t x = 0; x < Engine::PrismNdfGridSize; ++x) {
+        const float px = 2.0F * static_cast<float>(x) / static_cast<float>(Engine::PrismNdfGridSize - 1) - 1.0F;
+        const float py = 2.0F * static_cast<float>(y) / static_cast<float>(Engine::PrismNdfGridSize - 1) - 1.0F;
+        const size_t index = static_cast<size_t>(y) * Engine::PrismNdfGridSize + x;
+        m_PrismPreviewHeatmap[index] = Engine::Renderer::EvaluatePrismNdfPreview(
+            *m_PrismPreview, residualMipChain, px, py, 2.0F / static_cast<float>(Engine::PrismNdfGridSize - 1));
+        m_PrismPreviewMaximum = (std::max)(m_PrismPreviewMaximum, m_PrismPreviewHeatmap[index]);
+      }
+    }
+    m_PrismPreviewSphereMaximum = 0.0F;
+    constexpr std::array<float, 3> light = {0.4242641F, 0.5656854F, 0.7071068F};
+    constexpr uint32_t sphereSteps = 64;
+    for (uint32_t row = 0; row < sphereSteps; ++row) {
+      for (uint32_t column = 0; column < sphereSteps; ++column) {
+        const float nx = 2.0F * (static_cast<float>(column) + 0.5F) / static_cast<float>(sphereSteps) - 1.0F;
+        const float ny = 1.0F - 2.0F * (static_cast<float>(row) + 0.5F) / static_cast<float>(sphereSteps);
+        const float radiusSquared = nx * nx + ny * ny;
+        if (radiusSquared > 1.0F) {
+          continue;
+        }
+        const float nz = std::sqrt(1.0F - radiusSquared);
+        const float nDotL = (std::max)(0.0F, nx * light[0] + ny * light[1] + nz * light[2]);
+        const float ndf = Engine::Renderer::EvaluatePrismNdfPreview(*m_PrismPreview, residualMipChain, nx, ny,
+                                                                    2.0F / static_cast<float>(sphereSteps));
+        const float shaded = (0.06F + 0.94F * nDotL) * (0.12F + 0.88F * ndf / (m_PrismPreviewMaximum + 1.0e-6F));
+        const size_t index = static_cast<size_t>(row) * sphereSteps + column;
+        m_PrismPreviewSphere[index] = shaded;
+        m_PrismPreviewSphereMaximum = (std::max)(m_PrismPreviewSphereMaximum, shaded);
+      }
+    }
+    m_PrismPreviewDirty = false;
+  }
+  ImGui::TextUnformatted("NDF heatmap");
+  const float cell = 3.0F;
+  const ImVec2 heatmapOrigin = ImGui::GetCursorScreenPos();
+  const ImVec2 heatmapSize(cell * Engine::PrismNdfGridSize, cell * Engine::PrismNdfGridSize);
+  ImGui::InvisibleButton("##PRISM NDF heatmap", heatmapSize);
+  ImDrawList* draw = ImGui::GetWindowDrawList();
+  for (uint32_t y = 0; y < Engine::PrismNdfGridSize; ++y) {
+    for (uint32_t x = 0; x < Engine::PrismNdfGridSize; ++x) {
+      const size_t index = static_cast<size_t>(y) * Engine::PrismNdfGridSize + x;
+      const ImVec2 min(heatmapOrigin.x + cell * static_cast<float>(x), heatmapOrigin.y + cell * static_cast<float>(y));
+      draw->AddRectFilled(min, ImVec2(min.x + cell, min.y + cell),
+                          HeatColor(m_PrismPreviewHeatmap[index], m_PrismPreviewMaximum));
+    }
+  }
+
+  ImGui::TextUnformatted("Lit sphere preview");
+  const float sphereSize = 192.0F;
+  const ImVec2 sphereOrigin = ImGui::GetCursorScreenPos();
+  ImGui::InvisibleButton("##PRISM NDF lit sphere", ImVec2(sphereSize, sphereSize));
+  constexpr uint32_t sphereSteps = 64;
+  const float sphereCell = sphereSize / static_cast<float>(sphereSteps);
+  for (uint32_t row = 0; row < sphereSteps; ++row) {
+    for (uint32_t column = 0; column < sphereSteps; ++column) {
+      const size_t index = static_cast<size_t>(row) * sphereSteps + column;
+      if (m_PrismPreviewSphere[index] <= 0.0F) {
+        continue;
+      }
+      const ImVec2 min(sphereOrigin.x + sphereCell * static_cast<float>(column),
+                       sphereOrigin.y + sphereCell * static_cast<float>(row));
+      draw->AddRectFilled(min, ImVec2(min.x + sphereCell + 0.5F, min.y + sphereCell + 0.5F),
+                          HeatColor(m_PrismPreviewSphere[index], m_PrismPreviewSphereMaximum));
+    }
+  }
+  ImGui::TextWrapped("Prompt: %s%s", m_PrismPreviewPrompt.c_str(),
+                     m_PrismPreviewDirectional ? " (directional)" : " (isotropic)");
+  if ((!m_PrismPreviewFromSaved || material.brdfModel != "prismNdf") && !materialGuid.empty()) {
+    if (ImGui::Button("Apply to material")) {
+      Engine::SceneGeneratedNdfDocument generated;
+      generated.data = *m_PrismPreview;
+      generated.directional = m_PrismPreviewDirectional;
+      generated.prompt = m_PrismPreviewPrompt;
+      generated.modelVersion = "PRISM release model";
+      generated.exporterVersion = "PRISM grid / degree-8 Zernike fit";
+      EmitEvent(std::make_unique<PrismNdfApplyRequestedEvent>(entity, materialGuid, std::move(generated)));
+      if (m_AssetFeedbackSucceeded) {
+        m_PrismEditorRequested = false;
+        m_PrismPreviewFromSaved = true;
+      }
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Discard preview")) {
+      if (m_PrismRequestId && m_PrismGeneration.cancel) {
+        (void)m_PrismGeneration.cancel(*m_PrismRequestId);
+        m_PrismRequestEligible = false;
+      }
+      m_PrismPreview.reset();
+      m_PrismPreviewFromSaved = false;
+      m_PrismStatus.reset();
+      if (material.generatedNdf) {
+        const auto& saved = *material.generatedNdf;
+        m_PrismPreview = std::make_shared<const Engine::PrismNdfData>(saved.data);
+        m_PrismPreviewDirty = true;
+        m_PrismPreviewPrompt = saved.prompt;
+        m_PrismPreviewDirectional = saved.directional;
+        m_PrismPreviewFromSaved = true;
+      } else {
+        m_PrismEditorRequested = false;
+      }
+    }
+  }
+  return materialChanged;
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
@@ -550,26 +896,50 @@ void InspectorPanel::DrawEntityInspector() {
         materialChanged |= ImGui::SliderFloat("Index of refraction", &material.ior, 1.0F, 3.0F, "%.2f");
       }
       ImGui::SeparatorText("MDF Parameters");
-      constexpr const char* brdfNames[] = {"GGX",     "GTR",    "Beckmann", "Gauss", "Blinn-Phong", "Ashikhmin-Shirley",
-                                           "Schlick", "Sawicki"};
-      int brdfIndex = material.brdfModel == "gtr"                ? 1
+      constexpr const char* brdfNames[] = {"GGX",     "GTR",         "Beckmann",
+                                           "Gauss",   "Blinn-Phong", "Ashikhmin-Shirley",
+                                           "Schlick", "Sawicki",     "PRISM generated NDF"};
+      const bool stagedPrism =
+          m_PrismEditorRequested && m_PrismEditorEntity == entity && m_PrismMaterialGuid == mesh.MaterialGuid;
+      int brdfIndex = stagedPrism                                ? 8
+                      : material.brdfModel == "gtr"              ? 1
                       : material.brdfModel == "beckmann"         ? 2
                       : material.brdfModel == "gauss"            ? 3
                       : material.brdfModel == "blinnPhong"       ? 4
                       : material.brdfModel == "ashikhminShirley" ? 5
                       : material.brdfModel == "schlick"          ? 6
                       : material.brdfModel == "sawicki"          ? 7
+                      : material.brdfModel == "prismNdf"         ? 8
                                                                  : 0;
-      if (ImGui::Combo("BRDF distribution", &brdfIndex, brdfNames, 8)) {
-        material.brdfModel = brdfIndex == 1   ? "gtr"
-                             : brdfIndex == 2 ? "beckmann"
-                             : brdfIndex == 3 ? "gauss"
-                             : brdfIndex == 4 ? "blinnPhong"
-                             : brdfIndex == 5 ? "ashikhminShirley"
-                             : brdfIndex == 6 ? "schlick"
-                             : brdfIndex == 7 ? "sawicki"
-                                              : "ggx";
-        materialChanged = true;
+      if (ImGui::Combo("BRDF distribution", &brdfIndex, brdfNames, 9)) {
+        if (brdfIndex == 8 && (legacyEmbeddedMaterial || mesh.MaterialGuid.empty())) {
+          m_AssetFeedbackSucceeded = false;
+          m_AssetFeedback = "PRISM generation requires a reusable material asset";
+        } else if (brdfIndex == 8) {
+          m_PrismEditorRequested = true;
+          m_PrismEditorEntity = entity;
+          m_PrismMaterialGuid = mesh.MaterialGuid;
+        } else {
+          if (brdfIndex != 8) {
+            ResetPrismNdfEditor(true);
+            m_PrismEditorEntity = entity;
+            m_PrismMaterialGuid = mesh.MaterialGuid;
+          }
+          material.brdfModel = brdfIndex == 1   ? "gtr"
+                               : brdfIndex == 2 ? "beckmann"
+                               : brdfIndex == 3 ? "gauss"
+                               : brdfIndex == 4 ? "blinnPhong"
+                               : brdfIndex == 5 ? "ashikhminShirley"
+                               : brdfIndex == 6 ? "schlick"
+                               : brdfIndex == 7 ? "sawicki"
+                               : brdfIndex == 8 ? "prismNdf"
+                                                : "ggx";
+          materialChanged = true;
+        }
+      }
+      if ((material.brdfModel == "prismNdf" || m_PrismEditorRequested) && !legacyEmbeddedMaterial &&
+          !mesh.MaterialGuid.empty()) {
+        materialChanged |= DrawPrismNdfEditor(entity, mesh.MaterialGuid, material);
       }
       if (material.brdfModel == "gtr") {
         materialChanged |= ImGui::SliderFloat("GTR gamma", &material.gtrGamma, 1.0F, 8.0F, "%.2f");
@@ -849,10 +1219,10 @@ void InspectorPanel::DrawEntityInspector() {
       postProcessing.Effects.erase(postProcessing.Effects.begin() + static_cast<std::ptrdiff_t>(*removeEffect));
       changed = true;
     } else if (reorderEffect) {
-      auto effect = std::move(postProcessing.Effects[reorderEffect->first]);
+      auto effect = postProcessing.Effects[reorderEffect->first];
       postProcessing.Effects.erase(postProcessing.Effects.begin() + static_cast<std::ptrdiff_t>(reorderEffect->first));
       postProcessing.Effects.insert(postProcessing.Effects.begin() + static_cast<std::ptrdiff_t>(reorderEffect->second),
-                                    std::move(effect));
+                                    effect);
       changed = true;
     }
     static constexpr const char* effectTypes[] = {"Color Grading", "Bloom", "FXAA"};

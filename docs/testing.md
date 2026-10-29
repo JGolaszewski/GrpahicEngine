@@ -68,8 +68,11 @@ applicable first-party findings rather than suppressing or bypassing the check.
 If the toolchain is unavailable, report which checks could not run.
 
 The default x64 Debug preset builds the asset and BRDF executables and the GoogleTest
-CPU unit suite. Tests use temporary project roots where they write scene or asset
-files; the suite does not create a window or graphics device.
+unit suite. Tests use temporary project roots where they write scene or asset
+files. D3D11 rendering cases create WARP devices; the PRISM Zernike parity case
+selects a hardware NVIDIA adapter and skips if one is unavailable. The opt-in
+PRISM timestamp workload also requires a hardware NVIDIA adapter and never uses
+WARP timing.
 
 ```powershell
 cmake --preset x64-debug
@@ -84,6 +87,29 @@ ctest --test-dir out/build/x64-debug --output-on-failure -C Debug
 out/build/x64-debug/bin/GraphicEngineUnitTests.exe --gtest_filter="ArchetypeWorldTests.*"
 ctest --test-dir out/build/x64-debug --output-on-failure -R "AssetManagerTests|BrdfReferenceTests"
 ```
+
+The PRISM GPU parity case compiles a compute harness that includes the production
+`brdf_common.hlsli`; run it alongside the CPU reference suite with:
+
+```powershell
+out/build/x64-debug/bin/GraphicEngineUnitTests.exe `
+  --gtest_filter="PrismNdfGpuParityTests.NvidiaD3D11MatchesIndependentDoubleReferenceForAllTermsAndEdgeCases"
+```
+
+To collect the opt-in RTX timestamp workload and enforce its documented 1080p
+frame budget, set `ENGINE_PRISM_GPU_TIMING=1` and run:
+
+```powershell
+$env:ENGINE_PRISM_GPU_TIMING = '1'
+out/build/x64-debug/bin/GraphicEngineUnitTests.exe `
+  --gtest_filter="PrismNdfGpuParityTests.NvidiaD3D11TimestampMeasuresPrismEnvironmentRenderCost"
+```
+
+The benchmark reports D3D11 GPU timestamp medians after warmup for its authored
+scene and workload. Record adapter, driver, compiler, power scheme, resolution,
+repeat count, and background-load conditions when comparing runs. See
+[`PRISM shader math`](rendering/prism-ndf-shader.md#rtx-5080-timing-budget) for
+the measured host result and limitations.
 
 CTest discovers the individual GoogleTest cases at test time, so `-R` and
 `--gtest_filter` can narrow runs. `AssetManagerTests` is the integration executable;

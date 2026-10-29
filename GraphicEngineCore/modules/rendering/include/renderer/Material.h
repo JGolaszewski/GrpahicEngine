@@ -1,6 +1,7 @@
 #pragma once
 
 #include "runtime/include/CoreExport.h"
+#include "runtime/include/PrismNdfData.h"
 #include <DirectXMath.h>
 #include <algorithm>
 #include <array>
@@ -33,7 +34,8 @@ enum class BrdfModel : uint32_t {
   BlinnPhong = 5,
   AshikhminShirley = 6,
   Schlick = 7,
-  Sawicki = 8
+  Sawicki = 8,
+  PrismNdf = 9
 };
 
 /// Metallic-roughness or specular-glossiness material parameterization.
@@ -47,7 +49,7 @@ enum class MaterialAlphaMode : uint32_t { Opaque = 0, Mask = 1, Blend = 2 };
 
 /// Versioned CPU-to-shader material constant-buffer layout.
 /// The buffer occupies b1; texture and sampler registers are listed in docs/material-binding-abi.md.
-inline constexpr uint32_t MaterialGpuAbiVersion = 5;
+inline constexpr uint32_t MaterialGpuAbiVersion = 6;
 /// Minimum alpha used by the shader to avoid a zero roughness denominator.
 inline constexpr float MaterialMinAlpha = 1.0e-3f;
 /// Smallest supported GTR distribution gamma.
@@ -72,6 +74,9 @@ struct MaterialGpu {
   DirectX::XMFLOAT4 TextureParams;           ///< Normal scale, occlusion strength, and reserved values.
   DirectX::XMFLOAT4 TextureTransformRows[5]; ///< Two UV transform rows for each material texture slot.
   DirectX::XMFLOAT4 TextureTransformOffsets[5]; ///< UV offsets for each material texture slot.
+  DirectX::XMFLOAT4 NdfCoefficients[12];        ///< 45 degree-8 real Zernike coefficients, packed as float4 values.
+  DirectX::XMFLOAT4 NdfParams; ///< Projected-energy normalization, residual-enable flag, residual option bitfield, and
+                               ///< reserved value.
 };
 
 static_assert(sizeof(DirectX::XMFLOAT4) == 16);
@@ -87,7 +92,9 @@ static_assert(offsetof(MaterialGpu, TextureCoordinates1) == 112);
 static_assert(offsetof(MaterialGpu, TextureParams) == 128);
 static_assert(offsetof(MaterialGpu, TextureTransformRows) == 144);
 static_assert(offsetof(MaterialGpu, TextureTransformOffsets) == 224);
-static_assert(sizeof(MaterialGpu) == 304);
+static_assert(offsetof(MaterialGpu, NdfCoefficients) == 304);
+static_assert(offsetof(MaterialGpu, NdfParams) == 496);
+static_assert(sizeof(MaterialGpu) == 512);
 
 /// UV offset, scale, and rotation for one material texture slot.
 struct MaterialTextureTransform {
@@ -142,6 +149,7 @@ struct MaterialProperties {
   MaterialTextureTransform TextureTransforms[5]; ///< Transforms for base color, metallic-roughness, normal,
                                                  ///< occlusion, and emissive maps.
   std::array<TextureAnisotropy, 5> TextureAnisotropyLevels{}; ///< Per-slot sampler requests; defaults to GlobalCap.
+  std::shared_ptr<const PrismNdfData> GeneratedNdf; ///< Immutable generated payload; absent for analytic distributions.
 };
 
 inline float ClampFinite(float value, float fallback, float minimum, float maximum) noexcept {
@@ -155,7 +163,7 @@ inline MaterialGpu BuildMaterialGpu(const MaterialProperties& properties) noexce
   const float ior = ClampFinite(properties.Ior, 1.5f, MaterialMinIor, MaterialMaxIor);
   const auto validModel = [](BrdfModel model) {
     return static_cast<uint32_t>(model) >= static_cast<uint32_t>(BrdfModel::GGX) &&
-                   static_cast<uint32_t>(model) <= static_cast<uint32_t>(BrdfModel::Sawicki)
+                   static_cast<uint32_t>(model) <= static_cast<uint32_t>(BrdfModel::PrismNdf)
                ? model
                : BrdfModel::GGX;
   };
@@ -189,7 +197,14 @@ inline MaterialGpu BuildMaterialGpu(const MaterialProperties& properties) noexce
            (validWorkflow(properties.Workflow) == MaterialWorkflow::SpecularGlossiness ? 0x100u : 0u),
        static_cast<uint32_t>(validAlphaMode(properties.AlphaMode)) | (properties.DoubleSided ? 0x100u : 0u)},
       {ClampFinite(properties.AlphaCutoff, 0.5f, 0.0f, 1.0f),
-       ClampFinite(properties.AnisotropicRoughnessV, 0.5f, 0.0f, 1.0f), 0.0f, 0.0f}};
+       ClampFinite(properties.AnisotropicRoughnessV, 0.5f, 0.0f, 1.0f), 0.0f, 0.0f},
+      {},
+      {},
+      {},
+      {},
+      {},
+      {},
+      {1.0f, 0.0f, 0.0f, 0.0f}};
   gpu.TextureCoordinates0 = {
       properties.BaseColorTexCoord < MaxTextureCoordinateSets ? properties.BaseColorTexCoord : 0,
       properties.NormalTexCoord < MaxTextureCoordinateSets ? properties.NormalTexCoord : 0,
@@ -210,6 +225,25 @@ inline MaterialGpu BuildMaterialGpu(const MaterialProperties& properties) noexce
     gpu.TextureTransformOffsets[i] = {std::isfinite(transform.Offset.x) ? transform.Offset.x : 0.0f,
                                       std::isfinite(transform.Offset.y) ? transform.Offset.y : 0.0f, 0.0f, 0.0f};
   }
+  if (properties.GeneratedNdf) {
+    for (size_t index = 0; index < PrismNdfCoefficientCount; ++index) {
+      auto& packed = gpu.NdfCoefficients[index / 4];
+      const std::array<float*, 4> components{&packed.x, &packed.y, &packed.z, &packed.w};
+      *components[index % 4] = std::isfinite(properties.GeneratedNdf->zernikeCoefficients[index])
+                                   ? properties.GeneratedNdf->zernikeCoefficients[index]
+                                   : 0.0F;
+    }
+    gpu.NdfParams.x =
+        std::isfinite(properties.GeneratedNdf->normalization) && properties.GeneratedNdf->normalization > 0.0F
+            ? properties.GeneratedNdf->normalization
+            : 1.0F;
+    gpu.NdfParams.y = properties.GeneratedNdf->residualsEnabled ? 1.0F : 0.0F;
+    const auto& ndf = *properties.GeneratedNdf;
+    const uint32_t options = (ndf.residualFilter == PrismNdfResidualFilter::QuinticUv ? 1U : 0U) |
+                             (ndf.horizonFade ? 2U : 0U) | (ndf.mipmappedResiduals ? 4U : 0U) |
+                             (ndf.equalAngleResiduals ? 8U : 0U);
+    gpu.NdfParams.z = static_cast<float>(options);
+  }
   return gpu;
 }
 
@@ -228,7 +262,8 @@ public:
   /// Releases the material's private GPU state.
   ~Material();
 
-  /// Replaces all editable factors and marks the material dirty for upload.
+  /// Replaces all editable factors and marks the material dirty for upload. A nonnull PRISM payload with an invalid
+  /// residual sample count is rejected without changing the material.
   /// @param properties New material factors and texture-coordinate selections.
   void SetProperties(const MaterialProperties& properties);
 
@@ -300,6 +335,7 @@ private:
   uint32_t m_MaterialID;
 
   std::unique_ptr<GpuState> m_GpuState;
+  std::shared_ptr<const PrismNdfData> m_GeneratedNdf;
   std::shared_ptr<TextureResource> m_BaseColorTexture;
   std::shared_ptr<TextureResource> m_NormalTexture;
   std::shared_ptr<TextureResource> m_MetallicRoughnessTexture;

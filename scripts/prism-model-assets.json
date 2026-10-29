@@ -1,0 +1,158 @@
+{
+  "schema_version": 2,
+  "prism_repository": "https://github.com/JGolaszewski/PRISM",
+  "prism_source_commit": "2d158fd74dfb98ffb72c35562650ab4185a7b514",
+  "e5_model_repository": "https://huggingface.co/intfloat/e5-large-v2",
+  "e5_model_revision": "f169b11e22de13617baa190a028a32f3493550b6",
+  "decoder_contract": {
+    "contract_version": 1,
+    "grid_output": {
+      "name": "ndf_grid_flat",
+      "dtype": "float32",
+      "shape": [
+        1,
+        16384
+      ]
+    },
+    "degree": 8,
+    "grid_size": 128
+  },
+  "onnx_contracts": {
+    "e5_encoder.onnx": {
+      "inputs": {
+        "input_ids": {
+          "dtype": "int64",
+          "shape": [
+            1,
+            128
+          ]
+        },
+        "attention_mask": {
+          "dtype": "int64",
+          "shape": [
+            1,
+            128
+          ]
+        }
+      },
+      "outputs": {
+        "normalized_embedding": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            1024
+          ]
+        }
+      }
+    },
+    "prism_text_predictor_128.onnx": {
+      "inputs": {
+        "embedding": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            1024
+          ]
+        },
+        "control_features": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            7
+          ]
+        }
+      },
+      "outputs": {
+        "predicted_latent": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            16
+          ]
+        }
+      }
+    },
+    "prism_vae_decoder_128.onnx": {
+      "inputs": {
+        "latent": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            16
+          ]
+        }
+      },
+      "outputs": {
+        "ndf_grid_flat": {
+          "dtype": "float32",
+          "shape": [
+            1,
+            16384
+          ]
+        }
+      }
+    }
+  },
+  "assets": [
+    {
+      "name": "e5_encoder.onnx",
+      "release_tag": "e5-onnx-v1.0.0",
+      "size_bytes": 2521912,
+      "sha256": "69d68596bc286daa84aaff9c10be097397e21e5a517e7e5b0436e79bee0f6902"
+    },
+    {
+      "name": "e5_encoder.onnx.data",
+      "release_tag": "e5-onnx-v1.0.0",
+      "size_bytes": 1336886272,
+      "sha256": "ac8ff17adefc1bfdcb9a4d49ab936807f54a01f1be8bb494d1e9d827d56a2100"
+    },
+    {
+      "name": "special_tokens_map.json",
+      "release_tag": "e5-onnx-v1.0.0",
+      "size_bytes": 732,
+      "sha256": "5aa43c2f985a25296d5a5ce621c2f77376ca8091a47993c492fd5460b895b140"
+    },
+    {
+      "name": "tokenizer.json",
+      "release_tag": "e5-onnx-v1.0.0",
+      "size_bytes": 711396,
+      "sha256": "d241a60d5e8f04cc1b2b3e9ef7a4921b27bf526d9f6050ab90f9267a1f9e5c66"
+    },
+    {
+      "name": "tokenizer_config.json",
+      "release_tag": "e5-onnx-v1.0.0",
+      "size_bytes": 1276,
+      "sha256": "c709b7b834bdb716d8d328fdc8a26d746b9f3af7c9bf49523677025bcbc6bf24"
+    },
+    {
+      "name": "vocab.txt",
+      "release_tag": "e5-onnx-v1.0.0",
+      "size_bytes": 231508,
+      "sha256": "07eced375cec144d27c900241f3e339478dec958f92fddbc551f295c992038a3"
+    },
+    {
+      "name": "prism_text_predictor_128.onnx",
+      "release_tag": "prism-onnx-128x128-v1.0.0",
+      "size_bytes": 49216,
+      "sha256": "8f33032d0e4eeb10c9e3c99b8be40163b03ea352e39876afb0efe60c1ceef4ae"
+    },
+    {
+      "name": "prism_text_predictor_128.onnx.data",
+      "release_tag": "prism-onnx-128x128-v1.0.0",
+      "size_bytes": 4818816,
+      "sha256": "e34fbf777b90d38a59a82fac271ea39c46ea694b4b6c5b8fd1e5c48331334c25"
+    },
+    {
+      "name": "prism_vae_decoder_128.onnx",
+      "release_tag": "prism-onnx-128x128-v1.0.0",
+      "size_bytes": 105774,
+      "sha256": "2d512a5f1b5935ab13f99076f89436443111eb59f2647d8b1660d36ed090d404"
+    },
+    {
+      "name": "prism_vae_decoder_128.onnx.data",
+      "release_tag": "prism-onnx-128x128-v1.0.0",
+      "size_bytes": 6802048,
+      "sha256": "509d447893ea0ddce446e8e82859088ddef39ced5d6b244c83a5d1e8df695a49"
+    }
+  ]
+}

@@ -49,6 +49,9 @@ private:
   nvrhi::BindingLayoutHandle m_StandardLayout;
   std::shared_ptr<TextureResource> m_FallbackColor;
   std::shared_ptr<TextureResource> m_FallbackNormal;
+  nvrhi::TextureHandle m_FallbackNdfResidual;
+  nvrhi::TextureHandle m_FallbackNdfDistribution;
+  nvrhi::SamplerHandle m_NdfResidualSampler;
 
   nvrhi::ShaderHandle m_StandardVS;
   nvrhi::ShaderHandle m_StandardPS;

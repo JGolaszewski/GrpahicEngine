@@ -211,6 +211,20 @@ auto MakeIrradianceMip(const RadianceSampler& sampleRadiance) -> FloatMip {
   return mip;
 }
 
+auto MakeStudioPanorama() -> FloatMip {
+  constexpr uint32_t width = 512;
+  constexpr uint32_t height = 256;
+  FloatMip panorama{width, height, std::vector<float>(static_cast<size_t>(width) * height * 4)};
+  for (uint32_t y = 0; y < height; ++y) {
+    for (uint32_t x = 0; x < width; ++x) {
+      const Vec3 radiance = StudioRadiance(
+          DirectionFromUv((static_cast<float>(x) + 0.5F) / width, (static_cast<float>(y) + 0.5F) / height));
+      StorePixel(panorama, x, y, radiance);
+    }
+  }
+  return panorama;
+}
+
 auto MakePrefilterMips(const RadianceSampler& sampleRadiance) -> std::vector<FloatMip> {
   std::vector<FloatMip> mips;
   uint32_t width = EnvironmentWidth;
@@ -315,17 +329,21 @@ bool EnvironmentLightingResources::Initialize(nvrhi::IDevice* device, std::strin
   }
 
   const RadianceSampler sampleRadiance = [](float u, float v) -> Vec3 { return StudioRadiance(DirectionFromUv(u, v)); };
+  const FloatMip panorama = MakeStudioPanorama();
   const FloatMip irradiance = MakeIrradianceMip(sampleRadiance);
   const std::vector<FloatMip> prefilteredMips = MakePrefilterMips(sampleRadiance);
   const FloatMip brdfLut = MakeBrdfLut();
+  Panorama = CreateTexture(device, {panorama}, "StudioEnvironmentPanorama");
   IrradianceMap = CreateTexture(device, {irradiance}, "StudioEnvironmentIrradiance");
   PrefilteredEnvironment = CreateTexture(device, prefilteredMips, "StudioEnvironmentPrefiltered");
   BrdfIntegrationLut = CreateTexture(device, {brdfLut}, "StudioEnvironmentBrdfLut");
+  PanoramaSampler = CreateSampler(device, false);
   IrradianceSampler = CreateSampler(device, false);
   PrefilteredEnvironmentSampler = CreateSampler(device, true);
   BrdfIntegrationSampler = CreateSampler(device, false);
-  if (IrradianceMap == nullptr || PrefilteredEnvironment == nullptr || BrdfIntegrationLut == nullptr ||
-      IrradianceSampler == nullptr || PrefilteredEnvironmentSampler == nullptr || BrdfIntegrationSampler == nullptr) {
+  if (Panorama == nullptr || IrradianceMap == nullptr || PrefilteredEnvironment == nullptr ||
+      BrdfIntegrationLut == nullptr || PanoramaSampler == nullptr || IrradianceSampler == nullptr ||
+      PrefilteredEnvironmentSampler == nullptr || BrdfIntegrationSampler == nullptr) {
     error = "NVRHI failed to create one or more Studio environment textures or samplers";
     return false;
   }
@@ -336,6 +354,7 @@ bool EnvironmentLightingResources::Initialize(nvrhi::IDevice* device, std::strin
     return false;
   }
   commandList->open();
+  WriteMipChain(commandList, Panorama, {panorama});
   WriteMipChain(commandList, IrradianceMap, {irradiance});
   WriteMipChain(commandList, PrefilteredEnvironment, prefilteredMips);
   commandList->writeTexture(BrdfIntegrationLut, 0, 0, brdfLut.Pixels.data(),

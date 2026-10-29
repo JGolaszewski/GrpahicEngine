@@ -1,0 +1,95 @@
+name: PRISM enabled Windows application release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  windows-app-bundle:
+    if: github.event.release.draft == false
+    runs-on: windows-2022
+    steps:
+      - name: Check out the published source and pinned submodules
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.event.release.tag_name }}
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Set up release tooling Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.13.17'
+
+      - name: Set up the Visual Studio compiler environment
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
+        with:
+          arch: x64
+
+      - name: Download and verify pinned PRISM models
+        run: python scripts/download_prism_models.py
+
+      - name: Stage embedded Python and tokenizer
+        run: python scripts/stage_prism_runtime.py
+
+      - name: Validate decoder output contract
+        run: python scripts/validate_prism_onnx_contract.py
+
+      - name: Configure release with optional native ONNX Runtime
+        run: cmake --preset x64-release-prism
+
+      - name: Build application
+        run: cmake --build --preset x64-release-prism --parallel
+
+      - name: Install complete application bundle
+        run: cmake --install out/build/x64-release-prism --prefix out/package --config Release
+
+      - name: Verify installed PRISM package and tokenizer smoke test
+        run: python scripts/verify_prism_package.py --package out/package
+
+      - name: Run native inference against packaged PRISM assets
+        shell: pwsh
+        run: |
+          $env:PATH = "$(Resolve-Path out/package/bin);$env:PATH"
+          New-Item -ItemType Directory -Force out/prism-smoke | Out-Null
+          Copy-Item out/build/x64-release-prism/bin/PrismNdfPackageSmoke.exe out/package/bin/
+          Push-Location out/package/bin
+          try {
+            & .\PrismNdfPackageSmoke.exe . *> ..\..\prism-inference-smoke.log
+            $smokeExitCode = $LASTEXITCODE
+          } finally {
+            Pop-Location
+          }
+          Move-Item out/package/bin/PrismNdfPackageSmoke.exe out/prism-smoke/ -Force
+          if ($smokeExitCode -ne 0) {
+            Get-Content out/prism-inference-smoke.log -Tail 80
+            throw "Packaged native PRISM generation failed with exit code $smokeExitCode"
+          }
+          $result = Select-String -Path out/prism-inference-smoke.log -Pattern '^Packaged PRISM inference generated a finite 45-term, 16384-residual payload'
+          if ($null -eq $result) { throw "Packaged native PRISM generation did not report a completed payload" }
+          $result.Line
+
+      - name: Create release ZIP and SHA-256 checksum
+        id: package
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        shell: pwsh
+        run: |
+          $safeTag = $env:RELEASE_TAG -replace '[^A-Za-z0-9._-]', '-'
+          $archive = Join-Path $env:RUNNER_TEMP "GraphicEngine-$safeTag-windows-x64.zip"
+          7z.exe a -tzip -mx=0 $archive '.\out\package\*' | Out-Host
+          if ($LASTEXITCODE -ne 0) { throw "7-Zip failed with exit code $LASTEXITCODE" }
+          7z.exe t $archive | Out-Host
+          if ($LASTEXITCODE -ne 0) { throw "7-Zip archive verification failed with exit code $LASTEXITCODE" }
+          $hash = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          Set-Content -LiteralPath "$archive.sha256" -Value "$hash  $(Split-Path -Leaf $archive)" -NoNewline
+          "archive=$archive" >> $env:GITHUB_OUTPUT
+
+      - name: Upload complete application package to this release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: gh release upload "$env:RELEASE_TAG" "${{ steps.package.outputs.archive }}" "${{ steps.package.outputs.archive }}.sha256" --repo "$env:GITHUB_REPOSITORY" --clobber
