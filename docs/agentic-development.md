@@ -6,19 +6,28 @@ defines issue, branch, project, and PR rules; [Testing and performance](testing.
 defines the verification commands. Start with [Getting started](getting-started.md)
 if the Windows toolchain or build tree is not ready.
 
+For small, reversible, single-subsystem fixes, first check whether the change
+qualifies for the [lightweight workflow](development-workflow.md#lightweight-path-for-low-risk-changes).
+Use the full issue and project workflow for broader or contract-changing work.
+
 ## Start a task
 
-1. Find or create a repository issue linked to the user-owned
+1. For tracked work, find or create a repository issue linked to the user-owned
    [Graphics Engine project](https://github.com/users/JGolaszewski/projects/1).
    Record the coding owner, affected producers and consumers, interface contracts,
    docs, verification, and acceptance criteria. Check issue state and project
    Status separately. Stop before implementation if project access is unavailable.
+   For lightweight work, record the reason, owner, acceptance criterion, and
+   focused check in the handoff instead.
 2. Choose one task branch for a coupled change. For independent child issues,
    create an epic integration branch and a separate branch and worktree for each
    coding agent. Never let coding agents edit the same checkout concurrently.
-3. Apply the relevant skills below. Inspect the affected subsystem and its
-   consumers before editing. If another dependency appears, update the issue and
-   ownership assignment before changing that area. Keep `vendor/` read-only.
+3. Apply the relevant skills below. Use focused Graphify queries on the changed
+   symbols or files to find connected systems and consumers that may need
+   accommodation. Verify graph leads against source, build metadata, and tests;
+   if the graph is missing or stale, record that and trace callers directly.
+   Update the impact map and ownership before editing newly discovered areas.
+   Keep `vendor/` read-only.
 4. Change code, focused tests, relevant docs, and public-header comments together.
    Run focused checks while developing, then verify the integrated diff according
    to [Testing and performance](testing.md). Record exact results and blockers.
@@ -29,18 +38,43 @@ if the Windows toolchain or build tree is not ready.
 
 ## Skills and subagents
 
-A **skill** is a set of role instructions in `.codex/skills/`; it does not start a
+A **skill** is a set of role instructions in `.agents/skills/`; it does not start a
 second agent. A **subagent** is a separate worker that can use a relevant skill.
 Name a skill in a task when a particular role is needed, or let its activation
 description select it. The root contract still applies to every role.
 
 | Skill | Use it for | Expected handoff |
 | --- | --- | --- |
-| `ge-coordinator` | Issue and board tracking, impact maps, task division, and integrated delivery | Issue and branch state, combined impact, checks, risks |
-| `ge-cpp-coder` | First-party Core, D3D11 backend C++, Editor, and their CMake wiring | Producer/consumer and API changes, tests, docs |
-| `ge-shader-engineer` | D3D11 HLSL, shader compilation, and CPU/GPU layouts | Layout agreement, shader compile, rendering evidence |
-| `ge-qa-reviewer` | Independent, read-only review of the combined diff | Findings with locations, observed checks, gaps |
-| `ge-devops` | Worktrees, Git/GitHub coordination, CI investigation, and PR preparation | Exact branch, worktree, PR, and check state |
+| `cpp-engineering` | First-party C++ implementation, refactoring, ownership, and interface work | Affected consumers, API/lifetime impact, focused checks |
+| `engine-change-impact` | Cross-subsystem, renderer, backend, asset-format, or public-contract changes | Evidence-backed impact map and regression surface |
+| `engine-environment-audit` | Toolchain setup, onboarding, or environment-gap diagnosis | Observed tool/version matrix and explicit unknowns |
+| `graphics-api-research` | Version-sensitive graphics API, shader language, compiler, driver, or library questions | Primary-source citations with version and platform scope |
+| `native-dependency-review` | Native dependencies, build inputs, downloads, parsers, or supply-chain review | Findings tied to manifests/scripts and evidence limits |
+| `renderer-performance` | Measured CPU/GPU performance or frame-pacing work | Comparable baseline, controlled result, correctness evidence |
+| `renderer-validation` | Rendering behavior, GPU lifetime, synchronization, or visual output changes | Exact checks, device/backend context, unverified coverage |
+| `shader-pipeline-validation` | Shader source, variants, reflection, generated bindings, or CPU/GPU layouts | Checked variants, interface evidence, and runtime limits |
+| `editor-ui-development` | Editor panel, menu, widget, input, docking, or local preference changes | Event path, persistence owner, focused checks, and observed UI behavior |
+| `editor-feature-integration` | Exposing a Core, scene, asset, or renderer feature through a complete Editor workflow | Engine-to-Editor impact map, request/state flow, persistence, docs, and validation |
+
+Specialist agents in `.codex/agents/` provide focused exploration, impact
+analysis, build triage, graphics documentation research, environment inventory,
+capture analysis, review, Editor UI implementation, and engine-to-Editor
+integration. Their `developer_instructions` define the role boundary; a
+specialist agent does not replace the coding owner's integrated review.
+
+## Research and context tools
+
+Use configured tools when available. Graphify helps trace connected code systems;
+for specific library/API documentation in the local docs RAG corpus, query RAG
+first and check its version context; use Exa or another approved web tool for
+corpus gaps or current/version-sensitive confirmation. The corpus and its limits
+are listed in the [tooling guide](../.codex/agent-tooling.md). Sequential
+thinking can structure complex analysis; Mem0 provides durable project context.
+These tools are declared by the user's Codex environment and may be temporarily
+unavailable during workflow upgrades. If unavailable, use the documented source
+or repository-search fallback. Verify retrieval against current source before
+acting; graph, memory, and search results are leads, not authority. See the shared
+[agent tooling guide](../.codex/agent-tooling.md) for exact use and limits.
 
 Use one coding owner when Core, D3D11, Editor, or Sandbox changes must agree on
 one evolving interface. The owner can apply both C++ and shader skills. Delegate
@@ -56,12 +90,13 @@ acceptance criteria, required docs and checks, and handoff format. Use the
 work. If isolation is unavailable, serialize coding and use additional agents
 only for read-only work.
 
-For the focused fix below, an assignment could look like this:
+Use `git-wt` (Worktrunk) to create and verify each isolated coding worktree. For
+the focused fix below, an assignment could look like this:
 
 ```text
 Issue: #<number>, In progress on the Graphics Engine project
-Owner: ge-cpp-coder; Core scene loading
-Branch/worktree: fix/<number>-scene-load; out/worktrees/<number>-scene-load
+Owner: C++ implementation skill; Core scene loading
+Branch/worktree: fix/<number>-scene-load; created and verified with `git-wt`
 Consumers: inspect Editor and Sandbox scene-open paths
 Contract: valid scenes still load; the reported failure gets a regression test
 Docs: update the scene guide and public API comments if their contract changes
@@ -69,25 +104,14 @@ Checks: focused regression, affected build, integrated Debug build/lint/CTest
 Handoff: commits, changed consumers, exact results, docs, and remaining risks
 ```
 
-## Optional Codex hooks
+## Codex hooks
 
-[Codex hooks](codex-hooks.md) has the registration TOML and setup instructions.
-They run only when enabled and registered in the user's Codex configuration.
-Run Codex from the repository root so the relative script paths resolve.
-
-| Hook | Trigger and prerequisites | Feedback |
-| --- | --- | --- |
-| C++ edit loop | After `apply_patch`, `Edit`, or `Write` touches an eligible first-party C/C++ file and `out/build/x64-debug/CMakeCache.txt` exists | Best-effort `clang-format`, existing Debug build, `lint`, and `unit` or `integration` CTest selection; 300-second overall deadline |
-| AddressSanitizer | After a `Bash` command containing `ctest`, except one targeting `out/build/x64-asan`; needs cached Ninja and installed vcpkg paths | Configure and build `x64-asan`, then run its full CTest suite |
-
-The edit hook skips documentation-only changes, excluded directories, and a
-checkout without the Debug build cache. The ASan hook can take longer because
-it builds another tree. A hook reports failures **after** the triggering tool
-operation; its `block` result gives the agent feedback but cannot undo an edit
-or a command's side effects. Tool operations outside the registered matchers do
-not trigger these hooks. Treat a skipped, unavailable, or failed hook as such in
-the handoff. Run and report the explicit checks required for the task; hooks do
-not replace [testing](testing.md) or PR checks.
+[Codex hooks](codex-hooks.md) documents project-local hooks for protected paths,
+agentic setup, changed-file formatting and input checks, validation reminders,
+and explicit GPU diagnostic sessions. The setup checker and protected-path rule
+also run in CI. Broad builds, lint, CTest, ASan, visual scenarios, and GPU
+captures remain task-scoped verification. A `PostToolUse` hook reports feedback
+after its triggering operation and cannot undo that operation.
 
 ## Worked workflows
 
@@ -99,13 +123,13 @@ scenes, and show the regression test."
 1. The coordinator finds the issue, records Core as owner and checks whether the
    Editor or Sandbox consumes the affected scene API. The issue is **In progress**
    while the `fix/<issue>-<slug>` branch is being changed.
-2. One `ge-cpp-coder` owner reproduces the failure, adds a focused regression
-   test, fixes the responsible layer, and updates the scene guide or API comments
-   if the observable contract changes. If the fix reaches Editor or Sandbox,
+2. One coding owner using `cpp-engineering` reproduces the failure, adds a
+   focused regression test, fixes the responsible layer, and updates the scene
+   guide or API comments if the observable contract changes. If the fix reaches Editor or Sandbox,
    the owner updates the impact map before editing those consumers.
 3. The owner runs the focused CTest selection, affected build, then the
    integrated Debug build, `lint`, and correctness suite when available. A
-   `ge-qa-reviewer` checks the regression, consuming paths, docs, and exact
+   `test-reviewer` checks the regression, consuming paths, docs, and exact
    results. The coordinator records blockers and prepares the PR when requested.
 
 ### Coupled rendering change
@@ -117,8 +141,9 @@ D3D11 shader input."
    D3D11 to the Editor, including CPU/GPU layout, shader bindings, and Sandbox
    behavior if it consumes the option. One coding owner keeps the coupled change
    on one issue and branch.
-2. The owner applies `ge-cpp-coder` for C++ and `ge-shader-engineer` for HLSL or
-   layout work. The same change updates the relevant rendering and Editor guides
+2. The owner applies `cpp-engineering` for C++ and
+   `shader-pipeline-validation` for shader or layout work. The same change updates
+   the relevant rendering and Editor guides
    and public-header comments. A new consumer is added to the issue before its
    code is edited.
 3. The owner checks CPU/GPU layout agreement, builds `CompileShaders`, runs

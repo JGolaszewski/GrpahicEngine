@@ -12,13 +12,14 @@ Copy-Item out/build/x64-debug/compile_commands.json compile_commands.json -Force
 
 The standard configure, build, and CTest commands are listed below. To remove generated build outputs, run `cmake --build out/build/x64-debug --target clean`.
 
-## Codex edit hooks
+## Codex hooks
 
-Optional local Codex hooks may automate formatting, building, linting, and tests
-when their scripts are installed and registered in the user's Codex configuration.
-A fresh checkout does not register or activate them, so do not rely on hooks as a
-repository gate. Follow the explicit commands below and report the checks that
-actually ran.
+Project-local Codex hooks check agentic setup, protected edit paths, changed
+C++/JSON/shader inputs, and provide validation reminders. A separate interactive
+GPU diagnostic command can summarize NVRHI messages from one Editor session.
+These hooks do not replace CI or visual validation. Full builds, lint, tests,
+ASan, and GPU scenarios remain task-scoped checks. See [Codex hooks](codex-hooks.md)
+and report only the checks that actually ran.
 
 ## Correctness tests
 

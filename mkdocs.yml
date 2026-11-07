@@ -75,7 +75,11 @@ nav:
       - Getting started: getting-started.md
       - Development workflow: development-workflow.md
       - Agentic development: agentic-development.md
+      - Agentic setup report: agentic-setup-report.md
+      - Agent and skill proposals: agent-skill-proposals.md
       - Codex hooks: codex-hooks.md
+      - Codex hook setup proposal: codex-hook-setup-report.md
+      - Codex hook audit: codex-hook-audit.md
       - Editor workflows: editor-workflows.md
       - Testing: testing.md
       - Windows validation: validation/windows.md

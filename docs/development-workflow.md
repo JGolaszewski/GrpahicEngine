@@ -6,7 +6,7 @@ For role selection, subagents, optional hooks, and worked examples, see
 
 ## Track work on GitHub Projects
 
-Every implementation task needs a repository issue linked to the [Graphics Engine project board](https://github.com/users/JGolaszewski/projects/1). Search for an existing issue before creating one; do not use a project-only draft item as the task record.
+Tracked implementation work needs a repository issue linked to the [Graphics Engine project board](https://github.com/users/JGolaszewski/projects/1). Search for an existing issue before creating one; do not use a project-only draft item as the task record. Use the lightweight path below when the change meets its low-risk criteria.
 
 | Status | When to use it |
 | --- | --- |
@@ -16,17 +16,41 @@ Every implementation task needs a repository issue linked to the [Graphics Engin
 | In review | A pull request is open for review |
 | Done | The change has merged to its target branch |
 
-If project access is unavailable, stop before implementation and report the blocker.
+If project access is unavailable for tracked implementation work, stop before implementation and report the blocker.
 
-Before editing, record an impact map in the issue: the owning subsystem, affected
+### Lightweight path for low-risk changes
+
+Skip issue and project-board tracking only when a change is small, reversible,
+confined to one subsystem, and has a clear acceptance criterion in the task or
+handoff. This path is suitable for documentation corrections, focused test
+maintenance, and similarly bounded fixes that do not change a public contract
+or introduce user-visible behavior.
+
+Use the full issue workflow for changes that cross subsystem boundaries; change
+public APIs, serialization, asset formats, build or dependency configuration,
+security behavior, or GPU resource lifetime and synchronization; need broad
+investigation; or are unclear in scope. When in doubt, use the full workflow.
+
+The lightweight path waives only the issue and project-board steps. Keep work on
+a non-`main` branch and use a pull request, human review, and required checks for
+changes entering `main`. Set `Issue: None`, `Lightweight reason: <reason>`, and
+`Project: Not applicable (lightweight change)` in the PR Tracking section.
+Identify the affected subsystem and record the acceptance criterion under
+Impact, along with the focused verification result. For branch names, use
+`fix/<slug>` or `docs/<slug>` when no issue number applies. Conventional Commits
+may omit an issue reference for this path.
+
+For tracked work, before editing, record an impact map in the issue: the owning subsystem, affected
 producers and consumers (including Core, D3D11, Editor, and Sandbox where relevant),
 public or CPU/GPU contracts, documentation to update, and verification needed for
 each affected area. Name the coding owner and acceptance criteria. If a dependency
 or consumer is discovered later, update the issue and coordinate its owner before
 editing that area. Keep a tightly coupled interface change in one issue and with
-one coding owner. Split independently deliverable changes into child issues.
+one coding owner. Split independently deliverable changes into child issues. For
+lightweight changes, capture the owning subsystem, acceptance criterion, and
+focused verification in the PR handoff instead.
 
-The coordinator checks project membership and Status before starting work and at
+For tracked work, the coordinator checks project membership and Status before starting work and at
 each PR transition. Use the live project's field and option IDs when updating
 Status; do not copy IDs into scripts or instructions. Move a scoped issue to
 `Ready`, to `In progress` when work starts, to `In review` when its PR opens, and
@@ -38,7 +62,7 @@ the child `Done`; the parent remains active until the integration PR merges to
 
 ## Branches, commits, and pull requests
 
-For one issue, branch from `main` using `feat/<issue>-<slug>` or `fix/<issue>-<slug>`. Make at least one scoped Conventional Commit per task and include its issue reference, for example:
+For tracked work, branch from `main` using `feat/<issue>-<slug>` or `fix/<issue>-<slug>`. Make at least one scoped Conventional Commit per task and include its issue reference, for example:
 
 ```text
 feat(rendering): add shadow filtering (#123)
@@ -50,7 +74,7 @@ Follow the PR, human-review, and merge boundary in `AGENTS.md`. Use the reposito
 
 ## Parallel agents and handoffs
 
-The coordinating agent owns issue breakdown, board updates, integration, and final verification. Choose one coding agent for tightly coupled cross-subsystem changes. Split work across specialist agents only when the interfaces and acceptance criteria permit independent changes; give each coding agent one issue, a narrow scope, and an isolated worktree/branch. If worktree isolation is unavailable, serialize coding and use other agents for read-only research or review. Never let two coding agents edit the same checkout.
+The coordinating agent owns issue breakdown, board updates, integration, and final verification. Choose one coding agent for tightly coupled cross-subsystem changes. Split work across specialist agents only when the interfaces and acceptance criteria permit independent changes; give each coding agent one issue, a narrow scope, and a `git-wt`-created isolated worktree/branch. Verify isolation before edits. If `git-wt` is unavailable, serialize coding and use other agents for read-only research or review. Never let two coding agents edit the same checkout.
 
 Each handoff reports its issue and branch, commits, changed producers and consumers, interface impact, documentation changes, verification commands and observed results, and unresolved risks. The coordinator reviews the combined diff for integration gaps and verifies it before opening or updating the PR.
 
@@ -60,7 +84,7 @@ Update relevant docs and public-header API comments when behavior, public APIs, 
 
 The coding owner updates documentation in the same change as the behavior or API.
 The reviewer checks the affected guides and comments against the implementation.
-Codex edit hooks are optional local feedback; only observed results belong in a
+Codex edit hooks provide local feedback; only observed results belong in a
 handoff. For C++ changes, build affected targets and run focused tests during
 development, then run the full x64 Debug build, `lint`, and registered correctness
 suite on the integrated branch when the toolchain is available. Compile shaders

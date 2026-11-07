@@ -17,13 +17,15 @@ vendor/
 !.github/pull_request_template.md
 !docs/*.md
 !docs/**/*.md
-!.codex/skills/**/SKILL.md
+!.agents/skills/**/SKILL.md
+!.codex/agent-tooling.md
 
 # =========================
 # Build & CMake Artifacts
 # =========================
 build/
 bin/
+artifacts/
 CMakeCache.txt
 CMakeFiles/
 CMakeUserPresets.json
@@ -69,6 +71,8 @@ compile_commands.json
 # Generated Python bytecode for hook imports.
 .codex/hooks/__pycache__/
 .github/scripts/__pycache__/
+scripts/__pycache__/
+scripts/**/__pycache__/
 .venv-docs/
 site/
 

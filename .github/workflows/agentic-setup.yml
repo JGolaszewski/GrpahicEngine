@@ -1,0 +1,59 @@
+name: Agentic setup consistency
+
+on:
+  push:
+    paths:
+      - '.github/workflows/agentic-setup.yml'
+      - '.github/pull_request_template.md'
+      - '.github/scripts/check_pr_body.py'
+      - '.codex/config.toml'
+      - '.codex/hooks/**'
+      - '.codex/agents/**'
+      - '.agents/skills/**/SKILL.md'
+      - 'scripts/check_agentic_setup.py'
+      - 'scripts/check_protected_paths.py'
+      - 'scripts/tests/**'
+      - 'scripts/run_gpu_diagnostic_smoke.ps1'
+      - '.github/workflows/protected-paths.yml'
+      - 'docs/agentic-development.md'
+      - 'docs/development-workflow.md'
+      - 'docs/codex-hooks.md'
+  pull_request:
+    paths:
+      - '.github/workflows/agentic-setup.yml'
+      - '.github/pull_request_template.md'
+      - '.github/scripts/check_pr_body.py'
+      - '.codex/config.toml'
+      - '.codex/hooks/**'
+      - '.codex/agents/**'
+      - '.agents/skills/**/SKILL.md'
+      - 'scripts/check_agentic_setup.py'
+      - 'scripts/check_protected_paths.py'
+      - 'scripts/tests/**'
+      - 'scripts/run_gpu_diagnostic_smoke.ps1'
+      - '.github/workflows/protected-paths.yml'
+      - 'docs/agentic-development.md'
+      - 'docs/development-workflow.md'
+      - 'docs/codex-hooks.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  consistency:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Validate custom agents, skills, and links
+        run: python scripts/check_agentic_setup.py
+
+      - name: Test hooks and PR handoff metadata
+        run: python -m unittest discover -s scripts/tests -v
