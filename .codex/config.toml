@@ -1,0 +1,126 @@
+approval_policy = "never"
+sandbox_mode = "workspace-write"
+web_search = "live"
+
+persistent_instructions = "Follow project AGENTS.md guidelines. Use available MCP servers when they can help."
+
+[mcp_servers.mem0]
+command = "uv"
+args = ["run", "./.codex/scripts/mem0_mcp.py"]
+startup_timeout_sec = 30
+env_vars = ["GEMINI_API_KEY"]
+
+[mcp_servers.local_docs_rag]
+command = "uv"
+args = ["run", "./.codex/scripts/local_docs_mcp.py"]
+startup_timeout_sec = 30
+env_vars = ["DOCS_DIR", "PERSIST_DIR"]
+
+[mcp_servers.local_docs_rag.env]
+UV_LINK_MODE = "copy"
+HF_HUB_OFFLINE = "1"
+TRANSFORMERS_OFFLINE = "1"
+
+[mcp_servers.sequential-thinking]
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-sequential-thinking"]
+startup_timeout_sec = 30
+
+# [mcp_servers.node_repl]
+# enabled = false
+
+[features]
+multi_agent = true
+
+[agents]
+enabled = true
+max_threads = 6
+max_depth = 1
+
+[agents.build_triage]
+description = "Read-only diagnosis of engine build, shader compilation, and test failures."
+config_file = "agents/build-triage.toml"
+
+[agents.change_impact]
+description = "Read-only blast-radius mapping for broad engine, renderer, and backend changes."
+config_file = "agents/change-impact.toml"
+
+[agents.dependency_reviewer]
+description = "Read-only security and reproducibility review of native dependencies and build inputs."
+config_file = "agents/dependency-reviewer.toml"
+
+[agents.editor_ui_specialist]
+description = "Focused implementation of GraphicEngine Editor GUI changes."
+config_file = "agents/editor-ui-specialist.toml"
+
+[agents.engine_editor_integrator]
+description = "Integrates runtime, scene, asset, and rendering features into Editor workflows."
+config_file = "agents/engine-editor-integrator.toml"
+
+[agents.engine_explorer]
+description = "Read-only codebase exploration and evidence gathering."
+config_file = "agents/engine-explorer.toml"
+
+[agents.environment_auditor]
+description = "Read-only inventory of the native build and graphics validation environment."
+config_file = "agents/environment-auditor.toml"
+
+[agents.gpu_capture_analyst]
+description = "Read-only analysis of supplied GPU captures, traces, and profiler reports."
+config_file = "agents/gpu-capture-analyst.toml"
+
+[agents.graphics_docs]
+description = "Read-only research of current graphics API and toolchain documentation."
+config_file = "agents/graphics-docs.toml"
+
+[agents.renderer_reviewer]
+description = "Read-only review of rendering and GPU correctness risks."
+config_file = "agents/renderer-reviewer.toml"
+
+[agents.shader_reviewer]
+description = "Read-only review of shader pipelines and CPU/GPU interface contracts."
+config_file = "agents/shader-reviewer.toml"
+
+[agents.test-reviewer]
+description = "Read-only correctness, security, and test coverage review."
+config_file = "agents/test-reviewer.toml"
+
+[[hooks.PreToolUse]]
+matcher = "^(apply_patch|Edit|Write)$"
+
+[[hooks.PreToolUse.hooks]]
+type = "command"
+command = 'python "$(git rev-parse --show-toplevel)/.codex/hooks/graphics_hooks.py"'
+command_windows = "powershell -NoProfile -Command \"$root = git rev-parse --show-toplevel; & python (Join-Path $root '.codex/hooks/graphics_hooks.py')\""
+timeout = 5
+statusMessage = "Checking protected repository paths"
+
+[[hooks.PostToolUse]]
+matcher = "^(apply_patch|Edit|Write)$"
+
+[[hooks.PostToolUse.hooks]]
+type = "command"
+command = 'python "$(git rev-parse --show-toplevel)/.codex/hooks/agentic_setup_check.py"'
+command_windows = "powershell -NoProfile -Command \"$root = git rev-parse --show-toplevel; & python (Join-Path $root '.codex/hooks/agentic_setup_check.py')\""
+timeout = 10
+statusMessage = "Checking agent and skill configuration"
+
+[[hooks.PostToolUse]]
+matcher = "^(apply_patch|Edit|Write)$"
+
+[[hooks.PostToolUse.hooks]]
+type = "command"
+command = 'python "$(git rev-parse --show-toplevel)/.codex/hooks/graphics_hooks.py"'
+command_windows = "powershell -NoProfile -Command \"$root = git rev-parse --show-toplevel; & python (Join-Path $root '.codex/hooks/graphics_hooks.py')\""
+timeout = 90
+statusMessage = "Checking changed engine inputs"
+
+[[hooks.PostToolUse]]
+matcher = "^Bash$"
+
+[[hooks.PostToolUse.hooks]]
+type = "command"
+command = 'python "$(git rev-parse --show-toplevel)/.codex/hooks/graphics_hooks.py"'
+command_windows = "powershell -NoProfile -Command \"$root = git rev-parse --show-toplevel; & python (Join-Path $root '.codex/hooks/graphics_hooks.py')\""
+timeout = 5
+statusMessage = "Reading GPU smoke diagnostics"

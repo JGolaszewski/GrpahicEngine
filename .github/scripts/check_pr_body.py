@@ -31,15 +31,25 @@ def main() -> int:
     errors = [f"Missing ## {heading} section." for heading in HEADINGS if heading not in sections]
 
     tracking = sections.get("Tracking", "")
-    if not re.search(r"(?m)^Issue:[ \t]*#\d+[ \t]*$", tracking):
-        errors.append("Tracking needs an Issue: #number line.")
-    if labelled_value(tracking, "Project") != PROJECT_URL:
-        errors.append("Tracking needs the Graphics Engine project link.")
+    issue = labelled_value(tracking, "Issue")
+    lightweight_reason = labelled_value(tracking, "Lightweight reason")
+    if re.fullmatch(r"#\d+", issue):
+        if labelled_value(tracking, "Project") != PROJECT_URL:
+            errors.append("Tracked work needs the Graphics Engine project link.")
+    elif issue.lower() == "none":
+        if not lightweight_reason or lightweight_reason.startswith("<!--"):
+            errors.append("Lightweight work needs a non-empty Lightweight reason: value.")
+        if labelled_value(tracking, "Project") != "Not applicable (lightweight change)":
+            errors.append("Lightweight work needs Project: Not applicable (lightweight change).")
+    else:
+        errors.append("Tracking needs Issue: #number or Issue: None for a lightweight change.")
 
     impact = sections.get("Impact", "")
     for label in ("Changed subsystems", "Producer/consumer contracts"):
         if not labelled_value(impact, label):
             errors.append(f"Impact needs a {label}: value.")
+    if issue.lower() == "none" and not labelled_value(impact, "Acceptance criteria"):
+        errors.append("Lightweight work needs an Acceptance criteria: value under Impact.")
 
     documentation = sections.get("Documentation", "")
     if not (labelled_value(documentation, "Updated") or labelled_value(documentation, "None")):
