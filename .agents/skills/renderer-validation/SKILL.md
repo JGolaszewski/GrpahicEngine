@@ -19,7 +19,7 @@ for gaps or current/version-sensitive confirmation. Use sequential thinking when
 change spans interacting GPU lifetime, synchronization, shader, or backend
 contracts. For behavior or interface changes, query Graphify for connected
 rendering systems and consumers, then verify the impact against source and
-tests. Follow the shared [agent tooling guidance](../../../.codex/agent-tooling.md).
+tests. Follow the shared [agent tooling guidance](../../../docs/agent-tooling.md).
 
 ## Before implementation
 

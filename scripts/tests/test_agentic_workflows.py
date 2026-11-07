@@ -140,6 +140,45 @@ class GraphicsHookTests(unittest.TestCase):
             [self.root / "docs/agentic-development.md", self.root / "AGENTS.md"],
         )
 
+    def test_pre_tool_denies_patch_move_into_vendor(self) -> None:
+        event = {
+            "tool_name": "apply_patch",
+            "tool_input": {
+                "command": "*** Update File: GraphicEngineCore/include/Example.h\n"
+                "*** Move to: vendor/Example.h\n"
+            },
+        }
+
+        with contextlib.redirect_stdout(io.StringIO()) as output:
+            graphics_hooks.pre_tool(event)
+
+        result = json.loads(output.getvalue())
+        self.assertEqual(result["hookSpecificOutput"]["permissionDecision"], "deny")
+        self.assertIn("vendor/Example.h", result["hookSpecificOutput"]["permissionDecisionReason"])
+
+    def test_post_edit_validates_patch_move_destination(self) -> None:
+        destination = self.root / "GraphicEngineCore/modules/core/example.cpp"
+        destination.parent.mkdir(parents=True)
+        destination.write_text("int value;\n", encoding="utf-8")
+        event = {
+            "tool_name": "apply_patch",
+            "tool_input": {
+                "command": "*** Update File: docs/example.txt\n"
+                "*** Move to: GraphicEngineCore/modules/core/example.cpp\n"
+            },
+        }
+
+        with mock.patch.object(graphics_hooks.shutil, "which", return_value="clang-format"):
+            with mock.patch.object(
+                graphics_hooks,
+                "run_command",
+                side_effect=[(0, "clang-format version 18.1.8"), (0, "")],
+            ) as run:
+                with contextlib.redirect_stdout(io.StringIO()):
+                    graphics_hooks.post_edit(event)
+
+        self.assertIn(str(destination), run.call_args_list[1].args[0])
+
     def test_post_edit_reports_invalid_json_and_accepts_valid_json(self) -> None:
         asset = self.root / "GraphicEngineCore/modules/scene/example.json"
         asset.parent.mkdir(parents=True)

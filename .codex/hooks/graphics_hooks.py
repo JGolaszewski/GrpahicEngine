@@ -14,6 +14,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[2]
 EDIT_TOOLS = {"apply_patch", "Edit", "Write"}
 PATCH_PATH = re.compile(r"(?m)^\*\*\* (?:Update|Add|Delete) File:\s*(.+?)\s*$")
+PATCH_MOVE_PATH = re.compile(r"(?m)^\*\*\* Move to:\s*(.+?)\s*$")
 UNIFIED_PATH = re.compile(r"(?m)^\+\+\+ b/(.+?)\s*$")
 CPP_EXTENSIONS = {".h", ".hpp", ".cpp", ".cc"}
 JSON_EXTENSIONS = {".json", ".gltf"}
@@ -69,9 +70,11 @@ def event_paths(event: dict[str, Any]) -> list[Path]:
         command = value.get("command")
         if isinstance(command, str):
             candidates.extend(match.group(1).strip() for match in PATCH_PATH.finditer(command))
+            candidates.extend(match.group(1).strip() for match in PATCH_MOVE_PATH.finditer(command))
             candidates.extend(match.group(1).strip() for match in UNIFIED_PATH.finditer(command))
     elif isinstance(value, str):
         candidates.extend(match.group(1).strip() for match in PATCH_PATH.finditer(value))
+        candidates.extend(match.group(1).strip() for match in PATCH_MOVE_PATH.finditer(value))
         candidates.extend(match.group(1).strip() for match in UNIFIED_PATH.finditer(value))
 
     resolved: list[Path] = []

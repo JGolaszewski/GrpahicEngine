@@ -68,13 +68,13 @@ Use configured tools when available. Graphify helps trace connected code systems
 for specific library/API documentation in the local docs RAG corpus, query RAG
 first and check its version context; use Exa or another approved web tool for
 corpus gaps or current/version-sensitive confirmation. The corpus and its limits
-are listed in the [tooling guide](../.codex/agent-tooling.md). Sequential
+are listed in the [tooling guide](agent-tooling.md). Sequential
 thinking can structure complex analysis; Mem0 provides durable project context.
 These tools are declared by the user's Codex environment and may be temporarily
 unavailable during workflow upgrades. If unavailable, use the documented source
 or repository-search fallback. Verify retrieval against current source before
 acting; graph, memory, and search results are leads, not authority. See the shared
-[agent tooling guide](../.codex/agent-tooling.md) for exact use and limits.
+[agent tooling guide](agent-tooling.md) for exact use and limits.
 
 Use one coding owner when Core, D3D11, Editor, or Sandbox changes must agree on
 one evolving interface. The owner can apply both C++ and shader skills. Delegate

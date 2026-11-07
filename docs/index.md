@@ -6,6 +6,7 @@ Use this site to find project conventions and development workflows:
 
 - [Getting started](getting-started.md)
 - [Agentic development](agentic-development.md)
+- [Agent tooling](agent-tooling.md)
 - [Architecture](architecture.md)
 - [Rendering pipeline](rendering/pipeline.md)
 - [Editor guide](editor-guide.md)

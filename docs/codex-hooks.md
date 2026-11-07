@@ -9,7 +9,7 @@ scripts in `/hooks` before trusting them.
 
 ## Agentic setup consistency checker
 
-[`scripts/check_agentic_setup.py`](../scripts/check_agentic_setup.py) validates
+The `scripts/check_agentic_setup.py` script validates
 the custom agent registry and role files, skill frontmatter and unique names,
 allowed reasoning efforts, and local links in agentic workflow instructions. It
 uses only Python's standard library and runs in CI through
@@ -83,8 +83,11 @@ reliably and runtime is appropriate for the event frequency.
 - GPU validation requires a running application, a suitable device, and a
   reproducible scenario. Debug-layer output can expose API misuse, but a hook
   cannot infer visual correctness from the fact that the application launched.
-  `scripts/run_gpu_diagnostic_smoke.ps1` uses a fresh temporary log and reports
-  only NVRHI diagnostics observed during that Editor session. It does not verify
+  `scripts/run_gpu_diagnostic_smoke.ps1` uses a fresh temporary log and disables
+  log rotation for the isolated Editor process so early diagnostics remain in
+  the report. It restores the caller's size limit afterward; the capture file
+  can grow for the duration of the session. It reports only NVRHI diagnostics
+  observed during that Editor session. It does not verify
   that the validation layer was active. Keep PIX captures and manual rendering
   scenarios explicit.
 - `SubagentStart` context supplements the assigned role and skill; it does not

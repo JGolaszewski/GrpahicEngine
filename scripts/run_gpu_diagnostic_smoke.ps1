@@ -14,8 +14,10 @@ $reportPath = Join-Path $reportDirectory "$runId.report.json"
 
 $previousLogPath = $env:ENGINE_LOG_PATH
 $previousBreadcrumbPath = $env:ENGINE_LOG_BREADCRUMB_PATH
+$previousMaxFileSize = $env:ENGINE_LOG_MAX_FILE_SIZE_BYTES
 $env:ENGINE_LOG_PATH = $logPath
 $env:ENGINE_LOG_BREADCRUMB_PATH = Join-Path $reportDirectory "$runId.breadcrumbs.log"
+$env:ENGINE_LOG_MAX_FILE_SIZE_BYTES = "0"
 $editorExitCode = $null
 $launchError = $null
 
@@ -43,6 +45,11 @@ try {
         Remove-Item Env:ENGINE_LOG_BREADCRUMB_PATH -ErrorAction SilentlyContinue
     } else {
         $env:ENGINE_LOG_BREADCRUMB_PATH = $previousBreadcrumbPath
+    }
+    if ($null -eq $previousMaxFileSize) {
+        Remove-Item Env:ENGINE_LOG_MAX_FILE_SIZE_BYTES -ErrorAction SilentlyContinue
+    } else {
+        $env:ENGINE_LOG_MAX_FILE_SIZE_BYTES = $previousMaxFileSize
     }
 }
 
