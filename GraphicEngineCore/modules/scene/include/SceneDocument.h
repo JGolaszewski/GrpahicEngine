@@ -13,7 +13,7 @@
 #include <vector>
 
 namespace Engine {
-inline constexpr uint32_t CurrentSceneSchemaVersion = 9;
+inline constexpr uint32_t CurrentSceneSchemaVersion = 10;
 
 /// Persistent 128-bit scene identity stored as two unsigned words.
 struct SceneGuidDocument {
@@ -98,6 +98,8 @@ struct SceneEntityDocument {
   std::optional<std::string> modelGuid;     ///< Optional imported model identity.
   std::optional<std::string> materialGuid;  ///< Optional shared material identity.
   std::optional<std::string> primitiveType; ///< Optional built-in primitive shape name.
+  std::optional<uint32_t>
+      sphereSubdivisions;       ///< Sphere latitude subdivisions (8, 16, 32, or 64); absent defaults to 16.
   bool hasMeshRenderer = false; ///< Whether this entity has a mesh renderer, even without a source assigned.
   std::optional<SceneMaterialDocument> material;                       ///< Optional entity-owned material data.
   std::vector<std::optional<SceneMaterialDocument>> materialOverrides; ///< Per-submesh material overrides.

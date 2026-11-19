@@ -718,6 +718,9 @@ auto EntityJson(const SceneEntityDocument& entity) -> Json {
   item.emplace("modelGuid", entity.modelGuid ? Json(*entity.modelGuid) : Json(nullptr));
   item.emplace("materialGuid", entity.materialGuid ? Json(*entity.materialGuid) : Json(nullptr));
   item.emplace("primitiveType", entity.primitiveType ? Json(*entity.primitiveType) : Json(nullptr));
+  if (entity.sphereSubdivisions) {
+    item.emplace("sphereSubdivisions", *entity.sphereSubdivisions);
+  }
   item.emplace("hasMeshRenderer", !entity.sceneRoot && HasMeshRenderer(entity));
   if (!entity.sceneRoot) {
     item.emplace("visible", entity.visible);
@@ -1073,13 +1076,17 @@ auto ValidateEntity(const SceneEntityDocument& entity, std::set<uint64_t>& ids, 
     error = "document contains a duplicate/invalid entity ID or asset GUID";
     return false;
   }
-  if (entity.sceneRoot && (entity.hasMeshRenderer || entity.modelGuid || entity.primitiveType || entity.materialGuid ||
-                           entity.material || entity.parentGuid || !entity.materialOverrides.empty())) {
+  if (entity.sceneRoot &&
+      (entity.hasMeshRenderer || entity.modelGuid || entity.primitiveType || entity.sphereSubdivisions ||
+       entity.materialGuid || entity.material || entity.parentGuid || !entity.materialOverrides.empty())) {
     error = "scene root cannot contain mesh or material data";
     return false;
   }
   if ((entity.modelGuid && entity.primitiveType) ||
       (entity.primitiveType && !IsValidPrimitiveType(*entity.primitiveType)) ||
+      (entity.sphereSubdivisions && (!entity.primitiveType || *entity.primitiveType != "sphere" ||
+                                     (*entity.sphereSubdivisions != 8U && *entity.sphereSubdivisions != 16U &&
+                                      *entity.sphereSubdivisions != 32U && *entity.sphereSubdivisions != 64U))) ||
       (entity.material && !IsValidMaterial(*entity.material)) ||
       (!entity.materialOverrides.empty() && !entity.modelGuid)) {
     error = "document contains an invalid entity asset descriptor or material";
@@ -1259,8 +1266,15 @@ auto ReadEntityIdentity(const Json& item, SceneEntityDocument& entity, std::set<
       return false;
     }
   }
+  if (item.contains("sphereSubdivisions") && !item.at("sphereSubdivisions").is_null()) {
+    if (!item.at("sphereSubdivisions").is_number_unsigned()) {
+      fieldError = context + ".sphereSubdivisions must be an unsigned integer";
+      return false;
+    }
+    entity.sphereSubdivisions = item.at("sphereSubdivisions").get<uint32_t>();
+  }
   if (entity.sceneRoot) {
-    if (entity.modelGuid || entity.primitiveType) {
+    if (entity.modelGuid || entity.primitiveType || entity.sphereSubdivisions) {
       fieldError = context + " scene root cannot specify a model or primitive";
       return false;
     }
@@ -1369,6 +1383,7 @@ auto ReadEntity(const Json& item, SceneEntityDocument& entity, std::set<uint64_t
                 "modelGuid",
                 "materialGuid",
                 "primitiveType",
+                "sphereSubdivisions",
                 "hasMeshRenderer",
                 "material",
                 "materialOverrides",

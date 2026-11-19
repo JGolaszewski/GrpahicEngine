@@ -43,6 +43,14 @@ public:
   /// @return The uploaded submesh, or no value if creation or upload fails.
   std::optional<::Engine::Renderer::Submesh> CreatePrimitive(PrimitiveShape shape,
                                                              std::shared_ptr<::Engine::Renderer::Material> material);
+  /// Creates a built-in primitive, using the requested subdivisions for spheres.
+  /// @param shape Shape to create.
+  /// @param material Material assigned to the new submesh.
+  /// @param sphereSubdivisions Sphere latitude subdivisions (supported values: 8, 16, 32, or 64).
+  /// @return The uploaded submesh, or no value if creation or upload fails.
+  std::optional<::Engine::Renderer::Submesh> CreatePrimitive(PrimitiveShape shape,
+                                                             std::shared_ptr<::Engine::Renderer::Material> material,
+                                                             uint32_t sphereSubdivisions);
 
 private:
   struct Impl;

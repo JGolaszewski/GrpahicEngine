@@ -581,7 +581,8 @@ auto Application::LoadSceneDocument(const SceneDocument& document, std::string& 
         shape = PrimitiveShape::Plane;
       }
       auto material = m_RenderSystem->CreateMaterial({});
-      if (!material || !m_RenderSystem->CreatePrimitive(shape, std::move(material))) {
+      const uint32_t sphereSubdivisions = entity.sphereSubdivisions.value_or(16U);
+      if (!material || !m_RenderSystem->CreatePrimitive(shape, std::move(material), sphereSubdivisions)) {
         setEntityError("primitive resource setup failed");
         return false;
       }
@@ -714,6 +715,7 @@ auto Application::LoadSceneDocument(const SceneDocument& document, std::string& 
                                   Ecs::MeshRenderer{
                                       .ModelGuid = source.modelGuid.value_or(""),
                                       .PrimitiveType = source.primitiveType.value_or(""),
+                                      .SphereSubdivisions = source.sphereSubdivisions.value_or(16U),
                                       .MaterialGuid = source.materialGuid.value_or(""),
                                       .CastShadows = source.castShadows,
                                       .ReceiveShadows = source.receiveShadows,
@@ -885,6 +887,9 @@ auto Application::CreateSceneDocument(const Scene& scene) const -> SceneDocument
           }
           if (mesh != nullptr && !mesh->PrimitiveType.empty()) {
             entity.primitiveType = mesh->PrimitiveType;
+            if (mesh->PrimitiveType == "sphere" && mesh->SphereSubdivisions != 16U) {
+              entity.sphereSubdivisions = mesh->SphereSubdivisions;
+            }
           }
           if (mesh != nullptr && !mesh->MaterialGuid.empty()) {
             entity.materialGuid = mesh->MaterialGuid;

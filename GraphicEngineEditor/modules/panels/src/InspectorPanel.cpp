@@ -755,6 +755,19 @@ void InspectorPanel::DrawEntityInspector() {
         }
         ImGui::EndCombo();
       }
+      if (mesh.PrimitiveType == "sphere") {
+        constexpr std::array<uint32_t, 4> subdivisionOptions = {8U, 16U, 32U, 64U};
+        constexpr std::array<const char*, 4> subdivisionNames = {"8", "16 (Default)", "32", "64"};
+        const auto selectedSubdivision = std::ranges::find(subdivisionOptions, mesh.SphereSubdivisions);
+        int subdivisionIndex = selectedSubdivision == subdivisionOptions.end()
+                                   ? 1
+                                   : static_cast<int>(std::distance(subdivisionOptions.begin(), selectedSubdivision));
+        if (ImGui::Combo("Sphere subdivisions", &subdivisionIndex, subdivisionNames.data(),
+                         static_cast<int>(subdivisionNames.size()))) {
+          mesh.SphereSubdivisions = subdivisionOptions.at(static_cast<size_t>(subdivisionIndex));
+          changed = true;
+        }
+      }
     }
     changed |= ImGui::Checkbox("Visible", &mesh.Visible);
     changed |= ImGui::Checkbox("Cast shadows", &mesh.CastShadows);

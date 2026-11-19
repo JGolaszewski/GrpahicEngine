@@ -176,6 +176,10 @@ public:
   /// @param material Material applied to the primitive.
   /// @return True when the primitive was created and uploaded.
   bool CreatePrimitive(Engine::PrimitiveShape shape, std::shared_ptr<::Engine::Renderer::Material> material);
+  /// Creates and registers a built-in primitive. Sphere subdivisions select its mesh resolution.
+  /// Supported sphere subdivision values are 8, 16, 32, and 64; other shapes ignore the value.
+  bool CreatePrimitive(Engine::PrimitiveShape shape, std::shared_ptr<::Engine::Renderer::Material> material,
+                       uint32_t sphereSubdivisions);
 
   /// Finds or uploads a mesh resource for an imported asset generation.
   /// @param guid Stable model identity.

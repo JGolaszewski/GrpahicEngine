@@ -32,3 +32,11 @@ camera. It is intended for manual checks of selection, transform editing,
 material changes, model/texture assignment, primitive creation, and scene save
 behavior. Automated coverage for loading, saving, and restoring this content
 runs in `SandboxSceneTests`.
+
+## Sphere mesh resolution
+
+Select an entity with a sphere primitive, then use **Sphere subdivisions** in
+the Inspector to choose 8, 16 (the default), 32, or 64 latitude divisions.
+Higher values produce denser sphere geometry. The selection is saved with the
+scene and restored when it is reopened. Existing scenes without this setting
+continue to use 16 divisions.
