@@ -794,7 +794,9 @@ auto RenderSystem::CreateImportedMaterial(
       ResolveImportedTexture(guid, generation, model, sourceMaterial.baseColorTexture, true,
                              properties.AlphaMode == ::Engine::Renderer::MaterialAlphaMode::Mask
                                  ? Renderer::TextureMipSemantic::MaskedBaseColor
-                                 : Renderer::TextureMipSemantic::BaseColor,
+                             : properties.AlphaMode == ::Engine::Renderer::MaterialAlphaMode::Blend
+                                 ? Renderer::TextureMipSemantic::BaseColor
+                                 : Renderer::TextureMipSemantic::Color,
                              properties.AlphaCutoff, baseColorTexture, error) &&
       ResolveImportedTexture(guid, generation, model, sourceMaterial.normalTexture, false,
                              Renderer::TextureMipSemantic::NormalMap, 0.5F, normalTexture, error) &&

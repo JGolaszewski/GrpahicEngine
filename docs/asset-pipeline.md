@@ -81,8 +81,9 @@ representation.
 
 GPU mip chains cover the complete source footprint for odd and non-square
 images. Mip filtering follows each glTF texture slot's channel semantics:
-base-color RGB uses opacity-weighted filtering, normal maps average and
-renormalize tangent-space vectors, and metallic-roughness, specular-glossiness,
+BLEND and MASK base-color RGB use opacity-weighted filtering, while OPAQUE
+base-color RGB ignores alpha as required by glTF. Normal maps average and
+renormalize tangent-space vectors. Metallic-roughness, specular-glossiness,
 occlusion, and emissive RGB are filtered independently of alpha. This preserves
 specular-glossiness alpha as glossiness and does not treat other unused alpha
 channels as opacity. Masked base-color textures use alpha-coverage adjustment
