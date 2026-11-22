@@ -235,15 +235,19 @@ auto SamplePreviewResidual(const std::vector<std::vector<float>>& mipLevels, con
 
 auto EvaluatePrismNdfPreview(const PrismNdfData& data, const std::vector<std::vector<float>>& mipLevels, float x,
                              float y, float footprint) -> float {
+  return EvaluatePrismNdfPreview(data, mipLevels, x, y, footprint, std::sqrt((std::max)(0.0F, 1.0F - x * x - y * y)));
+}
+
+auto EvaluatePrismNdfPreview(const PrismNdfData& data, const std::vector<std::vector<float>>& mipLevels, float x,
+                             float y, float footprint, float noV) -> float {
   if (data.residuals.size() != PrismNdfSampleCount || x * x + y * y > 1.0F || mipLevels.empty() ||
-      !std::isfinite(footprint) || footprint <= 0.0F) {
+      !std::isfinite(footprint) || footprint <= 0.0F || !std::isfinite(noV)) {
     return 0.0F;
   }
   double value = 0.0;
   for (uint32_t index = 0; index < PrismNdfCoefficientCount; ++index) {
     value += static_cast<double>(data.zernikeCoefficients[index]) * EvaluatePrismZernikeBasis(index, x, y);
   }
-  const float radius = std::sqrt(x * x + y * y);
   const auto uv = MapPreviewResidualUv(data, x, y);
   const auto uvX = MapPreviewResidualUv(data, x + footprint, y);
   const auto uvY = MapPreviewResidualUv(data, x, y + footprint);
@@ -259,7 +263,7 @@ auto EvaluatePrismNdfPreview(const PrismNdfData& data, const std::vector<std::ve
   const double blend = static_cast<double>(lod - static_cast<float>(lowerMip));
   const double lowerResidual = SamplePreviewResidual(mipLevels, uv, lowerMip);
   const double upperResidual = SamplePreviewResidual(mipLevels, uv, upperMip);
-  const float fadeT = std::clamp(std::sqrt((std::max)(0.0F, 1.0F - radius * radius)) / 0.1F, 0.0F, 1.0F);
+  const float fadeT = std::clamp(noV / 0.1F, 0.0F, 1.0F);
   const float horizon = data.horizonFade ? fadeT * fadeT * (3.0F - 2.0F * fadeT) : 1.0F;
   const double residual = data.residualsEnabled ? std::lerp(lowerResidual, upperResidual, blend) * horizon : 0.0;
   value = (std::max)(0.0, value + residual);
