@@ -865,8 +865,9 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
     if (GetRenderSystem() != nullptr) {
       for (const auto& [textureGuid, srgb, semantic, alphaCutoff] :
            {std::tuple{material->baseColorTextureGuid, true,
-                       material->alphaMode == "mask" ? Engine::Renderer::TextureMipSemantic::MaskedBaseColor
-                                                     : Engine::Renderer::TextureMipSemantic::BaseColor,
+                       material->alphaMode == "mask"    ? Engine::Renderer::TextureMipSemantic::MaskedBaseColor
+                       : material->alphaMode == "blend" ? Engine::Renderer::TextureMipSemantic::BaseColor
+                                                        : Engine::Renderer::TextureMipSemantic::Color,
                        material->alphaCutoff},
             std::tuple{material->normalTextureGuid, false, Engine::Renderer::TextureMipSemantic::NormalMap, 0.5F}}) {
         if (!textureGuid) {
@@ -899,7 +900,8 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
       for (const auto& [textureGuid, srgb, semantic, alphaCutoff] :
            {std::tuple{request.GetMaterial().baseColorTextureGuid, true,
                        request.GetMaterial().alphaMode == "mask" ? Engine::Renderer::TextureMipSemantic::MaskedBaseColor
-                                                                 : Engine::Renderer::TextureMipSemantic::BaseColor,
+                       : request.GetMaterial().alphaMode == "blend" ? Engine::Renderer::TextureMipSemantic::BaseColor
+                                                                    : Engine::Renderer::TextureMipSemantic::Color,
                        request.GetMaterial().alphaCutoff},
             std::tuple{request.GetMaterial().normalTextureGuid, false, Engine::Renderer::TextureMipSemantic::NormalMap,
                        0.5F}}) {
@@ -1129,8 +1131,9 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
             return true;
           };
           return prepare(material.baseColorTextureGuid, true,
-                         material.alphaMode == "mask" ? Engine::Renderer::TextureMipSemantic::MaskedBaseColor
-                                                      : Engine::Renderer::TextureMipSemantic::BaseColor,
+                         material.alphaMode == "mask"    ? Engine::Renderer::TextureMipSemantic::MaskedBaseColor
+                         : material.alphaMode == "blend" ? Engine::Renderer::TextureMipSemantic::BaseColor
+                                                         : Engine::Renderer::TextureMipSemantic::Color,
                          material.alphaCutoff, "base-color") &&
                  prepare(material.normalTextureGuid, false, Engine::Renderer::TextureMipSemantic::NormalMap, 0.5F,
                          "normal");

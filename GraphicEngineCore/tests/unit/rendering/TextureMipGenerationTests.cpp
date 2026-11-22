@@ -162,7 +162,7 @@ TEST(TextureMipGenerationTests, DataChannelsAreFilteredIndependentlyOfAlpha) {
   EXPECT_EQ(Channel(mips.back(), 0, 3), 128U);
 }
 
-TEST(TextureMipGenerationTests, ColorWithUnusedAlphaDoesNotAlphaWeightRgb) {
+TEST(TextureMipGenerationTests, OpaqueBaseColorIgnoresZeroAlphaWhenFilteringRgb) {
   auto image = MakeImage(2, 1);
   image.rgba8[0] = image.rgba8[1] = image.rgba8[2] = 255;
   image.rgba8[3] = 0;
@@ -171,9 +171,17 @@ TEST(TextureMipGenerationTests, ColorWithUnusedAlphaDoesNotAlphaWeightRgb) {
 
   const auto mips = Engine::Renderer::TextureMipGenerator::Build(
       image, {.Srgb = true, .Semantic = Engine::Renderer::TextureMipSemantic::Color});
+  auto opaqueReference = image;
+  opaqueReference.rgba8[3] = 255;
+  const auto referenceMips = Engine::Renderer::TextureMipGenerator::Build(
+      opaqueReference, {.Srgb = true, .Semantic = Engine::Renderer::TextureMipSemantic::Color});
 
   ASSERT_EQ(mips.size(), 2U);
+  ASSERT_EQ(referenceMips.size(), mips.size());
   EXPECT_NEAR(Channel(mips.back(), 0, 0), 188, 1);
+  for (size_t channel = 0; channel < 3U; ++channel) {
+    EXPECT_EQ(Channel(mips.back(), 0, channel), Channel(referenceMips.back(), 0, channel));
+  }
   EXPECT_EQ(Channel(mips.back(), 0, 3), 128U);
 }
 
@@ -192,7 +200,7 @@ TEST(TextureMipGenerationTests, SrgbSpecularGlossinessFiltersColorAndGlossChanne
   EXPECT_EQ(Channel(mips.back(), 0, 3), 128U);
 }
 
-TEST(TextureMipGenerationTests, BaseColorStillUsesOpacityToFilterRgb) {
+TEST(TextureMipGenerationTests, BlendBaseColorStillUsesOpacityToFilterRgb) {
   auto image = MakeImage(2, 1);
   image.rgba8[0] = 255;
   image.rgba8[1] = 0;

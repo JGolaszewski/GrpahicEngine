@@ -499,8 +499,9 @@ auto Application::LoadSceneDocument(const SceneDocument& document, std::string& 
       }
     };
     prepare(material.baseColorTextureGuid, true,
-            material.alphaMode == "mask" ? Engine::Renderer::TextureMipSemantic::MaskedBaseColor
-                                         : Engine::Renderer::TextureMipSemantic::BaseColor,
+            material.alphaMode == "mask"    ? Engine::Renderer::TextureMipSemantic::MaskedBaseColor
+            : material.alphaMode == "blend" ? Engine::Renderer::TextureMipSemantic::BaseColor
+                                            : Engine::Renderer::TextureMipSemantic::Color,
             material.alphaCutoff, "base-color");
     prepare(material.normalTextureGuid, false, Engine::Renderer::TextureMipSemantic::NormalMap, 0.5F, "normal");
   };

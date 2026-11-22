@@ -1053,8 +1053,9 @@ auto Engine::SceneRenderer::MaterialForSubmesh(const ::Engine::Renderer::RenderV
   auto normalTexture = submesh.material->GetNormalTexture();
   if (m_AssetTextureResolver != nullptr) {
     if (source->baseColorTextureGuid) {
-      const auto semantic = source->alphaMode == "mask" ? ::Engine::Renderer::TextureMipSemantic::MaskedBaseColor
-                                                        : ::Engine::Renderer::TextureMipSemantic::BaseColor;
+      const auto semantic = source->alphaMode == "mask"    ? ::Engine::Renderer::TextureMipSemantic::MaskedBaseColor
+                            : source->alphaMode == "blend" ? ::Engine::Renderer::TextureMipSemantic::BaseColor
+                                                           : ::Engine::Renderer::TextureMipSemantic::Color;
       if (auto texture = m_AssetTextureResolver(*source->baseColorTextureGuid, true, semantic, source->alphaCutoff)) {
         baseColorTexture = std::move(texture);
       }
