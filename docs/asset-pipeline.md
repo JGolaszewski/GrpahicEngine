@@ -80,9 +80,14 @@ Textures are decoded to four-channel, 8-bit RGBA pixels for the CPU asset
 representation.
 
 GPU mip chains cover the complete source footprint for odd and non-square
-images. Normal-map mips average tangent-space vectors and renormalize each
-result. Masked base-color textures use alpha-coverage adjustment at the
-standard 0.5 cutoff; other texture uses keep their filtered alpha values.
+images. Mip filtering follows each glTF texture slot's channel semantics:
+base-color RGB uses opacity-weighted filtering, normal maps average and
+renormalize tangent-space vectors, and metallic-roughness, specular-glossiness,
+occlusion, and emissive RGB are filtered independently of alpha. This preserves
+specular-glossiness alpha as glossiness and does not treat other unused alpha
+channels as opacity. Masked base-color textures use alpha-coverage adjustment
+at the material cutoff; see [texture mip generation](rendering/texture-mips.md)
+for the filtering and cache behavior.
 
 ## Limitations and troubleshooting
 

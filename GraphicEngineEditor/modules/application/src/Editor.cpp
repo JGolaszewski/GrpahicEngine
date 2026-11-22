@@ -863,15 +863,16 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
       return fail("Material asset could not be read after loading");
     }
     if (GetRenderSystem() != nullptr) {
-      for (const auto& [textureGuid, srgb, normalMap, preserveAlphaCoverage, alphaCutoff] :
-           {std::tuple{material->baseColorTextureGuid, true, false, material->alphaMode == "mask",
+      for (const auto& [textureGuid, srgb, semantic, alphaCutoff] :
+           {std::tuple{material->baseColorTextureGuid, true,
+                       material->alphaMode == "mask" ? Engine::Renderer::TextureMipSemantic::MaskedBaseColor
+                                                     : Engine::Renderer::TextureMipSemantic::BaseColor,
                        material->alphaCutoff},
-            std::tuple{material->normalTextureGuid, false, true, false, 0.5F}}) {
+            std::tuple{material->normalTextureGuid, false, Engine::Renderer::TextureMipSemantic::NormalMap, 0.5F}}) {
         if (!textureGuid) {
           continue;
         }
-        if (!GetRenderSystem()->PrepareAssetTexture(*textureGuid, srgb, error, normalMap, preserveAlphaCoverage,
-                                                    alphaCutoff)) {
+        if (!GetRenderSystem()->PrepareAssetTexture(*textureGuid, srgb, error, semantic, alphaCutoff)) {
           return fail(error);
         }
       }
@@ -895,15 +896,17 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
     }
     std::string error;
     if (GetRenderSystem() != nullptr) {
-      for (const auto& [textureGuid, srgb, normalMap, preserveAlphaCoverage, alphaCutoff] :
-           {std::tuple{request.GetMaterial().baseColorTextureGuid, true, false,
-                       request.GetMaterial().alphaMode == "mask", request.GetMaterial().alphaCutoff},
-            std::tuple{request.GetMaterial().normalTextureGuid, false, true, false, 0.5F}}) {
+      for (const auto& [textureGuid, srgb, semantic, alphaCutoff] :
+           {std::tuple{request.GetMaterial().baseColorTextureGuid, true,
+                       request.GetMaterial().alphaMode == "mask" ? Engine::Renderer::TextureMipSemantic::MaskedBaseColor
+                                                                 : Engine::Renderer::TextureMipSemantic::BaseColor,
+                       request.GetMaterial().alphaCutoff},
+            std::tuple{request.GetMaterial().normalTextureGuid, false, Engine::Renderer::TextureMipSemantic::NormalMap,
+                       0.5F}}) {
         if (!textureGuid) {
           continue;
         }
-        if (!GetRenderSystem()->PrepareAssetTexture(*textureGuid, srgb, error, normalMap, preserveAlphaCoverage,
-                                                    alphaCutoff)) {
+        if (!GetRenderSystem()->PrepareAssetTexture(*textureGuid, srgb, error, semantic, alphaCutoff)) {
           AssetWorkflowFeedbackEvent feedback(false, error);
           BroadcastEvent(feedback);
           return true;
@@ -1109,15 +1112,14 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
           if (GetRenderSystem() == nullptr) {
             return true;
           }
-          const auto prepare = [this](const std::optional<std::string>& guid, bool srgb, bool normalMap,
-                                      bool preserveAlphaCoverage, float alphaCutoff,
+          const auto prepare = [this](const std::optional<std::string>& guid, bool srgb,
+                                      Engine::Renderer::TextureMipSemantic mipSemantic, float alphaCutoff,
                                       std::string_view semantic) -> bool {
             if (!guid) {
               return true;
             }
             std::string error;
-            if (!GetRenderSystem()->PrepareAssetTexture(*guid, srgb, error, normalMap, preserveAlphaCoverage,
-                                                        alphaCutoff)) {
+            if (!GetRenderSystem()->PrepareAssetTexture(*guid, srgb, error, mipSemantic, alphaCutoff)) {
               ENGINE_LOG_ERROR("Asset", "Material texture assignment rejected | slot: {} | guid: {} | reason: {}",
                                semantic, *guid, error);
               AssetWorkflowFeedbackEvent feedback(false, error);
@@ -1126,9 +1128,12 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
             }
             return true;
           };
-          return prepare(material.baseColorTextureGuid, true, false, material.alphaMode == "mask", material.alphaCutoff,
-                         "base-color") &&
-                 prepare(material.normalTextureGuid, false, true, false, 0.5F, "normal");
+          return prepare(material.baseColorTextureGuid, true,
+                         material.alphaMode == "mask" ? Engine::Renderer::TextureMipSemantic::MaskedBaseColor
+                                                      : Engine::Renderer::TextureMipSemantic::BaseColor,
+                         material.alphaCutoff, "base-color") &&
+                 prepare(material.normalTextureGuid, false, Engine::Renderer::TextureMipSemantic::NormalMap, 0.5F,
+                         "normal");
         };
         bool texturesReady = !value->Material || prepareMaterial(*value->Material);
         for (const auto& material : value->MaterialOverrides) {
@@ -1222,7 +1227,8 @@ void Editor::ProcessPanelEvent(std::unique_ptr<Engine::Events::Event> event) {
             return true;
           }
           if (GetRenderSystem() == nullptr ||
-              !GetRenderSystem()->PrepareAssetTexture(value->TextureGuid, true, error)) {
+              !GetRenderSystem()->PrepareAssetTexture(value->TextureGuid, true, error,
+                                                      Engine::Renderer::TextureMipSemantic::Color)) {
             if (error.empty()) {
               error = "PNG skybox renderer is unavailable";
             }
