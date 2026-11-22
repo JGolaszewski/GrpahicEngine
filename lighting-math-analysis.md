@@ -185,3 +185,15 @@ The audit was initially requested as local, untracked analysis. Follow-up tracki
 - [#160: Fix texture mip generation](https://github.com/JGolaszewski/GrpahicEngine/issues/160) — expanded with the data-map alpha-weighting finding.
 
 The integration branch is `epic/207-material-lighting-correctness`. No rendering fix is claimed by this audit commit; implementation commits should reference their corresponding child issue, and visual correctness remains pending the validation described above.
+
+## Deeper follow-up findings
+
+A second source pass and Khronos-spec check refined several claims and exposed more edge cases:
+
+- glTF 2.0 requires reversing back-face normals for double-sided lighting. It also requires flat generated normals and says provided tangents must be ignored when normals are absent; when tangents are absent, default MikkTSpace generation is recommended. See [mesh attribute rules](https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#meshes) and [double-sided material rules](https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#material-double-sided).
+- The Khronos sample renderer negates tangent, bitangent, and geometric normal together for a back-facing surface before transforming a normal map. See its [`getNormalInfo`](https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Renderer/main/source/Renderer/shaders/material_info.glsl).
+- The KHR specular-glossiness workflow defines `c_diff = diffuse * (1 - max(specular.rgb))`, `F0 = specular.rgb`, and roughness alpha from `(1-glossiness)^2`. The engine's direct shader was applying another Fresnel remainder to this already partitioned diffuse input. The direct path now consumes that input once; environment parity is tracked separately in #209. See [KHR_materials_pbrSpecularGlossiness](https://github.com/KhronosGroup/glTF/blob/main/extensions/2.0/Khronos/KHR_materials_pbrSpecularGlossiness/README.md).
+- Shader review found that Schlick lacked the hemisphere guard used by every other GPU evaluator; that zero-distance point/spot paths have undefined surface-to-light vectors; and that mirrored transforms need the raster front-face convention adjusted before `SV_IsFrontFace` can classify backfaces consistently with transformed normals.
+- glTF base-color alpha is ignored in OPAQUE mode. Mip alpha weighting should therefore be chosen by alpha mode: opacity-weighted RGB for BLEND/MASK, independent RGB for OPAQUE; non-base-color data/color maps always treat alpha by their slot semantics. The #160 follow-up is tracking this cache/import detail.
+
+These are implementation targets, not claims of complete visual validation. Existing shader and CPU references cover parts of the BRDF equations, but only the documented D3D11 material sweep can establish rendered parity across both workflows, all nine NDF choices, texture variants, and light types.

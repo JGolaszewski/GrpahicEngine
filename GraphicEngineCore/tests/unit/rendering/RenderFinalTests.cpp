@@ -888,6 +888,375 @@ TEST(RenderFinalTests, WARPAllEditorExposedPrimitivesRender) {
   }
 }
 
+TEST(RenderFinalTests, WARPDoubleSidedPlaneFlipsBackfaceNormalsAndStillReceivesLight) {
+  EngineTests::WarpDevice device;
+  if (!device.Initialize()) {
+    GTEST_SKIP() << "D3D11 WARP device could not be created on this host";
+  }
+
+  EngineTests::WarpRenderBackend backend(device.GetDevice());
+  Engine::RenderSystem renderer(&backend);
+  ASSERT_TRUE(renderer.IsValid());
+
+  Engine::Renderer::MaterialProperties properties;
+  properties.BaseColor = {0.8F, 0.6F, 0.4F, 1.0F};
+  properties.Roughness = 0.2F;
+  properties.SpecularF0 = {0.5F, 0.5F, 0.5F};
+  properties.DoubleSided = true;
+  const auto material = renderer.CreateMaterial(properties);
+  ASSERT_NE(material, nullptr);
+  ASSERT_TRUE(renderer.CreatePrimitive(Engine::PrimitiveShape::Plane, material));
+
+  Engine::Scene scene;
+  const uint64_t planeSequence = scene.QueueCreate("Double-sided light receiver");
+  const uint64_t lightSequence =
+      scene.QueueCreate("Backface test light", Engine::InvalidEntityHandle, Engine::Scene::EntityPreset::SpotLight);
+  const auto created = scene.sync();
+  ASSERT_EQ(created.size(), 2U);
+  ASSERT_EQ(created.at(0).Sequence, planeSequence);
+  ASSERT_EQ(created.at(1).Sequence, lightSequence);
+  ASSERT_TRUE(created.at(0).Outcome);
+  ASSERT_TRUE(created.at(1).Outcome);
+  const Engine::AmbientLightSettings ambientDisabled{.Enabled = false};
+
+  Engine::Ecs::LocalTransform planeTransform;
+  DirectX::XMFLOAT4 planeRotation{};
+  DirectX::XMStoreFloat4(&planeRotation, DirectX::XMQuaternionRotationRollPitchYaw(-DirectX::XM_PIDIV2, 0.0F, 0.0F));
+  planeTransform.Rotation = {planeRotation.x, planeRotation.y, planeRotation.z, planeRotation.w};
+  planeTransform.Scale = {2.0F, 2.0F, 2.0F};
+  (void)scene.QueueSet(created.at(0).Entity, planeTransform);
+  (void)scene.QueueAdd(created.at(0).Entity, Engine::Ecs::MeshRenderer{.PrimitiveType = "plane"});
+
+  Engine::Ecs::Light light;
+  light.Type = Engine::Ecs::LightType::Point;
+  light.Intensity = 20.0F;
+  light.Range = 10.0F;
+  light.CastShadows = false;
+  (void)scene.QueueSet(created.at(1).Entity, light);
+
+  constexpr uint32_t imageSize = 33U;
+  const auto renderFromSide = [&](float side) -> std::optional<Engine::RenderOutput> {
+    Engine::Ecs::LocalTransform lightTransform;
+    lightTransform.Position = {0.0F, 0.0F, side * 2.0F};
+    (void)scene.QueueSet(created.at(1).Entity, lightTransform);
+    if (!scene.Update(0.0F)) {
+      return std::nullopt;
+    }
+
+    Engine::Renderer::CameraView camera;
+    camera.Position = {0.0F, 0.0F, side * 5.0F};
+    if (side > 0.0F) {
+      DirectX::XMFLOAT4 cameraRotation{};
+      DirectX::XMStoreFloat4(&cameraRotation, DirectX::XMQuaternionRotationRollPitchYaw(0.0F, DirectX::XM_PI, 0.0F));
+      camera.Rotation = {cameraRotation.x, cameraRotation.y, cameraRotation.z, cameraRotation.w};
+    }
+    auto output = renderer.RenderFinal(scene, camera, imageSize, imageSize, {}, {}, {}, ambientDisabled);
+    if (!output.has_value()) {
+      return std::nullopt;
+    }
+    return std::move(output.value());
+  };
+
+  const size_t center = (static_cast<size_t>(imageSize / 2U) * imageSize) + imageSize / 2U;
+  constexpr std::array models = {
+      Engine::Renderer::BrdfModel::GGX,        Engine::Renderer::BrdfModel::GTR,
+      Engine::Renderer::BrdfModel::Beckmann,   Engine::Renderer::BrdfModel::Gauss,
+      Engine::Renderer::BrdfModel::BlinnPhong, Engine::Renderer::BrdfModel::AshikhminShirley,
+      Engine::Renderer::BrdfModel::Schlick,    Engine::Renderer::BrdfModel::Sawicki,
+      Engine::Renderer::BrdfModel::PrismNdf,
+  };
+  constexpr std::array workflows = {Engine::Renderer::MaterialWorkflow::MetallicRoughness,
+                                    Engine::Renderer::MaterialWorkflow::SpecularGlossiness};
+  std::array<float, 3> untexturedSpecularGlossinessDiffuse{};
+  std::array<float, 3> untexturedSpecularGlossinessSpecular{};
+  for (const auto workflow : workflows) {
+    properties.Workflow = workflow;
+    for (const auto model : models) {
+      properties.Model = model;
+      material->SetProperties(properties);
+      const auto front = renderFromSide(-1.0F);
+      ASSERT_TRUE(front.has_value()) << "workflow=" << static_cast<uint32_t>(workflow)
+                                     << " model=" << static_cast<uint32_t>(model);
+      const auto back = renderFromSide(1.0F);
+      ASSERT_TRUE(back.has_value()) << "workflow=" << static_cast<uint32_t>(workflow)
+                                    << " model=" << static_cast<uint32_t>(model);
+      const auto frontNormal = front->GetPixels(Engine::RenderAov::WorldNormal);
+      const auto backNormal = back->GetPixels(Engine::RenderAov::WorldNormal);
+      const auto frontDiffuse = front->GetPixels(Engine::RenderAov::DiffuseLighting);
+      const auto backDiffuse = back->GetPixels(Engine::RenderAov::DiffuseLighting);
+      const auto frontSpecular = front->GetPixels(Engine::RenderAov::SpecularLighting);
+      ASSERT_GT(frontNormal.size(), center * 3U + 2U);
+      ASSERT_GT(backNormal.size(), center * 3U + 2U);
+      ASSERT_GT(frontDiffuse.size(), center * 3U + 2U);
+      ASSERT_GT(backDiffuse.size(), center * 3U + 2U);
+      ASSERT_GT(frontSpecular.size(), center * 3U + 2U);
+
+      EXPECT_LT(frontNormal[center * 3U + 2U], -0.9F)
+          << "workflow=" << static_cast<uint32_t>(workflow) << " model=" << static_cast<uint32_t>(model);
+      EXPECT_GT(backNormal[center * 3U + 2U], 0.9F)
+          << "workflow=" << static_cast<uint32_t>(workflow) << " model=" << static_cast<uint32_t>(model);
+      EXPECT_GT(frontDiffuse[center * 3U], 0.05F)
+          << "workflow=" << static_cast<uint32_t>(workflow) << " model=" << static_cast<uint32_t>(model);
+      EXPECT_GT(backDiffuse[center * 3U], 0.05F)
+          << "workflow=" << static_cast<uint32_t>(workflow) << " model=" << static_cast<uint32_t>(model);
+      for (size_t channel = 0; channel < 3U; ++channel) {
+        EXPECT_NEAR(frontDiffuse[center * 3U + channel], backDiffuse[center * 3U + channel], 0.05F)
+            << "workflow=" << static_cast<uint32_t>(workflow) << " model=" << static_cast<uint32_t>(model);
+      }
+      if (workflow == Engine::Renderer::MaterialWorkflow::SpecularGlossiness &&
+          model == Engine::Renderer::BrdfModel::GGX) {
+        std::copy_n(frontDiffuse.begin() + static_cast<std::ptrdiff_t>(center * 3U), 3U,
+                    untexturedSpecularGlossinessDiffuse.begin());
+        std::copy_n(frontSpecular.begin() + static_cast<std::ptrdiff_t>(center * 3U), 3U,
+                    untexturedSpecularGlossinessSpecular.begin());
+        constexpr float rangeAttenuation = 0.24920064F;
+        constexpr float directRadiance = 20.0F * rangeAttenuation;
+        constexpr float specularF0 = 0.5F;
+        const float diffuseScale = directRadiance * (1.0F - specularF0) / Engine::Renderer::Brdf::Pi;
+        const float alpha = properties.Roughness * properties.Roughness;
+        const float ggxPeak = 1.0F / (Engine::Renderer::Brdf::Pi * alpha * alpha);
+        const float specularScale = directRadiance * specularF0 * ggxPeak / 4.0F;
+        EXPECT_NEAR(frontDiffuse[center * 3U], properties.BaseColor.x * diffuseScale, 0.02F);
+        EXPECT_GT(frontSpecular[center * 3U], specularScale * 0.9F);
+      }
+    }
+  }
+
+  properties.Workflow = Engine::Renderer::MaterialWorkflow::SpecularGlossiness;
+  properties.Model = Engine::Renderer::BrdfModel::GGX;
+  material->SetProperties(properties);
+  Engine::ImportedImage whiteImage{.name = "white material texture",
+                                   .mimeType = "image/raw",
+                                   .width = 1,
+                                   .height = 1,
+                                   .rgba8 = {255, 255, 255, 255}};
+  Engine::ImportedImage flatNormalImage{.name = "flat normal texture",
+                                        .mimeType = "image/raw",
+                                        .width = 1,
+                                        .height = 1,
+                                        .rgba8 = {128, 128, 255, 255}};
+  std::string textureError;
+  const auto baseColorTexture =
+      renderer.GetOrCreateTexture("double-sided-base-color", 1U, whiteImage, true, textureError);
+  ASSERT_NE(baseColorTexture, nullptr) << textureError;
+  const auto normalTexture =
+      renderer.GetOrCreateTexture("double-sided-normal", 1U, flatNormalImage, false, textureError, nullptr, true);
+  ASSERT_NE(normalTexture, nullptr) << textureError;
+  const auto specularGlossinessTexture =
+      renderer.GetOrCreateTexture("double-sided-spec-gloss", 1U, whiteImage, true, textureError);
+  ASSERT_NE(specularGlossinessTexture, nullptr) << textureError;
+  const auto occlusionTexture =
+      renderer.GetOrCreateTexture("double-sided-occlusion", 1U, whiteImage, false, textureError);
+  ASSERT_NE(occlusionTexture, nullptr) << textureError;
+  const auto emissiveTexture = renderer.GetOrCreateTexture("double-sided-emissive", 1U, whiteImage, true, textureError);
+  ASSERT_NE(emissiveTexture, nullptr) << textureError;
+  ASSERT_TRUE(renderer.SetPbrMaterialTextures(material, baseColorTexture, normalTexture, specularGlossinessTexture,
+                                              occlusionTexture, emissiveTexture, true));
+  const auto texturedSpecularGlossiness = renderFromSide(-1.0F);
+  ASSERT_TRUE(texturedSpecularGlossiness.has_value());
+  const auto texturedDiffuse = texturedSpecularGlossiness->GetPixels(Engine::RenderAov::DiffuseLighting);
+  const auto texturedSpecular = texturedSpecularGlossiness->GetPixels(Engine::RenderAov::SpecularLighting);
+  ASSERT_GT(texturedDiffuse.size(), center * 3U + 2U);
+  ASSERT_GT(texturedSpecular.size(), center * 3U + 2U);
+  for (size_t channel = 0; channel < 3U; ++channel) {
+    EXPECT_NEAR(texturedDiffuse[center * 3U + channel], untexturedSpecularGlossinessDiffuse[channel], 0.02F);
+    EXPECT_NEAR(texturedSpecular[center * 3U + channel], untexturedSpecularGlossinessSpecular[channel],
+                (std::max)(0.05F, untexturedSpecularGlossinessSpecular[channel] * 0.05F));
+  }
+
+  properties.Workflow = Engine::Renderer::MaterialWorkflow::MetallicRoughness;
+  material->SetProperties(properties);
+  planeTransform.FlipHorizontal = true;
+  (void)scene.QueueSet(created.at(0).Entity, planeTransform);
+  ASSERT_TRUE(scene.Update(0.0F));
+  const auto mirroredFront = renderFromSide(-1.0F);
+  const auto mirroredBack = renderFromSide(1.0F);
+  ASSERT_TRUE(mirroredFront.has_value());
+  ASSERT_TRUE(mirroredBack.has_value());
+  const auto mirroredFrontNormal = mirroredFront->GetPixels(Engine::RenderAov::WorldNormal);
+  const auto mirroredBackNormal = mirroredBack->GetPixels(Engine::RenderAov::WorldNormal);
+  const auto mirroredFrontDiffuse = mirroredFront->GetPixels(Engine::RenderAov::DiffuseLighting);
+  const auto mirroredBackDiffuse = mirroredBack->GetPixels(Engine::RenderAov::DiffuseLighting);
+  ASSERT_GT(mirroredFrontNormal.size(), center * 3U + 2U);
+  ASSERT_GT(mirroredBackNormal.size(), center * 3U + 2U);
+  ASSERT_GT(mirroredFrontDiffuse.size(), center * 3U + 2U);
+  ASSERT_GT(mirroredBackDiffuse.size(), center * 3U + 2U);
+  EXPECT_LT(mirroredFrontNormal[center * 3U + 2U], -0.9F);
+  EXPECT_GT(mirroredBackNormal[center * 3U + 2U], 0.9F);
+  EXPECT_GT(mirroredFrontDiffuse[center * 3U], 0.05F);
+  EXPECT_GT(mirroredBackDiffuse[center * 3U], 0.05F);
+
+  light.Intensity = 0.0F;
+  (void)scene.QueueSet(created.at(1).Entity, light);
+  ASSERT_TRUE(scene.Update(0.0F));
+  Engine::Renderer::CameraView frontCamera;
+  frontCamera.Position = {0.0F, 0.0F, -5.0F};
+  const auto noLight = renderer.RenderFinal(scene, frontCamera, imageSize, imageSize, {}, {}, {}, ambientDisabled);
+  ASSERT_TRUE(noLight.has_value());
+
+  light.Intensity = 20.0F;
+  (void)scene.QueueSet(created.at(1).Entity, light);
+  Engine::Ecs::LocalTransform coincidentLightTransform;
+  (void)scene.QueueSet(created.at(1).Entity, coincidentLightTransform);
+  ASSERT_TRUE(scene.Update(0.0F));
+  const auto coincidentLight =
+      renderer.RenderFinal(scene, frontCamera, imageSize, imageSize, {}, {}, {}, ambientDisabled);
+  ASSERT_TRUE(coincidentLight.has_value());
+  const auto noLightDiffuse = noLight->GetPixels(Engine::RenderAov::DiffuseLighting);
+  const auto coincidentDiffuse = coincidentLight->GetPixels(Engine::RenderAov::DiffuseLighting);
+  ASSERT_GT(noLightDiffuse.size(), center * 3U + 2U);
+  ASSERT_GT(coincidentDiffuse.size(), center * 3U + 2U);
+  for (size_t channel = 0; channel < 3U; ++channel) {
+    EXPECT_NEAR(noLightDiffuse[center * 3U + channel], coincidentDiffuse[center * 3U + channel], 1.0e-3F);
+  }
+
+  light.Type = Engine::Ecs::LightType::Spot;
+  light.Direction = {0.0F, 0.0F, 1.0F};
+  light.Intensity = 0.0F;
+  (void)scene.QueueSet(created.at(1).Entity, light);
+  ASSERT_TRUE(scene.Update(0.0F));
+  const auto noSpot = renderer.RenderFinal(scene, frontCamera, imageSize, imageSize, {}, {}, {}, ambientDisabled);
+  ASSERT_TRUE(noSpot.has_value());
+
+  light.Intensity = 20.0F;
+  (void)scene.QueueSet(created.at(1).Entity, light);
+  (void)scene.QueueSet(created.at(1).Entity, coincidentLightTransform);
+  ASSERT_TRUE(scene.Update(0.0F));
+  const auto coincidentSpot =
+      renderer.RenderFinal(scene, frontCamera, imageSize, imageSize, {}, {}, {}, ambientDisabled);
+  ASSERT_TRUE(coincidentSpot.has_value());
+  const auto noSpotDiffuse = noSpot->GetPixels(Engine::RenderAov::DiffuseLighting);
+  const auto coincidentSpotDiffuse = coincidentSpot->GetPixels(Engine::RenderAov::DiffuseLighting);
+  ASSERT_GT(noSpotDiffuse.size(), center * 3U + 2U);
+  ASSERT_GT(coincidentSpotDiffuse.size(), center * 3U + 2U);
+  for (size_t channel = 0; channel < 3U; ++channel) {
+    EXPECT_NEAR(noSpotDiffuse[center * 3U + channel], coincidentSpotDiffuse[center * 3U + channel], 1.0e-3F);
+  }
+}
+
+TEST(RenderFinalTests, WARPDoubleSidedNormalMapReversesTheWholeTangentBasisOnBackfaces) {
+  EngineTests::WarpDevice device;
+  if (!device.Initialize()) {
+    GTEST_SKIP() << "D3D11 WARP device could not be created on this host";
+  }
+
+  EngineTests::WarpRenderBackend backend(device.GetDevice());
+  Engine::RenderSystem renderer(&backend);
+  ASSERT_TRUE(renderer.IsValid());
+
+  Engine::Renderer::MaterialProperties fallbackProperties;
+  const auto fallbackMaterial = renderer.CreateMaterial(fallbackProperties);
+  ASSERT_NE(fallbackMaterial, nullptr);
+  ASSERT_TRUE(renderer.CreatePrimitive(Engine::PrimitiveShape::Plane, fallbackMaterial));
+
+  const std::string normalGuid = "44444444-5555-4666-8777-888888888888";
+  Engine::ImportedImage normalImage{.name = "tangent-X normal",
+                                    .mimeType = "image/raw",
+                                    .width = 1,
+                                    .height = 1,
+                                    .rgba8 = {204, 128, 230, 255}};
+  std::string error;
+  const auto normalTexture = renderer.GetOrCreateTexture(normalGuid, 1U, normalImage, false, error, nullptr, true);
+  ASSERT_NE(normalTexture, nullptr) << error;
+  renderer.GetSceneRenderer()->SetAssetTextureResolver(
+      [normalTexture, normalGuid](const std::string& guid, bool srgb, bool normalMap, bool,
+                                  float) -> std::shared_ptr<Engine::Renderer::TextureResource> {
+        return guid == normalGuid && !srgb && normalMap ? normalTexture : nullptr;
+      });
+
+  Engine::SceneMaterialDocument material;
+  material.baseColor = {0.8F, 0.6F, 0.4F, 1.0F};
+  material.normalTextureGuid = normalGuid;
+  material.doubleSided = true;
+
+  Engine::Scene scene;
+  const uint64_t planeSequence = scene.QueueCreate("Mapped double-sided receiver");
+  const uint64_t lightSequence =
+      scene.QueueCreate("Mapped backface light", Engine::InvalidEntityHandle, Engine::Scene::EntityPreset::SpotLight);
+  const auto created = scene.sync();
+  ASSERT_EQ(created.size(), 2U);
+  ASSERT_EQ(created.at(0).Sequence, planeSequence);
+  ASSERT_EQ(created.at(1).Sequence, lightSequence);
+  ASSERT_TRUE(created.at(0).Outcome);
+  ASSERT_TRUE(created.at(1).Outcome);
+
+  Engine::Ecs::LocalTransform planeTransform;
+  DirectX::XMFLOAT4 planeRotation{};
+  DirectX::XMStoreFloat4(&planeRotation, DirectX::XMQuaternionRotationRollPitchYaw(-DirectX::XM_PIDIV2, 0.0F, 0.0F));
+  planeTransform.Rotation = {planeRotation.x, planeRotation.y, planeRotation.z, planeRotation.w};
+  planeTransform.Scale = {2.0F, 2.0F, 2.0F};
+  (void)scene.QueueSet(created.at(0).Entity, planeTransform);
+  (void)scene.QueueAdd(created.at(0).Entity, Engine::Ecs::MeshRenderer{.PrimitiveType = "plane", .Material = material});
+
+  Engine::Ecs::Light light;
+  light.Type = Engine::Ecs::LightType::Point;
+  light.Intensity = 20.0F;
+  light.Range = 10.0F;
+  light.CastShadows = false;
+  (void)scene.QueueSet(created.at(1).Entity, light);
+
+  constexpr uint32_t imageSize = 33U;
+  const auto renderFromSide = [&](float side) -> std::optional<Engine::RenderOutput> {
+    Engine::Ecs::LocalTransform lightTransform;
+    lightTransform.Position = {0.0F, 0.0F, side * 2.0F};
+    (void)scene.QueueSet(created.at(1).Entity, lightTransform);
+    if (!scene.Update(0.0F)) {
+      return std::nullopt;
+    }
+
+    Engine::Renderer::CameraView camera;
+    camera.Position = {0.0F, 0.0F, side * 5.0F};
+    if (side > 0.0F) {
+      DirectX::XMFLOAT4 cameraRotation{};
+      DirectX::XMStoreFloat4(&cameraRotation, DirectX::XMQuaternionRotationRollPitchYaw(0.0F, DirectX::XM_PI, 0.0F));
+      camera.Rotation = {cameraRotation.x, cameraRotation.y, cameraRotation.z, cameraRotation.w};
+    }
+    auto output = renderer.RenderFinal(scene, camera, imageSize, imageSize);
+    if (!output.has_value()) {
+      return std::nullopt;
+    }
+    return std::move(output.value());
+  };
+
+  const auto front = renderFromSide(-1.0F);
+  const auto back = renderFromSide(1.0F);
+  ASSERT_TRUE(front.has_value());
+  ASSERT_TRUE(back.has_value());
+  const size_t center = (static_cast<size_t>(imageSize / 2U) * imageSize) + imageSize / 2U;
+  const auto frontNormals = front->GetPixels(Engine::RenderAov::WorldNormal);
+  const auto backNormals = back->GetPixels(Engine::RenderAov::WorldNormal);
+  ASSERT_GT(frontNormals.size(), center * 3U + 2U);
+  ASSERT_GT(backNormals.size(), center * 3U + 2U);
+  const float frontX = frontNormals[center * 3U];
+  const float frontY = frontNormals[center * 3U + 1U];
+  const float frontZ = frontNormals[center * 3U + 2U];
+  EXPECT_GT(frontX, 0.55F);
+  EXPECT_LT(frontZ, -0.75F);
+  EXPECT_NEAR(std::sqrt(frontX * frontX + frontY * frontY + frontZ * frontZ), 1.0F, 0.02F);
+  for (size_t channel = 0; channel < 3U; ++channel) {
+    EXPECT_NEAR(backNormals[center * 3U + channel], -frontNormals[center * 3U + channel], 0.02F);
+  }
+
+  planeTransform.FlipHorizontal = true;
+  (void)scene.QueueSet(created.at(0).Entity, planeTransform);
+  ASSERT_TRUE(scene.Update(0.0F));
+  const auto mirroredFront = renderFromSide(-1.0F);
+  const auto mirroredBack = renderFromSide(1.0F);
+  ASSERT_TRUE(mirroredFront.has_value());
+  ASSERT_TRUE(mirroredBack.has_value());
+  const auto mirroredFrontNormals = mirroredFront->GetPixels(Engine::RenderAov::WorldNormal);
+  const auto mirroredBackNormals = mirroredBack->GetPixels(Engine::RenderAov::WorldNormal);
+  ASSERT_GT(mirroredFrontNormals.size(), center * 3U + 2U);
+  ASSERT_GT(mirroredBackNormals.size(), center * 3U + 2U);
+  EXPECT_LT(mirroredFrontNormals[center * 3U], -0.55F);
+  EXPECT_LT(mirroredFrontNormals[center * 3U + 2U], -0.75F);
+  EXPECT_NEAR(mirroredFrontNormals[center * 3U], -frontX, 0.02F);
+  EXPECT_NEAR(mirroredFrontNormals[center * 3U + 2U], frontZ, 0.02F);
+  for (size_t channel = 0; channel < 3U; ++channel) {
+    EXPECT_NEAR(mirroredBackNormals[center * 3U + channel], -mirroredFrontNormals[center * 3U + channel], 0.02F);
+  }
+}
+
 TEST(RenderFinalTests, WARPAssignedMaterialTextureGuidsReachLiveTextureResolver) {
   EngineTests::WarpDevice device;
   if (!device.Initialize()) {

@@ -171,6 +171,10 @@ void TestSchlickReferenceAndFiniteEvaluation() {
                                                                    {0.04F, 0.04F, 0.04F}, alpha);
   Require(std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z),
           "Schlick BRDF reference evaluation must remain finite");
+  const auto backFacingView = ::Engine::Renderer::Brdf::EvaluateSchlickBrdf(
+      {0.0F, 0.0F, 1.0F}, {0.0F, 0.0F, -1.0F}, {0.0F, 0.0F, 1.0F}, {0.7F, 0.4F, 0.2F}, {0.04F, 0.04F, 0.04F}, alpha);
+  Require(backFacingView.x == 0.0F && backFacingView.y == 0.0F && backFacingView.z == 0.0F,
+          "Schlick must reject a view direction outside the surface hemisphere");
 }
 
 void TestBlinnPhongReferenceAndFiniteEvaluation() {
@@ -222,6 +226,22 @@ void TestAshikhminShirleyReferenceAndFiniteEvaluation() {
       {0.7F, 0.4F, 0.2F}, {0.04F, 0.04F, 0.04F}, 0.2F, 0.8F);
   Require(std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z),
           "Ashikhmin-Shirley BRDF reference evaluation must remain finite");
+
+  constexpr float inverseSqrtTwo = 0.70710678F;
+  const DirectX::XMFLOAT3 mappedNormal = {0.0F, inverseSqrtTwo, inverseSqrtTwo};
+  const DirectX::XMFLOAT3 tangent = {1.0F, 0.0F, 0.0F};
+  const DirectX::XMFLOAT3 geometricBitangent = {0.0F, 1.0F, 0.0F};
+  const DirectX::XMFLOAT3 orthogonalBitangent = {0.0F, inverseSqrtTwo, -inverseSqrtTwo};
+  const DirectX::XMFLOAT3 view = {0.2F, 0.7F, 0.68F};
+  const DirectX::XMFLOAT3 light = {-0.1F, 0.8F, 0.6F};
+  const auto mappedFrameResult = ::Engine::Renderer::Brdf::EvaluateAshikhminShirleyBrdf(
+      mappedNormal, tangent, geometricBitangent, view, light, {0.7F, 0.4F, 0.2F}, {0.04F, 0.04F, 0.04F}, 0.2F, 0.8F);
+  const auto orthogonalFrameResult = ::Engine::Renderer::Brdf::EvaluateAshikhminShirleyBrdf(
+      mappedNormal, tangent, orthogonalBitangent, view, light, {0.7F, 0.4F, 0.2F}, {0.04F, 0.04F, 0.04F}, 0.2F, 0.8F);
+  Require(std::abs(mappedFrameResult.x - orthogonalFrameResult.x) < 1.0e-6F &&
+              std::abs(mappedFrameResult.y - orthogonalFrameResult.y) < 1.0e-6F &&
+              std::abs(mappedFrameResult.z - orthogonalFrameResult.z) < 1.0e-6F,
+          "Ashikhmin-Shirley must re-orthogonalize a geometric tangent frame around a mapped normal");
 }
 
 void TestGaussReferenceAndFiniteEvaluation() {
@@ -338,6 +358,44 @@ void TestReciprocityAndWhiteFurnace() {
   }
 }
 
+void TestCpuDiffuseFresnelMatchesShaderEquation() {
+  using namespace ::Engine::Renderer::Brdf;
+  const DirectX::XMFLOAT3 normal = {0.0F, 0.0F, 1.0F};
+  const DirectX::XMFLOAT3 view = {0.95F, 0.0F, 0.3122499F};
+  const DirectX::XMFLOAT3 light = {0.0F, 0.0F, 1.0F};
+  const DirectX::XMFLOAT3 diffuse = {0.7F, 0.4F, 0.2F};
+  const DirectX::XMFLOAT3 f0 = {0.04F, 0.04F, 0.04F};
+  constexpr float alpha = 0.35F;
+
+  const auto normalize = [](DirectX::XMFLOAT3 value) {
+    const float length = std::sqrt(value.x * value.x + value.y * value.y + value.z * value.z);
+    return DirectX::XMFLOAT3{value.x / length, value.y / length, value.z / length};
+  };
+  const DirectX::XMFLOAT3 unitView = normalize(view);
+  const DirectX::XMFLOAT3 unitLight = normalize(light);
+  const DirectX::XMFLOAT3 halfVector =
+      normalize({unitView.x + unitLight.x, unitView.y + unitLight.y, unitView.z + unitLight.z});
+  const float noV = unitView.z;
+  const float noL = unitLight.z;
+  const float noH = halfVector.z;
+  const float voH = unitView.x * halfVector.x + unitView.y * halfVector.y + unitView.z * halfVector.z;
+  const float fresnelWeight = std::pow(1.0F - voH, 5.0F);
+  const float fresnel = f0.x + (1.0F - f0.x) * fresnelWeight;
+  const float alphaSquared = alpha * alpha;
+  const float smithV = noL * std::sqrt(alphaSquared + (1.0F - alphaSquared) * noV * noV);
+  const float smithL = noV * std::sqrt(alphaSquared + (1.0F - alphaSquared) * noL * noL);
+  const float geometry = 2.0F * noV * noL / (smithV + smithL);
+  const float specularScale = EvaluateGgxNdf(noH, alpha) * geometry / (4.0F * noV * noL);
+  const float expectedDiffuseScale = (1.0F - fresnel) / Pi;
+  const float expectedSpecular = fresnel * specularScale;
+  const DirectX::XMFLOAT3 actual = EvaluateGgxBrdf(normal, view, light, diffuse, f0, alpha);
+
+  Require(std::abs(actual.x - (diffuse.x * expectedDiffuseScale + expectedSpecular)) < 1.0e-5F &&
+              std::abs(actual.y - (diffuse.y * expectedDiffuseScale + expectedSpecular)) < 1.0e-5F &&
+              std::abs(actual.z - (diffuse.z * expectedDiffuseScale + expectedSpecular)) < 1.0e-5F,
+          "CPU diffuse evaluation must use the same angular Fresnel term as the production shader");
+}
+
 void TestMaterialGpuAbiPacking() {
   ::Engine::Renderer::MaterialProperties properties;
   properties.Model = ::Engine::Renderer::BrdfModel::GTR;
@@ -361,6 +419,12 @@ void TestMaterialGpuAbiPacking() {
   Require(std::abs(gpu.SpecularParams.x - 0.2F) < 1.0e-6F && std::abs(gpu.SpecularParams.y - 0.3F) < 1.0e-6F &&
               std::abs(gpu.SpecularParams.z - 0.4F) < 1.0e-6F,
           "Explicit dielectric F0 must be packed");
+
+  properties.Workflow = ::Engine::Renderer::MaterialWorkflow::SpecularGlossiness;
+  properties.Roughness = 0.2F;
+  const auto specularGlossinessGpu = ::Engine::Renderer::BuildMaterialGpu(properties);
+  Require(std::abs(specularGlossinessGpu.SurfaceParams.x - 0.2F) < 1.0e-6F,
+          "Specular-glossiness packing must keep the converted roughness without a second inversion");
 
   auto generatedNdf = std::make_shared<::Engine::PrismNdfData>();
   generatedNdf->residuals.resize(::Engine::PrismNdfSampleCount);
@@ -505,6 +569,7 @@ auto main() -> int {
     TestSchlickReferenceAndFiniteEvaluation();
     TestGtrLimitsAndRoughnessMapping();
     TestReciprocityAndWhiteFurnace();
+    TestCpuDiffuseFresnelMatchesShaderEquation();
     TestMaterialGpuAbiPacking();
     TestPrismResidualMipChainPreservesSignedAverages();
     TestMaterialPropertiesRoundTrip();

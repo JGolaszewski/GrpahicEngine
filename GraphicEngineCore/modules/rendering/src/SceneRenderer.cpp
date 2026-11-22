@@ -857,7 +857,7 @@ auto Engine::SceneRenderer::ConfigureAndQueuePacket(
     ::Engine::Renderer::RenderView* view, const ::Engine::Ecs::MeshRenderer& meshRenderer,
     const ::Engine::Renderer::Submesh& submesh, const ::Engine::Renderer::MaterialProperties& materialProperties,
     bool hasTextureOverrides, const nvrhi::FramebufferInfoEx& framebufferInfo, ::Engine::Renderer::RenderPacket& packet,
-    bool disableFaceCulling) -> bool {
+    bool disableFaceCulling, bool reverseFrontFace) -> bool {
   if (view->ViewType == ::Engine::Renderer::RenderView::Type::Shadow &&
       materialProperties.AlphaMode == ::Engine::Renderer::MaterialAlphaMode::Blend) {
     return false;
@@ -897,6 +897,7 @@ auto Engine::SceneRenderer::ConfigureAndQueuePacket(
   key.SceneLayout = m_SceneBindingLayout;
   key.MaterialLayout = m_MaterialSystem->GetStandardMaterialLayout();
   key.DepthWrite = packet.Queue != ::Engine::Renderer::RenderQueueType::Transparent;
+  key.RasterState.frontCounterClockwise = reverseFrontFace;
   if (view->ViewType == ::Engine::Renderer::RenderView::Type::Shadow) {
     key.PS = packet.ShadowAlphaTest ? m_ShadowMaskPS : nullptr;
     key.SceneLayout = nullptr;
@@ -984,6 +985,7 @@ void Engine::SceneRenderer::SubmitSubmesh(::Engine::Renderer::RenderView* view,
   const DirectX::XMMATRIX mvp = world * viewProjection;
   DirectX::XMVECTOR determinant;
   const DirectX::XMMATRIX inverseWorld = DirectX::XMMatrixInverse(&determinant, world);
+  const bool reverseFrontFace = DirectX::XMVectorGetX(determinant) < 0.0F;
   const DirectX::XMMATRIX normal = std::abs(DirectX::XMVectorGetX(determinant)) > 1.0e-8F
                                        ? DirectX::XMMatrixTranspose(inverseWorld)
                                        : DirectX::XMMatrixIdentity();
@@ -995,10 +997,9 @@ void Engine::SceneRenderer::SubmitSubmesh(::Engine::Renderer::RenderView* view,
   const auto material = MaterialForSubmesh(view, entity, meshRenderer, submesh);
   auto packet = CreateRenderPacket(submesh.mesh.get(), material.get());
   packet.PerObjectData = perObjectData;
-  const bool disableFaceCulling =
-      transform.HasAxisFlip || DirectX::XMVectorGetX(DirectX::XMMatrixDeterminant(world)) < 0.0F;
+  const bool disableFaceCulling = transform.HasAxisFlip || reverseFrontFace;
   if (ConfigureAndQueuePacket(view, meshRenderer, submesh, material->GetProperties(), material->HasTextureOverrides(),
-                              framebufferInfo, packet, disableFaceCulling)) {
+                              framebufferInfo, packet, disableFaceCulling, reverseFrontFace)) {
     m_SubmissionStats.PacketBuildTimeMs +=
         std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - packetBuildStart).count();
   }
