@@ -119,6 +119,22 @@ float3 BrdfTangentForNormal(float3 normal, float3 tangent)
     return BrdfNormalizeOr(projected, fallbackTangent);
 }
 
+void BrdfApplyUvTransformToTangentFrame(float3 normal, float4 uvTransform, inout float3 tangent,
+    inout float handedness)
+{
+    const float determinant = uvTransform.x * uvTransform.w - uvTransform.y * uvTransform.z;
+    if (!isfinite(determinant) || abs(determinant) <= 1.0e-20f) return;
+
+    const float3 safeNormal = BrdfNormalizeOr(normal, float3(0.0f, 0.0f, 1.0f));
+    const float3 sourceTangent = BrdfTangentForNormal(safeNormal, tangent);
+    const float3 sourceBitangent = cross(safeNormal, sourceTangent) * handedness;
+    // Match the normalized tangent basis generated from transformed UV coordinates.
+    const float3 transformedTangent =
+        (sourceTangent * uvTransform.w - sourceBitangent * uvTransform.z) / determinant;
+    tangent = BrdfTangentForNormal(safeNormal, transformedTangent);
+    handedness *= determinant < 0.0f ? -1.0f : 1.0f;
+}
+
 BrdfQuery BuildBrdfQuery(float3 normal, float3 view, float3 light)
 {
     BrdfQuery query;
