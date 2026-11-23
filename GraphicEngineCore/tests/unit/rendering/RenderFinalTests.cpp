@@ -1244,9 +1244,20 @@ TEST(RenderFinalTests, WARPDoubleSidedNormalMapReversesTheWholeTangentBasisOnBac
     return std::move(output.value());
   };
   const auto renderFromSide = [&](float side) { return renderFromPosition(side, 0.0F); };
+  // The first WARP readback after a material mutation can observe the prior frame's binding.
+  const auto renderStableFromSide = [&](float side) -> std::optional<Engine::RenderOutput> {
+    if (!renderFromSide(side).has_value())
+      return std::nullopt;
+    return renderFromSide(side);
+  };
+  const auto renderStableFromPosition = [&](float side, float lightX) -> std::optional<Engine::RenderOutput> {
+    if (!renderFromPosition(side, lightX).has_value())
+      return std::nullopt;
+    return renderFromPosition(side, lightX);
+  };
 
-  const auto front = renderFromSide(-1.0F);
-  const auto back = renderFromSide(1.0F);
+  const auto front = renderStableFromSide(-1.0F);
+  const auto back = renderStableFromSide(1.0F);
   ASSERT_TRUE(front.has_value());
   ASSERT_TRUE(back.has_value());
   const size_t center = (static_cast<size_t>(imageSize / 2U) * imageSize) + imageSize / 2U;
@@ -1267,7 +1278,7 @@ TEST(RenderFinalTests, WARPDoubleSidedNormalMapReversesTheWholeTangentBasisOnBac
   material.normalTextureTransform.scale = {2.0F, 2.0F};
   (void)scene.QueueSet(created.at(0).Entity, Engine::Ecs::MeshRenderer{.PrimitiveType = "plane", .Material = material});
   ASSERT_TRUE(scene.Update(0.0F));
-  const auto uniformlyScaledUv = renderFromSide(-1.0F);
+  const auto uniformlyScaledUv = renderStableFromSide(-1.0F);
   ASSERT_TRUE(uniformlyScaledUv.has_value());
   const auto uniformlyScaledUvNormals = uniformlyScaledUv->GetPixels(Engine::RenderAov::WorldNormal);
   ASSERT_GT(uniformlyScaledUvNormals.size(), center * 3U + 2U);
@@ -1279,7 +1290,7 @@ TEST(RenderFinalTests, WARPDoubleSidedNormalMapReversesTheWholeTangentBasisOnBac
   material.normalTextureTransform.rotation = DirectX::XM_PIDIV2;
   (void)scene.QueueSet(created.at(0).Entity, Engine::Ecs::MeshRenderer{.PrimitiveType = "plane", .Material = material});
   ASSERT_TRUE(scene.Update(0.0F));
-  const auto rotatedUv = renderFromSide(-1.0F);
+  const auto rotatedUv = renderStableFromSide(-1.0F);
   ASSERT_TRUE(rotatedUv.has_value());
   const auto rotatedUvNormals = rotatedUv->GetPixels(Engine::RenderAov::WorldNormal);
   ASSERT_GT(rotatedUvNormals.size(), center * 3U + 2U);
@@ -1291,7 +1302,7 @@ TEST(RenderFinalTests, WARPDoubleSidedNormalMapReversesTheWholeTangentBasisOnBac
   material.normalTextureTransform.scale = {2.0F, 0.5F};
   (void)scene.QueueSet(created.at(0).Entity, Engine::Ecs::MeshRenderer{.PrimitiveType = "plane", .Material = material});
   ASSERT_TRUE(scene.Update(0.0F));
-  const auto nonuniformUv = renderFromSide(-1.0F);
+  const auto nonuniformUv = renderStableFromSide(-1.0F);
   ASSERT_TRUE(nonuniformUv.has_value());
   const auto nonuniformUvNormals = nonuniformUv->GetPixels(Engine::RenderAov::WorldNormal);
   ASSERT_GT(nonuniformUvNormals.size(), center * 3U + 2U);
@@ -1302,7 +1313,7 @@ TEST(RenderFinalTests, WARPDoubleSidedNormalMapReversesTheWholeTangentBasisOnBac
   material.normalTextureGuid = normalYGuid;
   (void)scene.QueueSet(created.at(0).Entity, Engine::Ecs::MeshRenderer{.PrimitiveType = "plane", .Material = material});
   ASSERT_TRUE(scene.Update(0.0F));
-  const auto nonuniformUvNormalY = renderFromSide(-1.0F);
+  const auto nonuniformUvNormalY = renderStableFromSide(-1.0F);
   ASSERT_TRUE(nonuniformUvNormalY.has_value());
   const auto nonuniformUvNormalYNormals = nonuniformUvNormalY->GetPixels(Engine::RenderAov::WorldNormal);
   ASSERT_GT(nonuniformUvNormalYNormals.size(), center * 3U + 2U);
@@ -1315,7 +1326,7 @@ TEST(RenderFinalTests, WARPDoubleSidedNormalMapReversesTheWholeTangentBasisOnBac
   material.normalTextureTransform.scale = {-1.0F, 1.0F};
   (void)scene.QueueSet(created.at(0).Entity, Engine::Ecs::MeshRenderer{.PrimitiveType = "plane", .Material = material});
   ASSERT_TRUE(scene.Update(0.0F));
-  const auto mirroredUv = renderFromSide(-1.0F);
+  const auto mirroredUv = renderStableFromSide(-1.0F);
   ASSERT_TRUE(mirroredUv.has_value());
   const auto mirroredUvNormals = mirroredUv->GetPixels(Engine::RenderAov::WorldNormal);
   ASSERT_GT(mirroredUvNormals.size(), center * 3U + 2U);
@@ -1326,7 +1337,7 @@ TEST(RenderFinalTests, WARPDoubleSidedNormalMapReversesTheWholeTangentBasisOnBac
   material.normalTextureTransform = {};
   (void)scene.QueueSet(created.at(0).Entity, Engine::Ecs::MeshRenderer{.PrimitiveType = "plane", .Material = material});
   ASSERT_TRUE(scene.Update(0.0F));
-  const auto normalY = renderFromSide(-1.0F);
+  const auto normalY = renderStableFromSide(-1.0F);
   ASSERT_TRUE(normalY.has_value());
   const auto normalYNormals = normalY->GetPixels(Engine::RenderAov::WorldNormal);
   ASSERT_GT(normalYNormals.size(), center * 3U + 2U);
@@ -1334,7 +1345,7 @@ TEST(RenderFinalTests, WARPDoubleSidedNormalMapReversesTheWholeTangentBasisOnBac
   material.normalTextureTransform.scale = {1.0F, -1.0F};
   (void)scene.QueueSet(created.at(0).Entity, Engine::Ecs::MeshRenderer{.PrimitiveType = "plane", .Material = material});
   ASSERT_TRUE(scene.Update(0.0F));
-  const auto mirroredV = renderFromSide(-1.0F);
+  const auto mirroredV = renderStableFromSide(-1.0F);
   ASSERT_TRUE(mirroredV.has_value());
   const auto mirroredVNormals = mirroredV->GetPixels(Engine::RenderAov::WorldNormal);
   ASSERT_GT(mirroredVNormals.size(), center * 3U + 2U);
@@ -1347,8 +1358,8 @@ TEST(RenderFinalTests, WARPDoubleSidedNormalMapReversesTheWholeTangentBasisOnBac
   planeTransform.FlipHorizontal = true;
   (void)scene.QueueSet(created.at(0).Entity, planeTransform);
   ASSERT_TRUE(scene.Update(0.0F));
-  const auto mirroredFront = renderFromSide(-1.0F);
-  const auto mirroredBack = renderFromSide(1.0F);
+  const auto mirroredFront = renderStableFromSide(-1.0F);
+  const auto mirroredBack = renderStableFromSide(1.0F);
   ASSERT_TRUE(mirroredFront.has_value());
   ASSERT_TRUE(mirroredBack.has_value());
   const auto mirroredFrontNormals = mirroredFront->GetPixels(Engine::RenderAov::WorldNormal);
@@ -1372,12 +1383,12 @@ TEST(RenderFinalTests, WARPDoubleSidedNormalMapReversesTheWholeTangentBasisOnBac
   material.normalTextureTransform = {};
   (void)scene.QueueSet(created.at(0).Entity, Engine::Ecs::MeshRenderer{.PrimitiveType = "plane", .Material = material});
   ASSERT_TRUE(scene.Update(0.0F));
-  const auto anisotropicIdentity = renderFromPosition(-1.0F, 1.0F);
+  const auto anisotropicIdentity = renderStableFromPosition(-1.0F, 1.0F);
   ASSERT_TRUE(anisotropicIdentity.has_value());
   material.normalTextureTransform.rotation = DirectX::XM_PIDIV2;
   (void)scene.QueueSet(created.at(0).Entity, Engine::Ecs::MeshRenderer{.PrimitiveType = "plane", .Material = material});
   ASSERT_TRUE(scene.Update(0.0F));
-  const auto anisotropicRotatedNormalUv = renderFromPosition(-1.0F, 1.0F);
+  const auto anisotropicRotatedNormalUv = renderStableFromPosition(-1.0F, 1.0F);
   ASSERT_TRUE(anisotropicRotatedNormalUv.has_value());
   const auto identitySpecular = anisotropicIdentity->GetPixels(Engine::RenderAov::SpecularLighting);
   const auto rotatedSpecular = anisotropicRotatedNormalUv->GetPixels(Engine::RenderAov::SpecularLighting);

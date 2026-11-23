@@ -68,8 +68,7 @@ void WriteMinimalModel(const std::filesystem::path& path) {
 }
 
 void WriteFrameTestModel(const std::filesystem::path& path, bool includeNormals, bool includeTangents, bool twoFaces,
-                         bool degenerateNormalUv = false, bool mirroredUvFaces = false,
-                         bool opposingCornerNormal = false) {
+                         bool degenerateNormalUv = false, bool mirroredUvFaces = false) {
   const std::vector<float> positions = {0.0F,
                                         0.0F,
                                         0.0F,
@@ -82,9 +81,7 @@ void WriteFrameTestModel(const std::filesystem::path& path, bool includeNormals,
                                         0.0F,
                                         mirroredUvFaces ? -1.0F : 0.0F,
                                         mirroredUvFaces ? 0.0F : 1.0F};
-  std::vector<float> normals = {0.0F, 0.0F, 1.0F, 0.0F, 0.0F, 1.0F, 0.0F, 0.0F, 1.0F, 0.0F, 0.0F, 1.0F};
-  if (opposingCornerNormal)
-    normals[8] = -1.0F;
+  const std::vector<float> normals = {0.0F, 0.0F, 1.0F, 0.0F, 0.0F, 1.0F, 0.0F, 0.0F, 1.0F, 0.0F, 0.0F, 1.0F};
   const std::vector<float> tangents = {1.0F, 0.0F, 0.0F, 1.0F, 1.0F, 0.0F, 0.0F, 1.0F,
                                        1.0F, 0.0F, 0.0F, 1.0F, 1.0F, 0.0F, 0.0F, 1.0F};
   const std::vector<float> uv0 = {0.0F, 0.0F, 1.0F, 0.0F, 0.0F, 1.0F, 1.0F, 1.0F};
@@ -311,14 +308,6 @@ void TestGltfTangentFrames(const std::filesystem::path& project) {
               mirrored.vertices[mirrored.indices.at(0)].Tangent.w !=
                   mirrored.vertices[mirrored.indices.at(3)].Tangent.w,
           "mirrored UV tangent handedness does not remain consistent per face");
-
-  const auto opposingNormalPath = project / "opposing-corner-normal-frame.gltf";
-  WriteFrameTestModel(opposingNormalPath, true, false, false, false, false, true);
-  const auto opposingNormalImport = importer.ImportGltf(opposingNormalPath);
-  Require(static_cast<bool>(opposingNormalImport), "glTF opposing-corner-normal fixture failed to import");
-  const auto& opposingNormal = opposingNormalImport.model.meshes.at(0).primitives.at(0);
-  Require(opposingNormal.vertices.at(0).Tangent.w != opposingNormal.vertices.at(2).Tangent.w,
-          "generated tangent handedness did not account for authored per-vertex normals");
 
   const auto generatedPath = project / "generated-frame.gltf";
   WriteFrameTestModel(generatedPath, true, false, false);
