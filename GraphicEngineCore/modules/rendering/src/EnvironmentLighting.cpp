@@ -160,13 +160,14 @@ auto IntegratePrefilter(Vec3 normal, float roughness, const RadianceSampler& sam
 }
 
 auto GeometrySmithGgx(float noV, float noL, float roughness) -> float {
-  const float alpha = roughness * roughness;
+  const float alpha = (std::max)(roughness * roughness, 1.0e-3F);
   const float alphaSquared = alpha * alpha;
-  const auto geometryOne = [alphaSquared](float noX) -> float {
-    const float denominator = noX + std::sqrt((alphaSquared + ((1.0F - alphaSquared) * noX * noX)));
-    return denominator > 1.0e-6F ? (2.0F * noX / denominator) : 0.0F;
-  };
-  return geometryOne(noV) * geometryOne(noL);
+  const float safeNoV = (std::max)(noV, 0.0F);
+  const float safeNoL = (std::max)(noL, 0.0F);
+  const float smithV = safeNoL * std::sqrt((std::max)(alphaSquared + (1.0F - alphaSquared) * safeNoV * safeNoV, 0.0F));
+  const float smithL = safeNoV * std::sqrt((std::max)(alphaSquared + (1.0F - alphaSquared) * safeNoL * safeNoL, 0.0F));
+  const float denominator = smithV + smithL;
+  return denominator > 1.0e-6F ? (2.0F * safeNoV * safeNoL / denominator) : 0.0F;
 }
 
 auto IntegrateBrdf(float noV, float roughness) -> std::array<float, 2> {
@@ -286,12 +287,13 @@ auto CreateTexture(nvrhi::IDevice* device, const std::vector<FloatMip>& mips, co
   return texture;
 }
 
-auto CreateSampler(nvrhi::IDevice* device, bool mipFilter) -> nvrhi::SamplerHandle {
+auto CreateSampler(nvrhi::IDevice* device, bool mipFilter,
+                   nvrhi::SamplerAddressMode addressU = nvrhi::SamplerAddressMode::Wrap) -> nvrhi::SamplerHandle {
   if (device == nullptr) {
     return nullptr;
   }
   nvrhi::SamplerDesc desc;
-  desc.setAddressU(nvrhi::SamplerAddressMode::Wrap)
+  desc.setAddressU(addressU)
       .setAddressV(nvrhi::SamplerAddressMode::Clamp)
       .setAddressW(nvrhi::SamplerAddressMode::Clamp)
       .setMinFilter(true)
@@ -340,7 +342,8 @@ bool EnvironmentLightingResources::Initialize(nvrhi::IDevice* device, std::strin
   PanoramaSampler = CreateSampler(device, false);
   IrradianceSampler = CreateSampler(device, false);
   PrefilteredEnvironmentSampler = CreateSampler(device, true);
-  BrdfIntegrationSampler = CreateSampler(device, false);
+  // The LUT's U axis is NoV, so its endpoint must clamp instead of wrapping to grazing angles.
+  BrdfIntegrationSampler = CreateSampler(device, false, nvrhi::SamplerAddressMode::Clamp);
   if (Panorama == nullptr || IrradianceMap == nullptr || PrefilteredEnvironment == nullptr ||
       BrdfIntegrationLut == nullptr || PanoramaSampler == nullptr || IrradianceSampler == nullptr ||
       PrefilteredEnvironmentSampler == nullptr || BrdfIntegrationSampler == nullptr) {

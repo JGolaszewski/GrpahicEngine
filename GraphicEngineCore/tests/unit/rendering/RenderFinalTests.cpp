@@ -106,6 +106,33 @@ void WriteConstantHdr(const std::filesystem::path& path, uint8_t red) {
   output.write(reinterpret_cast<const char*>(pixels.data()), static_cast<std::streamsize>(pixels.size()));
 }
 
+void WriteDirectionalHdr(const std::filesystem::path& path) {
+  constexpr int width = 64;
+  constexpr int height = 32;
+  std::vector<float> pixels(static_cast<size_t>(width) * height * 3U, 0.001F);
+  const DirectX::XMFLOAT3 spotDirection{0.25F, 0.0F, -0.9682458F};
+  for (int y = 0; y < height; ++y) {
+    for (int x = 0; x < width; ++x) {
+      const float u = (static_cast<float>(x) + 0.5F) / static_cast<float>(width);
+      const float v = (static_cast<float>(y) + 0.5F) / static_cast<float>(height);
+      const float longitude = (u - 0.5F) * 2.0F * std::numbers::pi_v<float>;
+      const float latitude = v * std::numbers::pi_v<float>;
+      const DirectX::XMFLOAT3 direction{std::sin(latitude) * std::cos(longitude), std::cos(latitude),
+                                        std::sin(latitude) * std::sin(longitude)};
+      const float cosine = std::clamp(
+          direction.x * spotDirection.x + direction.y * spotDirection.y + direction.z * spotDirection.z, -1.0F, 1.0F);
+      const float angle = std::acos(cosine);
+      const float weight = 1000.0F * std::exp(-(angle * angle) / (2.0F * 0.04F * 0.04F));
+      const size_t offset = (static_cast<size_t>(y) * static_cast<size_t>(width) + static_cast<size_t>(x)) * 3U;
+      pixels[offset] += weight;
+      pixels[offset + 1U] += weight * 0.4F;
+      pixels[offset + 2U] += weight * 0.1F;
+    }
+  }
+  const std::string filename = path.string();
+  EXPECT_NE(stbi_write_hdr(filename.c_str(), width, height, 3, pixels.data()), 0);
+}
+
 auto HighSampleConstantEnvironmentReference(const std::array<double, 3>& radiance, double normalization, double f0,
                                             double roughness, uint32_t sampleCount) -> std::array<double, 3> {
   const double alpha = roughness * roughness;
@@ -129,6 +156,77 @@ auto HighSampleConstantEnvironmentReference(const std::array<double, 3>& radianc
   }
   for (double& channel : result) {
     channel *= std::numbers::pi / sampleCount;
+  }
+  return result;
+}
+
+auto HighSampleAnalyticNdfEnvironmentReference(const std::array<double, 3>& radiance, Engine::Renderer::BrdfModel model,
+                                               double f0, double roughness, double roughnessU, double roughnessV,
+                                               double gamma, uint32_t sampleCount, double noV = 1.0)
+    -> std::array<double, 3> {
+  using Engine::Renderer::Brdf::Pi;
+  const double alpha = (std::max)(static_cast<double>(Engine::Renderer::Brdf::MinAlpha), roughness * roughness);
+  const double alphaU = (std::max)(static_cast<double>(Engine::Renderer::Brdf::MinAlpha), roughnessU * roughnessU);
+  const double alphaV = (std::max)(static_cast<double>(Engine::Renderer::Brdf::MinAlpha), roughnessV * roughnessV);
+  const double geometryAlpha =
+      model == Engine::Renderer::BrdfModel::AshikhminShirley ? (std::max)(alphaU, alphaV) : alpha;
+  const double geometryAlphaSquared = geometryAlpha * geometryAlpha;
+  const double viewTangent = std::sqrt((std::max)(0.0, 1.0 - noV * noV));
+  std::array<double, 3> result{};
+  constexpr double goldenAngle = 2.39996322972865332;
+  for (uint32_t index = 0; index < sampleCount; ++index) {
+    const double radiusSquared = (static_cast<double>(index) + 0.5) / static_cast<double>(sampleCount);
+    const double noH = std::sqrt(1.0 - radiusSquared);
+    const double diskRadius = std::sqrt(radiusSquared);
+    const double phi = goldenAngle * static_cast<double>(index);
+    const double halfX = diskRadius * std::cos(phi);
+    const double halfY = diskRadius * std::sin(phi);
+    const double voH = viewTangent * halfX + noV * noH;
+    const double noL = 2.0 * voH * noH - noV;
+    if (voH <= 1.0e-6 || noL <= 1.0e-6) {
+      continue;
+    }
+    const double smithV = noL * std::sqrt(geometryAlphaSquared + (1.0 - geometryAlphaSquared) * noV * noV);
+    const double smithL = noV * std::sqrt(geometryAlphaSquared + (1.0 - geometryAlphaSquared) * noL * noL);
+    const double geometry = (smithV + smithL) > 1.0e-12 ? (2.0 * noV * noL) / (smithV + smithL) : 0.0;
+    const double fresnel = f0 + (1.0 - f0) * std::pow(1.0 - voH, 5.0);
+    double distribution = 0.0;
+    switch (model) {
+    case Engine::Renderer::BrdfModel::GGX:
+      distribution = Engine::Renderer::Brdf::EvaluateGgxNdf(static_cast<float>(noH), static_cast<float>(alpha));
+      break;
+    case Engine::Renderer::BrdfModel::GTR:
+      distribution = Engine::Renderer::Brdf::EvaluateGtrNdf(static_cast<float>(noH), static_cast<float>(alpha),
+                                                            static_cast<float>(gamma));
+      break;
+    case Engine::Renderer::BrdfModel::Beckmann:
+      distribution = Engine::Renderer::Brdf::EvaluateBeckmannNdf(static_cast<float>(noH), static_cast<float>(alpha));
+      break;
+    case Engine::Renderer::BrdfModel::Gauss:
+      distribution = Engine::Renderer::Brdf::EvaluateGaussNdf(static_cast<float>(noH), static_cast<float>(alpha));
+      break;
+    case Engine::Renderer::BrdfModel::BlinnPhong:
+      distribution = Engine::Renderer::Brdf::EvaluateBlinnPhongNdf(static_cast<float>(noH), static_cast<float>(alpha));
+      break;
+    case Engine::Renderer::BrdfModel::AshikhminShirley:
+      distribution = Engine::Renderer::Brdf::EvaluateAshikhminShirleyNdf(
+          DirectX::XMFLOAT3{static_cast<float>(halfX), static_cast<float>(halfY), static_cast<float>(noH)},
+          static_cast<float>(roughnessU), static_cast<float>(roughnessV));
+      break;
+    case Engine::Renderer::BrdfModel::Schlick:
+      distribution = Engine::Renderer::Brdf::EvaluateSchlickNdf(static_cast<float>(noH), static_cast<float>(alpha));
+      break;
+    case Engine::Renderer::BrdfModel::Sawicki:
+      distribution = Engine::Renderer::Brdf::EvaluateSawickiNdf(static_cast<float>(noH), static_cast<float>(alpha));
+      break;
+    default:
+      continue;
+    }
+    const double contribution =
+        Pi * distribution * geometry * fresnel * voH / (noV * noH * static_cast<double>(sampleCount));
+    for (size_t channel = 0; channel < result.size(); ++channel) {
+      result[channel] += radiance[channel] * contribution;
+    }
   }
   return result;
 }
@@ -2245,6 +2343,229 @@ TEST(RenderFinalTests, WARPPrismDirectAndConstantEnvironmentMatchIndependentRefe
                 directReference + dimReference[channel],
                 2.0e-3 + 5.0e-3 * std::abs(directReference + dimReference[channel]))
         << "updated environment channel=" << channel;
+  }
+  std::filesystem::remove_all(project);
+}
+
+TEST(RenderFinalTests, WARPAnalyticNdfEnvironmentMatchesReferencesAcrossNdfRoughnessAndViewAngles) {
+  EngineTests::WarpDevice device;
+  if (!device.Initialize()) {
+    GTEST_SKIP() << "D3D11 WARP device could not be created on this host";
+  }
+
+  const auto project = std::filesystem::temp_directory_path() /
+                       ("GraphicEngineAnalyticNdfReference-" +
+                        std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+  std::filesystem::create_directories(project);
+  WriteConstantHdr(project / "constant.hdr", 128);
+  WriteDirectionalHdr(project / "directional.hdr");
+  Engine::AssetManager assets(project);
+  const auto environmentGuid = assets.ImportEnvironment("constant.hdr");
+  const auto directionalEnvironmentGuid = assets.ImportEnvironment("directional.hdr");
+  ASSERT_TRUE(environmentGuid.has_value()) << (environmentGuid.has_value() ? "" : environmentGuid.error().Message);
+  ASSERT_TRUE(directionalEnvironmentGuid.has_value())
+      << (directionalEnvironmentGuid.has_value() ? "" : directionalEnvironmentGuid.error().Message);
+
+  EngineTests::WarpRenderBackend backend(device.GetDevice());
+  Engine::RenderSystem renderer(&backend);
+  ASSERT_TRUE(renderer.IsValid());
+  renderer.SetAssetManager(&assets);
+  std::string error;
+  ASSERT_TRUE(renderer.PrepareAssetEnvironment(*environmentGuid, error)) << error;
+  ASSERT_TRUE(renderer.PrepareAssetEnvironment(*directionalEnvironmentGuid, error)) << error;
+
+  Engine::Renderer::MaterialProperties properties;
+  properties.BaseColor = {0.0F, 0.0F, 0.0F, 1.0F};
+  properties.SpecularMode = Engine::Renderer::DielectricSpecularMode::ExplicitF0;
+  properties.SpecularF0 = {0.04F, 0.04F, 0.04F};
+  properties.Roughness = 0.65F;
+  auto material = renderer.CreateMaterial(properties);
+  ASSERT_NE(material, nullptr);
+  ASSERT_TRUE(renderer.CreatePrimitive(Engine::PrimitiveShape::Plane, material));
+
+  Engine::Scene scene;
+  const uint64_t planeSequence = scene.QueueCreate("Analytic NDF reference plane");
+  const auto created = scene.sync();
+  ASSERT_EQ(created.size(), 1U);
+  ASSERT_EQ(created.front().Sequence, planeSequence);
+  ASSERT_TRUE(created.front().Outcome);
+  Engine::Ecs::LocalTransform planeTransform;
+  DirectX::XMFLOAT4 planeRotation{};
+  DirectX::XMStoreFloat4(&planeRotation, DirectX::XMQuaternionRotationRollPitchYaw(-DirectX::XM_PIDIV2, 0.0F, 0.0F));
+  planeTransform.Rotation = {planeRotation.x, planeRotation.y, planeRotation.z, planeRotation.w};
+  planeTransform.Scale = {2.0F, 2.0F, 2.0F};
+  (void)scene.QueueSet(created.front().Entity, planeTransform);
+  (void)scene.QueueAdd(created.front().Entity, Engine::Ecs::MeshRenderer{.PrimitiveType = "plane"});
+  ASSERT_TRUE(scene.Update(0.0F));
+  const uint64_t skyboxSequence =
+      scene.QueueAdd(scene.SceneRootEntity(), Engine::Ecs::Skybox{.EnvironmentGuid = *environmentGuid});
+  const auto setup = scene.sync();
+  ASSERT_EQ(setup.size(), 1U);
+  ASSERT_EQ(setup.front().Sequence, skyboxSequence);
+  ASSERT_TRUE(setup.front().Outcome);
+  ASSERT_TRUE(scene.Update(0.0F));
+
+  Engine::Renderer::CameraView camera;
+  camera.Position = {0.0F, 0.0F, -5.0F};
+  constexpr uint32_t imageSize = 17U;
+  constexpr uint32_t referenceSamples = 1U << 18U;
+  constexpr std::array<double, 3> radiance{2.0, 1.0, 0.5};
+  constexpr std::array<double, 4> noVValues{1.0, 0.5, 0.2, 0.05};
+  constexpr std::array<float, 8> gtrGammaValues{1.0F, 1.0001F, 1.0002F, 1.3F, 1.9999F, 2.0F, 2.0001F, 8.0F};
+  constexpr std::array<Engine::Renderer::BrdfModel, 8> models = {
+      Engine::Renderer::BrdfModel::GGX,        Engine::Renderer::BrdfModel::GTR,
+      Engine::Renderer::BrdfModel::Beckmann,   Engine::Renderer::BrdfModel::Gauss,
+      Engine::Renderer::BrdfModel::BlinnPhong, Engine::Renderer::BrdfModel::AshikhminShirley,
+      Engine::Renderer::BrdfModel::Schlick,    Engine::Renderer::BrdfModel::Sawicki};
+  constexpr std::array<float, 3> roughnessValues{0.032F, 0.65F, 0.9999F};
+  const Engine::AmbientLightSettings ambientDisabled{.Enabled = false};
+  for (const auto model : models) {
+    for (const float roughness : roughnessValues) {
+      const uint32_t gammaCount =
+          model == Engine::Renderer::BrdfModel::GTR
+              ? (roughness <= 0.04F ? 2U : (roughness >= 0.9F ? 3U : static_cast<uint32_t>(gtrGammaValues.size())))
+              : 1U;
+      for (uint32_t gammaIndex = 0; gammaIndex < gammaCount; ++gammaIndex) {
+        float gamma = 1.3F;
+        if (model == Engine::Renderer::BrdfModel::GTR) {
+          if (roughness <= 0.04F)
+            gamma = gammaIndex == 0U ? 1.0F : 8.0F;
+          else if (roughness >= 0.9F)
+            gamma = gammaIndex == 0U ? 1.0002F : (gammaIndex == 1U ? 2.0F : 8.0F);
+          else
+            gamma = gtrGammaValues[gammaIndex];
+        }
+        const auto viewCount = roughness <= 0.04F || roughness >= 0.9F ? 1U : static_cast<uint32_t>(noVValues.size());
+        for (uint32_t viewIndex = 0; viewIndex < viewCount; ++viewIndex) {
+          const double noV = noVValues[viewIndex];
+          const float cameraX = static_cast<float>(5.0 * std::sqrt((1.0 / (noV * noV)) - 1.0));
+          camera.Position = {cameraX, 0.0F, -5.0F};
+          DirectX::XMFLOAT4 cameraRotation{};
+          DirectX::XMStoreFloat4(&cameraRotation,
+                                 DirectX::XMQuaternionRotationRollPitchYaw(0.0F, -std::atan2(cameraX, 5.0F), 0.0F));
+          camera.Rotation = {cameraRotation.x, cameraRotation.y, cameraRotation.z, cameraRotation.w};
+          properties.Model = model;
+          properties.Roughness = roughness;
+          properties.GtrGamma = gamma;
+          properties.AnisotropicRoughnessU = 0.6F;
+          properties.AnisotropicRoughnessV = 0.85F;
+          material->SetProperties(properties);
+          const auto output = renderer.RenderFinal(scene, camera, imageSize, imageSize, {}, {}, {}, ambientDisabled);
+          ASSERT_TRUE(output.has_value()) << (output.has_value() ? "" : output.error().Message);
+          const auto worldNormal = output->GetPixels(Engine::RenderAov::WorldNormal);
+          const size_t centerOffset = (static_cast<size_t>(imageSize / 2U) * imageSize + imageSize / 2U) * 3U;
+          ASSERT_GT(worldNormal.size(), centerOffset + 2U);
+          EXPECT_NEAR(worldNormal[centerOffset], 0.0F, 1.0e-3F);
+          EXPECT_NEAR(worldNormal[centerOffset + 1U], 0.0F, 1.0e-3F);
+          EXPECT_NEAR(worldNormal[centerOffset + 2U], -1.0F, 1.0e-3F);
+          const auto specular = CenterSpecular(*output, imageSize, imageSize);
+          for (size_t channel = 0; channel < specular.size(); ++channel) {
+            EXPECT_TRUE(std::isfinite(specular[channel]))
+                << "non-finite IBL for model=" << static_cast<uint32_t>(model) << " roughness=" << roughness
+                << " gamma=" << gamma << " channel=" << channel;
+          }
+          if (roughness <= 0.04F && model != Engine::Renderer::BrdfModel::Sawicki) {
+            EXPECT_GT(specular[0], 0.04F)
+                << "narrow NDF lost most of its reflected energy for model=" << static_cast<uint32_t>(model)
+                << " gamma=" << gamma;
+            continue;
+          }
+          const auto reference = HighSampleAnalyticNdfEnvironmentReference(
+              radiance, model, 0.04, roughness, properties.AnisotropicRoughnessU, properties.AnisotropicRoughnessV,
+              gamma, referenceSamples, noV);
+          for (size_t channel = 0; channel < specular.size(); ++channel) {
+            const double tolerance = 0.02 + 0.18 * std::abs(reference[channel]);
+            EXPECT_NEAR(specular[channel], reference[channel], tolerance)
+                << "model=" << static_cast<uint32_t>(model) << " roughness=" << roughness << " gamma=" << gamma
+                << " NoV=" << noV << " channel=" << channel;
+          }
+        }
+      }
+    }
+  }
+
+  camera.Position = {0.0F, 0.0F, -5.0F};
+  camera.Rotation = {0.0F, 0.0F, 0.0F, 1.0F};
+  const uint64_t directionalSkyboxSequence =
+      scene.QueueSet(scene.SceneRootEntity(), Engine::Ecs::Skybox{.EnvironmentGuid = *directionalEnvironmentGuid});
+  const auto directionalSkybox = scene.sync();
+  ASSERT_EQ(directionalSkybox.size(), 1U);
+  ASSERT_EQ(directionalSkybox.front().Sequence, directionalSkyboxSequence);
+  ASSERT_TRUE(directionalSkybox.front().Outcome);
+  properties.Model = Engine::Renderer::BrdfModel::AshikhminShirley;
+  properties.Roughness = 0.5F;
+  properties.AnisotropicRoughnessU = 0.2F;
+  properties.AnisotropicRoughnessV = 0.8F;
+  material->SetProperties(properties);
+  const auto narrowU = renderer.RenderFinal(scene, camera, imageSize, imageSize, {}, {}, {}, ambientDisabled);
+  ASSERT_TRUE(narrowU.has_value()) << (narrowU.has_value() ? "" : narrowU.error().Message);
+  const auto narrowUCenter = CenterSpecular(*narrowU, imageSize, imageSize);
+  properties.AnisotropicRoughnessU = 0.8F;
+  properties.AnisotropicRoughnessV = 0.2F;
+  material->SetProperties(properties);
+  const auto broadU = renderer.RenderFinal(scene, camera, imageSize, imageSize, {}, {}, {}, ambientDisabled);
+  ASSERT_TRUE(broadU.has_value()) << (broadU.has_value() ? "" : broadU.error().Message);
+  const auto broadUCenter = CenterSpecular(*broadU, imageSize, imageSize);
+  EXPECT_GT(broadUCenter[0], narrowUCenter[0] * 1.5F + 1.0e-3F)
+      << "rotating the anisotropic roughness axes should move energy into the x-aligned environment feature";
+
+  const uint64_t constantSkyboxSequence =
+      scene.QueueSet(scene.SceneRootEntity(), Engine::Ecs::Skybox{.EnvironmentGuid = *environmentGuid});
+  const auto constantSkybox = scene.sync();
+  ASSERT_EQ(constantSkybox.size(), 1U);
+  ASSERT_EQ(constantSkybox.front().Sequence, constantSkyboxSequence);
+  ASSERT_TRUE(constantSkybox.front().Outcome);
+  camera.Position = {0.0F, 0.0F, -5.0F};
+  camera.Rotation = {0.0F, 0.0F, 0.0F, 1.0F};
+
+  properties.Workflow = Engine::Renderer::MaterialWorkflow::SpecularGlossiness;
+  properties.Model = Engine::Renderer::BrdfModel::GGX;
+  properties.Roughness = 0.5F;
+  properties.BaseColor = {0.8F, 0.6F, 0.4F, 1.0F};
+  properties.SpecularF0 = {0.5F, 0.3F, 0.2F};
+  material->SetProperties(properties);
+  const auto untextured = renderer.RenderFinal(scene, camera, imageSize, imageSize, {}, {}, {}, ambientDisabled);
+  ASSERT_TRUE(untextured.has_value()) << (untextured.has_value() ? "" : untextured.error().Message);
+  const auto untexturedDiffuse = untextured->GetPixels(Engine::RenderAov::DiffuseLighting);
+  const size_t center = (static_cast<size_t>(imageSize / 2U) * imageSize + imageSize / 2U) * 3U;
+  ASSERT_GT(untexturedDiffuse.size(), center + 2U);
+  for (size_t channel = 0; channel < 3U; ++channel) {
+    const std::array<float, 3> baseColor{properties.BaseColor.x, properties.BaseColor.y, properties.BaseColor.z};
+    constexpr std::array<float, 3> maxF0Partition{0.5F, 0.5F, 0.5F};
+    EXPECT_NEAR(untexturedDiffuse[center + channel],
+                static_cast<float>(radiance[channel]) * baseColor[channel] * (1.0F - maxF0Partition[channel]), 0.03F);
+  }
+
+  Engine::ImportedImage whiteImage{.name = "white SG material map",
+                                   .mimeType = "image/raw",
+                                   .width = 1,
+                                   .height = 1,
+                                   .rgba8 = {255, 255, 255, 255}};
+  Engine::ImportedImage flatNormalImage{.name = "flat material normal",
+                                        .mimeType = "image/raw",
+                                        .width = 1,
+                                        .height = 1,
+                                        .rgba8 = {128, 128, 255, 255}};
+  auto baseColorTexture = renderer.GetOrCreateTexture("analytic-ndf-base-color", 1U, whiteImage, true, error);
+  auto normalTexture =
+      renderer.GetOrCreateTexture("analytic-ndf-normal", 1U, flatNormalImage, false, error, nullptr, true);
+  auto specularGlossinessTexture = renderer.GetOrCreateTexture("analytic-ndf-spec-gloss", 1U, whiteImage, true, error);
+  auto occlusionTexture = renderer.GetOrCreateTexture("analytic-ndf-occlusion", 1U, whiteImage, false, error);
+  auto emissiveTexture = renderer.GetOrCreateTexture("analytic-ndf-emissive", 1U, whiteImage, true, error);
+  ASSERT_NE(baseColorTexture, nullptr) << error;
+  ASSERT_NE(normalTexture, nullptr) << error;
+  ASSERT_NE(specularGlossinessTexture, nullptr) << error;
+  ASSERT_NE(occlusionTexture, nullptr) << error;
+  ASSERT_NE(emissiveTexture, nullptr) << error;
+  ASSERT_TRUE(renderer.SetPbrMaterialTextures(material, baseColorTexture, normalTexture, specularGlossinessTexture,
+                                              occlusionTexture, emissiveTexture, true));
+  const auto textured = renderer.RenderFinal(scene, camera, imageSize, imageSize, {}, {}, {}, ambientDisabled);
+  ASSERT_TRUE(textured.has_value()) << (textured.has_value() ? "" : textured.error().Message);
+  const auto texturedDiffuse = textured->GetPixels(Engine::RenderAov::DiffuseLighting);
+  ASSERT_GT(texturedDiffuse.size(), center + 2U);
+  for (size_t channel = 0; channel < 3U; ++channel) {
+    EXPECT_NEAR(texturedDiffuse[center + channel], untexturedDiffuse[center + channel], 0.03F)
+        << "textured SG diffuse channel=" << channel;
   }
   std::filesystem::remove_all(project);
 }
