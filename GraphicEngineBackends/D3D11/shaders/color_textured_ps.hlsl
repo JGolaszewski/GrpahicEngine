@@ -355,12 +355,17 @@ PS_OUTPUT main_ps(VS_OUTPUT input, bool isFrontFace : SV_IsFrontFace)
         tangentInput = -tangentInput;
         tangentHandedness = -tangentHandedness;
     }
-    const float3 tangent = BrdfTangentForNormal(geometricNormal, tangentInput);
-    const float3 bitangent = cross(geometricNormal, tangent) * tangentHandedness;
+    const float3 materialTangent = BrdfTangentForNormal(geometricNormal, tangentInput);
+    const float3 materialBitangent = cross(geometricNormal, materialTangent) * tangentHandedness;
+    float3 normalMapTangent = materialTangent;
+    float normalMapHandedness = tangentHandedness;
+    BrdfApplyUvTransformToTangentFrame(geometricNormal, g_TextureTransformRows[1], normalMapTangent,
+        normalMapHandedness);
+    const float3 normalMapBitangent = cross(geometricNormal, normalMapTangent) * normalMapHandedness;
     float3 tangentNormal = g_NormalMap.Sample(g_NormalSampler, normalUv).xyz * 2.0f - 1.0f;
     tangentNormal.xy *= g_TextureParams.x;
-    float3 N = BrdfNormalizeOr(tangent * tangentNormal.x + bitangent * tangentNormal.y + geometricNormal * tangentNormal.z,
-        geometricNormal);
+    float3 N = BrdfNormalizeOr(normalMapTangent * tangentNormal.x + normalMapBitangent * tangentNormal.y +
+        geometricNormal * tangentNormal.z, geometricNormal);
     const bool isSpecularGlossiness = (g_ModelFlags.z & 0x100u) != 0u;
     float  metallic = saturate(g_EmissiveMetallic.w * metallicRoughnessSample.b);
     const float roughness = isSpecularGlossiness
@@ -454,8 +459,8 @@ PS_OUTPUT main_ps(VS_OUTPUT input, bool isFrontFace : SV_IsFrontFace)
         float3 specularBrdf;
         if (g_ModelFlags.y == 9u)
         {
-            const float3 ndfTangent = BrdfTangentForNormal(N, tangent);
-            const float ndfHandedness = dot(cross(N, ndfTangent), bitangent) < 0.0f ? -1.0f : 1.0f;
+            const float3 ndfTangent = BrdfTangentForNormal(N, materialTangent);
+            const float ndfHandedness = dot(cross(N, ndfTangent), materialBitangent) < 0.0f ? -1.0f : 1.0f;
             const float3 ndfBitangent = cross(N, ndfTangent) * ndfHandedness;
             const float2 ndfCoord = float2(dot(query.H, ndfTangent), dot(query.H, ndfBitangent));
             const float2 residualUv = PrismNdfFilterUv(ndfCoord * 0.5f + 0.5f);
@@ -472,8 +477,8 @@ PS_OUTPUT main_ps(VS_OUTPUT input, bool isFrontFace : SV_IsFrontFace)
         }
         else if (g_ModelFlags.y == 6u)
         {
-            const float3 ndfTangent = BrdfTangentForNormal(N, tangent);
-            const float ndfHandedness = dot(cross(N, ndfTangent), bitangent) < 0.0f ? -1.0f : 1.0f;
+            const float3 ndfTangent = BrdfTangentForNormal(N, materialTangent);
+            const float ndfHandedness = dot(cross(N, ndfTangent), materialBitangent) < 0.0f ? -1.0f : 1.0f;
             const float3 ndfBitangent = cross(N, ndfTangent) * ndfHandedness;
             EvaluateAshikhminShirleyBrdfComponents(query, ndfTangent, ndfBitangent, brdfBaseColor, brdfMetallic,
                 brdfF0, g_SpecularParams.w, g_AlphaParams.y, diffuseFresnelWeight, diffuseBrdf, specularBrdf);
@@ -547,7 +552,7 @@ PS_OUTPUT main_ps(VS_OUTPUT input, bool isFrontFace : SV_IsFrontFace)
                     iblF0, saturate(dot(N, viewDirection)), saturate(roughness));
                 ambientDiffuse = irradiance * diffuseColor * lerp(1.0f, 1.0f - fresnel, diffuseFresnelWeight) /
                     BRDF_PI * occlusion;
-                ambientSpecular = EvaluatePrismNdfEnvironmentSpecular(N, viewDirection, tangent, bitangent,
+                ambientSpecular = EvaluatePrismNdfEnvironmentSpecular(N, viewDirection, materialTangent, materialBitangent,
                     iblF0, alpha, input.pos.xy) * occlusion;
             }
         }
@@ -560,7 +565,7 @@ PS_OUTPUT main_ps(VS_OUTPUT input, bool isFrontFace : SV_IsFrontFace)
                 ambientDiffuse = irradiance * diffuseColor * lerp(1.0f, 1.0f - fresnel, diffuseFresnelWeight) /
                     BRDF_PI * occlusion;
                 ambientSpecular = EvaluateAnalyticNdfEnvironmentSpecular(g_ModelFlags.y, N, viewDirection,
-                    tangent, bitangent, iblF0, roughness, g_SpecularParams.w, g_AlphaParams.y,
+                    materialTangent, materialBitangent, iblF0, roughness, g_SpecularParams.w, g_AlphaParams.y,
                     g_SurfaceParams.z, input.pos.xy) * occlusion;
             }
         }

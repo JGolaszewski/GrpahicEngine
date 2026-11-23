@@ -1,4 +1,5 @@
 file(GLOB_RECURSE ENGINE_ASSET_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
+list(FILTER ENGINE_ASSET_SOURCES EXCLUDE REGEX "/third_party/")
 add_library(EngineAssets OBJECT ${ENGINE_ASSET_SOURCES})
 configure_engine_module(EngineAssets assets)
 target_link_libraries(EngineAssets PRIVATE
@@ -9,4 +10,9 @@ target_link_libraries(EngineAssets PRIVATE
 target_include_directories(EngineAssets SYSTEM PRIVATE
     "${ENGINE_TINYGLTF_INCLUDE_DIR}"
     "${ENGINE_STB_INCLUDE_DIR}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/third_party/mikktspace"
 )
+
+add_library(EngineMikkTSpace OBJECT src/third_party/mikktspace/mikktspace.cpp)
+target_compile_features(EngineMikkTSpace PRIVATE cxx_std_11)
+target_compile_options(EngineMikkTSpace PRIVATE "$<$<CXX_COMPILER_ID:MSVC>:/W0>")

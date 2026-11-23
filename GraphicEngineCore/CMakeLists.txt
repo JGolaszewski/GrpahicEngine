@@ -39,6 +39,7 @@ set(CORE_MODULE_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/modules")
 add_library(GraphicEngineCore SHARED ${CORE_HEADERS}
     $<TARGET_OBJECTS:EngineRuntime>
     $<TARGET_OBJECTS:EngineAssets>
+    $<TARGET_OBJECTS:EngineMikkTSpace>
     $<TARGET_OBJECTS:EngineScene>
     $<TARGET_OBJECTS:EngineRendering>
 )
@@ -113,6 +114,9 @@ file(GLOB_RECURSE ENGINE_STYLE_FILES CONFIGURE_DEPENDS
     "${PROJECT_SOURCE_DIR}/SandboxApp/*.cpp"
     "${PROJECT_SOURCE_DIR}/SandboxApp/*.cc"
 )
+list(FILTER ENGINE_STYLE_FILES EXCLUDE
+    REGEX "/GraphicEngineCore/modules/assets/src/third_party/mikktspace/"
+)
 if(CLANG_FORMAT_EXECUTABLE)
     add_custom_target(format
         COMMAND "${CLANG_FORMAT_EXECUTABLE}" --dry-run --Werror ${ENGINE_STYLE_FILES}
@@ -133,6 +137,7 @@ file(GLOB_RECURSE ENGINE_TIDY_SOURCES CONFIGURE_DEPENDS
     "${PROJECT_SOURCE_DIR}/SandboxApp/*.cpp"
 )
 list(FILTER ENGINE_TIDY_SOURCES EXCLUDE REGEX "/tests/benchmarks/")
+list(FILTER ENGINE_TIDY_SOURCES EXCLUDE REGEX "/modules/assets/src/third_party/mikktspace/")
 if(ENGINE_BUILD_BENCHMARKS)
     file(GLOB_RECURSE ENGINE_TIDY_BENCHMARK_SOURCES CONFIGURE_DEPENDS
         "${PROJECT_SOURCE_DIR}/GraphicEngineCore/tests/benchmarks/*.cpp"

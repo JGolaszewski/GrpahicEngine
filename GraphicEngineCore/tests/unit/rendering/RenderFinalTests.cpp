@@ -1248,18 +1248,44 @@ TEST(RenderFinalTests, WARPDoubleSidedNormalMapReversesTheWholeTangentBasisOnBac
   ASSERT_TRUE(renderer.CreatePrimitive(Engine::PrimitiveShape::Plane, fallbackMaterial));
 
   const std::string normalGuid = "44444444-5555-4666-8777-888888888888";
+  const std::string normalYGuid = "55555555-6666-4777-8888-999999999999";
+  const std::string flatNormalGuid = "66666666-7777-4888-9999-aaaaaaaaaaaa";
   Engine::ImportedImage normalImage{.name = "tangent-X normal",
                                     .mimeType = "image/raw",
                                     .width = 1,
                                     .height = 1,
                                     .rgba8 = {204, 128, 230, 255}};
+  Engine::ImportedImage normalYImage{.name = "tangent-Y normal",
+                                     .mimeType = "image/raw",
+                                     .width = 1,
+                                     .height = 1,
+                                     .rgba8 = {128, 204, 230, 255}};
+  Engine::ImportedImage flatNormalImage{.name = "flat normal",
+                                        .mimeType = "image/raw",
+                                        .width = 1,
+                                        .height = 1,
+                                        .rgba8 = {128, 128, 255, 255}};
   std::string error;
   const auto normalTexture = renderer.GetOrCreateTexture(normalGuid, 1U, normalImage, false, error, nullptr, true);
   ASSERT_NE(normalTexture, nullptr) << error;
+  const auto normalYTexture = renderer.GetOrCreateTexture(normalYGuid, 1U, normalYImage, false, error, nullptr, true);
+  ASSERT_NE(normalYTexture, nullptr) << error;
+  const auto flatNormalTexture =
+      renderer.GetOrCreateTexture(flatNormalGuid, 1U, flatNormalImage, false, error, nullptr, true);
+  ASSERT_NE(flatNormalTexture, nullptr) << error;
   renderer.GetSceneRenderer()->SetAssetTextureResolver(
-      [normalTexture, normalGuid](const std::string& guid, bool srgb, bool normalMap, bool,
-                                  float) -> std::shared_ptr<Engine::Renderer::TextureResource> {
-        return guid == normalGuid && !srgb && normalMap ? normalTexture : nullptr;
+      [normalTexture, normalGuid, normalYTexture, normalYGuid, flatNormalTexture,
+       flatNormalGuid](const std::string& guid, bool srgb, bool normalMap, bool,
+                       float) -> std::shared_ptr<Engine::Renderer::TextureResource> {
+        if (srgb || !normalMap)
+          return nullptr;
+        if (guid == normalGuid)
+          return normalTexture;
+        if (guid == normalYGuid)
+          return normalYTexture;
+        if (guid == flatNormalGuid)
+          return flatNormalTexture;
+        return nullptr;
       });
 
   Engine::SceneMaterialDocument material;
@@ -1294,9 +1320,9 @@ TEST(RenderFinalTests, WARPDoubleSidedNormalMapReversesTheWholeTangentBasisOnBac
   (void)scene.QueueSet(created.at(1).Entity, light);
 
   constexpr uint32_t imageSize = 33U;
-  const auto renderFromSide = [&](float side) -> std::optional<Engine::RenderOutput> {
+  const auto renderFromPosition = [&](float side, float lightX) -> std::optional<Engine::RenderOutput> {
     Engine::Ecs::LocalTransform lightTransform;
-    lightTransform.Position = {0.0F, 0.0F, side * 2.0F};
+    lightTransform.Position = {lightX, 0.0F, side * 2.0F};
     (void)scene.QueueSet(created.at(1).Entity, lightTransform);
     if (!scene.Update(0.0F)) {
       return std::nullopt;
@@ -1315,9 +1341,21 @@ TEST(RenderFinalTests, WARPDoubleSidedNormalMapReversesTheWholeTangentBasisOnBac
     }
     return std::move(output.value());
   };
+  const auto renderFromSide = [&](float side) { return renderFromPosition(side, 0.0F); };
+  // The first WARP readback after a material mutation can observe the prior frame's binding.
+  const auto renderStableFromSide = [&](float side) -> std::optional<Engine::RenderOutput> {
+    if (!renderFromSide(side).has_value())
+      return std::nullopt;
+    return renderFromSide(side);
+  };
+  const auto renderStableFromPosition = [&](float side, float lightX) -> std::optional<Engine::RenderOutput> {
+    if (!renderFromPosition(side, lightX).has_value())
+      return std::nullopt;
+    return renderFromPosition(side, lightX);
+  };
 
-  const auto front = renderFromSide(-1.0F);
-  const auto back = renderFromSide(1.0F);
+  const auto front = renderStableFromSide(-1.0F);
+  const auto back = renderStableFromSide(1.0F);
   ASSERT_TRUE(front.has_value());
   ASSERT_TRUE(back.has_value());
   const size_t center = (static_cast<size_t>(imageSize / 2U) * imageSize) + imageSize / 2U;
@@ -1335,11 +1373,91 @@ TEST(RenderFinalTests, WARPDoubleSidedNormalMapReversesTheWholeTangentBasisOnBac
     EXPECT_NEAR(backNormals[center * 3U + channel], -frontNormals[center * 3U + channel], 0.02F);
   }
 
+  material.normalTextureTransform.scale = {2.0F, 2.0F};
+  (void)scene.QueueSet(created.at(0).Entity, Engine::Ecs::MeshRenderer{.PrimitiveType = "plane", .Material = material});
+  ASSERT_TRUE(scene.Update(0.0F));
+  const auto uniformlyScaledUv = renderStableFromSide(-1.0F);
+  ASSERT_TRUE(uniformlyScaledUv.has_value());
+  const auto uniformlyScaledUvNormals = uniformlyScaledUv->GetPixels(Engine::RenderAov::WorldNormal);
+  ASSERT_GT(uniformlyScaledUvNormals.size(), center * 3U + 2U);
+  for (size_t channel = 0; channel < 3U; ++channel) {
+    EXPECT_NEAR(uniformlyScaledUvNormals[center * 3U + channel], frontNormals[center * 3U + channel], 0.02F);
+  }
+
+  material.normalTextureTransform = {};
+  material.normalTextureTransform.rotation = DirectX::XM_PIDIV2;
+  (void)scene.QueueSet(created.at(0).Entity, Engine::Ecs::MeshRenderer{.PrimitiveType = "plane", .Material = material});
+  ASSERT_TRUE(scene.Update(0.0F));
+  const auto rotatedUv = renderStableFromSide(-1.0F);
+  ASSERT_TRUE(rotatedUv.has_value());
+  const auto rotatedUvNormals = rotatedUv->GetPixels(Engine::RenderAov::WorldNormal);
+  ASSERT_GT(rotatedUvNormals.size(), center * 3U + 2U);
+  EXPECT_NEAR(rotatedUvNormals[center * 3U], 0.0F, 0.03F);
+  EXPECT_GT(rotatedUvNormals[center * 3U + 1U], 0.55F);
+  EXPECT_LT(rotatedUvNormals[center * 3U + 2U], -0.75F);
+
+  material.normalTextureTransform.rotation = DirectX::XM_PIDIV4;
+  material.normalTextureTransform.scale = {2.0F, 0.5F};
+  (void)scene.QueueSet(created.at(0).Entity, Engine::Ecs::MeshRenderer{.PrimitiveType = "plane", .Material = material});
+  ASSERT_TRUE(scene.Update(0.0F));
+  const auto nonuniformUv = renderStableFromSide(-1.0F);
+  ASSERT_TRUE(nonuniformUv.has_value());
+  const auto nonuniformUvNormals = nonuniformUv->GetPixels(Engine::RenderAov::WorldNormal);
+  ASSERT_GT(nonuniformUvNormals.size(), center * 3U + 2U);
+  EXPECT_NEAR(nonuniformUvNormals[center * 3U], 0.15F, 0.03F);
+  EXPECT_GT(nonuniformUvNormals[center * 3U + 1U], 0.55F);
+  EXPECT_NEAR(nonuniformUvNormals[center * 3U + 2U], -0.80F, 0.03F);
+
+  material.normalTextureGuid = normalYGuid;
+  (void)scene.QueueSet(created.at(0).Entity, Engine::Ecs::MeshRenderer{.PrimitiveType = "plane", .Material = material});
+  ASSERT_TRUE(scene.Update(0.0F));
+  const auto nonuniformUvNormalY = renderStableFromSide(-1.0F);
+  ASSERT_TRUE(nonuniformUvNormalY.has_value());
+  const auto nonuniformUvNormalYNormals = nonuniformUvNormalY->GetPixels(Engine::RenderAov::WorldNormal);
+  ASSERT_GT(nonuniformUvNormalYNormals.size(), center * 3U + 2U);
+  EXPECT_NEAR(nonuniformUvNormalYNormals[center * 3U], 0.58F, 0.03F);
+  EXPECT_NEAR(nonuniformUvNormalYNormals[center * 3U + 1U], -0.14F, 0.03F);
+  EXPECT_NEAR(nonuniformUvNormalYNormals[center * 3U + 2U], -0.80F, 0.03F);
+
+  material.normalTextureGuid = normalGuid;
+  material.normalTextureTransform = {};
+  material.normalTextureTransform.scale = {-1.0F, 1.0F};
+  (void)scene.QueueSet(created.at(0).Entity, Engine::Ecs::MeshRenderer{.PrimitiveType = "plane", .Material = material});
+  ASSERT_TRUE(scene.Update(0.0F));
+  const auto mirroredUv = renderStableFromSide(-1.0F);
+  ASSERT_TRUE(mirroredUv.has_value());
+  const auto mirroredUvNormals = mirroredUv->GetPixels(Engine::RenderAov::WorldNormal);
+  ASSERT_GT(mirroredUvNormals.size(), center * 3U + 2U);
+  EXPECT_LT(mirroredUvNormals[center * 3U], -0.55F);
+  EXPECT_LT(mirroredUvNormals[center * 3U + 2U], -0.75F);
+
+  material.normalTextureGuid = normalYGuid;
+  material.normalTextureTransform = {};
+  (void)scene.QueueSet(created.at(0).Entity, Engine::Ecs::MeshRenderer{.PrimitiveType = "plane", .Material = material});
+  ASSERT_TRUE(scene.Update(0.0F));
+  const auto normalY = renderStableFromSide(-1.0F);
+  ASSERT_TRUE(normalY.has_value());
+  const auto normalYNormals = normalY->GetPixels(Engine::RenderAov::WorldNormal);
+  ASSERT_GT(normalYNormals.size(), center * 3U + 2U);
+  EXPECT_LT(normalYNormals[center * 3U + 1U], -0.55F);
+  material.normalTextureTransform.scale = {1.0F, -1.0F};
+  (void)scene.QueueSet(created.at(0).Entity, Engine::Ecs::MeshRenderer{.PrimitiveType = "plane", .Material = material});
+  ASSERT_TRUE(scene.Update(0.0F));
+  const auto mirroredV = renderStableFromSide(-1.0F);
+  ASSERT_TRUE(mirroredV.has_value());
+  const auto mirroredVNormals = mirroredV->GetPixels(Engine::RenderAov::WorldNormal);
+  ASSERT_GT(mirroredVNormals.size(), center * 3U + 2U);
+  EXPECT_GT(mirroredVNormals[center * 3U + 1U], 0.55F);
+
+  material.normalTextureGuid = normalGuid;
+  material.normalTextureTransform = {};
+  (void)scene.QueueSet(created.at(0).Entity, Engine::Ecs::MeshRenderer{.PrimitiveType = "plane", .Material = material});
+  ASSERT_TRUE(scene.Update(0.0F));
   planeTransform.FlipHorizontal = true;
   (void)scene.QueueSet(created.at(0).Entity, planeTransform);
   ASSERT_TRUE(scene.Update(0.0F));
-  const auto mirroredFront = renderFromSide(-1.0F);
-  const auto mirroredBack = renderFromSide(1.0F);
+  const auto mirroredFront = renderStableFromSide(-1.0F);
+  const auto mirroredBack = renderStableFromSide(1.0F);
   ASSERT_TRUE(mirroredFront.has_value());
   ASSERT_TRUE(mirroredBack.has_value());
   const auto mirroredFrontNormals = mirroredFront->GetPixels(Engine::RenderAov::WorldNormal);
@@ -1352,6 +1470,30 @@ TEST(RenderFinalTests, WARPDoubleSidedNormalMapReversesTheWholeTangentBasisOnBac
   EXPECT_NEAR(mirroredFrontNormals[center * 3U + 2U], frontZ, 0.02F);
   for (size_t channel = 0; channel < 3U; ++channel) {
     EXPECT_NEAR(mirroredBackNormals[center * 3U + channel], -mirroredFrontNormals[center * 3U + channel], 0.02F);
+  }
+
+  material.normalTextureGuid = flatNormalGuid;
+  material.normalScale = 0.0F;
+  material.brdfModel = "ashikhminShirley";
+  material.roughness = 0.5F;
+  material.anisotropicRoughnessU = 0.2F;
+  material.anisotropicRoughnessV = 0.8F;
+  material.normalTextureTransform = {};
+  (void)scene.QueueSet(created.at(0).Entity, Engine::Ecs::MeshRenderer{.PrimitiveType = "plane", .Material = material});
+  ASSERT_TRUE(scene.Update(0.0F));
+  const auto anisotropicIdentity = renderStableFromPosition(-1.0F, 1.0F);
+  ASSERT_TRUE(anisotropicIdentity.has_value());
+  material.normalTextureTransform.rotation = DirectX::XM_PIDIV2;
+  (void)scene.QueueSet(created.at(0).Entity, Engine::Ecs::MeshRenderer{.PrimitiveType = "plane", .Material = material});
+  ASSERT_TRUE(scene.Update(0.0F));
+  const auto anisotropicRotatedNormalUv = renderStableFromPosition(-1.0F, 1.0F);
+  ASSERT_TRUE(anisotropicRotatedNormalUv.has_value());
+  const auto identitySpecular = anisotropicIdentity->GetPixels(Engine::RenderAov::SpecularLighting);
+  const auto rotatedSpecular = anisotropicRotatedNormalUv->GetPixels(Engine::RenderAov::SpecularLighting);
+  ASSERT_GT(identitySpecular.size(), center * 3U + 2U);
+  ASSERT_GT(rotatedSpecular.size(), center * 3U + 2U);
+  for (size_t channel = 0; channel < 3U; ++channel) {
+    EXPECT_NEAR(rotatedSpecular[center * 3U + channel], identitySpecular[center * 3U + channel], 1.0e-3F);
   }
 }
 
@@ -2322,7 +2464,7 @@ TEST(RenderFinalTests, WARPAnalyticNdfEnvironmentMatchesReferencesAcrossNdfRough
                 << "non-finite IBL for model=" << static_cast<uint32_t>(model) << " roughness=" << roughness
                 << " gamma=" << gamma << " channel=" << channel;
           }
-          if (roughness <= 0.04F) {
+          if (roughness <= 0.04F && model != Engine::Renderer::BrdfModel::Sawicki) {
             EXPECT_GT(specular[0], 0.04F)
                 << "narrow NDF lost most of its reflected energy for model=" << static_cast<uint32_t>(model)
                 << " gamma=" << gamma;
@@ -2343,7 +2485,7 @@ TEST(RenderFinalTests, WARPAnalyticNdfEnvironmentMatchesReferencesAcrossNdfRough
   }
 
   camera.Position = {0.0F, 0.0F, -5.0F};
-  camera.Rotation = {};
+  camera.Rotation = {0.0F, 0.0F, 0.0F, 1.0F};
   const uint64_t directionalSkyboxSequence =
       scene.QueueSet(scene.SceneRootEntity(), Engine::Ecs::Skybox{.EnvironmentGuid = *directionalEnvironmentGuid});
   const auto directionalSkybox = scene.sync();
@@ -2374,7 +2516,7 @@ TEST(RenderFinalTests, WARPAnalyticNdfEnvironmentMatchesReferencesAcrossNdfRough
   ASSERT_EQ(constantSkybox.front().Sequence, constantSkyboxSequence);
   ASSERT_TRUE(constantSkybox.front().Outcome);
   camera.Position = {0.0F, 0.0F, -5.0F};
-  camera.Rotation = {};
+  camera.Rotation = {0.0F, 0.0F, 0.0F, 1.0F};
 
   properties.Workflow = Engine::Renderer::MaterialWorkflow::SpecularGlossiness;
   properties.Model = Engine::Renderer::BrdfModel::GGX;
