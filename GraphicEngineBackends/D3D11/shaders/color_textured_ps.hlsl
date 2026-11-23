@@ -479,7 +479,7 @@ PS_OUTPUT main_ps(VS_OUTPUT input)
         }
         else if (g_ModelFlags.y == 8u)
         {
-            EvaluateSawickiBrdfComponents(query, brdfBaseColor, brdfMetallic, brdfF0, alpha,
+            EvaluateSawickiBrdfComponents(query, brdfBaseColor, brdfMetallic, brdfF0, alpha, g_AlphaParams.z,
                 diffuseBrdf, specularBrdf);
         }
         else

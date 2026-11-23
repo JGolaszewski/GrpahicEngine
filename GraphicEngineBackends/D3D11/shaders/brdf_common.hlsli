@@ -259,14 +259,13 @@ float BrdfSchlickNdf(float noH, float alpha)
     return (m * m * m * x) / max(denominator, 1.0e-30f);
 }
 
-float BrdfSawickiNdf(float noH, float alpha)
+float BrdfSawickiNdf(float noH, float nds)
 {
     const float safeNoH = saturate(noH);
-    const float safeAlpha = clamp(alpha, BRDF_MIN_ALPHA, 1.0f);
-    const float nds = 4.0f * safeAlpha - 3.0f;
-    const float shifted = (1.0f - nds) * safeNoH + nds + 3.0f;
+    const float safeNds = clamp(nds, -2.999f, 3.0e6f);
+    const float shifted = (safeNds + 3.0f) * (1.0f - safeNoH) + 4.0f * safeNoH;
     const float denominator = BRDF_PI * shifted * shifted * shifted * shifted;
-    return 96.0f * (3.0f + nds) * safeNoH / max(denominator, 1.0e-30f);
+    return 96.0f * (3.0f + safeNds) * safeNoH / max(denominator, 1.0e-30f);
 }
 
 float BrdfAshikhminShirleyNdf(float3 halfTangent, float roughnessU, float roughnessV)
@@ -408,10 +407,10 @@ void EvaluateSchlickBrdfComponents(BrdfQuery query, float3 baseColor, float meta
 }
 
 void EvaluateSawickiBrdfComponents(BrdfQuery query, float3 baseColor, float metallic, float3 dielectricF0,
-    float alpha, out float3 diffuse, out float3 specular)
+    float alpha, float nds, out float3 diffuse, out float3 specular)
 {
     EvaluateMicrofacetBrdfComponents(query, baseColor, metallic, dielectricF0, alpha,
-        BrdfSawickiNdf(query.NoH, alpha), diffuse, specular);
+        BrdfSawickiNdf(query.NoH, nds), diffuse, specular);
 }
 
 void EvaluateAshikhminShirleyBrdfComponents(BrdfQuery query, float3 tangent, float3 bitangent,
