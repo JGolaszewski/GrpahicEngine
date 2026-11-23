@@ -1,6 +1,6 @@
 #pragma once
 
-#include "renderer/brdf/Sawicki.h"
+#include "brdf/Sawicki.h"
 #include "runtime/include/CoreExport.h"
 #include "runtime/include/PrismNdfData.h"
 #include <DirectXMath.h>

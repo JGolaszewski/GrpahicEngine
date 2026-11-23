@@ -112,17 +112,17 @@ auto IntegrateSchlickNdf(float alpha) -> float {
 }
 
 auto IntegrateSawickiNdf(float alpha) -> float {
-  constexpr uint32_t sampleCount = 100000;
-  const float step = DirectX::XM_PIDIV2 / static_cast<float>(sampleCount);
+  constexpr uint32_t sampleCount = 1000000;
+  const double step = static_cast<double>(DirectX::XM_PIDIV2) / static_cast<double>(sampleCount);
   const float nds = ::Engine::Renderer::Brdf::SawickiNdsFromBeckmannAlpha(alpha);
-  float integral = 0.0F;
+  double integral = 0.0;
   for (uint32_t i = 0; i < sampleCount; ++i) {
-    const float theta = (static_cast<float>(i) + 0.5F) * step;
-    const float cosine = std::cos(theta);
-    const float sine = std::sin(theta);
-    integral += ::Engine::Renderer::Brdf::EvaluateSawickiNdf(cosine, nds) * cosine * sine * step;
+    const double theta = (static_cast<double>(i) + 0.5) * step;
+    const float cosine = static_cast<float>(std::cos(theta));
+    const float sine = static_cast<float>(std::sin(theta));
+    integral += static_cast<double>(::Engine::Renderer::Brdf::EvaluateSawickiNdf(cosine, nds)) * cosine * sine * step;
   }
-  return 2.0F * ::Engine::Renderer::Brdf::Pi * integral;
+  return static_cast<float>(2.0 * ::Engine::Renderer::Brdf::Pi * integral);
 }
 
 void TestSawickiReferenceAndFiniteEvaluation() {
@@ -148,8 +148,8 @@ void TestSawickiReferenceAndFiniteEvaluation() {
               std::isfinite(EvaluateSawickiNdf(1.0F, std::numeric_limits<float>::quiet_NaN())),
           "Sawicki NDF must clamp its domain and stay finite at minimum roughness");
   float previousNds = std::numeric_limits<float>::infinity();
-  for (float alpha : {0.001F, 0.01F, 0.04F, 0.25F, 0.5F, 1.0F}) {
-    const float mappedNds = SawickiNdsFromBeckmannAlpha(alpha);
+  for (float alphaValue : {0.001F, 0.01F, 0.04F, 0.25F, 0.5F, 1.0F}) {
+    const float mappedNds = SawickiNdsFromBeckmannAlpha(alphaValue);
     Require(std::isfinite(mappedNds) && mappedNds < previousNds,
             "Increasing Beckmann slope roughness must reduce the converted Sawicki N_DS coefficient");
     previousNds = mappedNds;

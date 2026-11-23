@@ -1,6 +1,6 @@
 #pragma once
 
-#include "renderer/brdf/Sawicki.h"
+#include "Sawicki.h"
 #include <DirectXMath.h>
 
 #include <algorithm>
@@ -406,4 +406,5 @@ EvaluateSawickiMetallicRoughnessBrdf(const DirectX::XMFLOAT3& normal, const Dire
                                 dielectricF0.y + (baseColor.y - dielectricF0.y) * safeMetallic,
                                 dielectricF0.z + (baseColor.z - dielectricF0.z) * safeMetallic};
   return EvaluateSawickiBrdf(normal, view, light, diffuseColor, f0, alpha);
+}
 } // namespace Engine::Renderer::Brdf
