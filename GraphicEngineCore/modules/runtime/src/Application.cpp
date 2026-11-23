@@ -449,7 +449,8 @@ auto Application::LoadSceneDocument(const SceneDocument& document, std::string& 
           warnings.push_back("scene skybox LDR texture " + skybox.TextureGuid +
                              " is not a 2:1 equirectangular PNG panorama");
         } else if (m_RenderSystem != nullptr &&
-                   !m_RenderSystem->PrepareAssetTexture(skybox.TextureGuid, true, skyError)) {
+                   !m_RenderSystem->PrepareAssetTexture(skybox.TextureGuid, true, skyError,
+                                                        Engine::Renderer::TextureMipSemantic::Color)) {
           warnings.push_back("scene skybox LDR texture " + skybox.TextureGuid +
                              " could not be prepared for rendering: " + skyError);
         }
@@ -486,21 +487,23 @@ auto Application::LoadSceneDocument(const SceneDocument& document, std::string& 
       return;
     }
     const auto prepare = [this, &warnings, &entityName](const std::optional<std::string>& guid, bool srgb,
-                                                        bool normalMap, bool preserveAlphaCoverage, float alphaCutoff,
-                                                        std::string_view slotName) -> void {
+                                                        Engine::Renderer::TextureMipSemantic semantic,
+                                                        float alphaCutoff, std::string_view slotName) -> void {
       if (!guid) {
         return;
       }
       std::string textureError;
-      if (!m_RenderSystem->PrepareAssetTexture(*guid, srgb, textureError, normalMap, preserveAlphaCoverage,
-                                               alphaCutoff)) {
+      if (!m_RenderSystem->PrepareAssetTexture(*guid, srgb, textureError, semantic, alphaCutoff)) {
         warnings.push_back("entity '" + entityName + "': could not prepare " + std::string(slotName) + " texture " +
                            *guid + ": " + textureError);
       }
     };
-    prepare(material.baseColorTextureGuid, true, false, material.alphaMode == "mask", material.alphaCutoff,
-            "base-color");
-    prepare(material.normalTextureGuid, false, true, false, 0.5F, "normal");
+    prepare(material.baseColorTextureGuid, true,
+            material.alphaMode == "mask"    ? Engine::Renderer::TextureMipSemantic::MaskedBaseColor
+            : material.alphaMode == "blend" ? Engine::Renderer::TextureMipSemantic::BaseColor
+                                            : Engine::Renderer::TextureMipSemantic::Color,
+            material.alphaCutoff, "base-color");
+    prepare(material.normalTextureGuid, false, Engine::Renderer::TextureMipSemantic::NormalMap, 0.5F, "normal");
   };
 
   for (const auto& entity : document.entities) {
