@@ -112,42 +112,71 @@ auto IntegrateSchlickNdf(float alpha) -> float {
 }
 
 auto IntegrateSawickiNdf(float alpha) -> float {
-  constexpr uint32_t sampleCount = 100000;
-  const float step = DirectX::XM_PIDIV2 / static_cast<float>(sampleCount);
-  float integral = 0.0F;
+  constexpr uint32_t sampleCount = 1000000;
+  const double step = static_cast<double>(DirectX::XM_PIDIV2) / static_cast<double>(sampleCount);
+  const float nds = ::Engine::Renderer::Brdf::SawickiNdsFromBeckmannAlpha(alpha);
+  double integral = 0.0;
   for (uint32_t i = 0; i < sampleCount; ++i) {
-    const float theta = (static_cast<float>(i) + 0.5F) * step;
-    const float cosine = std::cos(theta);
-    const float sine = std::sin(theta);
-    integral += ::Engine::Renderer::Brdf::EvaluateSawickiNdf(cosine, alpha) * cosine * sine * step;
+    const double theta = (static_cast<double>(i) + 0.5) * step;
+    const float cosine = static_cast<float>(std::cos(theta));
+    const float sine = static_cast<float>(std::sin(theta));
+    integral += static_cast<double>(::Engine::Renderer::Brdf::EvaluateSawickiNdf(cosine, nds)) * cosine * sine * step;
   }
-  return 2.0F * ::Engine::Renderer::Brdf::Pi * integral;
+  return static_cast<float>(2.0 * ::Engine::Renderer::Brdf::Pi * integral);
 }
 
 void TestSawickiReferenceAndFiniteEvaluation() {
   using ::Engine::Renderer::Brdf::EvaluateSawickiNdf;
+  using ::Engine::Renderer::Brdf::SawickiNdsFromBeckmannAlpha;
   for (float alpha : {0.001F, 0.01F, 0.2F, 0.65F, 1.0F}) {
     Require(std::abs(IntegrateSawickiNdf(alpha) - 1.0F) < 2.0e-3F,
             "Sawicki projected NDF must normalize to one including minimum alpha");
   }
-  constexpr float alpha = 0.4F;
+  constexpr float alpha = 0.25F;
   constexpr float noH = 0.75F;
-  constexpr float nds = 4.0F * alpha - 3.0F;
-  constexpr float shifted = (1.0F - nds) * noH + nds + 3.0F;
+  const float nds = SawickiNdsFromBeckmannAlpha(alpha);
+  Require(std::abs(nds - 31.60749F) < 2.0e-3F,
+          "Sawicki N_DS must follow the paper's Beckmann half-height conversion, equations (9) and (10)");
+  const float shifted = (1.0F - nds) * noH + nds + 3.0F;
   const float expected =
       96.0F * (3.0F + nds) * noH / (::Engine::Renderer::Brdf::Pi * shifted * shifted * shifted * shifted);
-  Require(std::abs(EvaluateSawickiNdf(noH, alpha) - expected) < 1.0e-6F,
+  Require(std::abs(EvaluateSawickiNdf(noH, nds) - expected) < 1.0e-6F,
           "Sawicki NDF must match its normalized rational reference equation");
-  Require(EvaluateSawickiNdf(-0.1F, alpha) == 0.0F && EvaluateSawickiNdf(0.0F, alpha) == 0.0F &&
-              EvaluateSawickiNdf(1.1F, alpha) == EvaluateSawickiNdf(1.0F, alpha) &&
-              std::isfinite(EvaluateSawickiNdf(1.0F, 0.0F)) &&
+  Require(EvaluateSawickiNdf(-0.1F, nds) == 0.0F && EvaluateSawickiNdf(0.0F, nds) == 0.0F &&
+              EvaluateSawickiNdf(1.1F, nds) == EvaluateSawickiNdf(1.0F, nds) &&
+              std::isfinite(EvaluateSawickiNdf(1.0F, SawickiNdsFromBeckmannAlpha(0.0F))) &&
               std::isfinite(EvaluateSawickiNdf(1.0F, std::numeric_limits<float>::quiet_NaN())),
           "Sawicki NDF must clamp its domain and stay finite at minimum roughness");
+  float previousNds = std::numeric_limits<float>::infinity();
+  for (float alphaValue : {0.001F, 0.01F, 0.04F, 0.25F, 0.5F, 1.0F}) {
+    const float mappedNds = SawickiNdsFromBeckmannAlpha(alphaValue);
+    Require(std::isfinite(mappedNds) && mappedNds < previousNds,
+            "Increasing Beckmann slope roughness must reduce the converted Sawicki N_DS coefficient");
+    previousNds = mappedNds;
+  }
   const auto value = ::Engine::Renderer::Brdf::EvaluateSawickiBrdf({0.0F, 0.0F, 1.0F}, {0.3F, 0.0F, 0.9539392F},
                                                                    {-0.1F, 0.5F, 0.8602325F}, {0.7F, 0.4F, 0.2F},
                                                                    {0.04F, 0.04F, 0.04F}, alpha);
   Require(std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z),
           "Sawicki BRDF reference evaluation must remain finite");
+
+  const DirectX::XMFLOAT3 normal{0.0F, 0.0F, 1.0F};
+  const DirectX::XMFLOAT3 view{0.3F, 0.0F, 0.9539392F};
+  const DirectX::XMFLOAT3 light{-0.1F, 0.5F, 0.8602325F};
+  const DirectX::XMFLOAT3 baseColor{0.7F, 0.4F, 0.2F};
+  const DirectX::XMFLOAT3 dielectricF0{0.04F, 0.04F, 0.04F};
+  const auto dielectric = ::Engine::Renderer::Brdf::EvaluateSawickiMetallicRoughnessBrdf(normal, view, light, baseColor,
+                                                                                         0.0F, dielectricF0, alpha);
+  const auto mixed = ::Engine::Renderer::Brdf::EvaluateSawickiMetallicRoughnessBrdf(normal, view, light, baseColor,
+                                                                                    0.5F, dielectricF0, alpha);
+  const auto metal = ::Engine::Renderer::Brdf::EvaluateSawickiMetallicRoughnessBrdf(normal, view, light, baseColor,
+                                                                                    1.0F, dielectricF0, alpha);
+  const auto pureMetalReference =
+      ::Engine::Renderer::Brdf::EvaluateSawickiBrdf(normal, view, light, {0.0F, 0.0F, 0.0F}, baseColor, alpha);
+  Require(std::abs(dielectric.x - mixed.x) > 1.0e-5F && std::abs(mixed.x - metal.x) > 1.0e-5F &&
+              std::abs(metal.x - pureMetalReference.x) < 1.0e-6F &&
+              std::abs(metal.y - pureMetalReference.y) < 1.0e-6F && std::abs(metal.z - pureMetalReference.z) < 1.0e-6F,
+          "Sawicki metallic factor must blend dielectric F0 to base color and remove diffuse energy at full metalness");
 }
 
 void TestSchlickReferenceAndFiniteEvaluation() {
@@ -491,9 +520,19 @@ void TestMaterialGpuAbiPacking() {
   Require(schlick.ModelFlags.y == 7U && schlick.ModelFlags.x == ::Engine::Renderer::MaterialGpuAbiVersion,
           "Schlick selector must append value seven without changing the material GPU ABI");
   properties.Model = ::Engine::Renderer::BrdfModel::Sawicki;
+  properties.Roughness = 0.5F;
   const auto sawicki = ::Engine::Renderer::BuildMaterialGpu(properties);
   Require(sawicki.ModelFlags.y == 8U && sawicki.ModelFlags.x == ::Engine::Renderer::MaterialGpuAbiVersion,
-          "Sawicki selector must append value eight without changing the material GPU ABI");
+          "Sawicki selector must retain model value eight and pack the current material ABI version");
+  Require(std::abs(sawicki.AlphaParams.z - ::Engine::Renderer::Brdf::SawickiNdsFromBeckmannAlpha(0.25F)) < 1.0e-6F,
+          "Sawicki coefficient must be packed from squared perceptual roughness into its reserved GPU lane");
+  Require(sawicki.EmissiveMetallic.w == 1.0F,
+          "Sawicki material packing must preserve full metalness for the shader's diffuse/specular blend");
+  properties.Metallic = 0.5F;
+  const auto mixedMetallicSawicki = ::Engine::Renderer::BuildMaterialGpu(properties);
+  Require(mixedMetallicSawicki.EmissiveMetallic.w == 0.5F &&
+              mixedMetallicSawicki.AlphaParams.z == sawicki.AlphaParams.z,
+          "Metalness changes must not alter the paper-derived Sawicki roughness coefficient");
 }
 
 void TestPrismResidualMipChainPreservesSignedAverages() {

@@ -444,7 +444,7 @@ PS_OUTPUT main_ps(VS_OUTPUT input, bool isFrontFace : SV_IsFrontFace)
         }
         else if (g_ModelFlags.y == 8u)
         {
-            EvaluateSawickiBrdfComponents(query, brdfBaseColor, brdfMetallic, brdfF0, alpha,
+            EvaluateSawickiBrdfComponents(query, brdfBaseColor, brdfMetallic, brdfF0, alpha, g_AlphaParams.z,
                 diffuseFresnelWeight, diffuseBrdf, specularBrdf);
         }
         else
@@ -497,7 +497,7 @@ PS_OUTPUT main_ps(VS_OUTPUT input, bool isFrontFace : SV_IsFrontFace)
                 ambientDiffuse = irradiance * diffuseColor * lerp(1.0f, 1.0f - fresnel, diffuseFresnelWeight) / BRDF_PI;
                 ambientSpecular = EvaluateAnalyticNdfEnvironmentSpecular(g_ModelFlags.y, N, viewDirection,
                     tangent, bitangent, iblF0, roughness, g_SpecularParams.w, g_AlphaParams.y,
-                    g_SurfaceParams.z, input.pos.xy);
+                    g_SurfaceParams.z, g_AlphaParams.z, input.pos.xy);
             }
         }
         else

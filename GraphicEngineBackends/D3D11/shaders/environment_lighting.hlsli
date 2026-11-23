@@ -86,7 +86,7 @@ float BrdfRadicalInverse(uint bits)
 
 float3 EvaluateAnalyticNdfEnvironmentSpecular(uint model, float3 normal, float3 viewDirection,
     float3 tangent, float3 bitangent, float3 f0, float roughness, float roughnessU, float roughnessV,
-    float gamma, float2 pixelPosition)
+    float gamma, float sawickiNds, float2 pixelPosition)
 {
     static const uint SAMPLE_COUNT = 128u;
     const float noV = dot(normal, viewDirection);
@@ -136,7 +136,7 @@ float3 EvaluateAnalyticNdfEnvironmentSpecular(uint model, float3 normal, float3 
             if (noL > BRDF_EPSILON)
             {
                 const float distribution = BrdfSelectedNdf(model, noH, halfTangent, alpha,
-                    roughnessU, roughnessV, gamma);
+                    roughnessU, roughnessV, gamma, sawickiNds);
                 const float ggxDensity = BrdfAnisotropicGgxNdf(halfTangent, alphaU, alphaV) * noH;
                 const float proposalDensity = useGtrProposal
                     ? BrdfGtrNdf(noH, alpha, gamma) * noH

@@ -217,7 +217,8 @@ auto HighSampleAnalyticNdfEnvironmentReference(const std::array<double, 3>& radi
       distribution = Engine::Renderer::Brdf::EvaluateSchlickNdf(static_cast<float>(noH), static_cast<float>(alpha));
       break;
     case Engine::Renderer::BrdfModel::Sawicki:
-      distribution = Engine::Renderer::Brdf::EvaluateSawickiNdf(static_cast<float>(noH), static_cast<float>(alpha));
+      distribution = Engine::Renderer::Brdf::EvaluateSawickiNdf(
+          static_cast<float>(noH), Engine::Renderer::Brdf::SawickiNdsFromBeckmannAlpha(static_cast<float>(alpha)));
       break;
     default:
       continue;

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Sawicki.h"
 #include <DirectXMath.h>
 
 #include <algorithm>
@@ -103,14 +104,13 @@ inline float EvaluateSchlickNdf(float noH, float alpha) noexcept {
   return (m * m * m * x) / (std::max)(denominator, 1.0e-30f);
 }
 
-/// Evaluates the normalized isotropic Sawicki normal distribution using alpha roughness.
-inline float EvaluateSawickiNdf(float noH, float alpha) noexcept {
+/// Evaluates the normalized isotropic Sawicki normal distribution using Sawicki's N_DS coefficient.
+inline float EvaluateSawickiNdf(float noH, float nds) noexcept {
   const float safeNoH = ClampUnit(noH);
-  const float safeAlpha = std::isfinite(alpha) ? (std::clamp)(alpha, MinAlpha, 1.0f) : MinAlpha;
-  const float nds = 4.0f * safeAlpha - 3.0f;
-  const float shifted = (1.0f - nds) * safeNoH + nds + 3.0f;
+  const float safeNds = std::isfinite(nds) ? (std::clamp)(nds, -2.999f, 3.0e6f) : 0.0f;
+  const float shifted = (safeNds + 3.0f) * (1.0f - safeNoH) + 4.0f * safeNoH;
   const float denominator = Pi * shifted * shifted * shifted * shifted;
-  return 96.0f * (3.0f + nds) * safeNoH / (std::max)(denominator, 1.0e-30f);
+  return 96.0f * (3.0f + safeNds) * safeNoH / (std::max)(denominator, 1.0e-30f);
 }
 
 /// Evaluates the normalized Ashikhmin-Shirley anisotropic NDF in a tangent frame.
@@ -385,12 +385,26 @@ inline DirectX::XMFLOAT3 EvaluateSawickiBrdf(const DirectX::XMFLOAT3& normal, co
   const float geometryDenominator = smithV + smithL;
   const float geometry = geometryDenominator > Epsilon ? (2.0f * noV * noL) / geometryDenominator : 0.0f;
   const float fresnelWeight = std::pow(1.0f - voH, 5.0f);
-  const float specularScale = EvaluateSawickiNdf(noH, safeAlpha) * geometry / (4.0f * noV * noL);
-  return {diffuseColor.x * (1.0f - f0.x) * (1.0f - fresnelWeight) / Pi +
-              (f0.x + (1.0f - f0.x) * fresnelWeight) * specularScale,
-          diffuseColor.y * (1.0f - f0.y) * (1.0f - fresnelWeight) / Pi +
-              (f0.y + (1.0f - f0.y) * fresnelWeight) * specularScale,
-          diffuseColor.z * (1.0f - f0.z) * (1.0f - fresnelWeight) / Pi +
-              (f0.z + (1.0f - f0.z) * fresnelWeight) * specularScale};
+  const XMFLOAT3 fresnel = {f0.x + (1.0f - f0.x) * fresnelWeight, f0.y + (1.0f - f0.y) * fresnelWeight,
+                            f0.z + (1.0f - f0.z) * fresnelWeight};
+  const float specularScale =
+      EvaluateSawickiNdf(noH, SawickiNdsFromBeckmannAlpha(safeAlpha)) * geometry / (4.0f * noV * noL);
+  return {diffuseColor.x * (1.0f - fresnel.x) / Pi + fresnel.x * specularScale,
+          diffuseColor.y * (1.0f - fresnel.y) / Pi + fresnel.y * specularScale,
+          diffuseColor.z * (1.0f - fresnel.z) / Pi + fresnel.z * specularScale};
+}
+
+/// Evaluates the Sawicki BRDF using metallic-roughness factors, matching the D3D11 material workflow.
+inline DirectX::XMFLOAT3
+EvaluateSawickiMetallicRoughnessBrdf(const DirectX::XMFLOAT3& normal, const DirectX::XMFLOAT3& view,
+                                     const DirectX::XMFLOAT3& light, const DirectX::XMFLOAT3& baseColor, float metallic,
+                                     const DirectX::XMFLOAT3& dielectricF0, float alpha) noexcept {
+  const float safeMetallic = std::isfinite(metallic) ? ClampUnit(metallic) : 0.0f;
+  const DirectX::XMFLOAT3 diffuseColor = {baseColor.x * (1.0f - safeMetallic), baseColor.y * (1.0f - safeMetallic),
+                                          baseColor.z * (1.0f - safeMetallic)};
+  const DirectX::XMFLOAT3 f0 = {dielectricF0.x + (baseColor.x - dielectricF0.x) * safeMetallic,
+                                dielectricF0.y + (baseColor.y - dielectricF0.y) * safeMetallic,
+                                dielectricF0.z + (baseColor.z - dielectricF0.z) * safeMetallic};
+  return EvaluateSawickiBrdf(normal, view, light, diffuseColor, f0, alpha);
 }
 } // namespace Engine::Renderer::Brdf
