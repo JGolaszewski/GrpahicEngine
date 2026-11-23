@@ -54,7 +54,7 @@ float2 GetTextureCoordinate(uint index, PS_INPUT input)
     }
 }
 
-PS_OUTPUT main_ps(PS_INPUT input)
+PS_OUTPUT main_ps(PS_INPUT input, bool isFrontFace : SV_IsFrontFace)
 {
     if ((g_ModelFlags.w & 0xffu) == 1u)
     {
@@ -68,6 +68,8 @@ PS_OUTPUT main_ps(PS_INPUT input)
 
     PS_OUTPUT output;
     output.Depth = input.pos.z;
-    output.WorldNormal = float4(normalize(input.normalWS), 1.0f);
+    float3 worldNormal = normalize(input.normalWS);
+    if ((g_ModelFlags.w & 0x100u) != 0u && !isFrontFace) worldNormal = -worldNormal;
+    output.WorldNormal = float4(worldNormal, 1.0f);
     return output;
 }

@@ -110,6 +110,15 @@ float3 BrdfNormalizeOr(float3 value, float3 fallback)
     return lengthSquared > BRDF_EPSILON ? value * rsqrt(lengthSquared) : fallback;
 }
 
+float3 BrdfTangentForNormal(float3 normal, float3 tangent)
+{
+    const float3 n = BrdfNormalizeOr(normal, float3(0.0f, 0.0f, 1.0f));
+    const float3 projected = tangent - n * dot(n, tangent);
+    const float3 fallbackAxis = abs(n.y) < 0.9f ? float3(0.0f, 1.0f, 0.0f) : float3(1.0f, 0.0f, 0.0f);
+    const float3 fallbackTangent = BrdfNormalizeOr(cross(fallbackAxis, n), float3(1.0f, 0.0f, 0.0f));
+    return BrdfNormalizeOr(projected, fallbackTangent);
+}
+
 BrdfQuery BuildBrdfQuery(float3 normal, float3 view, float3 light)
 {
     BrdfQuery query;
@@ -323,7 +332,7 @@ float BrdfGtrNdf(float noH, float alpha, float gamma)
 }
 
 void EvaluateMicrofacetBrdfComponents(BrdfQuery query, float3 baseColor, float metallic, float3 dielectricF0,
-    float alpha, float distribution, out float3 diffuse, out float3 specular)
+    float alpha, float distribution, float diffuseFresnelWeight, out float3 diffuse, out float3 specular)
 {
     if (query.NoV <= BRDF_EPSILON || query.NoL <= BRDF_EPSILON)
     {
@@ -337,7 +346,7 @@ void EvaluateMicrofacetBrdfComponents(BrdfQuery query, float3 baseColor, float m
     const float geometry = BrdfSmithGgxCorrelated(query.NoV, query.NoL, alpha);
     const float specularDenominator = max(4.0f * query.NoV * query.NoL, BRDF_EPSILON);
     const float3 diffuseColor = baseColor * (1.0f - saturate(metallic));
-    diffuse = BrdfLambert(diffuseColor * (1.0f - fresnel));
+    diffuse = BrdfLambert(diffuseColor * (1.0f - fresnel * diffuseFresnelWeight));
     specular = fresnel * (distribution * geometry / specularDenominator);
 }
 
@@ -346,15 +355,15 @@ float3 EvaluateGgxBrdf(BrdfQuery query, float3 baseColor, float metallic, float3
     float3 diffuse;
     float3 specular;
     EvaluateMicrofacetBrdfComponents(query, baseColor, metallic, dielectricF0, alpha,
-        BrdfGgxNdf(query.NoH, alpha), diffuse, specular);
+        BrdfGgxNdf(query.NoH, alpha), 1.0f, diffuse, specular);
     return diffuse + specular;
 }
 
 void EvaluateGgxBrdfComponents(BrdfQuery query, float3 baseColor, float metallic, float3 dielectricF0,
-    float alpha, out float3 diffuse, out float3 specular)
+    float alpha, float diffuseFresnelWeight, out float3 diffuse, out float3 specular)
 {
     EvaluateMicrofacetBrdfComponents(query, baseColor, metallic, dielectricF0, alpha,
-        BrdfGgxNdf(query.NoH, alpha), diffuse, specular);
+        BrdfGgxNdf(query.NoH, alpha), diffuseFresnelWeight, diffuse, specular);
 }
 
 float3 EvaluateGtrBrdf(BrdfQuery query, float3 baseColor, float metallic, float3 dielectricF0,
@@ -363,59 +372,55 @@ float3 EvaluateGtrBrdf(BrdfQuery query, float3 baseColor, float metallic, float3
     float3 diffuse;
     float3 specular;
     EvaluateMicrofacetBrdfComponents(query, baseColor, metallic, dielectricF0, alpha,
-        BrdfGtrNdf(query.NoH, alpha, gamma), diffuse, specular);
+        BrdfGtrNdf(query.NoH, alpha, gamma), 1.0f, diffuse, specular);
     return diffuse + specular;
 }
 
 void EvaluateGtrBrdfComponents(BrdfQuery query, float3 baseColor, float metallic, float3 dielectricF0,
-    float alpha, float gamma, out float3 diffuse, out float3 specular)
+    float alpha, float gamma, float diffuseFresnelWeight, out float3 diffuse, out float3 specular)
 {
     EvaluateMicrofacetBrdfComponents(query, baseColor, metallic, dielectricF0, alpha,
-        BrdfGtrNdf(query.NoH, alpha, gamma), diffuse, specular);
+        BrdfGtrNdf(query.NoH, alpha, gamma), diffuseFresnelWeight, diffuse, specular);
 }
 
 void EvaluateBeckmannBrdfComponents(BrdfQuery query, float3 baseColor, float metallic, float3 dielectricF0,
-    float alpha, out float3 diffuse, out float3 specular)
+    float alpha, float diffuseFresnelWeight, out float3 diffuse, out float3 specular)
 {
     EvaluateMicrofacetBrdfComponents(query, baseColor, metallic, dielectricF0, alpha,
-        BrdfBeckmannNdf(query.NoH, alpha), diffuse, specular);
+        BrdfBeckmannNdf(query.NoH, alpha), diffuseFresnelWeight, diffuse, specular);
 }
 
 void EvaluateGaussBrdfComponents(BrdfQuery query, float3 baseColor, float metallic, float3 dielectricF0,
-    float alpha, out float3 diffuse, out float3 specular)
+    float alpha, float diffuseFresnelWeight, out float3 diffuse, out float3 specular)
 {
     EvaluateMicrofacetBrdfComponents(query, baseColor, metallic, dielectricF0, alpha,
-        BrdfGaussNdf(query.NoH, alpha), diffuse, specular);
+        BrdfGaussNdf(query.NoH, alpha), diffuseFresnelWeight, diffuse, specular);
 }
 
 void EvaluateBlinnPhongBrdfComponents(BrdfQuery query, float3 baseColor, float metallic, float3 dielectricF0,
-    float alpha, out float3 diffuse, out float3 specular)
+    float alpha, float diffuseFresnelWeight, out float3 diffuse, out float3 specular)
 {
     EvaluateMicrofacetBrdfComponents(query, baseColor, metallic, dielectricF0, alpha,
-        BrdfBlinnPhongNdf(query.NoH, alpha), diffuse, specular);
+        BrdfBlinnPhongNdf(query.NoH, alpha), diffuseFresnelWeight, diffuse, specular);
 }
 
 void EvaluateSchlickBrdfComponents(BrdfQuery query, float3 baseColor, float metallic, float3 dielectricF0,
-    float alpha, out float3 diffuse, out float3 specular)
+    float alpha, float diffuseFresnelWeight, out float3 diffuse, out float3 specular)
 {
-    const float3 diffuseColor = baseColor * (1.0f - saturate(metallic));
-    const float3 f0 = lerp(dielectricF0, baseColor, saturate(metallic));
-    const float3 fresnel = BrdfFresnelSchlick(f0, query.VoH);
-    const float geometry = BrdfSmithGgxCorrelated(query.NoV, query.NoL, alpha);
-    diffuse = BrdfLambert(diffuseColor * (1.0f - fresnel));
-    specular = fresnel * (BrdfSchlickNdf(query.NoH, alpha) * geometry /
-        max(4.0f * query.NoV * query.NoL, BRDF_EPSILON));
+    EvaluateMicrofacetBrdfComponents(query, baseColor, metallic, dielectricF0, alpha,
+        BrdfSchlickNdf(query.NoH, alpha), diffuseFresnelWeight, diffuse, specular);
 }
 
 void EvaluateSawickiBrdfComponents(BrdfQuery query, float3 baseColor, float metallic, float3 dielectricF0,
-    float alpha, out float3 diffuse, out float3 specular)
+    float alpha, float diffuseFresnelWeight, out float3 diffuse, out float3 specular)
 {
     EvaluateMicrofacetBrdfComponents(query, baseColor, metallic, dielectricF0, alpha,
-        BrdfSawickiNdf(query.NoH, alpha), diffuse, specular);
+        BrdfSawickiNdf(query.NoH, alpha), diffuseFresnelWeight, diffuse, specular);
 }
 
 void EvaluateAshikhminShirleyBrdfComponents(BrdfQuery query, float3 tangent, float3 bitangent,
     float3 baseColor, float metallic, float3 dielectricF0, float roughnessU, float roughnessV,
+    float diffuseFresnelWeight,
     out float3 diffuse, out float3 specular)
 {
     if (query.NoV <= BRDF_EPSILON || query.NoL <= BRDF_EPSILON)
@@ -430,7 +435,7 @@ void EvaluateAshikhminShirleyBrdfComponents(BrdfQuery query, float3 tangent, flo
     const float geometry = BrdfSmithGgxCorrelated(query.NoV, query.NoL, alpha);
     const float3 halfTangent = float3(dot(query.H, tangent), dot(query.H, bitangent), dot(query.H, query.N));
     const float distribution = BrdfAshikhminShirleyNdf(halfTangent, roughnessU, roughnessV);
-    diffuse = BrdfLambert(baseColor * (1.0f - saturate(metallic)) * (1.0f - fresnel));
+    diffuse = BrdfLambert(baseColor * (1.0f - saturate(metallic)) * (1.0f - fresnel * diffuseFresnelWeight));
     specular = fresnel * (distribution * geometry / max(4.0f * query.NoV * query.NoL, BRDF_EPSILON));
 }
 
