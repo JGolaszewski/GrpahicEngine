@@ -5,7 +5,7 @@ This repository is a Windows-first C++23 graphics engine. These rules apply to e
 ## Always-follow rules
 
 - Preserve existing user changes. Keep edits scoped, inspect `git status` before staging, and never stage unrelated files.
-- Treat `vendor/` as read-only: do not edit, format, or refactor third-party code.
+- Treat third-party files under `vendor/` as read-only: do not edit, format, or refactor them. Submodule gitlink pointer changes are metadata-only and must be pinned, issue-tracked, and reviewed through a PR.
 - For implementation work, use a repository issue linked to the user-owned **Graphics Engine** project (#1), except for a narrowly scoped low-risk change that meets the lightweight path in [development workflow](docs/development-workflow.md). Keep project status current for tracked work. If project access is unavailable for work that does not qualify for the lightweight path, stop before implementation and report the blocker.
 - Before implementation, identify the owning subsystem, affected consumers, and interface changes. Coordinate newly discovered cross-subsystem work through the issue before editing it.
 - Preserve GPU resource ownership, lifetime, synchronization, and shutdown invariants. Follow existing backend boundaries and treat shader interfaces, serialization, and public headers as contracts.
