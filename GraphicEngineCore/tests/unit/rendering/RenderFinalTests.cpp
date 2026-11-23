@@ -267,7 +267,8 @@ TEST(RenderFinalTests, WARPSceneSkyboxRendersAsBackgroundInAllViewModes) {
   WriteSolidPng(project / "sky.png");
   const auto textureGuid = assets.ImportTexture("sky.png");
   ASSERT_TRUE(textureGuid.has_value()) << (textureGuid.has_value() ? "" : textureGuid.error().Message);
-  ASSERT_TRUE(renderer.PrepareAssetTexture(*textureGuid, true, error)) << error;
+  ASSERT_TRUE(renderer.PrepareAssetTexture(*textureGuid, true, error, Engine::Renderer::TextureMipSemantic::Color))
+      << error;
   (void)scene.QueueSet(scene.SceneRootEntity(), Engine::Ecs::Skybox{.Mode = Engine::Ecs::SkyboxMode::LdrPanorama,
                                                                     .EnvironmentGuid = {},
                                                                     .TextureGuid = *textureGuid});
@@ -903,6 +904,7 @@ TEST(RenderFinalTests, WARPAssignedMaterialTextureGuidsReachLiveTextureResolver)
   const std::vector<Engine::AssetManager::TextureAssetInfo> textures = {{.guid = baseColorGuid, .name = "Base color"},
                                                                         {.guid = normalGuid, .name = "Normal"}};
   Engine::SceneMaterialDocument material;
+  material.alphaMode = "opaque";
   std::string error;
   for (const auto& [guid, slot] : std::array<std::pair<const char*, MaterialTextureSlot>, 2>{
            {{baseColorGuid, MaterialTextureSlot::BaseColor}, {normalGuid, MaterialTextureSlot::Normal}}}) {
@@ -926,23 +928,45 @@ TEST(RenderFinalTests, WARPAssignedMaterialTextureGuidsReachLiveTextureResolver)
                                        .width = 1,
                                        .height = 1,
                                        .rgba8 = {255, 0, 0, 255}};
-  gpuTextures[0] = renderer.GetOrCreateTexture(baseColorGuid, 1U, baseColorImage, true, error);
+  gpuTextures[0] = renderer.GetOrCreateTexture(baseColorGuid, 1U, baseColorImage, true, error, nullptr,
+                                               Engine::Renderer::TextureMipSemantic::Color);
   ASSERT_NE(gpuTextures[0], nullptr) << error;
+  auto dataTexture = renderer.GetOrCreateTexture(baseColorGuid, 1U, baseColorImage, true, error, nullptr,
+                                                 Engine::Renderer::TextureMipSemantic::Data);
+  ASSERT_NE(dataTexture, nullptr) << error;
+  EXPECT_NE(dataTexture, gpuTextures[0]);
+  EXPECT_EQ(renderer.GetOrCreateTexture(baseColorGuid, 1U, baseColorImage, true, error, nullptr,
+                                        Engine::Renderer::TextureMipSemantic::Data),
+            dataTexture);
+  auto blendTexture = renderer.GetOrCreateTexture(baseColorGuid, 1U, baseColorImage, true, error, nullptr,
+                                                  Engine::Renderer::TextureMipSemantic::BaseColor);
+  ASSERT_NE(blendTexture, nullptr) << error;
+  EXPECT_NE(blendTexture, gpuTextures[0]);
+  auto maskedTexture = renderer.GetOrCreateTexture(baseColorGuid, 1U, baseColorImage, true, error, nullptr,
+                                                   Engine::Renderer::TextureMipSemantic::MaskedBaseColor, 0.4F);
+  ASSERT_NE(maskedTexture, nullptr) << error;
+  EXPECT_NE(maskedTexture, gpuTextures[0]);
+  auto maskedDifferentCutoff = renderer.GetOrCreateTexture(baseColorGuid, 1U, baseColorImage, true, error, nullptr,
+                                                           Engine::Renderer::TextureMipSemantic::MaskedBaseColor, 0.8F);
+  ASSERT_NE(maskedDifferentCutoff, nullptr) << error;
+  EXPECT_NE(maskedDifferentCutoff, maskedTexture);
   Engine::ImportedImage normalImage{.name = "flat normal",
                                     .mimeType = "image/raw",
                                     .width = 1,
                                     .height = 1,
                                     .rgba8 = {128, 128, 255, 255}};
-  gpuTextures[1] = renderer.GetOrCreateTexture(normalGuid, 1U, normalImage, false, error, nullptr, true);
+  gpuTextures[1] = renderer.GetOrCreateTexture(normalGuid, 1U, normalImage, false, error, nullptr,
+                                               Engine::Renderer::TextureMipSemantic::NormalMap);
   ASSERT_NE(gpuTextures[1], nullptr) << error;
 
-  std::vector<std::tuple<std::string, bool, bool, bool, float>> resolved;
+  std::vector<std::tuple<std::string, bool, Engine::Renderer::TextureMipSemantic, float>> resolved;
   renderer.GetSceneRenderer()->SetAssetTextureResolver(
-      [&resolved, &gpuTextures](const std::string& guid, bool srgb, bool normalMap, bool preserveAlphaCoverage,
-                                float alphaCutoff) -> std::shared_ptr<Engine::Renderer::TextureResource> {
-        resolved.emplace_back(guid, srgb, normalMap, preserveAlphaCoverage, alphaCutoff);
+      [&resolved, &gpuTextures,
+       &blendTexture](const std::string& guid, bool srgb, Engine::Renderer::TextureMipSemantic semantic,
+                      float alphaCutoff) -> std::shared_ptr<Engine::Renderer::TextureResource> {
+        resolved.emplace_back(guid, srgb, semantic, alphaCutoff);
         if (guid == "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee" && srgb) {
-          return gpuTextures[0];
+          return semantic == Engine::Renderer::TextureMipSemantic::BaseColor ? blendTexture : gpuTextures[0];
         }
         if (guid == "11111111-2222-4333-8444-555555555555" && !srgb) {
           return gpuTextures[1];
@@ -991,19 +1015,23 @@ TEST(RenderFinalTests, WARPAssignedMaterialTextureGuidsReachLiveTextureResolver)
   const auto baseColorOutput = renderer.RenderFinal(scene, camera, 32, 32);
   ASSERT_TRUE(baseColorOutput.has_value()) << (baseColorOutput.has_value() ? "" : baseColorOutput.error().Message);
   ASSERT_EQ(resolved.size(), 1U);
-  EXPECT_EQ(resolved[0], (std::tuple<std::string, bool, bool, bool, float>{baseColorGuid, true, false, false, 0.5F}));
+  EXPECT_EQ(resolved[0], (std::tuple<std::string, bool, Engine::Renderer::TextureMipSemantic, float>{
+                             baseColorGuid, true, Engine::Renderer::TextureMipSemantic::Color, 0.5F}));
   const auto baseColorWarmOutput = renderer.RenderFinal(scene, camera, 32, 32);
   ASSERT_TRUE(baseColorWarmOutput.has_value())
       << (baseColorWarmOutput.has_value() ? "" : baseColorWarmOutput.error().Message);
 
   resolved.clear();
+  material.alphaMode = "blend";
   (void)scene.QueueSet(meshEntity, Engine::Ecs::MeshRenderer{.PrimitiveType = "cube", .Material = material});
   ASSERT_TRUE(scene.Update(0.0F));
   const auto output = renderer.RenderFinal(scene, camera, 32, 32);
   ASSERT_TRUE(output.has_value()) << (output.has_value() ? "" : output.error().Message);
   ASSERT_EQ(resolved.size(), 2U);
-  EXPECT_EQ(resolved[0], (std::tuple<std::string, bool, bool, bool, float>{baseColorGuid, true, false, false, 0.5F}));
-  EXPECT_EQ(resolved[1], (std::tuple<std::string, bool, bool, bool, float>{normalGuid, false, true, false, 0.5F}));
+  EXPECT_EQ(resolved[0], (std::tuple<std::string, bool, Engine::Renderer::TextureMipSemantic, float>{
+                             baseColorGuid, true, Engine::Renderer::TextureMipSemantic::BaseColor, 0.5F}));
+  EXPECT_EQ(resolved[1], (std::tuple<std::string, bool, Engine::Renderer::TextureMipSemantic, float>{
+                             normalGuid, false, Engine::Renderer::TextureMipSemantic::NormalMap, 0.5F}));
   ASSERT_TRUE(renderer.RenderFinal(scene, camera, 32, 32).has_value());
 
   const auto untextured = withoutTextures->GetPixels(Engine::RenderAov::FinalColor);
@@ -1674,7 +1702,8 @@ TEST(RenderFinalTests, WARPPrismDirectAndConstantEnvironmentMatchIndependentRefe
                                        .width = 1,
                                        .height = 1,
                                        .rgba8 = {255, 255, 255, 255}};
-  auto baseColorTexture = renderer.GetOrCreateTexture("prism-reference-base-color", 1U, whiteBaseColor, true, error);
+  auto baseColorTexture = renderer.GetOrCreateTexture("prism-reference-base-color", 1U, whiteBaseColor, true, error,
+                                                      nullptr, Engine::Renderer::TextureMipSemantic::BaseColor);
   ASSERT_NE(baseColorTexture, nullptr) << error;
   ASSERT_TRUE(renderer.SetMaterialTextures(material, std::move(baseColorTexture), nullptr));
   const auto texturedDirect = renderer.RenderFinal(scene, camera, imageSize, imageSize);

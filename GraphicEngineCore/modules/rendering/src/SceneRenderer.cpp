@@ -375,7 +375,8 @@ void Engine::SceneRenderer::Init(nvrhi::IDevice* device, ::Engine::Renderer::Mat
 }
 
 void Engine::SceneRenderer::SetAssetTextureResolver(
-    std::function<std::shared_ptr<::Engine::Renderer::TextureResource>(const std::string&, bool, bool, bool, float)>
+    std::function<std::shared_ptr<::Engine::Renderer::TextureResource>(const std::string&, bool,
+                                                                       ::Engine::Renderer::TextureMipSemantic, float)>
         resolver) {
   m_AssetTextureResolver = std::move(resolver);
 }
@@ -1052,13 +1053,16 @@ auto Engine::SceneRenderer::MaterialForSubmesh(const ::Engine::Renderer::RenderV
   auto normalTexture = submesh.material->GetNormalTexture();
   if (m_AssetTextureResolver != nullptr) {
     if (source->baseColorTextureGuid) {
-      if (auto texture = m_AssetTextureResolver(*source->baseColorTextureGuid, true, false, source->alphaMode == "mask",
-                                                source->alphaCutoff)) {
+      const auto semantic = source->alphaMode == "mask"    ? ::Engine::Renderer::TextureMipSemantic::MaskedBaseColor
+                            : source->alphaMode == "blend" ? ::Engine::Renderer::TextureMipSemantic::BaseColor
+                                                           : ::Engine::Renderer::TextureMipSemantic::Color;
+      if (auto texture = m_AssetTextureResolver(*source->baseColorTextureGuid, true, semantic, source->alphaCutoff)) {
         baseColorTexture = std::move(texture);
       }
     }
     if (source->normalTextureGuid) {
-      if (auto texture = m_AssetTextureResolver(*source->normalTextureGuid, false, true, false, 0.5F)) {
+      if (auto texture = m_AssetTextureResolver(*source->normalTextureGuid, false,
+                                                ::Engine::Renderer::TextureMipSemantic::NormalMap, 0.5F)) {
         normalTexture = std::move(texture);
       }
     }
