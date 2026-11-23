@@ -155,23 +155,35 @@ float2 BrdfEnvironmentUv(float3 direction)
 }
 
 float3 EvaluateSplitSumIbl(float3 diffuseIrradiance, float3 prefilteredRadiance, float2 brdfIntegration,
-    float3 normal, float3 view, float3 diffuseColor, float3 f0, float roughness, float occlusion)
+    float3 normal, float3 view, float3 diffuseColor, float3 f0, float roughness, float diffuseFresnelWeight,
+    float occlusion)
 {
-    const float noV = saturate(dot(normal, view));
+    const float rawNoV = dot(normal, view);
+    if (rawNoV <= BRDF_EPSILON) return 0.0f;
+    const float noV = saturate(rawNoV);
     const float3 fresnel = BrdfFresnelSchlickRoughness(f0, noV, roughness);
-    const float3 diffuse = diffuseIrradiance * diffuseColor * (1.0f - fresnel) / BRDF_PI;
-    const float3 specular = prefilteredRadiance * (fresnel * brdfIntegration.x + brdfIntegration.y);
+    const float3 diffuse = diffuseIrradiance * diffuseColor *
+        lerp(1.0f, 1.0f - fresnel, saturate(diffuseFresnelWeight)) / BRDF_PI;
+    const float3 specular = prefilteredRadiance * (f0 * brdfIntegration.x + brdfIntegration.y);
     return (diffuse + specular) * saturate(occlusion);
 }
 
 void EvaluateSplitSumIblComponents(float3 diffuseIrradiance, float3 prefilteredRadiance, float2 brdfIntegration,
-    float3 normal, float3 view, float3 diffuseColor, float3 f0, float roughness, float occlusion,
+    float3 normal, float3 view, float3 diffuseColor, float3 f0, float roughness, float diffuseFresnelWeight, float occlusion,
     out float3 diffuse, out float3 specular)
 {
-    const float noV = saturate(dot(normal, view));
+    const float rawNoV = dot(normal, view);
+    if (rawNoV <= BRDF_EPSILON)
+    {
+        diffuse = 0.0f;
+        specular = 0.0f;
+        return;
+    }
+    const float noV = saturate(rawNoV);
     const float3 fresnel = BrdfFresnelSchlickRoughness(f0, noV, roughness);
-    diffuse = diffuseIrradiance * diffuseColor * (1.0f - fresnel) / BRDF_PI * saturate(occlusion);
-    specular = prefilteredRadiance * (fresnel * brdfIntegration.x + brdfIntegration.y) * saturate(occlusion);
+    diffuse = diffuseIrradiance * diffuseColor * lerp(1.0f, 1.0f - fresnel, saturate(diffuseFresnelWeight)) /
+        BRDF_PI * saturate(occlusion);
+    specular = prefilteredRadiance * (f0 * brdfIntegration.x + brdfIntegration.y) * saturate(occlusion);
 }
 
 float BrdfSmithGgxCorrelated(float noV, float noL, float alpha)
@@ -294,6 +306,22 @@ float BrdfAshikhminShirleyNdf(float3 halfTangent, float roughnessU, float roughn
     return normalization * cosPower;
 }
 
+float BrdfExpm1Stable(float value)
+{
+    if (abs(value) > 1.0e-2f) return exp(value) - 1.0f;
+    const float valueSquared = value * value;
+    return value + 0.5f * valueSquared + valueSquared * value / 6.0f + valueSquared * valueSquared / 24.0f +
+        valueSquared * valueSquared * value / 120.0f + valueSquared * valueSquared * valueSquared / 720.0f;
+}
+
+float BrdfLog1pStable(float value)
+{
+    if (abs(value) > 1.0e-2f) return log(1.0f + value);
+    const float valueSquared = value * value;
+    return value - 0.5f * valueSquared + valueSquared * value / 3.0f - valueSquared * valueSquared / 4.0f +
+        valueSquared * valueSquared * value / 5.0f - valueSquared * valueSquared * valueSquared / 6.0f;
+}
+
 float BrdfGtrLogNormalization(float alpha, float gamma)
 {
     const float safeAlpha = max(alpha, BRDF_MIN_ALPHA);
@@ -305,20 +333,23 @@ float BrdfGtrLogNormalization(float alpha, float gamma)
     }
 
     const float logAlphaSquared = log(alphaSquared);
-    if (abs(safeGamma - 1.0f) <= 1.0e-4f)
-    {
-        return log(abs(alphaSquared - 1.0f)) - log(BRDF_PI) - log(abs(logAlphaSquared));
-    }
-
     const float exponent = (1.0f - safeGamma) * logAlphaSquared;
-    if (exponent > 0.0f)
+    const float baseLogNormalization = log(abs(alphaSquared - 1.0f)) - log(BRDF_PI) - log(abs(logAlphaSquared));
+    if (abs(safeGamma - 1.0f) <= 1.0e-4f) return baseLogNormalization;
+    float logCorrection;
+    if (abs(exponent) <= 1.0e-2f)
     {
-        const float inverseExponential = exp(-exponent);
-        return log(safeGamma - 1.0f) + log(1.0f - alphaSquared) - exponent - log(BRDF_PI) -
-            log(1.0f - inverseExponential);
+        logCorrection = log(exponent / BrdfExpm1Stable(exponent));
     }
-
-    return log(safeGamma - 1.0f) + log(alphaSquared - 1.0f) - log(BRDF_PI) - log(1.0f - exp(exponent));
+    else if (exponent > 0.0f)
+    {
+        logCorrection = log(exponent) - exponent - log(1.0f - exp(-exponent));
+    }
+    else
+    {
+        logCorrection = log(-exponent) - log(1.0f - exp(exponent));
+    }
+    return baseLogNormalization + logCorrection;
 }
 
 float BrdfGtrNdf(float noH, float alpha, float gamma)
@@ -329,6 +360,20 @@ float BrdfGtrNdf(float noH, float alpha, float gamma)
     const float alphaSquared = safeAlpha * safeAlpha;
     const float denominator = max(1.0f + (alphaSquared - 1.0f) * safeNoH * safeNoH, BRDF_EPSILON);
     return exp(BrdfGtrLogNormalization(safeAlpha, safeGamma) - safeGamma * log(denominator));
+}
+
+float BrdfSelectedNdf(uint model, float noH, float3 halfTangent, float alpha,
+    float roughnessU, float roughnessV, float gamma)
+{
+    float distribution = BrdfGgxNdf(noH, alpha);
+    if (model == 2u) distribution = BrdfGtrNdf(noH, alpha, gamma);
+    else if (model == 3u) distribution = BrdfBeckmannNdf(noH, alpha);
+    else if (model == 4u) distribution = BrdfGaussNdf(noH, alpha);
+    else if (model == 5u) distribution = BrdfBlinnPhongNdf(noH, alpha);
+    else if (model == 6u) distribution = BrdfAshikhminShirleyNdf(halfTangent, roughnessU, roughnessV);
+    else if (model == 7u) distribution = BrdfSchlickNdf(noH, alpha);
+    else if (model == 8u) distribution = BrdfSawickiNdf(noH, alpha);
+    return distribution;
 }
 
 void EvaluateMicrofacetBrdfComponents(BrdfQuery query, float3 baseColor, float metallic, float3 dielectricF0,

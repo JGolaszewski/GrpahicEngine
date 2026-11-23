@@ -160,13 +160,14 @@ auto IntegratePrefilter(Vec3 normal, float roughness, const RadianceSampler& sam
 }
 
 auto GeometrySmithGgx(float noV, float noL, float roughness) -> float {
-  const float alpha = roughness * roughness;
+  const float alpha = (std::max)(roughness * roughness, 1.0e-3F);
   const float alphaSquared = alpha * alpha;
-  const auto geometryOne = [alphaSquared](float noX) -> float {
-    const float denominator = noX + std::sqrt((alphaSquared + ((1.0F - alphaSquared) * noX * noX)));
-    return denominator > 1.0e-6F ? (2.0F * noX / denominator) : 0.0F;
-  };
-  return geometryOne(noV) * geometryOne(noL);
+  const float safeNoV = (std::max)(noV, 0.0F);
+  const float safeNoL = (std::max)(noL, 0.0F);
+  const float smithV = safeNoL * std::sqrt((std::max)(alphaSquared + (1.0F - alphaSquared) * safeNoV * safeNoV, 0.0F));
+  const float smithL = safeNoV * std::sqrt((std::max)(alphaSquared + (1.0F - alphaSquared) * safeNoL * safeNoL, 0.0F));
+  const float denominator = smithV + smithL;
+  return denominator > 1.0e-6F ? (2.0F * safeNoV * safeNoL / denominator) : 0.0F;
 }
 
 auto IntegrateBrdf(float noV, float roughness) -> std::array<float, 2> {

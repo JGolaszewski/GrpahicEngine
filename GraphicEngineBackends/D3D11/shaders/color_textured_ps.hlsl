@@ -72,6 +72,8 @@ SamplerState g_EnvironmentPanoramaSampler : register(s12);
 Texture2D<float> g_NdfDistribution : register(t6);
 SamplerState g_NdfDistributionSampler : register(s6);
 
+#include "environment_lighting.hlsli"
+
 float2 PrismNdfFilterUv(float2 uv)
 {
     const uint options = (uint)g_NdfParams.z;
@@ -103,6 +105,7 @@ float3 EvaluatePrismNdfEnvironmentSpecular(float3 normal, float3 viewDirection, 
     static const float GOLDEN_COS = -0.737368878f;
     static const float GOLDEN_SIN = 0.675490294f;
     const float horizonNoV = saturate(dot(normal, viewDirection));
+    if (horizonNoV <= BRDF_EPSILON) return 0.0f;
     const float noV = max(horizonNoV, BRDF_EPSILON);
     const float3 localTangent = BrdfTangentForNormal(normal, tangent);
     const float handedness = dot(cross(normal, localTangent), bitangent) < 0.0f ? -1.0f : 1.0f;
@@ -535,17 +538,36 @@ PS_OUTPUT main_ps(VS_OUTPUT input, bool isFrontFace : SV_IsFrontFace)
         const float2 brdfIntegration = g_BrdfIntegrationLut.Sample(g_BrdfIntegrationSampler,
             float2(saturate(dot(N, viewDirection)), saturate(roughness)));
         const float3 iblF0 = isSpecularGlossiness ? specularF0 : lerp(dielectricF0, baseColor, metallic);
+        const float diffuseFresnelWeight = isSpecularGlossiness ? 0.0f : 1.0f;
         if (g_ModelFlags.y == 9u)
         {
-            ambientDiffuse = irradiance * diffuseColor * (1.0f - BrdfFresnelSchlickRoughness(
-                iblF0, saturate(dot(N, viewDirection)), saturate(roughness))) / BRDF_PI * occlusion;
-            ambientSpecular = EvaluatePrismNdfEnvironmentSpecular(N, viewDirection, tangent, bitangent,
-                iblF0, alpha, input.pos.xy) * occlusion;
+            if (dot(N, viewDirection) > BRDF_EPSILON)
+            {
+                const float3 fresnel = BrdfFresnelSchlickRoughness(
+                    iblF0, saturate(dot(N, viewDirection)), saturate(roughness));
+                ambientDiffuse = irradiance * diffuseColor * lerp(1.0f, 1.0f - fresnel, diffuseFresnelWeight) /
+                    BRDF_PI * occlusion;
+                ambientSpecular = EvaluatePrismNdfEnvironmentSpecular(N, viewDirection, tangent, bitangent,
+                    iblF0, alpha, input.pos.xy) * occlusion;
+            }
+        }
+        else if (g_ModelFlags.y != 1u)
+        {
+            if (dot(N, viewDirection) > BRDF_EPSILON)
+            {
+                const float3 fresnel = BrdfFresnelSchlickRoughness(
+                    iblF0, saturate(dot(N, viewDirection)), saturate(roughness));
+                ambientDiffuse = irradiance * diffuseColor * lerp(1.0f, 1.0f - fresnel, diffuseFresnelWeight) /
+                    BRDF_PI * occlusion;
+                ambientSpecular = EvaluateAnalyticNdfEnvironmentSpecular(g_ModelFlags.y, N, viewDirection,
+                    tangent, bitangent, iblF0, roughness, g_SpecularParams.w, g_AlphaParams.y,
+                    g_SurfaceParams.z, input.pos.xy) * occlusion;
+            }
         }
         else
         {
             EvaluateSplitSumIblComponents(irradiance, prefiltered, brdfIntegration, N, viewDirection,
-                diffuseColor, iblF0, saturate(roughness), occlusion, ambientDiffuse, ambientSpecular);
+                diffuseColor, iblF0, saturate(roughness), diffuseFresnelWeight, occlusion, ambientDiffuse, ambientSpecular);
         }
     }
     float3 sceneAmbientDiffuse = diffuseColor * g_AmbientLightColor.rgb * max(g_AmbientLightIntensity, 0.0f);
