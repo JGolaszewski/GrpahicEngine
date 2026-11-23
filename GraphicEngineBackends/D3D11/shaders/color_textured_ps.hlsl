@@ -72,6 +72,8 @@ SamplerState g_EnvironmentPanoramaSampler : register(s12);
 Texture2D<float> g_NdfDistribution : register(t6);
 SamplerState g_NdfDistributionSampler : register(s6);
 
+#include "environment_lighting.hlsli"
+
 float2 PrismNdfFilterUv(float2 uv)
 {
     const uint options = (uint)g_NdfParams.z;
@@ -103,9 +105,9 @@ float3 EvaluatePrismNdfEnvironmentSpecular(float3 normal, float3 viewDirection, 
     static const float GOLDEN_COS = -0.737368878f;
     static const float GOLDEN_SIN = 0.675490294f;
     const float horizonNoV = saturate(dot(normal, viewDirection));
+    if (horizonNoV <= BRDF_EPSILON) return 0.0f;
     const float noV = max(horizonNoV, BRDF_EPSILON);
-    const float3 localTangent = BrdfNormalizeOr(tangent - normal * dot(normal, tangent),
-        abs(normal.y) < 0.9f ? normalize(cross(float3(0.0f, 1.0f, 0.0f), normal)) : float3(1.0f, 0.0f, 0.0f));
+    const float3 localTangent = BrdfTangentForNormal(normal, tangent);
     const float handedness = dot(cross(normal, localTangent), bitangent) < 0.0f ? -1.0f : 1.0f;
     const float3 localBitangent = cross(normal, localTangent) * handedness;
     const float phase = frac(sin(dot(pixelPosition, float2(12.9898f, 78.233f))) * 43758.5453f) * 2.0f * BRDF_PI;
@@ -299,7 +301,7 @@ struct PS_OUTPUT
     float4 DiffuseLighting : SV_TARGET4;
 };
 
-PS_OUTPUT main_ps(VS_OUTPUT input)
+PS_OUTPUT main_ps(VS_OUTPUT input, bool isFrontFace : SV_IsFrontFace)
 {
     PS_OUTPUT output;
     const float2 uvBase = GetTextureCoordinate(g_TextureCoordinates0.x, input);
@@ -329,25 +331,41 @@ PS_OUTPUT main_ps(VS_OUTPUT input)
         discard;
     }
 
+    const bool flipBackfaceNormal = (g_ModelFlags.w & 0x100u) != 0u && !isFrontFace;
+
     if (g_ObjectParams.y > 0.5f)
     {
         const float3 unlit = baseColor + g_EmissiveMetallic.rgb * emissiveSample;
         output.FinalColor = float4(unlit, baseAlpha);
         output.Depth = input.pos.z;
-        output.WorldNormal = float4(BrdfNormalizeOr(input.normalWS, float3(0.0f, 0.0f, 1.0f)), 1.0f);
+        float3 unlitNormal = BrdfNormalizeOr(input.normalWS, float3(0.0f, 0.0f, 1.0f));
+        if (flipBackfaceNormal) unlitNormal = -unlitNormal;
+        output.WorldNormal = float4(unlitNormal, 1.0f);
         output.SpecularLighting = float4(0.0f, 0.0f, 0.0f, baseAlpha);
         output.DiffuseLighting = float4(unlit, baseAlpha);
         return output;
     }
 
-    const float3 geometricNormal = BrdfNormalizeOr(input.normalWS, float3(0.0f, 0.0f, 1.0f));
-    const float3 tangent = BrdfNormalizeOr(input.tangentWS.xyz - geometricNormal * dot(geometricNormal, input.tangentWS.xyz),
-        abs(geometricNormal.y) < 0.9f ? normalize(cross(float3(0.0f, 1.0f, 0.0f), geometricNormal)) : float3(1.0f, 0.0f, 0.0f));
-    const float3 bitangent = cross(geometricNormal, tangent) * (input.tangentWS.w < 0.0f ? -1.0f : 1.0f);
+    float3 geometricNormal = BrdfNormalizeOr(input.normalWS, float3(0.0f, 0.0f, 1.0f));
+    float3 tangentInput = input.tangentWS.xyz;
+    float tangentHandedness = input.tangentWS.w < 0.0f ? -1.0f : 1.0f;
+    if (flipBackfaceNormal)
+    {
+        geometricNormal = -geometricNormal;
+        tangentInput = -tangentInput;
+        tangentHandedness = -tangentHandedness;
+    }
+    const float3 materialTangent = BrdfTangentForNormal(geometricNormal, tangentInput);
+    const float3 materialBitangent = cross(geometricNormal, materialTangent) * tangentHandedness;
+    float3 normalMapTangent = materialTangent;
+    float normalMapHandedness = tangentHandedness;
+    BrdfApplyUvTransformToTangentFrame(geometricNormal, g_TextureTransformRows[1], normalMapTangent,
+        normalMapHandedness);
+    const float3 normalMapBitangent = cross(geometricNormal, normalMapTangent) * normalMapHandedness;
     float3 tangentNormal = g_NormalMap.Sample(g_NormalSampler, normalUv).xyz * 2.0f - 1.0f;
     tangentNormal.xy *= g_TextureParams.x;
-    float3 N = BrdfNormalizeOr(tangent * tangentNormal.x + bitangent * tangentNormal.y + geometricNormal * tangentNormal.z,
-        geometricNormal);
+    float3 N = BrdfNormalizeOr(normalMapTangent * tangentNormal.x + normalMapBitangent * tangentNormal.y +
+        geometricNormal * tangentNormal.z, geometricNormal);
     const bool isSpecularGlossiness = (g_ModelFlags.z & 0x100u) != 0u;
     float  metallic = saturate(g_EmissiveMetallic.w * metallicRoughnessSample.b);
     const float roughness = isSpecularGlossiness
@@ -389,6 +407,10 @@ PS_OUTPUT main_ps(VS_OUTPUT input)
             const float range = max(g_Lights[i].PositionRange.w, 0.001f);
             const float3 toLight = lightPosition - input.worldPos;
             const float distance = length(toLight);
+            if (distance <= 0.0001f)
+            {
+                continue;
+            }
             attenuation = BrdfInverseSquareRangeAttenuation(distance, range);
             if (attenuation <= 0.0f)
             {
@@ -402,6 +424,11 @@ PS_OUTPUT main_ps(VS_OUTPUT input)
             float  range         = max(g_Lights[i].PositionRange.w, 0.001f);
             float3 toLight       = lightPosition - input.worldPos;
             float  distance      = length(toLight);
+
+            if (distance <= 0.0001f)
+            {
+                continue;
+            }
 
             if (distance > range)
             {
@@ -427,12 +454,13 @@ PS_OUTPUT main_ps(VS_OUTPUT input)
         const float3 brdfBaseColor = isSpecularGlossiness ? diffuseColor : baseColor;
         const float brdfMetallic = isSpecularGlossiness ? 0.0f : metallic;
         const float3 brdfF0 = isSpecularGlossiness ? specularF0 : dielectricF0;
+        const float diffuseFresnelWeight = isSpecularGlossiness ? 0.0f : 1.0f;
         float3 diffuseBrdf;
         float3 specularBrdf;
         if (g_ModelFlags.y == 9u)
         {
-            const float3 ndfTangent = BrdfNormalizeOr(tangent - N * dot(N, tangent), tangent);
-            const float ndfHandedness = dot(cross(N, ndfTangent), bitangent) < 0.0f ? -1.0f : 1.0f;
+            const float3 ndfTangent = BrdfTangentForNormal(N, materialTangent);
+            const float ndfHandedness = dot(cross(N, ndfTangent), materialBitangent) < 0.0f ? -1.0f : 1.0f;
             const float3 ndfBitangent = cross(N, ndfTangent) * ndfHandedness;
             const float2 ndfCoord = float2(dot(query.H, ndfTangent), dot(query.H, ndfBitangent));
             const float2 residualUv = PrismNdfFilterUv(ndfCoord * 0.5f + 0.5f);
@@ -445,47 +473,50 @@ PS_OUTPUT main_ps(VS_OUTPUT input)
             }
             const float distribution = PrismZernikeNdf(ndfCoord, g_NdfCoefficients, residual, g_NdfParams.x);
             EvaluateMicrofacetBrdfComponents(query, brdfBaseColor, brdfMetallic, brdfF0, alpha,
-                distribution, diffuseBrdf, specularBrdf);
+                distribution, diffuseFresnelWeight, diffuseBrdf, specularBrdf);
         }
         else if (g_ModelFlags.y == 6u)
         {
-            EvaluateAshikhminShirleyBrdfComponents(query, tangent, bitangent, brdfBaseColor, brdfMetallic,
-                brdfF0, g_SpecularParams.w, g_AlphaParams.y, diffuseBrdf, specularBrdf);
+            const float3 ndfTangent = BrdfTangentForNormal(N, materialTangent);
+            const float ndfHandedness = dot(cross(N, ndfTangent), materialBitangent) < 0.0f ? -1.0f : 1.0f;
+            const float3 ndfBitangent = cross(N, ndfTangent) * ndfHandedness;
+            EvaluateAshikhminShirleyBrdfComponents(query, ndfTangent, ndfBitangent, brdfBaseColor, brdfMetallic,
+                brdfF0, g_SpecularParams.w, g_AlphaParams.y, diffuseFresnelWeight, diffuseBrdf, specularBrdf);
         }
         else if (g_ModelFlags.y == 2u)
         {
             EvaluateGtrBrdfComponents(query, brdfBaseColor, brdfMetallic, brdfF0, alpha,
-                g_SurfaceParams.z, diffuseBrdf, specularBrdf);
+                g_SurfaceParams.z, diffuseFresnelWeight, diffuseBrdf, specularBrdf);
         }
         else if (g_ModelFlags.y == 3u)
         {
             EvaluateBeckmannBrdfComponents(query, brdfBaseColor, brdfMetallic, brdfF0, alpha,
-                diffuseBrdf, specularBrdf);
+                diffuseFresnelWeight, diffuseBrdf, specularBrdf);
         }
         else if (g_ModelFlags.y == 4u)
         {
             EvaluateGaussBrdfComponents(query, brdfBaseColor, brdfMetallic, brdfF0, alpha,
-                diffuseBrdf, specularBrdf);
+                diffuseFresnelWeight, diffuseBrdf, specularBrdf);
         }
         else if (g_ModelFlags.y == 5u)
         {
             EvaluateBlinnPhongBrdfComponents(query, brdfBaseColor, brdfMetallic, brdfF0, alpha,
-                diffuseBrdf, specularBrdf);
+                diffuseFresnelWeight, diffuseBrdf, specularBrdf);
         }
         else if (g_ModelFlags.y == 7u)
         {
             EvaluateSchlickBrdfComponents(query, brdfBaseColor, brdfMetallic, brdfF0, alpha,
-                diffuseBrdf, specularBrdf);
+                diffuseFresnelWeight, diffuseBrdf, specularBrdf);
         }
         else if (g_ModelFlags.y == 8u)
         {
             EvaluateSawickiBrdfComponents(query, brdfBaseColor, brdfMetallic, brdfF0, alpha, g_AlphaParams.z,
-                diffuseBrdf, specularBrdf);
+                diffuseFresnelWeight, diffuseBrdf, specularBrdf);
         }
         else
         {
             EvaluateGgxBrdfComponents(query, brdfBaseColor, brdfMetallic, brdfF0, alpha,
-                diffuseBrdf, specularBrdf);
+                diffuseFresnelWeight, diffuseBrdf, specularBrdf);
         }
         const float3 lightScale = lightColor * (query.NoL * intensity * attenuation * shadow);
         diffuseAccum += diffuseBrdf * lightScale;
@@ -512,17 +543,36 @@ PS_OUTPUT main_ps(VS_OUTPUT input)
         const float2 brdfIntegration = g_BrdfIntegrationLut.Sample(g_BrdfIntegrationSampler,
             float2(saturate(dot(N, viewDirection)), saturate(roughness)));
         const float3 iblF0 = isSpecularGlossiness ? specularF0 : lerp(dielectricF0, baseColor, metallic);
+        const float diffuseFresnelWeight = isSpecularGlossiness ? 0.0f : 1.0f;
         if (g_ModelFlags.y == 9u)
         {
-            ambientDiffuse = irradiance * diffuseColor * (1.0f - BrdfFresnelSchlickRoughness(
-                iblF0, saturate(dot(N, viewDirection)), saturate(roughness))) / BRDF_PI * occlusion;
-            ambientSpecular = EvaluatePrismNdfEnvironmentSpecular(N, viewDirection, tangent, bitangent,
-                iblF0, alpha, input.pos.xy) * occlusion;
+            if (dot(N, viewDirection) > BRDF_EPSILON)
+            {
+                const float3 fresnel = BrdfFresnelSchlickRoughness(
+                    iblF0, saturate(dot(N, viewDirection)), saturate(roughness));
+                ambientDiffuse = irradiance * diffuseColor * lerp(1.0f, 1.0f - fresnel, diffuseFresnelWeight) /
+                    BRDF_PI * occlusion;
+                ambientSpecular = EvaluatePrismNdfEnvironmentSpecular(N, viewDirection, materialTangent, materialBitangent,
+                    iblF0, alpha, input.pos.xy) * occlusion;
+            }
+        }
+        else if (g_ModelFlags.y != 1u)
+        {
+            if (dot(N, viewDirection) > BRDF_EPSILON)
+            {
+                const float3 fresnel = BrdfFresnelSchlickRoughness(
+                    iblF0, saturate(dot(N, viewDirection)), saturate(roughness));
+                ambientDiffuse = irradiance * diffuseColor * lerp(1.0f, 1.0f - fresnel, diffuseFresnelWeight) /
+                    BRDF_PI * occlusion;
+                ambientSpecular = EvaluateAnalyticNdfEnvironmentSpecular(g_ModelFlags.y, N, viewDirection,
+                    materialTangent, materialBitangent, iblF0, roughness, g_SpecularParams.w, g_AlphaParams.y,
+                    g_SurfaceParams.z, g_AlphaParams.z, input.pos.xy) * occlusion;
+            }
         }
         else
         {
             EvaluateSplitSumIblComponents(irradiance, prefiltered, brdfIntegration, N, viewDirection,
-                diffuseColor, iblF0, saturate(roughness), occlusion, ambientDiffuse, ambientSpecular);
+                diffuseColor, iblF0, saturate(roughness), diffuseFresnelWeight, occlusion, ambientDiffuse, ambientSpecular);
         }
     }
     float3 sceneAmbientDiffuse = diffuseColor * g_AmbientLightColor.rgb * max(g_AmbientLightIntensity, 0.0f);

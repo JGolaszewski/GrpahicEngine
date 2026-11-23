@@ -134,6 +134,7 @@ inline float EvaluateAshikhminShirleyNdf(const DirectX::XMFLOAT3& halfTangent, f
   return normalization * cosPower;
 }
 
+/// Evaluates GGX with the same angular Schlick Fresnel diffuse partition as the D3D11 BRDF shader.
 inline DirectX::XMFLOAT3 EvaluateGgxBrdf(const DirectX::XMFLOAT3& normal, const DirectX::XMFLOAT3& view,
                                          const DirectX::XMFLOAT3& light, const DirectX::XMFLOAT3& diffuseColor,
                                          const DirectX::XMFLOAT3& f0, float alpha) noexcept {
@@ -160,11 +161,13 @@ inline DirectX::XMFLOAT3 EvaluateGgxBrdf(const DirectX::XMFLOAT3& normal, const 
   const float specularScale = ndf * geometry / (4.0f * noV * noL);
 
   XMFLOAT3 result;
-  XMStoreFloat3(
-      &result,
-      XMVectorSet(diffuseColor.x * (1.0f - f0.x) / Pi + (f0.x + (1.0f - f0.x) * fresnelWeight) * specularScale,
-                  diffuseColor.y * (1.0f - f0.y) / Pi + (f0.y + (1.0f - f0.y) * fresnelWeight) * specularScale,
-                  diffuseColor.z * (1.0f - f0.z) / Pi + (f0.z + (1.0f - f0.z) * fresnelWeight) * specularScale, 0.0f));
+  XMStoreFloat3(&result, XMVectorSet(diffuseColor.x * (1.0f - f0.x) * (1.0f - fresnelWeight) / Pi +
+                                         (f0.x + (1.0f - f0.x) * fresnelWeight) * specularScale,
+                                     diffuseColor.y * (1.0f - f0.y) * (1.0f - fresnelWeight) / Pi +
+                                         (f0.y + (1.0f - f0.y) * fresnelWeight) * specularScale,
+                                     diffuseColor.z * (1.0f - f0.z) * (1.0f - fresnelWeight) / Pi +
+                                         (f0.z + (1.0f - f0.z) * fresnelWeight) * specularScale,
+                                     0.0f));
   return result;
 }
 
@@ -194,11 +197,13 @@ inline DirectX::XMFLOAT3 EvaluateBeckmannBrdf(const DirectX::XMFLOAT3& normal, c
   const float specularScale = EvaluateBeckmannNdf(noH, safeAlpha) * geometry / (4.0f * noV * noL);
 
   XMFLOAT3 result;
-  XMStoreFloat3(
-      &result,
-      XMVectorSet(diffuseColor.x * (1.0f - f0.x) / Pi + (f0.x + (1.0f - f0.x) * fresnelWeight) * specularScale,
-                  diffuseColor.y * (1.0f - f0.y) / Pi + (f0.y + (1.0f - f0.y) * fresnelWeight) * specularScale,
-                  diffuseColor.z * (1.0f - f0.z) / Pi + (f0.z + (1.0f - f0.z) * fresnelWeight) * specularScale, 0.0f));
+  XMStoreFloat3(&result, XMVectorSet(diffuseColor.x * (1.0f - f0.x) * (1.0f - fresnelWeight) / Pi +
+                                         (f0.x + (1.0f - f0.x) * fresnelWeight) * specularScale,
+                                     diffuseColor.y * (1.0f - f0.y) * (1.0f - fresnelWeight) / Pi +
+                                         (f0.y + (1.0f - f0.y) * fresnelWeight) * specularScale,
+                                     diffuseColor.z * (1.0f - f0.z) * (1.0f - fresnelWeight) / Pi +
+                                         (f0.z + (1.0f - f0.z) * fresnelWeight) * specularScale,
+                                     0.0f));
   return result;
 }
 
@@ -227,11 +232,13 @@ inline DirectX::XMFLOAT3 EvaluateGaussBrdf(const DirectX::XMFLOAT3& normal, cons
   const float fresnelWeight = std::pow(1.0f - voH, 5.0f);
   const float specularScale = EvaluateGaussNdf(noH, safeAlpha) * geometry / (4.0f * noV * noL);
   XMFLOAT3 result;
-  XMStoreFloat3(
-      &result,
-      XMVectorSet(diffuseColor.x * (1.0f - f0.x) / Pi + (f0.x + (1.0f - f0.x) * fresnelWeight) * specularScale,
-                  diffuseColor.y * (1.0f - f0.y) / Pi + (f0.y + (1.0f - f0.y) * fresnelWeight) * specularScale,
-                  diffuseColor.z * (1.0f - f0.z) / Pi + (f0.z + (1.0f - f0.z) * fresnelWeight) * specularScale, 0.0f));
+  XMStoreFloat3(&result, XMVectorSet(diffuseColor.x * (1.0f - f0.x) * (1.0f - fresnelWeight) / Pi +
+                                         (f0.x + (1.0f - f0.x) * fresnelWeight) * specularScale,
+                                     diffuseColor.y * (1.0f - f0.y) * (1.0f - fresnelWeight) / Pi +
+                                         (f0.y + (1.0f - f0.y) * fresnelWeight) * specularScale,
+                                     diffuseColor.z * (1.0f - f0.z) * (1.0f - fresnelWeight) / Pi +
+                                         (f0.z + (1.0f - f0.z) * fresnelWeight) * specularScale,
+                                     0.0f));
   return result;
 }
 
@@ -261,15 +268,17 @@ inline DirectX::XMFLOAT3 EvaluateBlinnPhongBrdf(const DirectX::XMFLOAT3& normal,
   const float fresnelWeight = std::pow(1.0f - voH, 5.0f);
   const float specularScale = EvaluateBlinnPhongNdf(noH, safeAlpha) * geometry / (4.0f * noV * noL);
   XMFLOAT3 result;
-  XMStoreFloat3(
-      &result,
-      XMVectorSet(diffuseColor.x * (1.0f - f0.x) / Pi + (f0.x + (1.0f - f0.x) * fresnelWeight) * specularScale,
-                  diffuseColor.y * (1.0f - f0.y) / Pi + (f0.y + (1.0f - f0.y) * fresnelWeight) * specularScale,
-                  diffuseColor.z * (1.0f - f0.z) / Pi + (f0.z + (1.0f - f0.z) * fresnelWeight) * specularScale, 0.0f));
+  XMStoreFloat3(&result, XMVectorSet(diffuseColor.x * (1.0f - f0.x) * (1.0f - fresnelWeight) / Pi +
+                                         (f0.x + (1.0f - f0.x) * fresnelWeight) * specularScale,
+                                     diffuseColor.y * (1.0f - f0.y) * (1.0f - fresnelWeight) / Pi +
+                                         (f0.y + (1.0f - f0.y) * fresnelWeight) * specularScale,
+                                     diffuseColor.z * (1.0f - f0.z) * (1.0f - fresnelWeight) / Pi +
+                                         (f0.z + (1.0f - f0.z) * fresnelWeight) * specularScale,
+                                     0.0f));
   return result;
 }
 
-/// Evaluates Ashikhmin-Shirley using the mesh tangent frame and independent perceptual roughness axes.
+/// Evaluates Ashikhmin-Shirley using an orthonormal frame around the shading normal and independent roughness axes.
 inline DirectX::XMFLOAT3 EvaluateAshikhminShirleyBrdf(const DirectX::XMFLOAT3& normal, const DirectX::XMFLOAT3& tangent,
                                                       const DirectX::XMFLOAT3& bitangent, const DirectX::XMFLOAT3& view,
                                                       const DirectX::XMFLOAT3& light,
@@ -288,8 +297,20 @@ inline DirectX::XMFLOAT3 EvaluateAshikhminShirleyBrdf(const DirectX::XMFLOAT3& n
     return {0.0f, 0.0f, 0.0f};
   }
   const XMVECTOR h = XMVector3Normalize(XMVectorAdd(v, l));
-  const XMFLOAT3 halfTangent{XMVectorGetX(XMVector3Dot(h, t)), XMVectorGetX(XMVector3Dot(h, b)),
-                             XMVectorGetX(XMVector3Dot(h, n))};
+  const XMVECTOR projectedTangent = XMVectorSubtract(t, XMVectorScale(n, XMVectorGetX(XMVector3Dot(n, t))));
+  const float projectedTangentLengthSquared = XMVectorGetX(XMVector3LengthSq(projectedTangent));
+  XMVECTOR orthogonalTangent = projectedTangent;
+  if (projectedTangentLengthSquared <= Epsilon) {
+    const XMVECTOR fallbackAxis =
+        std::abs(XMVectorGetY(n)) < 0.9F ? XMVectorSet(0.0F, 1.0F, 0.0F, 0.0F) : XMVectorSet(1.0F, 0.0F, 0.0F, 0.0F);
+    orthogonalTangent = XMVector3Cross(fallbackAxis, n);
+  }
+  orthogonalTangent = XMVector3Normalize(orthogonalTangent);
+  const XMVECTOR frameBitangent = XMVector3Cross(n, orthogonalTangent);
+  const float handedness = XMVectorGetX(XMVector3Dot(frameBitangent, b)) < 0.0F ? -1.0F : 1.0F;
+  const XMVECTOR orthogonalBitangent = XMVectorScale(frameBitangent, handedness);
+  const XMFLOAT3 halfTangent{XMVectorGetX(XMVector3Dot(h, orthogonalTangent)),
+                             XMVectorGetX(XMVector3Dot(h, orthogonalBitangent)), XMVectorGetX(XMVector3Dot(h, n))};
   const float voH = ClampUnit(XMVectorGetX(XMVector3Dot(v, h)));
   const float safeRoughnessU = std::isfinite(roughnessU) ? roughnessU : 0.5f;
   const float safeRoughnessV = std::isfinite(roughnessV) ? roughnessV : 0.5f;
@@ -302,9 +323,12 @@ inline DirectX::XMFLOAT3 EvaluateAshikhminShirleyBrdf(const DirectX::XMFLOAT3& n
   const float fresnelWeight = std::pow(1.0f - voH, 5.0f);
   const float specularScale =
       EvaluateAshikhminShirleyNdf(halfTangent, safeRoughnessU, safeRoughnessV) * geometry / (4.0f * noV * noL);
-  return {diffuseColor.x * (1.0f - f0.x) / Pi + (f0.x + (1.0f - f0.x) * fresnelWeight) * specularScale,
-          diffuseColor.y * (1.0f - f0.y) / Pi + (f0.y + (1.0f - f0.y) * fresnelWeight) * specularScale,
-          diffuseColor.z * (1.0f - f0.z) / Pi + (f0.z + (1.0f - f0.z) * fresnelWeight) * specularScale};
+  return {diffuseColor.x * (1.0f - f0.x) * (1.0f - fresnelWeight) / Pi +
+              (f0.x + (1.0f - f0.x) * fresnelWeight) * specularScale,
+          diffuseColor.y * (1.0f - f0.y) * (1.0f - fresnelWeight) / Pi +
+              (f0.y + (1.0f - f0.y) * fresnelWeight) * specularScale,
+          diffuseColor.z * (1.0f - f0.z) * (1.0f - fresnelWeight) / Pi +
+              (f0.z + (1.0f - f0.z) * fresnelWeight) * specularScale};
 }
 
 /// Evaluates the single-scatter isotropic Schlick microfacet BRDF.
@@ -331,9 +355,12 @@ inline DirectX::XMFLOAT3 EvaluateSchlickBrdf(const DirectX::XMFLOAT3& normal, co
   const float geometry = geometryDenominator > Epsilon ? (2.0f * noV * noL) / geometryDenominator : 0.0f;
   const float fresnelWeight = std::pow(1.0f - voH, 5.0f);
   const float specularScale = EvaluateSchlickNdf(noH, safeAlpha) * geometry / (4.0f * noV * noL);
-  return {diffuseColor.x * (1.0f - f0.x) / Pi + (f0.x + (1.0f - f0.x) * fresnelWeight) * specularScale,
-          diffuseColor.y * (1.0f - f0.y) / Pi + (f0.y + (1.0f - f0.y) * fresnelWeight) * specularScale,
-          diffuseColor.z * (1.0f - f0.z) / Pi + (f0.z + (1.0f - f0.z) * fresnelWeight) * specularScale};
+  return {diffuseColor.x * (1.0f - f0.x) * (1.0f - fresnelWeight) / Pi +
+              (f0.x + (1.0f - f0.x) * fresnelWeight) * specularScale,
+          diffuseColor.y * (1.0f - f0.y) * (1.0f - fresnelWeight) / Pi +
+              (f0.y + (1.0f - f0.y) * fresnelWeight) * specularScale,
+          diffuseColor.z * (1.0f - f0.z) * (1.0f - fresnelWeight) / Pi +
+              (f0.z + (1.0f - f0.z) * fresnelWeight) * specularScale};
 }
 
 /// Evaluates the single-scatter isotropic Sawicki microfacet BRDF.
@@ -379,5 +406,4 @@ EvaluateSawickiMetallicRoughnessBrdf(const DirectX::XMFLOAT3& normal, const Dire
                                 dielectricF0.y + (baseColor.y - dielectricF0.y) * safeMetallic,
                                 dielectricF0.z + (baseColor.z - dielectricF0.z) * safeMetallic};
   return EvaluateSawickiBrdf(normal, view, light, diffuseColor, f0, alpha);
-}
 } // namespace Engine::Renderer::Brdf

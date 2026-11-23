@@ -1,5 +1,6 @@
 #pragma once
 
+#include "rendering/include/TextureMipSemantic.h"
 #include "runtime/include/CoreExport.h"
 #include <DirectXMath.h>
 #include <cstddef>
@@ -62,9 +63,9 @@ public:
   void Init(nvrhi::IDevice* device, ::Engine::Renderer::MaterialSystem* materialSystem,
             ::Engine::Renderer::ShaderFactory* shaderFactory,
             const ::Engine::Renderer::ModelResourceLibrary* modelResources);
-  void SetAssetTextureResolver(
-      std::function<std::shared_ptr<::Engine::Renderer::TextureResource>(const std::string&, bool, bool, bool, float)>
-          resolver);
+  void SetAssetTextureResolver(std::function<std::shared_ptr<::Engine::Renderer::TextureResource>(
+                                   const std::string&, bool, ::Engine::Renderer::TextureMipSemantic, float)>
+                                   resolver);
 
   void BuildViews(::Engine::Renderer::FrameBlackboard& blackboard, nvrhi::ICommandList* commandList,
                   ::Engine::Renderer::FrameContext& frameContext, ::Engine::Renderer::FrameDiagnostics& diagnostics);
@@ -120,7 +121,8 @@ private:
                                const ::Engine::Renderer::Submesh& submesh,
                                const ::Engine::Renderer::MaterialProperties& materialProperties,
                                bool hasTextureOverrides, const nvrhi::FramebufferInfoEx& framebufferInfo,
-                               ::Engine::Renderer::RenderPacket& packet, bool disableFaceCulling);
+                               ::Engine::Renderer::RenderPacket& packet, bool disableFaceCulling,
+                               bool reverseFrontFace);
   static void SortViewQueues(::Engine::Renderer::RenderView* view);
   void EnsureDebugBuffer(nvrhi::BufferHandle& buffer, uint64_t& capacity, size_t vertexCount, const char* debugName);
   nvrhi::GraphicsPipelineHandle GetDebugPipeline(const nvrhi::FramebufferInfo& framebuffer,
@@ -174,7 +176,8 @@ private:
   uint64_t m_DebugTriangleBufferCapacity = 0;
 
   ::Engine::Renderer::MaterialSystem* m_MaterialSystem = nullptr;
-  std::function<std::shared_ptr<::Engine::Renderer::TextureResource>(const std::string&, bool, bool, bool, float)>
+  std::function<std::shared_ptr<::Engine::Renderer::TextureResource>(const std::string&, bool,
+                                                                     ::Engine::Renderer::TextureMipSemantic, float)>
       m_AssetTextureResolver;
   const ::Engine::Renderer::ModelResourceLibrary* m_ModelResources = nullptr;
   using MaterialOverrideKey = std::tuple<uintptr_t, uint32_t, uint32_t, std::string, int32_t, uintptr_t>;

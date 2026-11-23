@@ -4,6 +4,7 @@
 #include "rendering/include/RenderBackend.h"
 #include "rendering/include/RenderLimits.h"
 #include "rendering/include/RenderOutput.h"
+#include "rendering/include/TextureMipSemantic.h"
 #include "rendering/include/ViewportTarget.h"
 #include "rendering/include/renderer/CameraView.h"
 #include "rendering/include/renderer/ShadowDiagnostics.h"
@@ -71,12 +72,11 @@ public:
   /// @param guid Stable texture asset identity.
   /// @param srgb Whether the texture should use sRGB sampling.
   /// @param error Receives a missing asset or upload diagnostic.
-  /// @param normalMap Whether generated mip levels should preserve normal direction.
-  /// @param preserveAlphaCoverage Whether generated mip levels should preserve masked alpha coverage.
+  /// @param semantic Interpretation of the texture's RGBA channels during mip generation.
   /// @param alphaCutoff Alpha threshold used when preserving coverage for masked materials.
   /// @return True when the texture resource is ready for scene material bindings.
-  bool PrepareAssetTexture(const std::string& guid, bool srgb, std::string& error, bool normalMap = false,
-                           bool preserveAlphaCoverage = false, float alphaCutoff = 0.5F);
+  bool PrepareAssetTexture(const std::string& guid, bool srgb, std::string& error,
+                           Renderer::TextureMipSemantic semantic, float alphaCutoff = 0.5F);
   /// Loads and prepares the GPU panorama and lighting maps for an imported HDR environment.
   /// @param guid Stable environment asset identity.
   /// @param error Receives a missing asset or GPU resource diagnostic.
@@ -85,13 +85,11 @@ public:
   /// Returns a previously prepared authored project texture.
   /// @param guid Stable texture asset identity.
   /// @param srgb Whether the texture uses sRGB sampling.
-  /// @param normalMap Whether the texture is a normal map.
-  /// @param preserveAlphaCoverage Whether masked alpha coverage is preserved in its mip levels.
+  /// @param semantic Interpretation of the texture's RGBA channels during mip generation.
   /// @param alphaCutoff Alpha threshold used when preserving coverage for masked materials.
   /// @return Prepared GPU resource, or empty when it has not been prepared.
   std::shared_ptr<::Engine::Renderer::TextureResource> GetPreparedAssetTexture(const std::string& guid, bool srgb,
-                                                                               bool normalMap = false,
-                                                                               bool preserveAlphaCoverage = false,
+                                                                               Renderer::TextureMipSemantic semantic,
                                                                                float alphaCutoff = 0.5F) const;
 
   /// Begin frame recording before submitting view work.
@@ -196,14 +194,13 @@ public:
   /// @param srgb Whether the texture uses sRGB sampling.
   /// @param error Receives a failure description when creation fails.
   /// @param sampler Optional sampler settings from the imported texture.
-  /// @param normalMap Whether generated mip levels should preserve normal direction.
-  /// @param preserveAlphaCoverage Whether generated mip levels should preserve masked alpha coverage.
+  /// @param semantic Interpretation of the texture's RGBA channels during mip generation.
   /// @param alphaCutoff Alpha threshold used when preserving coverage for masked materials.
   /// @return GPU texture resource, or an empty pointer on failure.
   std::shared_ptr<::Engine::Renderer::TextureResource>
   GetOrCreateTexture(const std::string& identity, uint64_t generation, const ImportedImage& image, bool srgb,
-                     std::string& error, const ImportedTexture* sampler = nullptr, bool normalMap = false,
-                     bool preserveAlphaCoverage = false, float alphaCutoff = 0.5F);
+                     std::string& error, const ImportedTexture* sampler, Renderer::TextureMipSemantic semantic,
+                     float alphaCutoff = 0.5F);
   /// Creates a material from renderer properties.
   /// @param properties Material parameters and texture transforms.
   /// @return New material, or an empty pointer on failure.
@@ -321,9 +318,8 @@ private:
                               const std::vector<std::optional<::Engine::Renderer::MaterialProperties>>& overrides,
                               std::shared_ptr<::Engine::Renderer::Material>& material, std::string& error);
   bool ResolveImportedTexture(const std::string& guid, uint64_t generation, const ImportedModel& model,
-                              int32_t textureIndex, bool srgb, bool normalMap, bool preserveAlphaCoverage,
-                              float alphaCutoff, std::shared_ptr<::Engine::Renderer::TextureResource>& destination,
-                              std::string& error);
+                              int32_t textureIndex, bool srgb, Renderer::TextureMipSemantic semantic, float alphaCutoff,
+                              std::shared_ptr<::Engine::Renderer::TextureResource>& destination, std::string& error);
   void UnregisterMaterials(const std::vector<std::shared_ptr<::Engine::Renderer::Material>>& materials);
   void ClearFrameBuffer();
   void ClearSubmittedTargets();
@@ -340,7 +336,8 @@ private:
   uint32_t m_MaxTextureAnisotropy = 8;
   bool m_TextureAnisotropyUpdatePending = false;
   AssetManager* m_AssetManager = nullptr;
-  std::map<std::tuple<std::string, bool, bool, bool, float>, std::shared_ptr<::Engine::Renderer::TextureResource>>
+  std::map<std::tuple<std::string, bool, Renderer::TextureMipSemantic, float>,
+           std::shared_ptr<::Engine::Renderer::TextureResource>>
       m_AuthoredTextures;
   std::map<std::pair<std::string, uint64_t>, std::shared_ptr<::Engine::Renderer::EnvironmentLightingResources>>
       m_AuthoredEnvironments;

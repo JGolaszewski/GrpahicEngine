@@ -130,12 +130,14 @@ Sawicki (2021) analyzes the NDF and coefficient conversion, not a complete
 metallic-roughness BRDF. The renderer combines this NDF with its shared
 correlated Smith-GGX masking-shadowing and Fresnel terms. Metallic remains the
 usual workflow blend between dielectric F0 and base color, with diffuse energy
-reduced by metalness. Analytic distributions currently use the GGX split-sum
-approximation for environment specular lighting; only PRISM uses its own
-distribution for panorama integration. Therefore the paper-derived Sawicki
-NDF governs direct lighting, while environment specular remains a GGX
-approximation. The implementation stays finite at grazing angles and minimum
-roughness.
+reduced by metalness. GGX environment specular uses the split-sum LUT. Other
+analytic models, including Sawicki, integrate their selected NDF against the
+source panorama using a 128-sample importance proposal; PRISM uses its separate
+generated-distribution integration path. The packed Sawicki `Nds` coefficient
+is used for both direct and panorama-integrated environment specular. Analytic
+environment lighting costs more texture samples and can show sampling noise
+around small bright features. The implementation stays finite at grazing
+angles and minimum roughness.
 
 The textured shader supports base color, normal, metallic-roughness, occlusion,
 and emissive maps, with a UV set and UV transform per slot. It applies the

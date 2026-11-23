@@ -371,7 +371,7 @@ auto InspectorPanel::DrawPrismNdfEditor(Engine::EntityHandle entity, const std::
         const float py = 2.0F * static_cast<float>(y) / static_cast<float>(Engine::PrismNdfGridSize - 1) - 1.0F;
         const size_t index = static_cast<size_t>(y) * Engine::PrismNdfGridSize + x;
         m_PrismPreviewHeatmap[index] = Engine::Renderer::EvaluatePrismNdfPreview(
-            *m_PrismPreview, residualMipChain, px, py, 2.0F / static_cast<float>(Engine::PrismNdfGridSize - 1));
+            *m_PrismPreview, residualMipChain, px, py, 2.0F / static_cast<float>(Engine::PrismNdfGridSize - 1), 1.0F);
         m_PrismPreviewMaximum = (std::max)(m_PrismPreviewMaximum, m_PrismPreviewHeatmap[index]);
       }
     }
@@ -389,7 +389,7 @@ auto InspectorPanel::DrawPrismNdfEditor(Engine::EntityHandle entity, const std::
         const float nz = std::sqrt(1.0F - radiusSquared);
         const float nDotL = (std::max)(0.0F, nx * light[0] + ny * light[1] + nz * light[2]);
         const float ndf = Engine::Renderer::EvaluatePrismNdfPreview(*m_PrismPreview, residualMipChain, nx, ny,
-                                                                    2.0F / static_cast<float>(sphereSteps));
+                                                                    2.0F / static_cast<float>(sphereSteps), nz);
         const float shaded = (0.06F + 0.94F * nDotL) * (0.12F + 0.88F * ndf / (m_PrismPreviewMaximum + 1.0e-6F));
         const size_t index = static_cast<size_t>(row) * sphereSteps + column;
         m_PrismPreviewSphere[index] = shaded;

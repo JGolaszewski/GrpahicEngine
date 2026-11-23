@@ -219,14 +219,15 @@ TEST(PrismNdfMathTests, InspectorPreviewUsesIndependentResidualEdgeControls) {
   horizonData.zernikeCoefficients[0] = 2.0F;
   horizonData.horizonFade = false;
   const auto horizonMips = Engine::Renderer::BuildPrismNdfResidualMipChain(horizonData.residuals);
-  EXPECT_FLOAT_EQ(Engine::Renderer::EvaluatePrismNdfPreview(horizonData, horizonMips, 1.0F, 0.0F, 0.01F), 3.0F);
+  EXPECT_FLOAT_EQ(Engine::Renderer::EvaluatePrismNdfPreview(horizonData, horizonMips, 1.0F, 0.0F, 0.01F, 1.0F), 3.0F);
   horizonData.horizonFade = true;
-  EXPECT_FLOAT_EQ(Engine::Renderer::EvaluatePrismNdfPreview(horizonData, horizonMips, 1.0F, 0.0F, 0.01F), 2.0F);
+  EXPECT_FLOAT_EQ(Engine::Renderer::EvaluatePrismNdfPreview(horizonData, horizonMips, 1.0F, 0.0F, 0.01F, 0.0F), 2.0F);
+  EXPECT_FLOAT_EQ(Engine::Renderer::EvaluatePrismNdfPreview(horizonData, horizonMips, 0.999F, 0.0F, 0.01F, 1.0F), 3.0F);
   const float nearHorizonRadius = 0.999F;
-  const float noV = std::sqrt(1.0F - nearHorizonRadius * nearHorizonRadius);
+  const float noV = 0.05F;
   const float fadeT = noV / 0.1F;
   const float expectedFade = fadeT * fadeT * (3.0F - 2.0F * fadeT);
-  EXPECT_NEAR(Engine::Renderer::EvaluatePrismNdfPreview(horizonData, horizonMips, nearHorizonRadius, 0.0F, 0.01F),
+  EXPECT_NEAR(Engine::Renderer::EvaluatePrismNdfPreview(horizonData, horizonMips, nearHorizonRadius, 0.0F, 0.01F, noV),
               2.0F + expectedFade, 1.0e-4F);
 
   Engine::PrismNdfData mipData;
@@ -240,9 +241,10 @@ TEST(PrismNdfMathTests, InspectorPreviewUsesIndependentResidualEdgeControls) {
     }
   }
   const auto mipLevels = Engine::Renderer::BuildPrismNdfResidualMipChain(mipData.residuals);
-  const float aliasedValue = Engine::Renderer::EvaluatePrismNdfPreview(mipData, mipLevels, 0.13F, 0.0F, 0.0625F);
+  const float aliasedValue = Engine::Renderer::EvaluatePrismNdfPreview(mipData, mipLevels, 0.13F, 0.0F, 0.0625F, 1.0F);
   mipData.mipmappedResiduals = true;
-  const float mipFilteredValue = Engine::Renderer::EvaluatePrismNdfPreview(mipData, mipLevels, 0.13F, 0.0F, 0.0625F);
+  const float mipFilteredValue =
+      Engine::Renderer::EvaluatePrismNdfPreview(mipData, mipLevels, 0.13F, 0.0F, 0.0625F, 1.0F);
   EXPECT_GT(aliasedValue, 0.5F);
   EXPECT_NEAR(mipFilteredValue, 0.0F, 1.0e-6F);
 
@@ -259,10 +261,10 @@ TEST(PrismNdfMathTests, InspectorPreviewUsesIndependentResidualEdgeControls) {
   }
   const auto equalAngleMips = Engine::Renderer::BuildPrismNdfResidualMipChain(equalAngleData.residuals);
   const float sineMappedValue =
-      Engine::Renderer::EvaluatePrismNdfPreview(equalAngleData, equalAngleMips, 0.8F, 0.0F, 0.01F);
+      Engine::Renderer::EvaluatePrismNdfPreview(equalAngleData, equalAngleMips, 0.8F, 0.0F, 0.01F, 1.0F);
   equalAngleData.equalAngleResiduals = true;
   const float equalAngleValue =
-      Engine::Renderer::EvaluatePrismNdfPreview(equalAngleData, equalAngleMips, 0.8F, 0.0F, 0.01F);
+      Engine::Renderer::EvaluatePrismNdfPreview(equalAngleData, equalAngleMips, 0.8F, 0.0F, 0.01F, 1.0F);
   EXPECT_GT(sineMappedValue - equalAngleValue, 0.15F);
 }
 TEST(PrismNdfMathTests, InvalidGridValuesAreRejected) {

@@ -68,9 +68,28 @@ files when moving or backing up project assets.
 The importer preserves the glTF scene graph, scene roots, local node
 transforms, mesh primitives, and material assignments. It reads positions,
 optional normals and tangents, vertex colors, and up to eight texture
-coordinate sets (`TEXCOORD_0` through `TEXCOORD_7`). Missing normals and
-tangents are generated for triangle primitives. Triangle strips and fans are
-expanded to triangle lists; line loops are expanded to line segments.
+coordinate sets (`TEXCOORD_0` through `TEXCOORD_7`). Missing normals on
+triangle primitives are generated as flat per-face normals; this expands the
+index stream so adjacent faces keep their hard edge, and provided tangent data
+is ignored when normals are absent. Missing tangents use the default MikkTSpace
+reference implementation and the normal texture's selected coordinate set.
+MikkTSpace is evaluated per triangle corner; shared vertices are split only
+when their resulting tangent frames differ, including mirrored UV seams.
+Degenerate UV triangles use a finite orthogonal fallback frame.
+Triangle strips and fans are expanded to triangle lists; line loops are
+expanded to line segments.
+
+`KHR_texture_transform` is applied to both normal-map sampling coordinates and
+the tangent frame. The shader transforms the U tangent by the inverse UV matrix,
+normalizes it, then derives the orthogonal V axis from the oriented surface
+normal and handedness. This matches MikkTSpace's frame convention for
+transformed UVs: UV scale changes sampling frequency but does not change
+normal-map vector strength. Normal-map axes remain separate from the material
+tangent axes used to orient anisotropic BRDFs.
+Singular transforms keep the source frame because their transformed tangent
+axis is undefined. Generated tangent frames use the upstream MikkTSpace
+implementation pinned in
+`GraphicEngineCore/modules/assets/src/third_party/mikktspace/README.md`.
 
 Imported glTF material data includes metallic-roughness factors and textures,
 base color, emissive values, normal and occlusion textures, alpha mode,
@@ -80,9 +99,15 @@ Textures are decoded to four-channel, 8-bit RGBA pixels for the CPU asset
 representation.
 
 GPU mip chains cover the complete source footprint for odd and non-square
-images. Normal-map mips average tangent-space vectors and renormalize each
-result. Masked base-color textures use alpha-coverage adjustment at the
-standard 0.5 cutoff; other texture uses keep their filtered alpha values.
+images. Mip filtering follows each glTF texture slot's channel semantics:
+BLEND and MASK base-color RGB use opacity-weighted filtering, while OPAQUE
+base-color RGB ignores alpha as required by glTF. Normal maps average and
+renormalize tangent-space vectors. Metallic-roughness, specular-glossiness,
+occlusion, and emissive RGB are filtered independently of alpha. This preserves
+specular-glossiness alpha as glossiness and does not treat other unused alpha
+channels as opacity. Masked base-color textures use alpha-coverage adjustment
+at the material cutoff; see [texture mip generation](rendering/texture-mips.md)
+for the filtering and cache behavior.
 
 ## Limitations and troubleshooting
 

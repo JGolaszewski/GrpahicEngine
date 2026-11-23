@@ -11,6 +11,7 @@
 #endif
 
 #include "assets/include/AssetImporter.h"
+#include <mikktspace.h>
 
 #include <algorithm>
 #include <array>
@@ -342,72 +343,153 @@ DirectX::XMFLOAT3 Normalize(const DirectX::XMFLOAT3& v, const DirectX::XMFLOAT3&
   return {v.x * inverseLength, v.y * inverseLength, v.z * inverseLength};
 }
 
-void GenerateNormals(ImportedPrimitive& primitive) {
-  std::vector<DirectX::XMFLOAT3> accumulated(primitive.vertices.size());
-  for (size_t i = 0; i + 2 < primitive.indices.size(); i += 3) {
-    auto& a = primitive.vertices[primitive.indices[i]].Position;
-    auto& b = primitive.vertices[primitive.indices[i + 1]].Position;
-    auto& c = primitive.vertices[primitive.indices[i + 2]].Position;
-    const DirectX::XMFLOAT3 edge1{b.x - a.x, b.y - a.y, b.z - a.z};
-    const DirectX::XMFLOAT3 edge2{c.x - a.x, c.y - a.y, c.z - a.z};
-    const DirectX::XMFLOAT3 normal{edge1.y * edge2.z - edge1.z * edge2.y, edge1.z * edge2.x - edge1.x * edge2.z,
-                                   edge1.x * edge2.y - edge1.y * edge2.x};
+auto Cross(const DirectX::XMFLOAT3& left, const DirectX::XMFLOAT3& right) -> DirectX::XMFLOAT3 {
+  return {left.y * right.z - left.z * right.y, left.z * right.x - left.x * right.z,
+          left.x * right.y - left.y * right.x};
+}
+
+auto Subtract(const DirectX::XMFLOAT3& left, const DirectX::XMFLOAT3& right) -> DirectX::XMFLOAT3 {
+  return {left.x - right.x, left.y - right.y, left.z - right.z};
+}
+
+auto Dot(const DirectX::XMFLOAT3& left, const DirectX::XMFLOAT3& right) -> float {
+  return left.x * right.x + left.y * right.y + left.z * right.z;
+}
+
+auto FallbackTangent(const DirectX::XMFLOAT3& normal) -> DirectX::XMFLOAT3 {
+  const DirectX::XMFLOAT3 axis =
+      std::abs(normal.y) < 0.9f ? DirectX::XMFLOAT3{0.0f, 1.0f, 0.0f} : DirectX::XMFLOAT3{1.0f, 0.0f, 0.0f};
+  return Normalize(Cross(axis, normal), {1.0f, 0.0f, 0.0f});
+}
+
+void GenerateFlatNormals(ImportedPrimitive& primitive) {
+  const auto sourceVertices = std::move(primitive.vertices);
+  const auto sourceIndices = std::move(primitive.indices);
+  primitive.vertices.clear();
+  primitive.indices.resize(sourceIndices.size());
+  primitive.vertices.reserve(sourceIndices.size());
+  for (size_t triangle = 0; triangle + 2 < sourceIndices.size(); triangle += 3) {
+    const auto& a = sourceVertices[sourceIndices[triangle]].Position;
+    const auto& b = sourceVertices[sourceIndices[triangle + 1]].Position;
+    const auto& c = sourceVertices[sourceIndices[triangle + 2]].Position;
+    const auto edge1 = Subtract(b, a);
+    const auto edge2 = Subtract(c, a);
+    const auto normal = Normalize(Cross(edge1, edge2), {0.0f, 1.0f, 0.0f});
     for (size_t corner = 0; corner < 3; ++corner) {
-      auto& sum = accumulated[primitive.indices[i + corner]];
-      sum.x += normal.x;
-      sum.y += normal.y;
-      sum.z += normal.z;
+      auto vertex = sourceVertices[sourceIndices[triangle + corner]];
+      vertex.Normal = normal;
+      primitive.indices[triangle + corner] = static_cast<uint32_t>(primitive.vertices.size());
+      primitive.vertices.push_back(vertex);
     }
   }
-  for (size_t i = 0; i < primitive.vertices.size(); ++i)
-    primitive.vertices[i].Normal = Normalize(accumulated[i], {0.0f, 1.0f, 0.0f});
+}
+
+struct MikkTangentGenerationInput {
+  const std::vector<Engine::Renderer::Vertex>* vertices = nullptr;
+  const std::vector<uint32_t>* indices = nullptr;
+  uint32_t texCoord = 0;
+  std::vector<DirectX::XMFLOAT4>* tangents = nullptr;
+};
+
+auto GetMikkInput(const SMikkTSpaceContext* context) -> MikkTangentGenerationInput& {
+  return *static_cast<MikkTangentGenerationInput*>(context->m_pUserData);
+}
+
+auto MikkGetFaceCount(const SMikkTSpaceContext* context) -> int {
+  return static_cast<int>(GetMikkInput(context).indices->size() / 3);
+}
+
+auto MikkGetVertexCount(const SMikkTSpaceContext*, int) -> int { return 3; }
+
+auto MikkGetSourceVertex(const SMikkTSpaceContext* context, int face, int vertex) -> const Engine::Renderer::Vertex& {
+  auto& input = GetMikkInput(context);
+  const size_t corner = static_cast<size_t>(face) * 3 + static_cast<size_t>(vertex);
+  return input.vertices->at(input.indices->at(corner));
+}
+
+void MikkGetPosition(const SMikkTSpaceContext* context, float output[], int face, int vertex) {
+  const auto& position = MikkGetSourceVertex(context, face, vertex).Position;
+  output[0] = position.x;
+  output[1] = position.y;
+  output[2] = position.z;
+}
+
+void MikkGetNormal(const SMikkTSpaceContext* context, float output[], int face, int vertex) {
+  const auto& normal = MikkGetSourceVertex(context, face, vertex).Normal;
+  output[0] = normal.x;
+  output[1] = normal.y;
+  output[2] = normal.z;
+}
+
+void MikkGetTexCoord(const SMikkTSpaceContext* context, float output[], int face, int vertex) {
+  const auto& input = GetMikkInput(context);
+  const auto& uv = MikkGetSourceVertex(context, face, vertex).UV[input.texCoord];
+  output[0] = uv.x;
+  output[1] = uv.y;
+}
+
+void MikkSetTangent(const SMikkTSpaceContext* context, const float tangent[], float sign, int face, int vertex) {
+  auto& input = GetMikkInput(context);
+  const size_t corner = static_cast<size_t>(face) * 3 + static_cast<size_t>(vertex);
+  input.tangents->at(corner) = {tangent[0], tangent[1], tangent[2], sign < 0.0f ? -1.0f : 1.0f};
 }
 
 void GenerateTangents(ImportedPrimitive& primitive, uint32_t texCoord) {
-  std::vector<DirectX::XMFLOAT3> tangent(primitive.vertices.size());
-  std::vector<DirectX::XMFLOAT3> bitangent(primitive.vertices.size());
-  for (size_t i = 0; i + 2 < primitive.indices.size(); i += 3) {
-    const uint32_t ia = primitive.indices[i], ib = primitive.indices[i + 1], ic = primitive.indices[i + 2];
-    const auto& a = primitive.vertices[ia];
-    const auto& b = primitive.vertices[ib];
-    const auto& c = primitive.vertices[ic];
-    const float x1 = b.Position.x - a.Position.x, x2 = c.Position.x - a.Position.x;
-    const float y1 = b.Position.y - a.Position.y, y2 = c.Position.y - a.Position.y;
-    const float z1 = b.Position.z - a.Position.z, z2 = c.Position.z - a.Position.z;
-    const float s1 = b.UV[texCoord].x - a.UV[texCoord].x, s2 = c.UV[texCoord].x - a.UV[texCoord].x;
-    const float t1 = b.UV[texCoord].y - a.UV[texCoord].y, t2 = c.UV[texCoord].y - a.UV[texCoord].y;
-    const float determinant = s1 * t2 - s2 * t1;
-    if (!std::isfinite(determinant) || std::abs(determinant) <= 1.0e-20f)
-      continue;
-    const float r = 1.0f / determinant;
-    const DirectX::XMFLOAT3 sdir{(t2 * x1 - t1 * x2) * r, (t2 * y1 - t1 * y2) * r, (t2 * z1 - t1 * z2) * r};
-    const DirectX::XMFLOAT3 tdir{(s1 * x2 - s2 * x1) * r, (s1 * y2 - s2 * y1) * r, (s1 * z2 - s2 * z1) * r};
-    for (uint32_t index : {ia, ib, ic}) {
-      tangent[index].x += sdir.x;
-      tangent[index].y += sdir.y;
-      tangent[index].z += sdir.z;
-      bitangent[index].x += tdir.x;
-      bitangent[index].y += tdir.y;
-      bitangent[index].z += tdir.z;
+  const auto sourceVertices = std::move(primitive.vertices);
+  const auto sourceIndices = std::move(primitive.indices);
+  std::vector<DirectX::XMFLOAT4> tangents(sourceIndices.size());
+  MikkTangentGenerationInput input{.vertices = &sourceVertices,
+                                   .indices = &sourceIndices,
+                                   .texCoord = texCoord,
+                                   .tangents = &tangents};
+  SMikkTSpaceInterface interface{};
+  interface.m_getNumFaces = MikkGetFaceCount;
+  interface.m_getNumVerticesOfFace = MikkGetVertexCount;
+  interface.m_getPosition = MikkGetPosition;
+  interface.m_getNormal = MikkGetNormal;
+  interface.m_getTexCoord = MikkGetTexCoord;
+  interface.m_setTSpaceBasic = MikkSetTangent;
+  SMikkTSpaceContext context{.m_pInterface = &interface, .m_pUserData = &input};
+  const bool generated = genTangSpaceDefault(&context) != 0;
+
+  primitive.vertices = sourceVertices;
+  primitive.indices.resize(sourceIndices.size());
+  struct TangentVariant {
+    DirectX::XMFLOAT4 tangent;
+    uint32_t vertexIndex = 0;
+  };
+  std::vector<std::vector<TangentVariant>> tangentVariants(sourceVertices.size());
+  for (size_t corner = 0; corner < sourceIndices.size(); ++corner) {
+    const uint32_t sourceIndex = sourceIndices[corner];
+    auto vertex = sourceVertices[sourceIndex];
+    auto tangent = tangents[corner];
+    const auto normal = Normalize(vertex.Normal, {0.0f, 1.0f, 0.0f});
+    const DirectX::XMFLOAT3 tangentDirection{tangent.x, tangent.y, tangent.z};
+    const float tangentLength = Dot(tangentDirection, tangentDirection);
+    if (!generated || !std::isfinite(tangentLength) || tangentLength <= 1.0e-20f) {
+      const auto fallback = FallbackTangent(normal);
+      tangent = {fallback.x, fallback.y, fallback.z, 1.0f};
+    } else {
+      const auto direction = Normalize(tangentDirection, FallbackTangent(normal));
+      tangent = {direction.x, direction.y, direction.z, tangent.w < 0.0f ? -1.0f : 1.0f};
     }
-  }
-  for (size_t i = 0; i < primitive.vertices.size(); ++i) {
-    const auto& normal = primitive.vertices[i].Normal;
-    const auto& source = tangent[i];
-    const float projection = normal.x * source.x + normal.y * source.y + normal.z * source.z;
-    const DirectX::XMFLOAT3 orthogonal{source.x - normal.x * projection, source.y - normal.y * projection,
-                                       source.z - normal.z * projection};
-    const DirectX::XMFLOAT3 fallback = std::abs(normal.y) < 0.9f
-                                           ? Normalize({normal.z, 0.0f, -normal.x}, {1.0f, 0.0f, 0.0f})
-                                           : DirectX::XMFLOAT3{1.0f, 0.0f, 0.0f};
-    const auto direction = Normalize(orthogonal, fallback);
-    const auto& bitan = bitangent[i];
-    const float handedness = (normal.x * (direction.y * bitan.z - direction.z * bitan.y) +
-                              normal.y * (direction.z * bitan.x - direction.x * bitan.z) +
-                              normal.z * (direction.x * bitan.y - direction.y * bitan.x)) < 0.0f
-                                 ? -1.0f
-                                 : 1.0f;
-    primitive.vertices[i].Tangent = {direction.x, direction.y, direction.z, handedness};
+    vertex.Tangent = tangent;
+    auto& variants = tangentVariants[sourceIndex];
+    const auto matching = std::ranges::find_if(variants, [&](const TangentVariant& variant) {
+      return variant.tangent.x == tangent.x && variant.tangent.y == tangent.y && variant.tangent.z == tangent.z &&
+             variant.tangent.w == tangent.w;
+    });
+    if (matching != variants.end()) {
+      primitive.indices[corner] = matching->vertexIndex;
+      continue;
+    }
+    const uint32_t outputIndex = variants.empty() ? sourceIndex : static_cast<uint32_t>(primitive.vertices.size());
+    if (!variants.empty())
+      primitive.vertices.push_back(vertex);
+    else
+      primitive.vertices[sourceIndex].Tangent = tangent;
+    variants.push_back({.tangent = tangent, .vertexIndex = outputIndex});
+    primitive.indices[corner] = outputIndex;
   }
 }
 
@@ -587,9 +669,10 @@ bool ImportPrimitive(const tinygltf::Model& source, const tinygltf::Primitive& i
     output.boundsMax.y = (std::max)(output.boundsMax.y, p.y);
     output.boundsMax.z = (std::max)(output.boundsMax.z, p.z);
   }
-  if (normals.empty() && output.primitiveType == ImportedPrimitiveType::Triangles)
-    GenerateNormals(output);
-  if (tangents.empty() && output.primitiveType == ImportedPrimitiveType::Triangles)
+  const bool normalsMissing = normals.empty();
+  if (normalsMissing && output.primitiveType == ImportedPrimitiveType::Triangles)
+    GenerateFlatNormals(output);
+  if ((tangents.empty() || normalsMissing) && output.primitiveType == ImportedPrimitiveType::Triangles)
     GenerateTangents(output, tangentTexCoord);
   return true;
 }
