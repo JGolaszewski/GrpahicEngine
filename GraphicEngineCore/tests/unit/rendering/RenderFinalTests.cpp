@@ -34,6 +34,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -1245,6 +1246,9 @@ TEST(RenderFinalTests, WARPDoubleSidedNormalMapReversesTheWholeTangentBasisOnBac
     GTEST_SKIP() << "D3D11 WARP device could not be created on this host";
   }
 
+  const std::string normalGuid = "44444444-5555-4666-8777-888888888888";
+  const std::string normalYGuid = "55555555-6666-4777-8888-999999999999";
+  const std::string flatNormalGuid = "66666666-7777-4888-9999-aaaaaaaaaaaa";
   EngineTests::WarpRenderBackend backend(device.GetDevice());
   Engine::RenderSystem renderer(&backend);
   ASSERT_TRUE(renderer.IsValid());
@@ -1254,9 +1258,6 @@ TEST(RenderFinalTests, WARPDoubleSidedNormalMapReversesTheWholeTangentBasisOnBac
   ASSERT_NE(fallbackMaterial, nullptr);
   ASSERT_TRUE(renderer.CreatePrimitive(Engine::PrimitiveShape::Plane, fallbackMaterial));
 
-  const std::string normalGuid = "44444444-5555-4666-8777-888888888888";
-  const std::string normalYGuid = "55555555-6666-4777-8888-999999999999";
-  const std::string flatNormalGuid = "66666666-7777-4888-9999-aaaaaaaaaaaa";
   Engine::ImportedImage normalImage{.name = "tangent-X normal",
                                     .mimeType = "image/raw",
                                     .width = 1,
@@ -1279,22 +1280,25 @@ TEST(RenderFinalTests, WARPDoubleSidedNormalMapReversesTheWholeTangentBasisOnBac
   const auto normalYTexture = renderer.GetOrCreateTexture(normalYGuid, 1U, normalYImage, false, error, nullptr,
                                                           Engine::Renderer::TextureMipSemantic::NormalMap);
   ASSERT_NE(normalYTexture, nullptr) << error;
-  const auto flatNormalTexture =
-      renderer.GetOrCreateTexture(flatNormalGuid, 1U, flatNormalImage, false, error, nullptr,
-                                  Engine::Renderer::TextureMipSemantic::NormalMap);
+  const auto flatNormalTexture = renderer.GetOrCreateTexture(flatNormalGuid, 1U, flatNormalImage, false, error, nullptr,
+                                                             Engine::Renderer::TextureMipSemantic::NormalMap);
   ASSERT_NE(flatNormalTexture, nullptr) << error;
+  const std::string_view normalGuidView{normalGuid};
+  const std::string_view normalYGuidView{normalYGuid};
+  const std::string_view flatNormalGuidView{flatNormalGuid};
   renderer.GetSceneRenderer()->SetAssetTextureResolver(
-      [normalTexture, normalGuid, normalYTexture, normalYGuid, flatNormalTexture,
-       flatNormalGuid](const std::string& guid, bool srgb, Engine::Renderer::TextureMipSemantic semantic,
-                       float) -> std::shared_ptr<Engine::Renderer::TextureResource> {
+      [normalTexture, normalGuidView, normalYTexture, normalYGuidView, flatNormalTexture,
+       flatNormalGuidView](const std::string& guid, bool srgb, Engine::Renderer::TextureMipSemantic semantic,
+                           float) noexcept -> std::shared_ptr<Engine::Renderer::TextureResource> {
         if (srgb || semantic != Engine::Renderer::TextureMipSemantic::NormalMap)
           return nullptr;
-        if (guid == normalGuid)
-          return normalTexture;
-        if (guid == normalYGuid)
-          return normalYTexture;
-        if (guid == flatNormalGuid)
-          return flatNormalTexture;
+        const std::string_view guidView{guid};
+        if (guidView == normalGuidView)
+          return std::shared_ptr<Engine::Renderer::TextureResource>{normalTexture};
+        if (guidView == normalYGuidView)
+          return std::shared_ptr<Engine::Renderer::TextureResource>{normalYTexture};
+        if (guidView == flatNormalGuidView)
+          return std::shared_ptr<Engine::Renderer::TextureResource>{flatNormalTexture};
         return nullptr;
       });
 

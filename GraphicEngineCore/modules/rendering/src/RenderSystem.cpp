@@ -345,7 +345,7 @@ void RenderSystem::SubmitViews(const std::vector<Engine::ViewportBinding>& views
   std::vector<::Engine::Renderer::RenderView*> sceneViews;
   std::vector<Engine::Scene*> scenes;
 
-  for (auto binding : views) {
+  for (const auto& binding : views) {
     if (!binding.IsValid()) {
       continue;
     }
@@ -1075,7 +1075,7 @@ auto RenderSystem::BeginFinalRender(Engine::Scene& scene, const ::Engine::Render
   binding.PostProcessing = cameraPostProcessing;
   binding.HasAmbientLightOverride = ambientLightOverride.has_value();
   if (ambientLightOverride) {
-    binding.AmbientLightOverride = std::move(*ambientLightOverride);
+    binding.AmbientLightOverride = *ambientLightOverride;
   }
   binding.OutputWidth = width;
   binding.OutputHeight = height;
@@ -1195,7 +1195,7 @@ auto RenderSystem::RenderFinal(Engine::Scene& scene, const ::Engine::Renderer::C
                                std::optional<Engine::AmbientLightSettings> ambientLightOverride)
     -> Engine::Result<Engine::RenderOutput> {
   auto ticket = BeginFinalRender(scene, camera, width, height, postProcess, environment, cameraPostProcessing,
-                                 std::move(ambientLightOverride));
+                                 ambientLightOverride);
   if (!ticket) {
     return std::unexpected(ticket.error());
   }

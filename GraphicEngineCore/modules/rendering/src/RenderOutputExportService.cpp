@@ -5,13 +5,20 @@
 #include "scene/include/Scene.h"
 
 #include <algorithm>
+#include <exception>
 #include <utility>
 
 namespace Engine {
 
 RenderOutputExportService::RenderOutputExportService() : m_Worker([this] { WorkerMain(); }) {}
 
-RenderOutputExportService::~RenderOutputExportService() { Shutdown(); }
+RenderOutputExportService::~RenderOutputExportService() {
+  try {
+    Shutdown();
+  } catch (...) {
+    std::terminate();
+  }
+}
 
 auto RenderOutputExportService::StartPng(RenderSystem& renderer, Scene& scene,
                                          const ::Engine::Renderer::CameraView& camera, uint32_t width, uint32_t height,
@@ -21,7 +28,7 @@ auto RenderOutputExportService::StartPng(RenderSystem& renderer, Scene& scene,
                                          std::optional<AmbientLightSettings> ambientLightOverride)
     -> Engine::Result<RequestId> {
   return Start(renderer, scene, camera, width, height, false, {}, std::move(destination), postProcess, background,
-               cameraPostProcessing, std::move(ambientLightOverride));
+               cameraPostProcessing, ambientLightOverride);
 }
 
 auto RenderOutputExportService::StartMultilayerExr(
@@ -30,7 +37,7 @@ auto RenderOutputExportService::StartMultilayerExr(
     const RenderOutputBackground& background, const Ecs::CameraPostProcessing& cameraPostProcessing,
     std::optional<AmbientLightSettings> ambientLightOverride) -> Engine::Result<RequestId> {
   return Start(renderer, scene, camera, width, height, true, std::move(selectedAovs), std::move(destination),
-               postProcess, background, cameraPostProcessing, std::move(ambientLightOverride));
+               postProcess, background, cameraPostProcessing, ambientLightOverride);
 }
 
 auto RenderOutputExportService::Start(RenderSystem& renderer, Scene& scene,
@@ -52,14 +59,18 @@ auto RenderOutputExportService::Start(RenderSystem& renderer, Scene& scene,
   }
 
   auto renderTicket = renderer.BeginFinalRender(scene, camera, width, height, postProcess, {}, cameraPostProcessing,
-                                                std::move(ambientLightOverride));
+                                                ambientLightOverride);
   if (!renderTicket) {
     return std::unexpected(renderTicket.error());
   }
 
   std::lock_guard lock(m_Mutex);
   if (m_ShuttingDown || m_ActiveReadback.has_value()) {
-    (void)renderer.CancelFinalRender(*renderTicket);
+    const Engine::Status cancellationStatus = renderer.CancelFinalRender(*renderTicket);
+    if (!cancellationStatus) {
+      return std::unexpected(Engine::MakeError("export service cannot accept another readback request; " +
+                                               cancellationStatus.error().Message));
+    }
     return std::unexpected(Engine::MakeError("export service cannot accept another readback request"));
   }
   Request request;
@@ -149,6 +160,7 @@ auto RenderOutputExportService::GetStatus(RequestId requestId) const -> std::opt
 void RenderOutputExportService::Shutdown() {
   RenderSystem* renderer = nullptr;
   std::optional<RenderSystem::FinalRenderTicket> ticket;
+  std::optional<RequestId> cancelledRequestId;
   {
     std::lock_guard lock(m_Mutex);
     if (m_ShuttingDown) {
@@ -162,6 +174,7 @@ void RenderOutputExportService::Shutdown() {
           std::ranges::find_if(m_Requests, [id](const Request& item) { return item.Status.RequestId == id; });
       if (request != m_Requests.end()) {
         ticket = request->RenderTicket;
+        cancelledRequestId = id;
         request->Status.Phase = RenderOutputExportPhase::Failed;
         request->Status.Message = "Export cancelled during shutdown.";
       }
@@ -169,7 +182,16 @@ void RenderOutputExportService::Shutdown() {
     }
   }
   if (renderer != nullptr && ticket.has_value()) {
-    (void)renderer->CancelFinalRender(*ticket);
+    const Engine::Status cancellationStatus = renderer->CancelFinalRender(*ticket);
+    if (!cancellationStatus && cancelledRequestId.has_value()) {
+      std::lock_guard lock(m_Mutex);
+      const auto request = std::ranges::find_if(m_Requests, [requestId = *cancelledRequestId](const Request& item) {
+        return item.Status.RequestId == requestId;
+      });
+      if (request != m_Requests.end()) {
+        request->Status.Message += " Renderer cancellation failed: " + cancellationStatus.error().Message;
+      }
+    }
   }
   m_WorkAvailable.notify_all();
   if (m_Worker.joinable()) {
