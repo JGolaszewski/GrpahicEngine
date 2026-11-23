@@ -10,14 +10,14 @@ GraphicEngine now registers narrow project hooks for protected paths, agentic se
 
 The former hooks ran an in-place formatter, a full Debug build, lint, and unit/integration tests after edits, or triggered a full ASan workflow after any CTest command. Those broad automation paths have been removed; ASan and engine verification remain explicit task-scoped workflows.
 
-Full builds, lint, CTest suites, ASan, visual checks, and PIX captures remain task-scoped. The GPU diagnostic session is explicit and reports only NVRHI messages from its own fresh log. A pull-request workflow enforces the protected-path rule because local hooks cannot cover arbitrary shell writes.
+Full builds, lint, CTest suites, ASan, visual checks, and PIX captures remain task-scoped. The GPU diagnostic session is explicit and reports only NVRHI messages from its own fresh log. A pull-request workflow enforces the protected-path rule because local hooks cannot cover arbitrary shell writes; it permits only a gitlink pointer update for `vendor/nvrhi`, while still rejecting third-party file edits.
 
 ## Current behavior
 
 | Hook | Trigger | Actual work | Audit |
 |---|---|---|---|
 | Agentic setup checker | CI and project `PostToolUse` after file edits | Standard-library TOML/frontmatter/link consistency checks | Invalid configuration returns a supported blocking response; launch errors and timeouts are informational skips; CI is authoritative |
-| Protected-path edit guard | Project `PreToolUse` for file-edit tools; pull-request workflow over changed paths | Reject edits to `vendor/`, build/generated directories, and compiled outputs | Local guard is limited to structured edit paths; CI diff check is authoritative |
+| Protected-path edit guard | Project `PreToolUse` for file-edit tools; pull-request workflow over changed paths | Reject edits to `vendor/` contents, build/generated directories, and compiled outputs; CI allows only an NVRHI gitlink pointer update | Local guard is limited to structured edit paths; CI diff check is authoritative |
 | Changed-file input checks | Project `PostToolUse` after file edits | Pinned clang-format check, JSON/GLTF syntax parse, incremental shader build when configured outputs exist | Actual format, JSON, or shader validation failures return a supported blocking response; missing tools, timeouts, and missing prerequisites are non-blocking skips |
 | Validation reminder | Project `PostToolUse` after relevant renderer/shader/asset edits | Adds task-relevant docs and manual validation guidance | Context only; it does not claim checks ran |
 | GPU diagnostic session | Explicit `scripts/run_gpu_diagnostic_smoke.ps1` Editor launch; project `PostToolUse` summarizes its report | Fresh JSONL capture and NVRHI warning/error counts | Known failed statuses or logged NVRHI errors block the returned tool result; warnings remain informational; no automated visual scenario assertion |

@@ -106,6 +106,10 @@ auto Build(const Engine::ImportedImage& image, Options options) -> std::vector<M
     return {};
   }
   std::vector<Mip> mips;
+  const bool normalMap = options.Semantic == Engine::Renderer::TextureMipSemantic::NormalMap;
+  const bool alphaWeightsColor = options.Semantic == Engine::Renderer::TextureMipSemantic::BaseColor ||
+                                 options.Semantic == Engine::Renderer::TextureMipSemantic::MaskedBaseColor;
+  const bool preserveCoverage = options.Semantic == Engine::Renderer::TextureMipSemantic::MaskedBaseColor;
   mips.push_back({.Width = image.width, .Height = image.height, .Pixels = image.rgba8});
   while (mips.back().Width > 1 || mips.back().Height > 1) {
     const Mip& source = mips.back();
@@ -133,9 +137,9 @@ auto Build(const Engine::ImportedImage& image, Options options) -> std::vector<M
             if (area <= 0.0) {
               continue;
             }
-            const auto value = Read(source, sourceX, sourceY, options.Srgb, options.NormalMap);
+            const auto value = Read(source, sourceX, sourceY, options.Srgb, normalMap);
             for (size_t channel = 0; channel < 3; ++channel) {
-              sum[channel] += static_cast<double>(value[channel]) * (options.NormalMap ? area : area * value[3]);
+              sum[channel] += static_cast<double>(value[channel]) * (alphaWeightsColor ? area * value[3] : area);
             }
             sum[3] += static_cast<double>(value[3]) * area;
             totalWeight += area;
@@ -145,13 +149,15 @@ auto Build(const Engine::ImportedImage& image, Options options) -> std::vector<M
         const double alpha = sum[3] / totalWeight;
         filtered[3] = static_cast<float>(alpha);
         for (size_t channel = 0; channel < 3; ++channel) {
-          const double divisor = options.NormalMap ? totalWeight : sum[3];
+          const double divisor = alphaWeightsColor ? sum[3] : totalWeight;
           filtered[channel] = divisor > 1.0e-12 ? static_cast<float>(sum[channel] / divisor) : 0.0F;
         }
-        Write(mip, x, y, filtered, options.Srgb, options.NormalMap);
+        Write(mip, x, y, filtered, options.Srgb, normalMap);
       }
     }
-    PreserveCoverage(mips.front(), mip, options.AlphaCutoff);
+    if (preserveCoverage) {
+      PreserveCoverage(mips.front(), mip, options.AlphaCutoff);
+    }
     mips.push_back(std::move(mip));
   }
   return mips;
