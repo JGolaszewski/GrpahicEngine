@@ -1136,18 +1136,23 @@ TEST(RenderFinalTests, WARPDoubleSidedPlaneFlipsBackfaceNormalsAndStillReceivesL
                                         .rgba8 = {128, 128, 255, 255}};
   std::string textureError;
   const auto baseColorTexture =
-      renderer.GetOrCreateTexture("double-sided-base-color", 1U, whiteImage, true, textureError);
+      renderer.GetOrCreateTexture("double-sided-base-color", 1U, whiteImage, true, textureError, nullptr,
+                                  Engine::Renderer::TextureMipSemantic::Color);
   ASSERT_NE(baseColorTexture, nullptr) << textureError;
   const auto normalTexture =
-      renderer.GetOrCreateTexture("double-sided-normal", 1U, flatNormalImage, false, textureError, nullptr, true);
+      renderer.GetOrCreateTexture("double-sided-normal", 1U, flatNormalImage, false, textureError, nullptr,
+                                  Engine::Renderer::TextureMipSemantic::NormalMap);
   ASSERT_NE(normalTexture, nullptr) << textureError;
   const auto specularGlossinessTexture =
-      renderer.GetOrCreateTexture("double-sided-spec-gloss", 1U, whiteImage, true, textureError);
+      renderer.GetOrCreateTexture("double-sided-spec-gloss", 1U, whiteImage, true, textureError, nullptr,
+                                  Engine::Renderer::TextureMipSemantic::Data);
   ASSERT_NE(specularGlossinessTexture, nullptr) << textureError;
   const auto occlusionTexture =
-      renderer.GetOrCreateTexture("double-sided-occlusion", 1U, whiteImage, false, textureError);
+      renderer.GetOrCreateTexture("double-sided-occlusion", 1U, whiteImage, false, textureError, nullptr,
+                                  Engine::Renderer::TextureMipSemantic::Data);
   ASSERT_NE(occlusionTexture, nullptr) << textureError;
-  const auto emissiveTexture = renderer.GetOrCreateTexture("double-sided-emissive", 1U, whiteImage, true, textureError);
+  const auto emissiveTexture = renderer.GetOrCreateTexture("double-sided-emissive", 1U, whiteImage, true, textureError,
+                                                           nullptr, Engine::Renderer::TextureMipSemantic::Color);
   ASSERT_NE(emissiveTexture, nullptr) << textureError;
   ASSERT_TRUE(renderer.SetPbrMaterialTextures(material, baseColorTexture, normalTexture, specularGlossinessTexture,
                                               occlusionTexture, emissiveTexture, true));
@@ -1267,18 +1272,21 @@ TEST(RenderFinalTests, WARPDoubleSidedNormalMapReversesTheWholeTangentBasisOnBac
                                         .height = 1,
                                         .rgba8 = {128, 128, 255, 255}};
   std::string error;
-  const auto normalTexture = renderer.GetOrCreateTexture(normalGuid, 1U, normalImage, false, error, nullptr, true);
+  const auto normalTexture = renderer.GetOrCreateTexture(normalGuid, 1U, normalImage, false, error, nullptr,
+                                                         Engine::Renderer::TextureMipSemantic::NormalMap);
   ASSERT_NE(normalTexture, nullptr) << error;
-  const auto normalYTexture = renderer.GetOrCreateTexture(normalYGuid, 1U, normalYImage, false, error, nullptr, true);
+  const auto normalYTexture = renderer.GetOrCreateTexture(normalYGuid, 1U, normalYImage, false, error, nullptr,
+                                                          Engine::Renderer::TextureMipSemantic::NormalMap);
   ASSERT_NE(normalYTexture, nullptr) << error;
   const auto flatNormalTexture =
-      renderer.GetOrCreateTexture(flatNormalGuid, 1U, flatNormalImage, false, error, nullptr, true);
+      renderer.GetOrCreateTexture(flatNormalGuid, 1U, flatNormalImage, false, error, nullptr,
+                                  Engine::Renderer::TextureMipSemantic::NormalMap);
   ASSERT_NE(flatNormalTexture, nullptr) << error;
   renderer.GetSceneRenderer()->SetAssetTextureResolver(
       [normalTexture, normalGuid, normalYTexture, normalYGuid, flatNormalTexture,
-       flatNormalGuid](const std::string& guid, bool srgb, bool normalMap, bool,
+       flatNormalGuid](const std::string& guid, bool srgb, Engine::Renderer::TextureMipSemantic semantic,
                        float) -> std::shared_ptr<Engine::Renderer::TextureResource> {
-        if (srgb || !normalMap)
+        if (srgb || semantic != Engine::Renderer::TextureMipSemantic::NormalMap)
           return nullptr;
         if (guid == normalGuid)
           return normalTexture;
@@ -2575,12 +2583,17 @@ TEST(RenderFinalTests, WARPAnalyticNdfEnvironmentMatchesReferencesAcrossNdfRough
                                         .width = 1,
                                         .height = 1,
                                         .rgba8 = {128, 128, 255, 255}};
-  auto baseColorTexture = renderer.GetOrCreateTexture("analytic-ndf-base-color", 1U, whiteImage, true, error);
+  auto baseColorTexture = renderer.GetOrCreateTexture("analytic-ndf-base-color", 1U, whiteImage, true, error, nullptr,
+                                                       Engine::Renderer::TextureMipSemantic::Color);
   auto normalTexture =
-      renderer.GetOrCreateTexture("analytic-ndf-normal", 1U, flatNormalImage, false, error, nullptr, true);
-  auto specularGlossinessTexture = renderer.GetOrCreateTexture("analytic-ndf-spec-gloss", 1U, whiteImage, true, error);
-  auto occlusionTexture = renderer.GetOrCreateTexture("analytic-ndf-occlusion", 1U, whiteImage, false, error);
-  auto emissiveTexture = renderer.GetOrCreateTexture("analytic-ndf-emissive", 1U, whiteImage, true, error);
+      renderer.GetOrCreateTexture("analytic-ndf-normal", 1U, flatNormalImage, false, error, nullptr,
+                                  Engine::Renderer::TextureMipSemantic::NormalMap);
+  auto specularGlossinessTexture = renderer.GetOrCreateTexture("analytic-ndf-spec-gloss", 1U, whiteImage, true, error,
+                                                               nullptr, Engine::Renderer::TextureMipSemantic::Data);
+  auto occlusionTexture = renderer.GetOrCreateTexture("analytic-ndf-occlusion", 1U, whiteImage, false, error, nullptr,
+                                                      Engine::Renderer::TextureMipSemantic::Data);
+  auto emissiveTexture = renderer.GetOrCreateTexture("analytic-ndf-emissive", 1U, whiteImage, true, error, nullptr,
+                                                     Engine::Renderer::TextureMipSemantic::Color);
   ASSERT_NE(baseColorTexture, nullptr) << error;
   ASSERT_NE(normalTexture, nullptr) << error;
   ASSERT_NE(specularGlossinessTexture, nullptr) << error;
