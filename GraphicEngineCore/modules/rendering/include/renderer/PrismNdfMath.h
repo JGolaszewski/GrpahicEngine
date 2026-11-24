@@ -27,8 +27,11 @@ ENGINE_API auto BuildPrismNdfResidualMipChain(std::span<const float> residuals) 
 
 /// Evaluates one Inspector preview sample using the same residual mapping, filtering, mip, and horizon controls as the
 /// shaders. `footprint` is the disk-space distance to a neighboring preview sample; mipLevels comes from
-/// BuildPrismNdfResidualMipChain.
+/// BuildPrismNdfResidualMipChain. The compatibility overload infers the aligned-view `noV` from the disk coordinate.
 ENGINE_API auto EvaluatePrismNdfPreview(const PrismNdfData& data, const std::vector<std::vector<float>>& mipLevels,
                                         float x, float y, float footprint) -> float;
+/// Evaluates the preview with the explicit view/normal cosine used by the renderer's residual horizon fade.
+ENGINE_API auto EvaluatePrismNdfPreview(const PrismNdfData& data, const std::vector<std::vector<float>>& mipLevels,
+                                        float x, float y, float footprint, float noV) -> float;
 
 } // namespace Engine::Renderer

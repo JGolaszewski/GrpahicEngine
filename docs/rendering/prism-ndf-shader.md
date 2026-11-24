@@ -40,6 +40,13 @@ gradients with the mipmapped anisotropic sampler (8x maximum); disabling it sele
 residual lookup still uses one hardware texture sample. Horizon fade multiplies
 only the signed residual by `smoothstep(0, 0.1, saturate(dot(N,V)))`; the coefficient
 basis and normalization path are unchanged.
+
+The GPU returns zero from PRISM environment specular when `N·V <= 1e-6`,
+matching the direct BRDF hemisphere guard. The Inspector heatmap has an explicit
+`N·V = 1` preview view; the sphere preview passes its displayed normal's
+`N·V = Nz`. The CPU preview takes this value explicitly rather than inferring
+it from the NDF's half-vector disk radius, because `N·H` and `N·V` are distinct
+quantities outside the aligned-view heatmap.
 Material resources occupy the contiguous SRV range `t0`–`t6`; scene resources
 occupy `t7`–`t12`. This separation is required by the D3D11 NVRHI backend:
 binding a set applies its complete contiguous SRV range, including null holes.

@@ -1,15 +1,20 @@
+#include "assets/include/AssetImporter.h"
 #include "assets/include/AssetManager.h"
 #include "scene/include/Scene.h"
 
+#include <algorithm>
 #include <array>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <exception>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <vector>
 
 namespace {
 void Require(bool condition, const char* message) {
@@ -60,6 +65,92 @@ void WriteMinimalModel(const std::filesystem::path& path) {
   output
       << R"({"asset":{"version":"2.0"},"scene":0,"scenes":[{"nodes":[0]}],"nodes":[{"name":"root","mesh":0}],"meshes":[{"primitives":[{"attributes":{"POSITION":0},"indices":1}]}],"buffers":[{"uri":"triangle.bin","byteLength":42}],"bufferViews":[{"buffer":0,"byteOffset":0,"byteLength":36},{"buffer":0,"byteOffset":36,"byteLength":6}],"accessors":[{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3","min":[0,0,0],"max":[1,1,0]},{"bufferView":1,"componentType":5123,"count":3,"type":"SCALAR"}]})";
   Require(static_cast<bool>(output), "could not write minimal glTF fixture");
+}
+
+void WriteFrameTestModel(const std::filesystem::path& path, bool includeNormals, bool includeTangents, bool twoFaces,
+                         bool degenerateNormalUv = false, bool mirroredUvFaces = false) {
+  const std::vector<float> positions = {0.0F,
+                                        0.0F,
+                                        0.0F,
+                                        1.0F,
+                                        0.0F,
+                                        0.0F,
+                                        0.0F,
+                                        1.0F,
+                                        0.0F,
+                                        0.0F,
+                                        mirroredUvFaces ? -1.0F : 0.0F,
+                                        mirroredUvFaces ? 0.0F : 1.0F};
+  const std::vector<float> normals = {0.0F, 0.0F, 1.0F, 0.0F, 0.0F, 1.0F, 0.0F, 0.0F, 1.0F, 0.0F, 0.0F, 1.0F};
+  const std::vector<float> tangents = {1.0F, 0.0F, 0.0F, 1.0F, 1.0F, 0.0F, 0.0F, 1.0F,
+                                       1.0F, 0.0F, 0.0F, 1.0F, 1.0F, 0.0F, 0.0F, 1.0F};
+  const std::vector<float> uv0 = {0.0F, 0.0F, 1.0F, 0.0F, 0.0F, 1.0F, 1.0F, 1.0F};
+  std::vector<float> uv1 = {0.0F, 0.0F, 0.0F, 1.0F, 1.0F, 0.0F, 1.0F, 1.0F};
+  if (degenerateNormalUv)
+    std::ranges::fill(uv1, 0.0F);
+  const std::array<uint16_t, 6> twoFaceIndices = {0, 1, 2, 0, 3, 1};
+  const std::array<uint16_t, 3> oneFaceIndices = {0, 1, 2};
+  const size_t indexCount = twoFaces ? twoFaceIndices.size() : oneFaceIndices.size();
+
+  struct View {
+    size_t offset = 0;
+    size_t size = 0;
+  };
+  std::ofstream binary(path.parent_path() / (path.stem().string() + ".bin"), std::ios::binary | std::ios::trunc);
+  size_t byteOffset = 0;
+  const auto writeVector = [&](const auto& values) -> View {
+    const size_t byteSize = values.size() * sizeof(values.front());
+    const size_t offset = byteOffset;
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast) // Fixture buffers serialize numeric arrays as bytes.
+    binary.write(reinterpret_cast<const char*>(values.data()), static_cast<std::streamsize>(byteSize));
+    byteOffset += byteSize;
+    return {offset, byteSize};
+  };
+  const auto positionView = writeVector(positions);
+  const auto normalView = writeVector(normals);
+  const auto tangentView = writeVector(tangents);
+  const auto uv0View = writeVector(uv0);
+  const auto uv1View = writeVector(uv1);
+  const size_t indexOffset = byteOffset;
+  if (twoFaces) {
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast) // Fixture buffers serialize numeric arrays as bytes.
+    binary.write(reinterpret_cast<const char*>(twoFaceIndices.data()), sizeof(twoFaceIndices));
+  } else {
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast) // Fixture buffers serialize numeric arrays as bytes.
+    binary.write(reinterpret_cast<const char*>(oneFaceIndices.data()), sizeof(oneFaceIndices));
+  }
+  byteOffset += indexCount * sizeof(uint16_t);
+  Require(static_cast<bool>(binary), "could not write tangent frame buffer fixture");
+
+  std::ofstream output(path, std::ios::binary | std::ios::trunc);
+  output
+      << R"json({"asset":{"version":"2.0"},"scene":0,"scenes":[{"nodes":[0]}],"nodes":[{"mesh":0}],"meshes":[{"primitives":[{"attributes":{"POSITION":0,"TEXCOORD_0":3,"TEXCOORD_1":4)json";
+  if (includeNormals)
+    output << R"(,"NORMAL":1)";
+  if (includeTangents)
+    output << R"(,"TANGENT":2)";
+  output
+      << R"json(},"indices":5,"material":0}]}],"materials":[{"normalTexture":{"index":0,"texCoord":1}}],"textures":[{"source":0}],"images":[{"uri":"frame-normal.png"}],"buffers":[{"uri":")json"
+      << path.stem().string() << R"json(.bin","byteLength":)json" << byteOffset << R"json(}],"bufferViews":[)json"
+      << R"json({"buffer":0,"byteOffset":)json" << positionView.offset << R"json(,"byteLength":)json"
+      << positionView.size << R"json(},)json"
+      << R"json({"buffer":0,"byteOffset":)json" << normalView.offset << R"json(,"byteLength":)json" << normalView.size
+      << R"json(},)json"
+      << R"json({"buffer":0,"byteOffset":)json" << tangentView.offset << R"json(,"byteLength":)json" << tangentView.size
+      << R"json(},)json"
+      << R"json({"buffer":0,"byteOffset":)json" << uv0View.offset << R"json(,"byteLength":)json" << uv0View.size
+      << R"json(},)json"
+      << R"json({"buffer":0,"byteOffset":)json" << uv1View.offset << R"json(,"byteLength":)json" << uv1View.size
+      << R"json(},)json"
+      << R"json({"buffer":0,"byteOffset":)json" << indexOffset << R"json(,"byteLength":)json"
+      << indexCount * sizeof(uint16_t) << R"json(}],"accessors":[)json"
+      << R"json({"bufferView":0,"componentType":5126,"count":4,"type":"VEC3","min":[0,0,0],"max":[1,1,1]},)json"
+      << R"json({"bufferView":1,"componentType":5126,"count":4,"type":"VEC3"},)json"
+      << R"json({"bufferView":2,"componentType":5126,"count":4,"type":"VEC4"},)json"
+      << R"json({"bufferView":3,"componentType":5126,"count":4,"type":"VEC2"},)json"
+      << R"json({"bufferView":4,"componentType":5126,"count":4,"type":"VEC2"},)json"
+      << R"json({"bufferView":5,"componentType":5123,"count":)json" << indexCount << R"json(,"type":"SCALAR"}]})json";
+  Require(static_cast<bool>(output), "could not write tangent frame glTF fixture");
 }
 
 void WriteMinimalPng(const std::filesystem::path& path) {
@@ -174,6 +265,69 @@ void TestImportAndGuidReload(const std::filesystem::path& project) {
   Require(reloaded.GetSourcePath(guid) == first.GetSourcePath(guid), "GUID reload resolved a different source path");
   Require(reloaded.LoadModel(guid, error) && reloaded.GetModel(guid) == loaded,
           "repeated GUID loads did not reuse the cached CPU asset");
+}
+
+void TestGltfTangentFrames(const std::filesystem::path& project) {
+  WriteMinimalPng(project / "frame-normal.png");
+  Engine::AssetImporter importer;
+
+  const auto flatPath = project / "flat-frame.gltf";
+  WriteFrameTestModel(flatPath, false, true, true);
+  auto flatImport = importer.ImportGltf(flatPath);
+  Require(static_cast<bool>(flatImport), "glTF flat normal/tangent fixture failed to import");
+  const auto& flat = flatImport.model.meshes.at(0).primitives.at(0);
+  Require(flat.vertices.size() == 6 && flat.indices == std::vector<uint32_t>({0, 1, 2, 3, 4, 5}),
+          "missing glTF normals did not split shared triangle vertices");
+  for (size_t vertex = 0; vertex < 3; ++vertex) {
+    const auto& normal = flat.vertices[vertex].Normal;
+    Require(std::abs(normal.x) < 1.0e-5F && std::abs(normal.y) < 1.0e-5F && normal.z > 0.999F,
+            "first missing-normal face did not receive one flat normal");
+    const auto& tangent = flat.vertices[vertex].Tangent;
+    Require(std::abs(tangent.x) < 0.02F && tangent.y > 0.99F,
+            "provided tangents were not ignored or TEXCOORD_1 was not used for generated tangents");
+    Require(flat.vertices[vertex].Tangent.w == flat.vertices[0].Tangent.w,
+            "tangent handedness differs between corners of one triangle");
+  }
+  for (size_t vertex = 3; vertex < 6; ++vertex) {
+    const auto& normal = flat.vertices[vertex].Normal;
+    Require(std::abs(normal.x) < 1.0e-5F && normal.y > 0.999F && std::abs(normal.z) < 1.0e-5F,
+            "second missing-normal face did not retain its hard edge");
+  }
+  Require(flatImport.model.materials.at(0).normalTexCoord == 1,
+          "normal-map TEXCOORD_1 selection was not preserved during tangent generation");
+
+  const auto mirroredPath = project / "mirrored-uv-frame.gltf";
+  WriteFrameTestModel(mirroredPath, true, false, true, false, true);
+  const auto mirroredImport = importer.ImportGltf(mirroredPath);
+  Require(static_cast<bool>(mirroredImport), "glTF mirrored-UV tangent fixture failed to import");
+  const auto& mirrored = mirroredImport.model.meshes.at(0).primitives.at(0);
+  Require(mirrored.vertices.size() == 6 && mirrored.indices.at(0) != mirrored.indices.at(3) &&
+              mirrored.indices.at(1) != mirrored.indices.at(5),
+          "opposite tangent orientations were not split at shared source vertices");
+  Require(mirrored.vertices[mirrored.indices.at(0)].Tangent.w == mirrored.vertices[mirrored.indices.at(1)].Tangent.w &&
+              mirrored.vertices[mirrored.indices.at(0)].Tangent.w !=
+                  mirrored.vertices[mirrored.indices.at(3)].Tangent.w,
+          "mirrored UV tangent handedness does not remain consistent per face");
+
+  const auto generatedPath = project / "generated-frame.gltf";
+  WriteFrameTestModel(generatedPath, true, false, false);
+  const auto generatedImport = importer.ImportGltf(generatedPath);
+  Require(static_cast<bool>(generatedImport), "glTF missing-tangent fixture failed to import");
+  const auto& generated = generatedImport.model.meshes.at(0).primitives.at(0);
+  Require(std::abs(generated.vertices.at(0).Tangent.x) < 0.02F && generated.vertices.at(0).Tangent.y > 0.99F,
+          "missing tangent generation did not use the normal texture's selected UV set");
+
+  const auto degeneratePath = project / "degenerate-frame.gltf";
+  WriteFrameTestModel(degeneratePath, true, false, false, true);
+  const auto degenerateImport = importer.ImportGltf(degeneratePath);
+  Require(static_cast<bool>(degenerateImport), "glTF degenerate-UV fixture failed to import");
+  const auto& degenerate = degenerateImport.model.meshes.at(0).primitives.at(0).vertices.at(0);
+  Require(std::isfinite(degenerate.Tangent.x) && std::isfinite(degenerate.Tangent.y) &&
+              std::isfinite(degenerate.Tangent.z) && (degenerate.Tangent.w == -1.0F || degenerate.Tangent.w == 1.0F),
+          "degenerate UV tangent generation produced a non-finite frame");
+  Require(std::abs(degenerate.Normal.x * degenerate.Tangent.x + degenerate.Normal.y * degenerate.Tangent.y +
+                   degenerate.Normal.z * degenerate.Tangent.z) < 1.0e-5F,
+          "degenerate UV tangent fallback is not orthogonal to the normal");
 }
 
 void TestAssetRenamePreservesGuidAndSceneReferences(const std::filesystem::path& project) {
@@ -461,6 +615,7 @@ auto main() -> int {
   try {
     TestWorkspace workspace;
     TestImportAndGuidReload(workspace.Project());
+    TestGltfTangentFrames(workspace.Project());
     TestAssetRenamePreservesGuidAndSceneReferences(workspace.Project());
     TestTextureImportAndRegistry(workspace.Project());
     TestEnvironmentImportAndRegistry(workspace.Project() / "environment-test");

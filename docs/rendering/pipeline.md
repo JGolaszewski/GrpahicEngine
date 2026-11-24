@@ -102,8 +102,9 @@ distribution. It is never silently shaded as a different model.
 
 Ashikhmin-Shirley uses separate perceptual roughness controls along the mesh
 tangent and bitangent, both defaulting to `0.5` for isotropic behavior. The
-material GPU ABI is version 6: anisotropic roughness occupies the reserved
-`SpecularParams.w` and `AlphaParams.y` lanes. PRISM materials append 48 packed
+material GPU ABI is version 7: anisotropic roughness occupies the reserved
+`SpecularParams.w` and `AlphaParams.y` lanes, and Sawicki's `Nds` occupies
+`AlphaParams.z`. PRISM materials append 48 packed
 coefficient lanes and normalization to the constant buffer, bringing
 `MaterialGpu` to 512 bytes; their signed 128×128 residual is bound separately as
 an R32F texture.
@@ -113,9 +114,29 @@ broad roughness values.
 Schlick uses a rational microfacet distribution with a supported half-vector domain and a finite result at minimum
 material roughness.
 Sawicki uses the normalized rational distribution
-`D(NoH) = 96 * (3 + Nds) * NoH / (π * ((1 - Nds) * NoH + Nds + 3)^4)`,
-where `Nds = 4 * alpha - 3` and alpha is the squared perceptual roughness
-clamped to the material minimum. The implementation stays finite at grazing
+`D(NoH) = 96 * (3 + Nds) * NoH / (π * ((1 - Nds) * NoH + Nds + 3)^4)`.
+The paper's `Nds` is a separate distribution coefficient; it is not derived as
+`4 * alpha - 3`. The engine treats squared perceptual roughness (clamped to the
+material alpha minimum) as the Beckmann slope parameter `mB`, solves paper
+equation (9) for the half-height angle, then computes `Nds` using equation (10).
+The resulting coefficient is packed in the reserved `AlphaParams.z` lane, so
+the shader evaluates the paper's NDF directly and keeps the existing material
+roughness meaning. This conversion matches the models at their half-height
+angle; it does not make their full distribution shapes identical. The paper
+also presents RMSE-fitted coefficient conversions for specific ranges and
+targets, which are distinct from this half-height mapping.
+
+Sawicki (2021) analyzes the NDF and coefficient conversion, not a complete
+metallic-roughness BRDF. The renderer combines this NDF with its shared
+correlated Smith-GGX masking-shadowing and Fresnel terms. Metallic remains the
+usual workflow blend between dielectric F0 and base color, with diffuse energy
+reduced by metalness. GGX environment specular uses the split-sum LUT. Other
+analytic models, including Sawicki, integrate their selected NDF against the
+source panorama using a 128-sample importance proposal; PRISM uses its separate
+generated-distribution integration path. The packed Sawicki `Nds` coefficient
+is used for both direct and panorama-integrated environment specular. Analytic
+environment lighting costs more texture samples and can show sampling noise
+around small bright features. The implementation stays finite at grazing
 angles and minimum roughness.
 
 The textured shader supports base color, normal, metallic-roughness, occlusion,

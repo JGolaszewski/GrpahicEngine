@@ -121,7 +121,8 @@ private:
                                const ::Engine::Renderer::Submesh& submesh,
                                const ::Engine::Renderer::MaterialProperties& materialProperties,
                                bool hasTextureOverrides, const nvrhi::FramebufferInfoEx& framebufferInfo,
-                               ::Engine::Renderer::RenderPacket& packet, bool disableFaceCulling);
+                               ::Engine::Renderer::RenderPacket& packet, bool disableFaceCulling,
+                               bool reverseFrontFace);
   static void SortViewQueues(::Engine::Renderer::RenderView* view);
   void EnsureDebugBuffer(nvrhi::BufferHandle& buffer, uint64_t& capacity, size_t vertexCount, const char* debugName);
   nvrhi::GraphicsPipelineHandle GetDebugPipeline(const nvrhi::FramebufferInfo& framebuffer,
