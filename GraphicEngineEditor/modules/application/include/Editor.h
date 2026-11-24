@@ -97,6 +97,7 @@ private:
   Engine::Ecs::LocalTransform m_EditorCameraTransform{.Position = {0.0F, 0.0F, -5.0F}};
   Engine::Ecs::Camera m_EditorCameraSettings;
   std::pair<float, float> m_ViewportSize = {0.0F, 0.0F};
+  uint32_t m_MainDockspaceId = 0;
   bool m_DefaultLayoutBuilt = false;
   bool m_LayoutLoadPending = false;
   bool m_EngineConsoleOpen = true;

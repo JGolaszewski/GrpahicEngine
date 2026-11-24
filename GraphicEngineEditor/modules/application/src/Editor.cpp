@@ -330,10 +330,6 @@ void Editor::OnInit() {
   if (!savedLayout.empty()) {
     if (savedLayout.find("[Docking][Data]") != std::string::npos) {
       ImGui::LoadIniSettingsFromMemory(savedLayout.data(), savedLayout.size());
-      for (size_t index = 0; index < m_DockPanels.size(); ++index) {
-        SetDockPanelOpen(index, m_EditorPreferences.SavedPanelVisibility[index]);
-      }
-      m_EngineConsoleOpen = m_EditorPreferences.SavedPanelVisibility[7];
     } else {
       ENGINE_LOG_WARN("Editor", "Saved panel layout is invalid; the default layout will be used");
       m_EditorPreferences.DockLayoutIni.clear();
@@ -550,9 +546,9 @@ void Editor::OnUIRender() {
   if (!m_UiIntegration.IsInitialized()) {
     return;
   }
-  const ImGuiID dockspaceId = ImGui::GetID("MainDockSpace");
-  ImGui::DockSpaceOverViewport(dockspaceId, ImGui::GetMainViewport(), ImGuiDockNodeFlags_PassthruCentralNode);
-  BuildDefaultDockLayoutIfNeeded(dockspaceId);
+  m_MainDockspaceId = ImGui::GetID("MainDockSpace");
+  ImGui::DockSpaceOverViewport(m_MainDockspaceId, ImGui::GetMainViewport(), ImGuiDockNodeFlags_PassthruCentralNode);
+  BuildDefaultDockLayoutIfNeeded(m_MainDockspaceId);
   for (auto& panel : m_Panels) {
     panel->Draw();
   }
@@ -1476,7 +1472,7 @@ void Editor::ResetDockLayout() {
     SetDockPanelOpen(index, open);
   }
   m_EngineConsoleOpen = true;
-  BuildDefaultDockLayout(ImGui::GetID("MainDockSpace"));
+  BuildDefaultDockLayout(m_MainDockspaceId);
   m_DefaultLayoutBuilt = true;
   SaveDockLayout();
   ENGINE_LOG_INFO("Editor", "Panel layout restored to the default arrangement");
