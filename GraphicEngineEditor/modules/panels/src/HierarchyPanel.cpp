@@ -41,7 +41,13 @@ void HierarchyPanel::OnEvent(Engine::Events::Event& event) {
 }
 
 void HierarchyPanel::Draw() {
-  ImGui::Begin("Hierarchy", nullptr, ImGuiWindowFlags_NoCollapse);
+  if (!m_Open) {
+    return;
+  }
+  if (!ImGui::Begin("Hierarchy", &m_Open, ImGuiWindowFlags_NoCollapse)) {
+    ImGui::End();
+    return;
+  }
   if (!m_Scene) {
     ImGui::TextUnformatted("No active scene");
     ImGui::End();

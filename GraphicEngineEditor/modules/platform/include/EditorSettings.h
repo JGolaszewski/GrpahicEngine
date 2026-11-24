@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <filesystem>
 #include <string>
@@ -18,6 +19,16 @@ struct EditorPreferences {
   std::uint32_t MaxShadowCasters = 4;
   std::uint32_t MaxTextureAnisotropy = 8;
   bool VSyncEnabled = true;
+  bool ScenePanelOpen = true;
+  bool HierarchyPanelOpen = true;
+  bool InspectorPanelOpen = true;
+  bool AssetBrowserPanelOpen = true;
+  bool StatisticsPanelOpen = true;
+  bool ConsolePanelOpen = true;
+  bool SettingsPanelOpen = false;
+  bool CameraPreviewPanelOpen = false;
+  std::array<bool, 8> SavedPanelVisibility = {true, true, true, true, true, true, false, true};
+  std::string DockLayoutIni;
 };
 
 /// Result from loading a user-wide settings file. Missing files use defaults without an error.

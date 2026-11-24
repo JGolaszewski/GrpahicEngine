@@ -64,12 +64,21 @@ void CameraPreviewPanel::OnEvent(Engine::Events::Event& event) {
 }
 
 void CameraPreviewPanel::Close() {
+  Hide();
+  m_Camera = Engine::InvalidEntityHandle;
+  m_ImageWidth = 0;
+  m_ImageHeight = 0;
+}
+
+void CameraPreviewPanel::Open() noexcept {
+  m_Open = true;
+  m_RefreshRequested = m_Camera != Engine::InvalidEntityHandle;
+}
+
+void CameraPreviewPanel::Hide() {
   m_Open = false;
   m_RefreshRequested = false;
   m_HasImage = false;
-  m_ImageWidth = 0;
-  m_ImageHeight = 0;
-  m_Camera = Engine::InvalidEntityHandle;
   if (m_ClearPreview) {
     m_ClearPreview();
   }

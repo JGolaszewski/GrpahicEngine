@@ -23,6 +23,11 @@ public:
 
   virtual ~EditorPanel() = default;
 
+  /// Returns whether the panel should be drawn.
+  [[nodiscard]] auto IsOpen() const noexcept -> bool { return m_Open; }
+  /// Controls whether the panel is drawn; ImGui may also update this through the window close button.
+  void SetOpen(bool open) noexcept { m_Open = open; }
+
   // Called every frame to render the panel's ImGui content.
   virtual void Draw() = 0;
 
@@ -44,6 +49,7 @@ private:
   void SetRequestSink(RequestHandler requestSink) { m_RequestSink = std::move(requestSink); }
 
   RequestHandler m_RequestSink;
+  bool m_Open = true;
 
   friend class EditorEventRouter;
 };

@@ -129,6 +129,7 @@ auto QuaternionToPitchYawRoll(const std::array<float, 4>& quaternion) -> std::ar
 
 void Editor::OnInit() {
   m_EditorPreferences = EditorPlatform::LoadEditorPreferences();
+  m_EngineConsoleOpen = m_EditorPreferences.ConsolePanelOpen;
   SetFrameLimiterHz(m_EditorPreferences.FrameLimiterHz);
   if (Engine::RenderSystem* renderSystem = GetRenderSystem()) {
     if (!renderSystem->SetMaxTextureAnisotropy(m_EditorPreferences.MaxTextureAnisotropy)) {
@@ -221,7 +222,7 @@ void Editor::OnInit() {
 
   CreateViewport(1280, 720);
   auto mainBar = std::make_unique<MainBar>();
-  mainBar->SetConsoleOpenHandler([this] -> void { m_EngineConsoleOpen = true; });
+  auto* mainBarPanel = mainBar.get();
   auto engineSettings = std::make_unique<EngineSettingsPanel>(
       this, [this] { return m_EditorPreferences; },
       [this](const auto& preferences) {
@@ -229,12 +230,21 @@ void Editor::OnInit() {
         EditorPlatform::SaveEditorPreferences(m_EditorPreferences);
       });
   auto* engineSettingsPanel = engineSettings.get();
-  mainBar->SetSettingsOpenHandler([engineSettingsPanel] -> void { engineSettingsPanel->Open(); });
+  engineSettingsPanel->SetOpen(m_EditorPreferences.SettingsPanelOpen);
   m_Panels.push_back(std::move(mainBar));
   m_Panels.push_back(std::move(engineSettings));
-  m_Panels.push_back(std::make_unique<StatWindow>(this));
-  m_Panels.push_back(std::make_unique<ScenePanel>());
-  m_Panels.push_back(std::make_unique<HierarchyPanel>());
+  auto statisticsPanel = std::make_unique<StatWindow>(this);
+  statisticsPanel->SetOpen(m_EditorPreferences.StatisticsPanelOpen);
+  auto* statisticsPanelRaw = statisticsPanel.get();
+  m_Panels.push_back(std::move(statisticsPanel));
+  auto scenePanel = std::make_unique<ScenePanel>();
+  scenePanel->SetOpen(m_EditorPreferences.ScenePanelOpen);
+  auto* scenePanelRaw = scenePanel.get();
+  m_Panels.push_back(std::move(scenePanel));
+  auto hierarchyPanel = std::make_unique<HierarchyPanel>();
+  hierarchyPanel->SetOpen(m_EditorPreferences.HierarchyPanelOpen);
+  auto* hierarchyPanelRaw = hierarchyPanel.get();
+  m_Panels.push_back(std::move(hierarchyPanel));
   const auto runtimeDirectory = GetPrismRuntimeDirectory();
   m_PrismNdfInferenceService = std::make_unique<Engine::PrismNdfInferenceService>(
       Engine::PrismNdfInferenceOptions{.modelDirectory = runtimeDirectory / "models" / "prism",
@@ -257,8 +267,14 @@ void Editor::OnInit() {
         }
       },
       .isAvailable = [] -> bool { return Engine::PrismNdfInferenceService::IsAvailable(); }};
-  m_Panels.push_back(std::make_unique<InspectorPanel>(std::move(prismGeneration)));
-  m_Panels.push_back(std::make_unique<AssetBrowserPanel>());
+  auto inspectorPanel = std::make_unique<InspectorPanel>(std::move(prismGeneration));
+  inspectorPanel->SetOpen(m_EditorPreferences.InspectorPanelOpen);
+  auto* inspectorPanelRaw = inspectorPanel.get();
+  m_Panels.push_back(std::move(inspectorPanel));
+  auto assetBrowserPanel = std::make_unique<AssetBrowserPanel>();
+  assetBrowserPanel->SetOpen(m_EditorPreferences.AssetBrowserPanelOpen);
+  auto* assetBrowserPanelRaw = assetBrowserPanel.get();
+  m_Panels.push_back(std::move(assetBrowserPanel));
   auto cameraPreviewPanel = std::make_unique<CameraPreviewPanel>(
       [this](Engine::EntityHandle entity) -> Engine::Result<Engine::RenderOutput> {
         if (!m_ActiveScene || GetRenderSystem() == nullptr) {
@@ -305,7 +321,33 @@ void Editor::OnInit() {
                                                       : std::nullopt;
       });
   m_CameraPreviewPanel = cameraPreviewPanel.get();
+  m_CameraPreviewPanel->SetOpen(m_EditorPreferences.CameraPreviewPanelOpen);
   m_Panels.push_back(std::move(cameraPreviewPanel));
+
+  m_DockPanels = {scenePanelRaw,      hierarchyPanelRaw,   inspectorPanelRaw,   assetBrowserPanelRaw,
+                  statisticsPanelRaw, engineSettingsPanel, m_CameraPreviewPanel};
+  const std::string& savedLayout = m_EditorPreferences.DockLayoutIni;
+  if (!savedLayout.empty()) {
+    if (savedLayout.find("[Docking][Data]") != std::string::npos) {
+      ImGui::LoadIniSettingsFromMemory(savedLayout.data(), savedLayout.size());
+    } else {
+      ENGINE_LOG_WARN("Editor", "Saved panel layout is invalid; the default layout will be used");
+      m_EditorPreferences.DockLayoutIni.clear();
+    }
+  }
+  std::vector<MainBar::PanelMenuItem> panelMenuItems;
+  panelMenuItems.reserve(m_DockPanels.size() + 1U);
+  constexpr std::array panelLabels = {"Viewport",   "Hierarchy", "Inspector",     "Assets",
+                                      "Statistics", "Settings",  "Camera Preview"};
+  for (size_t index = 0; index < m_DockPanels.size(); ++index) {
+    panelMenuItems.push_back({panelLabels[index], [this, index] -> bool { return m_DockPanels[index]->IsOpen(); },
+                              [this, index](bool open) -> void { SetDockPanelOpen(index, open); }});
+  }
+  panelMenuItems.push_back({"Console", [this] -> bool { return m_EngineConsoleOpen; },
+                            [this](bool open) -> void { m_EngineConsoleOpen = open; }});
+  mainBarPanel->SetPanelMenuItems(std::move(panelMenuItems));
+  mainBarPanel->SetLayoutHandlers([this] -> void { ResetDockLayout(); }, [this] -> void { SaveDockLayout(); },
+                                  [this] -> void { LoadDockLayout(); });
 
   m_PanelConnections.reserve(m_Panels.size());
   for (auto& panel : m_Panels) {
@@ -504,12 +546,13 @@ void Editor::OnUIRender() {
   if (!m_UiIntegration.IsInitialized()) {
     return;
   }
-  const ImGuiID dockspaceId = ImGui::GetID("MainDockSpace");
-  ImGui::DockSpaceOverViewport(dockspaceId, ImGui::GetMainViewport(), ImGuiDockNodeFlags_PassthruCentralNode);
-  BuildDefaultDockLayoutIfNeeded(dockspaceId);
+  m_MainDockspaceId = ImGui::GetID("MainDockSpace");
+  ImGui::DockSpaceOverViewport(m_MainDockspaceId, ImGui::GetMainViewport(), ImGuiDockNodeFlags_PassthruCentralNode);
+  BuildDefaultDockLayoutIfNeeded(m_MainDockspaceId);
   for (auto& panel : m_Panels) {
     panel->Draw();
   }
+  SyncPanelVisibilityPreferences();
   if (m_ActiveScene) {
     for (const auto& result : m_ActiveScene->sync()) {
       if (!result.Outcome) {
@@ -526,9 +569,21 @@ void Editor::OnUIRender() {
     }
   }
   m_EditorConsole.UpdateAndRender(&m_EngineConsoleOpen);
+  SyncPanelVisibilityPreferences();
 }
 
-void Editor::OnBeginUIFrame() { m_UiIntegration.BeginFrame(); }
+void Editor::OnBeginUIFrame() {
+  if (m_LayoutLoadPending) {
+    ImGui::LoadIniSettingsFromMemory(m_EditorPreferences.DockLayoutIni.data(),
+                                     m_EditorPreferences.DockLayoutIni.size());
+    for (size_t index = 0; index < m_DockPanels.size(); ++index) {
+      SetDockPanelOpen(index, m_EditorPreferences.SavedPanelVisibility[index]);
+    }
+    m_EngineConsoleOpen = m_EditorPreferences.SavedPanelVisibility[7];
+    m_LayoutLoadPending = false;
+  }
+  m_UiIntegration.BeginFrame();
+}
 void Editor::OnEndUIFrame() { m_UiIntegration.EndFrame(); }
 
 void Editor::OnShutdownUI() {
@@ -1382,9 +1437,11 @@ void Editor::BuildDefaultDockLayoutIfNeeded(uint32_t dockspaceId) {
 }
 
 void Editor::BuildDefaultDockLayout(uint32_t dockspaceId) {
+  const ImGuiViewport* viewport = ImGui::GetMainViewport();
   ImGui::DockBuilderRemoveNode(dockspaceId);
   ImGui::DockBuilderAddNode(dockspaceId, ImGuiDockNodeFlags_DockSpace);
-  ImGui::DockBuilderSetNodeSize(dockspaceId, ImGui::GetMainViewport()->Size);
+  ImGui::DockBuilderSetNodePos(dockspaceId, viewport->WorkPos);
+  ImGui::DockBuilderSetNodeSize(dockspaceId, viewport->WorkSize);
   ImGuiID main = dockspaceId;
   ImGuiID left = 0;
   ImGuiID right = 0;
@@ -1392,7 +1449,6 @@ void Editor::BuildDefaultDockLayout(uint32_t dockspaceId) {
   ImGui::DockBuilderSplitNode(main, ImGuiDir_Left, 0.20F, &left, &main);
   ImGui::DockBuilderSplitNode(main, ImGuiDir_Right, 0.25F, &right, &main);
   ImGui::DockBuilderSplitNode(main, ImGuiDir_Down, 0.25F, &bottom, &main);
-  ImGui::DockBuilderDockWindow("Scene", left);
   ImGui::DockBuilderDockWindow("Hierarchy", left);
   ImGui::DockBuilderDockWindow("Inspector", right);
   ImGui::DockBuilderDockWindow("Stats", bottom);
@@ -1400,4 +1456,89 @@ void Editor::BuildDefaultDockLayout(uint32_t dockspaceId) {
   ImGui::DockBuilderDockWindow("Console", bottom);
   ImGui::DockBuilderDockWindow("Viewport", main);
   ImGui::DockBuilderFinish(dockspaceId);
+}
+
+void Editor::ResetDockLayout() {
+  m_EditorPreferences.ScenePanelOpen = true;
+  m_EditorPreferences.HierarchyPanelOpen = true;
+  m_EditorPreferences.InspectorPanelOpen = true;
+  m_EditorPreferences.AssetBrowserPanelOpen = true;
+  m_EditorPreferences.StatisticsPanelOpen = true;
+  m_EditorPreferences.ConsolePanelOpen = true;
+  m_EditorPreferences.SettingsPanelOpen = false;
+  m_EditorPreferences.CameraPreviewPanelOpen = false;
+  for (size_t index = 0; index < m_DockPanels.size(); ++index) {
+    const bool open = index < 5U;
+    SetDockPanelOpen(index, open);
+  }
+  m_EngineConsoleOpen = true;
+  BuildDefaultDockLayout(m_MainDockspaceId);
+  m_DefaultLayoutBuilt = true;
+  SaveDockLayout();
+  ENGINE_LOG_INFO("Editor", "Panel layout restored to the default arrangement");
+}
+
+void Editor::SaveDockLayout() {
+  const char* layout = ImGui::SaveIniSettingsToMemory();
+  if (layout == nullptr || std::string_view(layout).find("[Docking][Data]") == std::string_view::npos) {
+    ENGINE_LOG_WARN("Editor", "Could not save the current panel layout");
+    return;
+  }
+  m_EditorPreferences.DockLayoutIni = layout;
+  ImGui::GetIO().WantSaveIniSettings = false;
+  SyncPanelVisibilityPreferences();
+  m_EditorPreferences.SavedPanelVisibility = {
+      m_DockPanels[0]->IsOpen(), m_DockPanels[1]->IsOpen(), m_DockPanels[2]->IsOpen(), m_DockPanels[3]->IsOpen(),
+      m_DockPanels[4]->IsOpen(), m_DockPanels[5]->IsOpen(), m_DockPanels[6]->IsOpen(), m_EngineConsoleOpen};
+  EditorPlatform::SaveEditorPreferences(m_EditorPreferences);
+  ENGINE_LOG_INFO("Editor", "Panel layout saved");
+}
+
+void Editor::LoadDockLayout() {
+  const std::string& layout = m_EditorPreferences.DockLayoutIni;
+  if (layout.empty() || layout.find("[Docking][Data]") == std::string::npos) {
+    ENGINE_LOG_WARN("Editor", "No saved panel layout is available; use Reset Layout to restore the default");
+    return;
+  }
+  m_LayoutLoadPending = true;
+  ENGINE_LOG_INFO("Editor", "Saved panel layout will load at the start of the next UI frame");
+}
+
+void Editor::SetDockPanelOpen(std::size_t index, bool open) {
+  if (index >= m_DockPanels.size() || m_DockPanels[index] == nullptr) {
+    return;
+  }
+  if (index == 6U && m_CameraPreviewPanel != nullptr) {
+    if (open) {
+      m_CameraPreviewPanel->Open();
+    } else {
+      m_CameraPreviewPanel->Hide();
+    }
+  } else {
+    m_DockPanels[index]->SetOpen(open);
+  }
+}
+
+void Editor::SyncPanelVisibilityPreferences() {
+  const std::array<bool, 7> current = {m_DockPanels[0]->IsOpen(), m_DockPanels[1]->IsOpen(), m_DockPanels[2]->IsOpen(),
+                                       m_DockPanels[3]->IsOpen(), m_DockPanels[4]->IsOpen(), m_DockPanels[5]->IsOpen(),
+                                       m_DockPanels[6]->IsOpen()};
+  const bool changed =
+      m_EditorPreferences.ScenePanelOpen != current[0] || m_EditorPreferences.HierarchyPanelOpen != current[1] ||
+      m_EditorPreferences.InspectorPanelOpen != current[2] || m_EditorPreferences.AssetBrowserPanelOpen != current[3] ||
+      m_EditorPreferences.StatisticsPanelOpen != current[4] || m_EditorPreferences.SettingsPanelOpen != current[5] ||
+      m_EditorPreferences.CameraPreviewPanelOpen != current[6] ||
+      m_EditorPreferences.ConsolePanelOpen != m_EngineConsoleOpen;
+  if (!changed) {
+    return;
+  }
+  m_EditorPreferences.ScenePanelOpen = current[0];
+  m_EditorPreferences.HierarchyPanelOpen = current[1];
+  m_EditorPreferences.InspectorPanelOpen = current[2];
+  m_EditorPreferences.AssetBrowserPanelOpen = current[3];
+  m_EditorPreferences.StatisticsPanelOpen = current[4];
+  m_EditorPreferences.SettingsPanelOpen = current[5];
+  m_EditorPreferences.CameraPreviewPanelOpen = current[6];
+  m_EditorPreferences.ConsolePanelOpen = m_EngineConsoleOpen;
+  EditorPlatform::SaveEditorPreferences(m_EditorPreferences);
 }

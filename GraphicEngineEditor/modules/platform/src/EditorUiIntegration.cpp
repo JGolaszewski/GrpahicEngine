@@ -33,6 +33,7 @@ auto EditorUiIntegration::Initialize(Engine::IWindow* window, Engine::IRenderBac
   ImGui::StyleColorsDark();
   ImGuiIO& io = ImGui::GetIO();
   io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_DockingEnable;
+  io.IniFilename = nullptr;
 
   auto* glfwWindow = static_cast<GLFWwindow*>(window->GetEventSourceHandle());
   if (!ImGui_ImplGlfw_InitForOther(glfwWindow, true)) {

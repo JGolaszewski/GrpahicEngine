@@ -42,6 +42,11 @@ public:
 
   void Draw() override;
   void OnEvent(Engine::Events::Event& event) override;
+  /// Shows the viewer and refreshes the last selected camera when one is available.
+  void Open() noexcept;
+  /// Hides the viewer and releases its preview texture while retaining the selected camera.
+  void Hide();
+  /// Closes the viewer and forgets the selected camera.
   void Close();
 
 private:
@@ -69,7 +74,6 @@ private:
   std::array<float, 2> m_ImageOffset{};
   std::array<float, 2> m_LastMousePosition{};
   bool m_IsPanning = false;
-  bool m_Open = false;
   bool m_RefreshRequested = false;
   bool m_HasImage = false;
 };

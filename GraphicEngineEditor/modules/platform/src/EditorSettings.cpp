@@ -111,6 +111,38 @@ auto LoadEditorSettingsFile(const std::filesystem::path& path) -> EditorSettings
     result.Preferences.VSyncEnabled = ReadBoolean(rendering, "vsync_enabled", true);
     result.Preferences.CameraPreviewScale = ReadPercentage(preview, "display_scale", 0.35F, 0.1F, 0.8F);
     result.Preferences.CameraPreviewQuality = ReadPercentage(preview, "render_quality", 0.25F, 0.05F, 1.0F);
+    if (document.contains("panels")) {
+      if (!document.at("panels").is_object()) {
+        throw std::runtime_error("expected an object for 'panels'");
+      }
+      const Json& panels = document.at("panels");
+      result.Preferences.ScenePanelOpen = ReadBoolean(panels, "scene", true);
+      result.Preferences.HierarchyPanelOpen = ReadBoolean(panels, "hierarchy", true);
+      result.Preferences.InspectorPanelOpen = ReadBoolean(panels, "inspector", true);
+      result.Preferences.AssetBrowserPanelOpen = ReadBoolean(panels, "assets", true);
+      result.Preferences.StatisticsPanelOpen = ReadBoolean(panels, "statistics", true);
+      result.Preferences.ConsolePanelOpen = ReadBoolean(panels, "console", true);
+      result.Preferences.SettingsPanelOpen = ReadBoolean(panels, "settings", false);
+      result.Preferences.CameraPreviewPanelOpen = ReadBoolean(panels, "camera_preview", false);
+    }
+    if (document.contains("dock_layout")) {
+      if (!document.at("dock_layout").is_string()) {
+        throw std::runtime_error("expected a string for 'dock_layout'");
+      }
+      result.Preferences.DockLayoutIni = document.at("dock_layout").get<std::string>();
+    }
+    if (document.contains("saved_panel_visibility")) {
+      const Json& savedPanels = document.at("saved_panel_visibility");
+      if (!savedPanels.is_array() || savedPanels.size() != result.Preferences.SavedPanelVisibility.size()) {
+        throw std::runtime_error("expected eight saved panel visibility values");
+      }
+      for (size_t index = 0; index < result.Preferences.SavedPanelVisibility.size(); ++index) {
+        if (!savedPanels.at(index).is_boolean()) {
+          throw std::runtime_error("expected boolean saved panel visibility values");
+        }
+        result.Preferences.SavedPanelVisibility[index] = savedPanels.at(index).get<bool>();
+      }
+    }
   } catch (const std::exception& exception) {
     result.Preferences = {};
     result.Error = std::string("invalid settings JSON: ") + exception.what();
@@ -147,7 +179,18 @@ auto SaveEditorSettingsFile(const std::filesystem::path& path, const EditorPrefe
                            {"vsync_enabled", preferences.VSyncEnabled}}},
                          {"camera_preview",
                           {{"display_scale", std::clamp(preferences.CameraPreviewScale, 0.1F, 0.8F)},
-                           {"render_quality", std::clamp(preferences.CameraPreviewQuality, 0.05F, 1.0F)}}}};
+                           {"render_quality", std::clamp(preferences.CameraPreviewQuality, 0.05F, 1.0F)}}},
+                         {"panels",
+                          {{"scene", preferences.ScenePanelOpen},
+                           {"hierarchy", preferences.HierarchyPanelOpen},
+                           {"inspector", preferences.InspectorPanelOpen},
+                           {"assets", preferences.AssetBrowserPanelOpen},
+                           {"statistics", preferences.StatisticsPanelOpen},
+                           {"console", preferences.ConsolePanelOpen},
+                           {"settings", preferences.SettingsPanelOpen},
+                           {"camera_preview", preferences.CameraPreviewPanelOpen}}},
+                         {"saved_panel_visibility", preferences.SavedPanelVisibility},
+                         {"dock_layout", preferences.DockLayoutIni}};
   std::ofstream output(path, std::ios::binary | std::ios::trunc);
   if (!output) {
     error = "could not open settings file for writing";

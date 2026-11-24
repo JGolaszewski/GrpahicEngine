@@ -208,8 +208,14 @@ void InspectorPanel::OnEvent(Engine::Events::Event& event) {
 }
 
 void InspectorPanel::Draw() {
+  if (!m_Open) {
+    return;
+  }
   PollPrismGeneration();
-  ImGui::Begin("Inspector", nullptr, ImGuiWindowFlags_NoCollapse);
+  if (!ImGui::Begin("Inspector", &m_Open, ImGuiWindowFlags_NoCollapse)) {
+    ImGui::End();
+    return;
+  }
   if (m_Scene && m_SelectedEntity != Engine::InvalidEntityHandle && m_Scene->World().IsAlive(m_SelectedEntity)) {
     DrawEntityInspector();
   } else {
