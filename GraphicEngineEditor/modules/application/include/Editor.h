@@ -21,6 +21,7 @@
 #include "scene/include/Scene.h"
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <utility>
@@ -64,6 +65,11 @@ private:
   void DestroyCameraPreview();
   void BuildDefaultDockLayoutIfNeeded(uint32_t dockspaceId);
   static void BuildDefaultDockLayout(uint32_t dockspaceId);
+  void ResetDockLayout();
+  void SaveDockLayout();
+  void LoadDockLayout();
+  void SetDockPanelOpen(std::size_t index, bool open);
+  void SyncPanelVisibilityPreferences();
   void UpdateEditorCamera(float deltaTime);
   [[nodiscard]] auto GetViewportTextureID() const -> void*;
 
@@ -74,6 +80,7 @@ private:
   std::shared_ptr<Engine::Viewport> m_CameraPreviewViewport;
   std::shared_ptr<Engine::ViewportTarget> m_CameraPreviewTarget;
   std::vector<std::unique_ptr<EditorPanel>> m_Panels;
+  std::array<EditorPanel*, 7> m_DockPanels{};
   std::unique_ptr<Engine::PrismNdfInferenceService> m_PrismNdfInferenceService;
   CommandHistory m_CommandHistory;
   CameraPreviewPanel* m_CameraPreviewPanel = nullptr;
@@ -91,6 +98,7 @@ private:
   Engine::Ecs::Camera m_EditorCameraSettings;
   std::pair<float, float> m_ViewportSize = {0.0F, 0.0F};
   bool m_DefaultLayoutBuilt = false;
+  bool m_LayoutLoadPending = false;
   bool m_EngineConsoleOpen = true;
   EditorPlatform::EditorPreferences m_EditorPreferences;
   std::array<bool, static_cast<size_t>(Engine::Events::KeyCode::Count)> m_CameraKeysDown{};

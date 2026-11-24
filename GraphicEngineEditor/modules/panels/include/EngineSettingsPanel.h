@@ -19,11 +19,10 @@ public:
         m_SetPreferences(std::move(setPreferences)) {}
 
   void Draw() override;
-  void Open() noexcept { m_Open = true; }
+  void Open() noexcept { SetOpen(true); }
 
 private:
   Engine::Application* m_Application = nullptr;
-  bool m_Open = false;
   std::function<EditorPlatform::EditorPreferences()> m_GetPreferences;
   std::function<void(const EditorPlatform::EditorPreferences&)> m_SetPreferences;
 };

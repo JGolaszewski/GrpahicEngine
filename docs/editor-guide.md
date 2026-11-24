@@ -127,11 +127,22 @@ editor preferences persist locally in
 `%LOCALAPPDATA%/GraphicEngine/editor-settings.json`. Runtime and renderer values
 are applied to the current application session.
 
+## Panel layout
+
+Close a panel with its title bar's close button. Reopen or hide any panel from
+**View**, including the Viewport, Scene Hierarchy, Inspector, Assets, Statistics,
+Engine Console, Settings, and Camera Preview. **View > Reset Layout** restores
+the default arrangement, with the Viewport in the center and the other panels
+docked around it below the menu bar. Use **View > Save Layout** to save the
+current docking arrangement and visible panels, then **View > Load Layout** to
+restore that saved layout. Current panel visibility is also remembered between
+editor launches.
+
 ## Current editor limits
 
 - The viewport supports camera navigation, not entity picking or transform
   gizmos. Use the hierarchy and Inspector for selection and edits.
 - The navigation camera has no visible settings panel. Authored scene cameras
   have their own Inspector controls and can be previewed or exported.
-- Panel arrangement is dockable, but the editor does not expose a layout reset
-  command.
+- Camera Preview is on-demand when a selected scene camera's preview image is
+  clicked. Its View menu entry can reopen the viewer after it is closed.

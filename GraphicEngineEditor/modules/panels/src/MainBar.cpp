@@ -18,7 +18,7 @@ void MainBar::Draw() {
       }
       ImGui::EndMenu();
     }
-    DrawWindowMenu();
+    DrawViewMenu();
     ImGui::EndMainMenuBar();
   }
 }
@@ -50,15 +50,25 @@ void MainBar::DrawFileMenu() {
   ImGui::EndMenu();
 }
 
-void MainBar::DrawWindowMenu() {
-  if (!ImGui::BeginMenu("Window")) {
+void MainBar::DrawViewMenu() {
+  if (!ImGui::BeginMenu("View")) {
     return;
   }
-  if (ImGui::MenuItem("Settings") && m_SettingsOpenHandler) {
-    m_SettingsOpenHandler();
+  for (const PanelMenuItem& item : m_PanelMenuItems) {
+    const bool isOpen = item.IsOpen && item.IsOpen();
+    if (ImGui::MenuItem(item.Label.c_str(), nullptr, isOpen) && item.SetOpen) {
+      item.SetOpen(!isOpen);
+    }
   }
-  if (ImGui::MenuItem("Console") && m_ConsoleOpenHandler) {
-    m_ConsoleOpenHandler();
+  ImGui::Separator();
+  if (ImGui::MenuItem("Reset Layout") && m_ResetLayoutHandler) {
+    m_ResetLayoutHandler();
+  }
+  if (ImGui::MenuItem("Save Layout") && m_SaveLayoutHandler) {
+    m_SaveLayoutHandler();
+  }
+  if (ImGui::MenuItem("Load Layout") && m_LoadLayoutHandler) {
+    m_LoadLayoutHandler();
   }
   ImGui::EndMenu();
 }

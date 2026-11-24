@@ -11,7 +11,13 @@
 #include <imgui.h>
 
 void AssetBrowserPanel::Draw() {
-  ImGui::Begin("Assets", nullptr, ImGuiWindowFlags_NoCollapse);
+  if (!m_Open) {
+    return;
+  }
+  if (!ImGui::Begin("Assets", &m_Open, ImGuiWindowFlags_NoCollapse)) {
+    ImGui::End();
+    return;
+  }
   if (ImGui::Button("Import model...")) {
     EmitEvent(std::make_unique<AssetImportRequestedEvent>());
   }

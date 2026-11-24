@@ -3,15 +3,23 @@
 The editor stores user-wide settings in `%LOCALAPPDATA%/GraphicEngine/editor-settings.json`.
 The file is created when a setting is changed. A missing file uses the built-in defaults.
 
-Settings use versioned JSON categories:
+Settings use versioned JSON categories. Older version 1 files remain valid;
+panel and layout entries are optional and use defaults when absent.
 
 - `runtime`: frame limiter frequency in hertz (`0` disables the limiter). Simulation pause is session state and resets on launch.
 - `rendering`: editor gizmos, wireframe plane, skybox background visibility in the editor viewport, shadow map resolution, shadow caster limit, maximum texture anisotropy, and VSync.
 - `camera_preview`: display scale and render quality, stored as fractions from `0.0` to `1.0`.
+- `panels`: current panel visibility for the Viewport, Hierarchy, Inspector, Assets, Statistics, Console, Settings, and Camera Preview.
+- `saved_panel_visibility` and `dock_layout`: the panel visibility snapshot and Dear ImGui docking data saved by **View > Save Layout**.
 
 The maximum texture anisotropy accepts 1x, 2x, 4x, 8x, or 16x and defaults to 8x. Invalid or unreadable settings are reported in the editor log and defaults are used so the editor can still launch.
 Out-of-range continuous numeric values are clamped to the supported editor ranges. Existing `editor-settings.txt` preferences
 are read once and migrated to JSON when possible; the old file is left untouched.
+
+Choose **View > Reset Layout** to restore the built-in panel arrangement and
+replace the saved layout. **View > Load Layout** restores the last layout saved
+with **View > Save Layout**. Closing a panel also updates its current visibility
+preference so that panel visibility is retained after restarting the editor.
 
 ## Project and scene selection
 

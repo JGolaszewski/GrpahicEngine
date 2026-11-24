@@ -30,6 +30,13 @@ void ScenePanel::OnEvent(Engine::Events::Event& event) {
 }
 
 void ScenePanel::Draw() {
+  if (!m_Open) {
+    if (m_IsHovered) {
+      m_IsHovered = false;
+      EmitEvent(std::make_unique<ViewportHoveredEvent>(false));
+    }
+    return;
+  }
   ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0F, 0.0F));
 
   ImGuiWindowClass viewportClass;
@@ -38,7 +45,16 @@ void ScenePanel::Draw() {
   viewportClass.DockingAllowUnclassed = false;
   ImGui::SetNextWindowClass(&viewportClass);
 
-  ImGui::Begin("Viewport", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove);
+  const bool visible = ImGui::Begin("Viewport", &m_Open, ImGuiWindowFlags_NoCollapse);
+  if (!visible) {
+    if (m_IsHovered) {
+      m_IsHovered = false;
+      EmitEvent(std::make_unique<ViewportHoveredEvent>(false));
+    }
+    ImGui::End();
+    ImGui::PopStyleVar();
+    return;
+  }
 
   bool isHovered = ImGui::IsWindowHovered();
   if (isHovered != m_IsHovered) {
