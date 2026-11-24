@@ -52,7 +52,7 @@ void CameraPreviewPanel::OnEvent(Engine::Events::Event& event) {
   Engine::Events::EventDispatcher dispatcher(event);
   dispatcher.Dispatch<CameraPreviewOpenRequestedEvent>([this](const auto& request) -> bool {
     m_Camera = request.GetEntity();
-    m_Open = true;
+    SetOpen(true);
     m_RefreshRequested = true;
     m_HasImage = false;
     m_Zoom = 1.0F;
@@ -71,12 +71,12 @@ void CameraPreviewPanel::Close() {
 }
 
 void CameraPreviewPanel::Open() noexcept {
-  m_Open = true;
+  SetOpen(true);
   m_RefreshRequested = m_Camera != Engine::InvalidEntityHandle;
 }
 
 void CameraPreviewPanel::Hide() {
-  m_Open = false;
+  SetOpen(false);
   m_RefreshRequested = false;
   m_HasImage = false;
   if (m_ClearPreview) {
@@ -197,7 +197,7 @@ void CameraPreviewPanel::UpdateExportStatus() {
 }
 
 void CameraPreviewPanel::Draw() {
-  if (!m_Open) {
+  if (!IsOpen()) {
     return;
   }
   UpdateExportStatus();
@@ -212,7 +212,7 @@ void CameraPreviewPanel::Draw() {
   ImGui::SetNextWindowSizeConstraints(ImVec2(320.0F, 240.0F), ImVec2(displaySize.x, displaySize.y));
   const ImGuiWindowFlags previewWindowFlags =
       m_IsPanning ? ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove : ImGuiWindowFlags_NoCollapse;
-  if (ImGui::Begin("Preview", &m_Open, previewWindowFlags)) {
+  if (ImGui::Begin("Preview", OpenFlag(), previewWindowFlags)) {
     if (ImGui::Button("Refresh")) {
       (void)RenderSelectedCamera();
     }
@@ -349,7 +349,7 @@ void CameraPreviewPanel::Draw() {
     ImGui::TextDisabled("Drag the image to pan; hover over it and use the mouse wheel to zoom.");
   }
   ImGui::End();
-  if (!m_Open && m_ClearPreview) {
+  if (!IsOpen() && m_ClearPreview) {
     m_ClearPreview();
     m_HasImage = false;
     m_ImageWidth = 0;

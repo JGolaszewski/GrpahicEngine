@@ -11,10 +11,10 @@
 #include <imgui.h>
 
 void AssetBrowserPanel::Draw() {
-  if (!m_Open) {
+  if (!IsOpen()) {
     return;
   }
-  if (!ImGui::Begin("Assets", &m_Open, ImGuiWindowFlags_NoCollapse)) {
+  if (!ImGui::Begin("Assets", OpenFlag(), ImGuiWindowFlags_NoCollapse)) {
     ImGui::End();
     return;
   }

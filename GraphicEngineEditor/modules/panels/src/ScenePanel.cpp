@@ -30,7 +30,7 @@ void ScenePanel::OnEvent(Engine::Events::Event& event) {
 }
 
 void ScenePanel::Draw() {
-  if (!m_Open) {
+  if (!IsOpen()) {
     if (m_IsHovered) {
       m_IsHovered = false;
       EmitEvent(std::make_unique<ViewportHoveredEvent>(false));
@@ -45,7 +45,7 @@ void ScenePanel::Draw() {
   viewportClass.DockingAllowUnclassed = false;
   ImGui::SetNextWindowClass(&viewportClass);
 
-  const bool visible = ImGui::Begin("Viewport", &m_Open, ImGuiWindowFlags_NoCollapse);
+  const bool visible = ImGui::Begin("Viewport", OpenFlag(), ImGuiWindowFlags_NoCollapse);
   if (!visible) {
     if (m_IsHovered) {
       m_IsHovered = false;
