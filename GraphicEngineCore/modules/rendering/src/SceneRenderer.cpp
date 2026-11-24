@@ -9,6 +9,7 @@
 #include <cstring>
 #include <limits>
 #include <numbers>
+#include <string>
 
 #include "rendering/include/renderer/DebugGeometry.h"
 #include "rendering/include/renderer/Material.h"
@@ -19,6 +20,16 @@
 #include "scene/include/Scene.h"
 
 namespace {
+auto PrimitiveResourceKey(const ::Engine::Ecs::MeshRenderer& meshRenderer) -> std::string {
+  if (!meshRenderer.ModelGuid.empty()) {
+    return meshRenderer.ModelGuid;
+  }
+  if (meshRenderer.PrimitiveType == "sphere" && meshRenderer.SphereSubdivisions != 16U) {
+    return "primitive:sphere:" + std::to_string(meshRenderer.SphereSubdivisions);
+  }
+  return "primitive:" + meshRenderer.PrimitiveType;
+}
+
 struct DebugViewData {
   DirectX::XMFLOAT4X4 ViewProjection;
 };
@@ -571,10 +582,7 @@ auto Engine::SceneRenderer::EstimateDrawCount(const ::Engine::Renderer::FrameBla
           [this, &count](std::span<const Engine::EntityHandle>,
                          std::span<const ::Engine::Ecs::MeshRenderer> meshRenderers) -> void {
             for (const auto& meshRenderer : meshRenderers) {
-              std::string resourceKey = meshRenderer.ModelGuid;
-              if (resourceKey.empty() && !meshRenderer.PrimitiveType.empty()) {
-                resourceKey = "primitive:" + meshRenderer.PrimitiveType;
-              }
+              const std::string resourceKey = PrimitiveResourceKey(meshRenderer);
               const auto* submeshes = m_ModelResources == nullptr ? nullptr : m_ModelResources->Find(resourceKey);
               const size_t submeshCount = submeshes == nullptr ? 1 : submeshes->size();
               if (submeshCount > std::numeric_limits<size_t>::max() - count) {
@@ -1012,8 +1020,7 @@ auto Engine::SceneRenderer::MaterialForSubmesh(const ::Engine::Renderer::RenderV
                                                const ::Engine::Renderer::Submesh& submesh)
     -> std::shared_ptr<::Engine::Renderer::Material> {
   const uint32_t slot = submesh.MaterialSlot < 0 ? 0U : static_cast<uint32_t>(submesh.MaterialSlot);
-  const std::string resourceKey =
-      meshRenderer.ModelGuid.empty() ? "primitive:" + meshRenderer.PrimitiveType : meshRenderer.ModelGuid;
+  const std::string resourceKey = PrimitiveResourceKey(meshRenderer);
   const std::optional<::Engine::SceneMaterialDocument>* selectedOverride = nullptr;
   if (submesh.MaterialSlot >= 0 && static_cast<size_t>(submesh.MaterialSlot) < meshRenderer.MaterialOverrides.size()) {
     selectedOverride = &meshRenderer.MaterialOverrides[static_cast<size_t>(submesh.MaterialSlot)];
@@ -1121,10 +1128,7 @@ void Engine::SceneRenderer::CullAndFillView(::Engine::Renderer::RenderView* view
                 ++m_SubmissionStats.ObjectsCulled;
                 continue;
               }
-              std::string resourceKey = meshRenderer.ModelGuid;
-              if (resourceKey.empty() && !meshRenderer.PrimitiveType.empty()) {
-                resourceKey = "primitive:" + meshRenderer.PrimitiveType;
-              }
+              const std::string resourceKey = PrimitiveResourceKey(meshRenderer);
               const auto* submeshes = m_ModelResources == nullptr ? nullptr : m_ModelResources->Find(resourceKey);
               if (submeshes == nullptr || submeshes->empty()) {
                 ++m_SubmissionStats.ObjectsCulled;

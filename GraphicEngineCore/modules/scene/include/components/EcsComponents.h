@@ -88,14 +88,15 @@ static_assert(alignof(WorldTransform) >= 16);
 
 /// Rendering settings and model identity for a mesh entity.
 struct MeshRenderer {
-  std::string ModelGuid;                         ///< Imported model identity, when using a model asset.
-  std::string PrimitiveType;                     ///< Built-in primitive name, when not using a model asset.
-  std::string MaterialGuid;                      ///< Optional reusable material asset identity.
-  bool CastShadows = true;                       ///< Whether this mesh contributes to shadow maps.
-  bool ReceiveShadows = true;                    ///< Whether this mesh receives shadows.
-  bool Visible = true;                           ///< Whether this mesh is submitted for rendering.
-  bool Wireframe = false;                        ///< Whether this mesh uses wireframe rasterization.
-  bool DisableDepthTest = false;                 ///< Whether depth testing is disabled for this mesh.
+  std::string ModelGuid;            ///< Imported model identity, when using a model asset.
+  std::string PrimitiveType;        ///< Built-in primitive name, when not using a model asset.
+  uint32_t SphereSubdivisions = 16; ///< Sphere latitude subdivisions (8, 16, 32, or 64); ignored otherwise.
+  std::string MaterialGuid;         ///< Optional reusable material asset identity.
+  bool CastShadows = true;          ///< Whether this mesh contributes to shadow maps.
+  bool ReceiveShadows = true;       ///< Whether this mesh receives shadows.
+  bool Visible = true;              ///< Whether this mesh is submitted for rendering.
+  bool Wireframe = false;           ///< Whether this mesh uses wireframe rasterization.
+  bool DisableDepthTest = false;    ///< Whether depth testing is disabled for this mesh.
   std::optional<SceneMaterialDocument> Material; ///< Optional material override applied to all mesh slots.
   std::vector<std::optional<SceneMaterialDocument>> MaterialOverrides; ///< Optional per-submesh material overrides.
 };

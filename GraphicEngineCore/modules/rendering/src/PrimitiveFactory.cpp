@@ -22,6 +22,11 @@ auto PrimitiveFactory::operator=(PrimitiveFactory&&) noexcept -> PrimitiveFactor
 
 auto PrimitiveFactory::CreatePrimitive(PrimitiveShape shape, std::shared_ptr<::Engine::Renderer::Material> material)
     -> std::optional<::Engine::Renderer::Submesh> {
+  return CreatePrimitive(shape, std::move(material), 16U);
+}
+
+auto PrimitiveFactory::CreatePrimitive(PrimitiveShape shape, std::shared_ptr<::Engine::Renderer::Material> material,
+                                       uint32_t sphereSubdivisions) -> std::optional<::Engine::Renderer::Submesh> {
   if (!m_Impl || (m_Impl->Device == nullptr) || !material) {
     return std::nullopt;
   }
@@ -41,7 +46,7 @@ auto PrimitiveFactory::CreatePrimitive(PrimitiveShape shape, std::shared_ptr<::E
     builder.Cube();
     break;
   case PrimitiveShape::Sphere:
-    builder.Sphere();
+    builder.Sphere(sphereSubdivisions, (sphereSubdivisions * 3U) / 2U);
     break;
   case PrimitiveShape::Plane:
     builder.Plane();

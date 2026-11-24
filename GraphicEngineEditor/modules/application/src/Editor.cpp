@@ -211,6 +211,11 @@ void Editor::OnInit() {
           ENGINE_LOG_WARN("Render", "Editor primitive resource setup failed | shape: {}", static_cast<uint32_t>(shape));
         }
       }
+      for (const uint32_t subdivisions : {8U, 32U, 64U}) {
+        if (!renderSystem->CreatePrimitive(Engine::PrimitiveShape::Sphere, material, subdivisions)) {
+          ENGINE_LOG_WARN("Render", "Editor sphere resource setup failed | subdivisions: {}", subdivisions);
+        }
+      }
     }
   }
 

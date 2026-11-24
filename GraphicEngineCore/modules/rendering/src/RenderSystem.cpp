@@ -41,12 +41,12 @@ auto GetModelSceneRoots(const ImportedModel& model, std::string& error) -> std::
   return roots;
 }
 
-auto PrimitiveResourceKey(Engine::PrimitiveShape shape) -> const char* {
+auto PrimitiveResourceKey(Engine::PrimitiveShape shape, uint32_t sphereSubdivisions) -> std::string {
   switch (shape) {
   case Engine::PrimitiveShape::Cube:
     return "primitive:cube";
   case Engine::PrimitiveShape::Sphere:
-    return "primitive:sphere";
+    return sphereSubdivisions == 16U ? "primitive:sphere" : "primitive:sphere:" + std::to_string(sphereSubdivisions);
   case Engine::PrimitiveShape::Plane:
     return "primitive:plane";
   case Engine::PrimitiveShape::Cone:
@@ -291,15 +291,25 @@ auto RenderSystem::CreateViewportTarget(uint32_t width, uint32_t height) -> std:
 
 auto RenderSystem::CreatePrimitive(Engine::PrimitiveShape shape, std::shared_ptr<::Engine::Renderer::Material> material)
     -> bool {
+  return CreatePrimitive(shape, std::move(material), 16U);
+}
+
+auto RenderSystem::CreatePrimitive(Engine::PrimitiveShape shape, std::shared_ptr<::Engine::Renderer::Material> material,
+                                   uint32_t sphereSubdivisions) -> bool {
+  if (shape == Engine::PrimitiveShape::Sphere && sphereSubdivisions != 8U && sphereSubdivisions != 16U &&
+      sphereSubdivisions != 32U && sphereSubdivisions != 64U) {
+    ENGINE_LOG_ERROR("ECS", "Sphere primitive creation rejected | unsupported subdivisions: {}", sphereSubdivisions);
+    return false;
+  }
   if (m_FrameActive || !m_PrimitiveFactory) {
     ENGINE_LOG_ERROR("ECS", "Primitive creation rejected | shape: {} | frame_active: {} | factory_valid: {}",
                      static_cast<uint32_t>(shape), m_FrameActive, m_PrimitiveFactory != nullptr);
     return false;
   }
 
-  auto submesh = m_PrimitiveFactory->CreatePrimitive(shape, std::move(material));
+  auto submesh = m_PrimitiveFactory->CreatePrimitive(shape, std::move(material), sphereSubdivisions);
   if (submesh && submesh->mesh && submesh->material) {
-    m_ModelResources->Register(PrimitiveResourceKey(shape), {*submesh});
+    m_ModelResources->Register(PrimitiveResourceKey(shape, sphereSubdivisions), {*submesh});
     return true;
   }
   return false;
