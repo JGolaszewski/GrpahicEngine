@@ -8,11 +8,11 @@
 #include <imgui.h>
 
 void EngineSettingsPanel::Draw() {
-  if (!m_Open) {
+  if (!IsOpen()) {
     return;
   }
 
-  if (!ImGui::Begin("Settings", &m_Open)) {
+  if (!ImGui::Begin("Settings", OpenFlag())) {
     ImGui::End();
     return;
   }

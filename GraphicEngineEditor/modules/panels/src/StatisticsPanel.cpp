@@ -57,10 +57,10 @@ void LogBackendSnapshot(const Engine::Application* application) {
 // NOLINTBEGIN(cppcoreguidelines-pro-type-vararg)
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
 void StatWindow::Draw() {
-  if (!m_Open) {
+  if (!IsOpen()) {
     return;
   }
-  if (!ImGui::Begin("Stats", &m_Open)) {
+  if (!ImGui::Begin("Stats", OpenFlag())) {
     ImGui::End();
     return;
   }

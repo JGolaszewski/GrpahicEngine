@@ -41,10 +41,10 @@ void HierarchyPanel::OnEvent(Engine::Events::Event& event) {
 }
 
 void HierarchyPanel::Draw() {
-  if (!m_Open) {
+  if (!IsOpen()) {
     return;
   }
-  if (!ImGui::Begin("Hierarchy", &m_Open, ImGuiWindowFlags_NoCollapse)) {
+  if (!ImGui::Begin("Hierarchy", OpenFlag(), ImGuiWindowFlags_NoCollapse)) {
     ImGui::End();
     return;
   }

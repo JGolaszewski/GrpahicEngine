@@ -38,6 +38,9 @@ public:
   // Set by the Editor after construction. Panels use EmitEvent() to send
   // state-change requests back to the Editor.
 protected:
+  /// Provides the open flag to ImGui windows, which update it when closed.
+  [[nodiscard]] auto OpenFlag() noexcept -> bool* { return &m_Open; }
+
   // Emits an event to the Editor. The Editor receives it synchronously
   // and is responsible for updating global state and broadcasting back.
   void EmitEvent(std::unique_ptr<Engine::Events::Event> event) {

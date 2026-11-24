@@ -208,11 +208,11 @@ void InspectorPanel::OnEvent(Engine::Events::Event& event) {
 }
 
 void InspectorPanel::Draw() {
-  if (!m_Open) {
+  if (!IsOpen()) {
     return;
   }
   PollPrismGeneration();
-  if (!ImGui::Begin("Inspector", &m_Open, ImGuiWindowFlags_NoCollapse)) {
+  if (!ImGui::Begin("Inspector", OpenFlag(), ImGuiWindowFlags_NoCollapse)) {
     ImGui::End();
     return;
   }
